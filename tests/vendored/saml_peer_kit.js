@@ -580,6 +580,11 @@ function create(name) {
           r = await kit.signInAt(b, next, o.username, o.password);
           continue;
         }
+        // THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576.
+        if (authnSignin.isConsent(next)) {
+          r = await kit.consentAt(b, next);
+          continue;
+        }
         r = await b.hop(next);
         continue;
       }
@@ -637,6 +642,20 @@ function create(name) {
       { cookie: b.cookies(url), headers: { "User-Agent": AGENT } });
     b.take(url, { headers: answer.headers });
     log.debug("Leaving signInAt(). " + answer.next);
+    return { status: authnSignin.responseLike(answer).status,
+             headers: answer.headers,
+             body: answer.text || JSON.stringify(answer.json), url: url,
+             location: answer.location };
+  };
+  // THE CONSENT SCREEN (#576): answered over `/authn-api/consent` through
+  // the one helper with this browser's cookies, in `hop()`'s shape — a 303
+  // back to the authorization request, as the form's POST was answered.
+  kit.consentAt = async function (b, url) {
+    log.debug("Entering consentAt().");
+    const answer = await authnSignin.consentFor(url, b.cookies(url),
+      { headers: { "User-Agent": AGENT } });
+    b.take(url, { headers: answer.headers });
+    log.debug("Leaving consentAt(). " + answer.next);
     return { status: authnSignin.responseLike(answer).status,
              headers: answer.headers,
              body: answer.text || JSON.stringify(answer.json), url: url,

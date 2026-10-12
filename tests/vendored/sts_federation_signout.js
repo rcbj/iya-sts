@@ -295,6 +295,23 @@ async function signInAt(cookies, url, username) {
            location: answer.location };
 }
 
+// THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576: answered
+// over `/authn-api/consent` through the one helper (`authn_signin.js`)
+// with this jar's cookies, and in `hop()`'s shape — a 303 back to the
+// authorization request, as the form's POST was answered.
+async function consentAt(cookies, url) {
+  log.debug("Entering consentAt().");
+  const answer = await authnSignin.consentFor(url, cookies && cookies.has() ? cookies.header() : "");
+  if (cookies) {
+    cookies.take({ headers: answer.headers });
+  }
+  log.debug("Leaving consentAt(). " + answer.next);
+  return { status: authnSignin.responseLike(answer).status,
+           headers: answer.headers,
+           body: answer.text || JSON.stringify(answer.json), url: url,
+           location: answer.location };
+}
+
 function formsIn(html) {
   log.debug("Entering formsIn().");
   const out = [];
@@ -344,6 +361,10 @@ async function toTheDoor(cookies, startUrl) {
       // answered through the one helper where the walk is sent to it.
       if (/\/authn\/login\?authn=/.test(next)) {
         r = await signInAt(cookies, next, PERSON);
+        continue;
+      }
+      if (authnSignin.isConsent(next)) {
+        r = await consentAt(cookies, next);
         continue;
       }
       r = await hop(cookies, next);

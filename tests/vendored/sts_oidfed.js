@@ -370,6 +370,16 @@ async function toTheAcs(cookies, startUrl, username, password) {
               url: next, location: answer.location };
         continue;
       }
+      // THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+      // answered over `/authn-api/consent` through the one helper.
+      if (authnSignin.isConsent(next)) {
+        const answer = await authnSignin.consentFor(next, cookies.header());
+        cookies.take({ headers: answer.headers });
+        r = { status: authnSignin.responseLike(answer).status,
+              body: answer.text || JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
       r = await browse(cookies, next);
       continue;
     }

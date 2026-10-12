@@ -1459,6 +1459,10 @@
     "en": "196d3a7dc50ac8ef",
     "text": "Vad en utloggning skulle avsluta, och utloggningen"
   },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "Vad samtyckesskärmen frågar, och svaret"
+  },
   "endpoints.route./authn-api/password-change/:id.name": {
     "en": "f2d18b738357010b",
     "text": "Ett påtvingat lösenordsbyte"
@@ -1546,6 +1550,10 @@
   "endpoints.route./oauth2/consent.name": {
     "en": "f38b4a6b64fec408",
     "text": "Samtyckesskärm"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "Samtyckesskärmens skript"
   },
   "endpoints.route./oauth2/autopost.js.name": {
     "en": "509aa57b5e9572d6",

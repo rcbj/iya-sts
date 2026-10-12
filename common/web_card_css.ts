@@ -81,6 +81,26 @@ class WebCardCss {
     'adius:3px;word-break:break-all}.wide a{color:#12107c}';
 
   /**
+   * The CONSENT SCREEN's card (#576): the rules `oauth-oidc/consent_screen.ts`
+   * appended to the card while it drew the page, scoped to `.card.consent` so
+   * no other page of the card changes — a wider card for the scope rows,
+   * each scope and authorization detail in a box of its own, a detail's
+   * members as a grid, a detail's limits (#432 phase 5), and the fold of
+   * what was already agreed.
+   */
+  static readonly CONSENT_CSS =
+    '.card.consent{width:460px}.consent div.limits{margin:6px 0 0;font-size:' +
+    '.9em}.consent div.limits div{margin:3px 0}.consent p.app{font-size:.9em' +
+    ';margin:0 0 14px}.consent ul.scopes{list-style:none;padding:0;margin:0 ' +
+    '0 8px}.consent ul.scopes li{padding:8px 10px;margin:6px 0;border:1px so' +
+    'lid #e3e3ea;border-radius:6px;background:#fafafd;font-size:.85em}.conse' +
+    'nt ul.scopes li span{display:block;color:#666;font-size:.9em;margin-top' +
+    ':3px}.consent ul.scopes li dl{margin:6px 0 0;display:grid;grid-template' +
+    '-columns:auto 1fr;gap:2px 8px}.consent ul.scopes li dt{color:#555}.cons' +
+    'ent ul.scopes li dd{margin:0;overflow-wrap:anywhere}.consent details{ma' +
+    'rgin:10px 0 0;font-size:.8em;color:#555}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -117,7 +137,7 @@ class WebCardCss {
     'block;font-size:.75em}' +
     WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS +
     // The steps' rules BEFORE the wide card's, which win where both speak.
-    WebCardCss.WIDE_CSS;
+    WebCardCss.WIDE_CSS + WebCardCss.CONSENT_CSS;
 }
 
 export = WebCardCss;

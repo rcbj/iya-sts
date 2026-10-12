@@ -2551,6 +2551,14 @@
     "en": "c2016f561ef917cf",
     "text": "POST termina sesiones y revoca lo que tiene la persona"
   },
+  "stsmetadata.endpoints./authn-api/consent/:id.what": {
+    "en": "b0e6e117fd23a284",
+    "text": "NON-SPEC (#576). GET responde con la vista de la pantalla de consentimiento —la aplicación, cada ámbito y detalle de autorización, los límites que una persona puede reducir, lo que ya se aceptó— y el token CSRF; POST recibe Permitir o Denegar como JSON, con un Origin de este servicio y el X-CSRF-Token de la sesión del navegador, y solo de la persona a la que se preguntó. El id es una capacidad al portador y nunca se registra en el log."
+  },
+  "stsmetadata.endpoints./authn-api/consent/:id.effect": {
+    "en": "4739640824fd1cc8",
+    "text": "POST registra Permitir o Denegar e indica la solicitud de autorización a la que volver"
+  },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET responde de quién es la contraseña que debe cambiar; POST guarda la nueva y continúa el inicio de sesión."
@@ -2644,12 +2652,16 @@
     "text": "NON-SPEC, para pruebas y para probar el intercambio a mano: activa y desactiva en tiempo de ejecución el requisito de nonce proporcionado por el servidor de las secciones 8/9 de RFC 9449, para que se pueda ejercitar el intercambio 401/reintento sin reiniciar el servicio. GET informa del estado actual; POST {\"required\": true|false} lo establece, para el DOMINIO DE CONFIANZA desde el que se accede, escribiendo oauth2.dpopNonceRequired (era un único interruptor para todo el proceso hasta el 2026-09-12). EL MODO PRODUCTO RECHAZA EL POST con 403, porque es un control de prueba: allí el ajuste se cambia mediante /admin/oauth2 o POST /admin-api/config/set."
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "PANTALLA NON-SPEC PARA UN COMPORTAMIENTO DE LA ESPECIFICACIÓN. OAuth 2.0 y OpenID Connect suponen que un servidor de autorización obtiene el consentimiento del propietario del recurso y ninguno dice qué aspecto tiene; este es el aspecto que tiene aquí. El endpoint de autorización envía aquí a una persona con sesión iniciada cuando la solicitud nombra un ámbito que aún no ha aceptado para ese client_id, y no se emite nada hasta que responde. Permitir escribe un valor oauthConsent por ámbito en su propia entrada bajo ou=users (<when> <scope> <client_id>, un valor por (persona, aplicación, ámbito)), de modo que el segundo inicio de sesión es silencioso y un ldapsearch puede leer lo que alguien aceptó. Denegar devuelve access_denied al cliente a través del endpoint de autorización, que es el que decide cómo viaja: una respuesta form_post es un formulario y no una redirección, y esta pantalla no debe saberlo. Un permiso delegado se registra por su identificador COMPLETO, nunca por el nombre de permiso a secas, porque dos recursos pueden exponer ambos `read`. EL REGISTRO ESTÁ EN EL SERVIDOR y lo único que hay en la URL es un id imposible de adivinar, así que no hay ninguna dirección de retorno que nadie pueda reescribir; la respuesta es un POST, porque un GET que registrara el consentimiento sería un consentimiento que podría dar cualquier cosa que precargue un enlace; y la sesión se comprueba contra la persona a la que se hizo la pregunta, que es el único fallo de aquí que escribiría algo falso en el directorio. SIN SCRIPT: dos botones en un formulario, así que el script-src 'none' de todo el servicio queda intacto. oauth2.consentRequired lo desactiva, y está ACTIVO por defecto; /admin/consent es el registro, y oauthGlobalConsent en una entrada de aplicación omite la pregunta para todos sin escribir nada sobre nadie."
+    "en": "a03a6663434a737e",
+    "text": "PANTALLA NON-SPEC PARA UN COMPORTAMIENTO DE LA ESPECIFICACIÓN. OAuth 2.0 y OpenID Connect suponen que un servidor de autorización obtiene el consentimiento del propietario del recurso y ninguno dice qué aspecto tiene; este es el aspecto que tiene aquí. El endpoint de autorización envía aquí a una persona con sesión iniciada cuando la solicitud nombra un ámbito que aún no ha aceptado para ese client_id, y no se emite nada hasta que responde. Permitir escribe un valor oauthConsent por ámbito en su propia entrada bajo ou=users (<when> <scope> <client_id>, un valor por (persona, aplicación, ámbito)), de modo que el segundo inicio de sesión es silencioso y un ldapsearch puede leer lo que alguien aceptó. Denegar devuelve access_denied al cliente a través del endpoint de autorización, que es el que decide cómo viaja: una respuesta form_post es un formulario y no una redirección, y esta pantalla no debe saberlo. Un permiso delegado se registra por su identificador COMPLETO, nunca por el nombre de permiso a secas, porque dos recursos pueden exponer ambos `read`. EL REGISTRO ESTÁ EN EL SERVIDOR y lo único que hay en la URL es un id imposible de adivinar, así que no hay ninguna dirección de retorno que nadie pueda reescribir; la respuesta es un POST, porque un GET que registrara el consentimiento sería un consentimiento que podría dar cualquier cosa que precargue un enlace; y la sesión se comprueba contra la persona a la que se hizo la pregunta, que es el único fallo de aquí que escribiría algo falso en el directorio. UNA PÁGINA DE LA SUPERFICIE DE INICIO DE SESIÓN desde #576: este GET responde con el shell una vez superadas esas comprobaciones, y /oauth2/consent.js dibuja la página a partir de /authn-api/consent/{id} y envía allí Permitir o Denegar como JSON; el script es obligatorio. oauth2.consentRequired lo desactiva, y está ACTIVO por defecto; /admin/consent es el registro, y oauthGlobalConsent en una entrada de aplicación omite la pregunta para todos sin escribir nada sobre nadie."
   },
   "stsmetadata.endpoints./oauth2/consent.effect": {
     "en": "bdd402747127b2ad",
     "text": "necesita un id de consentimiento pendiente: responde 400 cuando se sigue sin él"
+  },
+  "stsmetadata.endpoints./oauth2/consent.js.what": {
+    "en": "555d8d46f0d53a4f",
+    "text": "NON-SPEC (#576). El paquete de la superficie de inicio de sesión —el mismo archivo que /authn/signin.js— en la dirección propia de la pantalla de consentimiento, para que el listener de la página sirva su script. Público: no contiene nada secreto."
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

@@ -942,9 +942,12 @@ function childMain() {
                           { kid: 'r91-ec' }), 'r91-consent');
       flow = await signIn(r, 'r91-consenter');
       const consentPage = String(flow.final.headers.location || '');
+      // THE CONSENT SCREEN'S VIEW (#576): the page is drawn in the browser
+      // from `/authn-api/consent/{id}`, whose view carries the request's
+      // own parameters at the foot.
       const drawn = consentPage
-        ? await request(port, 'GET', consentPage.replace(/^https?:\/\/[^/]+/,
-                                                         ''), { cookies: true })
+        ? await screen.openConsent({ port: port, jar: jar,
+            at: consentPage.replace(/^https?:\/\/[^/]+/, '') })
         : { text: '' };
       note(/\/oauth2\/consent/.test(consentPage) &&
            /signed request object \(ES256\)/.test(drawn.text),

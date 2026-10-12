@@ -36,7 +36,8 @@
 // in the states its view can name, the federation chooser and the forced
 // password change; the SPNEGO sign-in's three bodies (#575), from the
 // state their shell carries; and the wallet's start and wait pages (#574),
-// the QR code and a refusal.
+// the QR code and a refusal. The OAuth consent screen (#576) is a page of
+// the same surface, and its cases are drawn from views alone too.
 //
 // The sign-out (#577) draws its one page from views alone: the inventory,
 // the result drawn in place, and the two refusals' pages.
@@ -435,6 +436,90 @@ function stepCases(en, fr) {
 }
 
 /**
+ * The OAuth consent screen's cases (#576): every part of the page — the
+ * application by name with its client_id, a scope with a permission and
+ * one without, an RFC 9396 detail member by member, every kind of limit as
+ * a control, the fold of what was already agreed (by the person, at a
+ * time, and for everybody) and the request's own parameters — in English
+ * and in French; a refused answer over it; and the plainest page there is.
+ *
+ * @param {string} root - the repository root
+ * @returns {object[]} `[{ label, view, ctx, path }]`
+ */
+function consentCases(root) {
+  log.debug("Entering consentCases().");
+  const en = { t: translatorFor(root, 'consent', ['en']), query: {},
+               prefix: '', origin: 'https://sts.example',
+               here: '/oauth2/consent?consent=c1', error: '' };
+  const fr = Object.assign({}, en,
+    { t: translatorFor(root, 'consent', ['fr', 'en']) });
+  const limits = { amount: '100.00', currency: 'EUR', count: 5,
+                   receiver: ['DE89 <one>', 'FR76 & two'],
+                   interval: 'R5/2026-10-01T00:00:00Z/P1M',
+                   window: { notBefore: '2026-10-01', notAfter: '2026-12-31' },
+                   vendor: { x: 1 } };
+  const rows = [
+    { member: 'amount', label: 'At most', value: '100.00 EUR' },
+    { member: 'currency', label: 'In', value: 'EUR' },
+    { member: 'count', label: 'At most', value: '5 operations' },
+    { member: 'receiver', label: 'Only to', value: 'DE89 <one>, FR76 & two' },
+    { member: 'interval', label: 'Resetting every',
+      value: 'R5/2026-10-01T00:00:00Z/P1M' },
+    { member: 'window', label: 'Only',
+      value: 'from 2026-10-01 until 2026-12-31' },
+    { member: 'vendor', label: 'vendor', value: '{"x":1}' }];
+  const everything = { consent: true, username: 'alice <a>',
+    base: 'https://sts.example',
+    client: { id: 'demo "client"', name: 'Demo <App> & co' },
+    scopes: [{ scope: 'read', permission: null },
+             { scope: 'https://api.example/write', permission: {
+               description: 'Write <things>', name: 'write',
+               identifier: 'https://api.example/write',
+               baseUri: 'https://api.example' } },
+             { scope: 'https://api.example/admin', permission: {
+               description: '', name: 'admin & more',
+               identifier: 'https://api.example/admin',
+               baseUri: 'https://api.example' } }],
+    authorizationDetails: [{ type: 'payment_initiation',
+      description: 'Initiate a <payment>', resource: 'Bank & co',
+      audience: 'https://pay.example',
+      members: [{ name: 'instructedAmount', value: '{"amount":"100.00"}' },
+                { name: 'creditorName', value: 'Merchant <A>' }] },
+      { type: 'account_information', description: '',
+        resource: 'r96-bank', audience: 'https://acct.example',
+        members: [] }],
+    already: [{ scope: 'openid', global: false, at: '' },
+              { scope: 'email', global: false,
+                at: '2026-10-12T09:00:00Z' },
+              { scope: 'profile', global: true, at: '' }],
+    limits: [{ r: 0, type: 'payment_initiation', limits: limits,
+               rows: rows }],
+    attribute: 'oauthConsent', protocol: 'OAuth 2.0 / OIDC',
+    details: [{ label: 'client_id', value: 'demo "client"', note: '' },
+              { label: 'scope', value: 'openid read', note: '' },
+              { label: 'request', value: 'signed request object (ES256)',
+                note: 'verified <ok>' }] };
+  const plain = { consent: true, username: 'bob', base: 'https://sts.example',
+    client: { id: 'plain', name: 'plain' },
+    scopes: [{ scope: 'openid', permission: null }],
+    authorizationDetails: [], already: [], limits: [],
+    attribute: 'oauthConsent', protocol: 'OAuth 2.0 / OIDC', details: [] };
+  log.debug("Leaving consentCases().");
+  return [
+    { label: 'the consent screen, every part, in English',
+      path: '/oauth2/consent', view: everything, ctx: en },
+    { label: 'the consent screen, every part, in French',
+      path: '/oauth2/consent', view: everything, ctx: fr },
+    { label: 'the consent screen with a raised limit refused',
+      path: '/oauth2/consent', view: everything,
+      ctx: Object.assign({}, en, { error: 'The limits of ' +
+        '"payment_initiation" may only be lowered here: amount.' }) },
+    { label: 'the plainest consent screen',
+      path: '/oauth2/consent', view: plain, ctx: fr }
+  ];
+}
+
+/**
  * The sign-out's cases (#577): the inventory with every kind of family row —
  * terminable, not, a failure, nothing live, a capped list — in English and
  * in French, under each of the three naming notes; the result drawn in
@@ -536,7 +621,8 @@ module.exports = [
     cases: function (root) {
       log.debug("Entering the sign-in screen's cases.");
       log.debug("Leaving the sign-in screen's cases.");
-      return authnCases(root).concat(walletCases(root));
+      return authnCases(root).concat(walletCases(root),
+                                     consentCases(root));
     } },
   { name: 'the sign-out',
     pages: 'logout/web_signout_pages.ts', global: 'StsSignout',

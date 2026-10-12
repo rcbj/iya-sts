@@ -174,6 +174,10 @@ const ROWS: Row[] = [
          'home cell (D9), in `screenAct()`, as at the form it replaced; a ' +
          'pinned browser first, where its pending sign-in is held — and ' +
          'its steps (#572, #573), held where the pending sign-in was' },
+  { prefix: '/authn-api/consent', strategy: 'affinity', browser: true,
+    why: 'the consent screen\'s view and answer (#576): the pending ' +
+         'consent is held where the browser that met /oauth2/consent is ' +
+         'pinned, as the page it replaced was answered there' },
   { prefix: '/authn-api/wallet', strategy: 'affinity', browser: true,
     why: 'a wallet sign-in\'s acts (#574): its transaction, the pending ' +
          'sign-in it is bound to and the binding cookie\'s hash are where ' +
@@ -236,6 +240,9 @@ const ROWS: Row[] = [
   { prefix: '/oauth2/check_session', strategy: 'local',
     why: 'the OP iframe answers from the browser state it is given' },
   { prefix: '/oauth2/autopost.js', strategy: 'local', why: 'a static script' },
+  { prefix: '/oauth2/consent.js', strategy: 'local',
+    why: 'the consent screen\'s script, the sign-in surface\'s bundle: the ' +
+         'same file in every cell (#576)' },
   { prefix: '/oauth2/rfc9700', strategy: 'local', why: 'an information page' },
   { prefix: '/oauth2/fapi', strategy: 'local', why: 'an information page' },
   { prefix: '/oauth2/oauth21', strategy: 'local', why: 'an information page' },

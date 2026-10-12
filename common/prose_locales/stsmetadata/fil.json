@@ -2551,6 +2551,14 @@
     "en": "c2016f561ef917cf",
     "text": "tinatapos ng POST ang mga session at binabawi ang hawak ng tao"
   },
+  "stsmetadata.endpoints./authn-api/consent/:id.what": {
+    "en": "b0e6e117fd23a284",
+    "text": "NON-SPEC (#576). Sinasagot ng GET ang view ng consent screen — ang application, bawat scope at authorization detail, ang mga limit na maaaring babaan ng isang tao, ang mga nasang-ayunan na — at ang CSRF token; tumatanggap ang POST ng Allow o Deny bilang JSON, may Origin ng serbisyong ito at ang X-CSRF-Token ng session ng browser, at mula lamang sa taong tinanong. Ang id ay isang bearer capability at hindi kailanman inilalagay sa log."
+  },
+  "stsmetadata.endpoints./authn-api/consent/:id.effect": {
+    "en": "4739640824fd1cc8",
+    "text": "Nire-record ng POST ang Allow o Deny at pinangangalanan ang authorization request na babalikan"
+  },
   "stsmetadata.endpoints./authn-api/password-change/:id.what": {
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). Sinasagot ng GET kung kaninong password ang kailangang palitan; iniimbak ng POST ang bago at ipinagpapatuloy ang sign-in."
@@ -2644,12 +2652,16 @@
     "text": "NON-SPEC, para sa mga test at para subukan nang mano-mano ang handshake: ino-on at ino-off sa runtime ang server-supplied nonce requirement ng RFC 9449 section 8/9, para masubok ang 401/retry na palitan nang hindi nire-restart ang serbisyo. Iniuulat ng GET ang kasalukuyang kalagayan; itinatakda ito ng POST {\"required\": true|false} — para sa TRUST REALM na pinag-abutan nito, sa pagsulat sa oauth2.dpopNonceRequired (iisang switch ito para sa buong process hanggang 2026-09-12). TINATANGGIHAN NG PRODUCT MODE ANG POST ng 403, dahil test control ito: doon ay binabago ang setting sa pamamagitan ng /admin/oauth2 o POST /admin-api/config/set."
   },
   "stsmetadata.endpoints./oauth2/consent.what": {
-    "en": "e28a727b69913853",
-    "text": "NON-SPEC NA SCREEN PARA SA SPEC NA PAG-UUGALI. Parehong ipinagpapalagay ng OAuth 2.0 at OpenID Connect na kumukuha ang authorization server ng consent ng resource owner at wala sa dalawa ang nagsasabi kung ano ang hitsura niyon; ito ang hitsura niyon dito. Ipinapadala rito ng authorization endpoint ang naka-sign in na tao kapag nagpapangalan ang request ng scope na hindi pa nila sinasang-ayunan para sa client_id na iyon, at walang ibinibigay hangga't hindi sila sumasagot. Ang Allow ay nagsusulat ng isang oauthConsent value bawat scope sa sarili nilang entry sa ilalim ng ou=users — <when> <scope> <client_id>, isang value bawat (tao, application, scope) — kaya tahimik ang ikalawang sign-in at mababasa ng ldapsearch kung ano ang sinang-ayunan ng isang tao. Ipinapadala ng Deny ang access_denied pabalik sa client sa pamamagitan ng authorization endpoint, na siyang nagpapasya kung paano ito maglalakbay: ang form_post response ay form at hindi redirect, at hindi dapat malaman iyon ng screen na ito. Nire-record ang delegated permission ayon sa BUONG identifier nito, hindi kailanman ayon sa simpleng pangalan ng permission, dahil maaaring parehong mag-expose ng `read` ang dalawang resource. SERVER-SIDE ANG RECORD at ang tanging nasa URL ay isang id na hindi mahuhulaan, kaya walang return address na maisusulat muli ng sinuman; POST ang sagot, dahil ang GET na nagre-record ng consent ay consent na maibibigay ng anumang nagpi-prefetch ng link; at sinusuri ang session laban sa taong tinanong, na siyang nag-iisang failure dito na magsusulat ng hindi totoo sa directory. WALANG SCRIPT — dalawang button sa isang form, kaya hindi nagagalaw ang service-wide na script-src 'none'. Ino-off ito ng oauth2.consentRequired, at NAKA-ON ito bilang default; ang /admin/consent ang register, at nilalaktawan ng oauthGlobalConsent sa application entry ang prompt para sa lahat nang walang isinusulat tungkol sa sinuman."
+    "en": "a03a6663434a737e",
+    "text": "NON-SPEC NA SCREEN PARA SA SPEC NA PAG-UUGALI. Parehong ipinagpapalagay ng OAuth 2.0 at OpenID Connect na kumukuha ang authorization server ng consent ng resource owner at wala sa dalawa ang nagsasabi kung ano ang hitsura niyon; ito ang hitsura niyon dito. Ipinapadala rito ng authorization endpoint ang naka-sign in na tao kapag nagpapangalan ang request ng scope na hindi pa nila sinasang-ayunan para sa client_id na iyon, at walang ibinibigay hangga't hindi sila sumasagot. Ang Allow ay nagsusulat ng isang oauthConsent value bawat scope sa sarili nilang entry sa ilalim ng ou=users — <when> <scope> <client_id>, isang value bawat (tao, application, scope) — kaya tahimik ang ikalawang sign-in at mababasa ng ldapsearch kung ano ang sinang-ayunan ng isang tao. Ipinapadala ng Deny ang access_denied pabalik sa client sa pamamagitan ng authorization endpoint, na siyang nagpapasya kung paano ito maglalakbay: ang form_post response ay form at hindi redirect, at hindi dapat malaman iyon ng screen na ito. Nire-record ang delegated permission ayon sa BUONG identifier nito, hindi kailanman ayon sa simpleng pangalan ng permission, dahil maaaring parehong mag-expose ng `read` ang dalawang resource. SERVER-SIDE ANG RECORD at ang tanging nasa URL ay isang id na hindi mahuhulaan, kaya walang return address na maisusulat muli ng sinuman; POST ang sagot, dahil ang GET na nagre-record ng consent ay consent na maibibigay ng anumang nagpi-prefetch ng link; at sinusuri ang session laban sa taong tinanong, na siyang nag-iisang failure dito na magsusulat ng hindi totoo sa directory. ISANG PAGE NG SIGN-IN SURFACE mula noong #576: sinasagot ng GET na ito ang shell kapag pumasa ang mga pagsusuring iyon, at iginuguhit ng /oauth2/consent.js ang page mula sa /authn-api/consent/{id} at ipinapadala roon ang Allow o Deny bilang JSON; kailangan ang script. Ino-off ito ng oauth2.consentRequired, at NAKA-ON ito bilang default; ang /admin/consent ang register, at nilalaktawan ng oauthGlobalConsent sa application entry ang prompt para sa lahat nang walang isinusulat tungkol sa sinuman."
   },
   "stsmetadata.endpoints./oauth2/consent.effect": {
     "en": "bdd402747127b2ad",
     "text": "kailangan ng nakabinbing consent id — sumasagot ng 400 kapag sinundan nang walang laman"
+  },
+  "stsmetadata.endpoints./oauth2/consent.js.what": {
+    "en": "555d8d46f0d53a4f",
+    "text": "NON-SPEC (#576). Ang bundle ng sign-in surface — ang parehong file ng /authn/signin.js — sa sariling address ng consent screen, para ihain ng listener ng page ang script nito. Pampubliko: walang lihim dito."
   },
   "stsmetadata.endpoints./oauth2/autopost.js.what": {
     "en": "71dadd973cb86ea8",

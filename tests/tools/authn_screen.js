@@ -25,6 +25,9 @@
 // names one (`redirect`, `mfa`, `password-change`) — read as the 303 the
 // form was answered with, which a browser follows with a GET either way —
 // and the API's own status otherwise.
+//
+// And the OAuth consent screen (#576), a page of the same surface:
+// `openConsent()` and `answerConsent()`.
 // ===========================================================================
 
 const http = require('http');
@@ -552,8 +555,84 @@ async function signOut(o) {
            headers: act.headers };
 }
 
+// THE OAUTH CONSENT SCREEN (#576): `/oauth2/consent?consent=<id>` answers
+// the sign-in surface's shell, the page is drawn from `GET
+// /authn-api/consent/{id}`, and Allow or Deny goes to `POST
+// /authn-api/consent/{id}`, bound as every act of the surface.
+
+/**
+ * The consent screen's address split into its prefix and its id.
+ *
+ * @param {string} at - `/realm/x/oauth2/consent?consent=…`, or a URL
+ * @returns {object} `{ prefix, id }`
+ */
+function consentOf(at) {
+  log.debug("Entering consentOf().");
+  const url = new URL(String(at), 'http://here.invalid');
+  const m = /^(.*?)\/oauth2\/consent$/.exec(url.pathname);
+  log.debug("Leaving consentOf().");
+  return { prefix: m ? m[1] : '',
+           id: url.searchParams.get('consent') || '' };
+}
+
+/**
+ * Opens the consent screen as its page does: the shell, then the view.
+ *
+ * @param {object} o - `port`, `ca`, `jar`, `userAgent`, `at` (the screen's
+ *   address, as the authorization endpoint's redirect named it)
+ * @returns {Promise<object>} `{ status, shell, json, view, csrf, prefix,
+ *   id, text }`
+ */
+async function openConsent(o) {
+  log.debug("Entering openConsent().");
+  const where = consentOf(o.at);
+  const shell = await call({ port: o.port, ca: o.ca, jar: o.jar,
+                             userAgent: o.userAgent, method: 'GET',
+                             path: String(o.at).replace(/^https?:\/\/[^/]+/,
+                                                         '') });
+  const view = await call({ port: o.port, ca: o.ca, jar: o.jar,
+    userAgent: o.userAgent, method: 'GET',
+    path: where.prefix + '/authn-api/consent/' +
+          encodeURIComponent(where.id),
+    headers: { accept: 'application/json' } });
+  log.debug("Leaving openConsent(). " + view.status);
+  return { status: view.status, shell: shell, json: view.json,
+           view: view.json && view.json.view, text: view.text,
+           csrf: (view.json && view.json.csrf) || '',
+           prefix: where.prefix, id: where.id, at: o.at };
+}
+
+/**
+ * Answers the consent screen as its page does: opens it, then sends Allow
+ * or Deny with any limit a test lowered. The answer is `act()`'s — a 303
+ * with `headers.location` the authorization request to go back to, read as
+ * the form's answer was.
+ *
+ * @param {object} o - `port`, `ca`, `jar`, `userAgent`, `at`; `decision`,
+ *   `allow` (the default) or `deny`; `limits`, the controls' values by
+ *   name (`lim_t0r0_amount`); `opened`, an `openConsent()` answer in hand
+ * @returns {Promise<object>} the answer, `opened` beside it
+ */
+async function answerConsent(o) {
+  log.debug("Entering answerConsent().");
+  const opened = o.opened || await openConsent(o);
+  const answer = await act(Object.assign({}, o, { opened: opened,
+    path: '/authn-api/consent/' + encodeURIComponent(opened.id),
+    body: Object.assign({}, o.limits || {},
+                        { action: o.decision === 'deny' ? 'deny'
+                                                        : 'allow' }) }));
+  answer.opened = opened;
+  answer.view = opened.view;
+  log.debug("Leaving answerConsent(). " + answer.apiStatus + " " +
+            answer.next);
+  return answer;
+}
+
 module.exports = {
   signOut: signOut,
+  consentOf: consentOf,
+  openConsent: openConsent,
+  answerConsent: answerConsent,
   call: call,
   open: open,
   act: act,

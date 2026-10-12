@@ -52,6 +52,16 @@
 //     state in `data-sts-state`, drawn from it and never fetched — the
 //     RFC 4559 exchange is the browser's navigation, untouched.
 //
+//   * THE OAUTH CONSENT SCREEN (#576): `/oauth2/consent` is a page of this
+//     surface although it is not under `/authn` — the address the
+//     authorization endpoint has always sent a person to — so the runtime
+//     owns that one path beside its base (`surfacePath()`). Allow and Deny
+//     go to `POST /authn-api/consent/{id}` with the limits a person
+//     lowered, bound as every act here is, and the answer names the
+//     authorization request to go back to. The bundle is served at
+//     `/oauth2/consent.js` as well as `/authn/signin.js`, so the page's
+//     listener serves its script whichever listener `/authn` is on (#472).
+//
 // `authn-spa.js` and never `authn.js` on disk: `authn/authn.js` is the server
 // module `authn.ts` compiles to, and the bundle would overwrite it.
 //
@@ -74,6 +84,10 @@ declare const HTMLFormElement: any;
 // The script the fingerprint comes from, and the window member it leaves
 // the visitorId in.
 const FINGERPRINT_SCRIPT = '/authn/fingerprint.js';
+
+// The consent screen's page (#576): the one path of this surface outside
+// `/authn`.
+const CONSENT_PATH = '/oauth2/consent';
 
 // THE STEPS' ACTS (#572, #573): for each page, the `action` of each of its
 // buttons, the operation under `/authn-api/mfa/{id}/` it is, and the body
@@ -233,8 +247,8 @@ class AuthnSurface extends WebSurface {
 
   /**
    * The catalog namespaces the page at the location draws: the SPNEGO
-   * sign-in's `spnego` beside `authn` there, `authn` and `wallet` (#574)
-   * everywhere else.
+   * sign-in's `spnego` beside `authn` there, the consent screen's `consent`
+   * alone (#576), `authn` and `wallet` (#574) everywhere else.
    *
    * @param env - the browser's objects
    * @returns the namespaces
@@ -245,6 +259,10 @@ class AuthnSurface extends WebSurface {
     // button is followed IN PLACE, to a page drawn from it.
     // THE EMAILED FACTOR'S (#573) on every page but SPNEGO's, for the same
     // reason: the screen's email buttons are followed in place.
+    if (/\/oauth2\/consent$/.test(path)) {
+      // THE CONSENT SCREEN'S OWN (#576): it draws nothing of the sign-in's.
+      return ['consent'];
+    }
     return /\/authn\/spnego$/.test(path) ? ['authn', 'spnego']
                                           : ['authn', 'wallet', 'emailFactor'];
   }
@@ -339,6 +357,48 @@ class AuthnSurface extends WebSurface {
     super.onClick(event);
   }
 
+  // --- the consent screen (#576) --------------------------------------------
+
+  /**
+   * The surface's path of a full path, or null: every path under `/authn`,
+   * and the consent screen's, which the authorization endpoint sends a
+   * person to at `/oauth2/consent` (#576).
+   *
+   * @param pathname - the path
+   * @returns the path without the prefix, or null
+   */
+  surfacePath(pathname: string): string | null {
+    const own = super.surfacePath(pathname);
+    if (own !== null) {
+      return own;
+    }
+    const path = String(pathname || '');
+    return path === this.prefix + CONSENT_PATH ? CONSENT_PATH : null;
+  }
+
+  /**
+   * Sends Allow or Deny, with the limits a person lowered, to the
+   * operation the index says is the consent screen's door.
+   *
+   * @param fields - the form's fields: `action` and the limit controls
+   * @returns nothing
+   */
+  async consentAct(fields: Json): Promise<void> {
+    if (!await this.ensureIndex()) {
+      this.refused('The service\'s API could not be reached.');
+      return;
+    }
+    const op = this.operationFor(CONSENT_PATH, String(fields.action || ''));
+    if (!op) {
+      this.refused('This control has no API operation (' + CONSENT_PATH +
+                   '), so the page refuses it rather than guess.');
+      return;
+    }
+    const answer = await this.send(String(op.path)
+      .replace('{id}', encodeURIComponent(this.idHere())), fields);
+    await this.next(answer);
+  }
+
   // --- the act ---------------------------------------------------------------
 
   /**
@@ -348,7 +408,8 @@ class AuthnSurface extends WebSurface {
    */
   idHere(): string {
     const query = WebPage.queryOf(this.env.location.search);
-    return String(query.authn || query.change || query.mfa || '');
+    return String(query.authn || query.change || query.mfa ||
+                  query.consent || '');
   }
 
   /**
@@ -434,6 +495,10 @@ class AuthnSurface extends WebSurface {
     const fields = this.formFields(form, submitter);
     if (path === '/authn/webauthn') {
       await this.stepPasskey(String(fields.key || ''));
+      return;
+    }
+    if (path === CONSENT_PATH) {
+      await this.consentAct(fields);
       return;
     }
     if (STEP_ACTS[path]) {

@@ -62,6 +62,9 @@
 // view), `stepAct()` sends one of its acts, and `passkeyStep()` runs a
 // passkey ceremony with the job's own authenticator. `ignoreOffer()`
 // presses the offered set-up step's Ignore over the API.
+//
+// AND THE OAUTH CONSENT SCREEN (#576), a page of the same surface since
+// then: `consentPage()`, `answerConsent()` and `consentWithJar()`, below.
 // ===========================================================================
 
 const log = require("bunyan").createLogger({ name: "authn_signin",
@@ -222,7 +225,7 @@ async function screen(base, where, options) {
 async function act(base, path, body, options) {
   // The id is a bearer capability: not logged.
   log.debug("Entering act(). " +
-            String(path).replace(/\/(pending|password-change)\/[^/]+/,
+            String(path).replace(/\/(pending|password-change|mfa|consent)\/[^/]+/,
                                  "/$1/(id)"));
   const opts = options || {};
   const b = baseOf(base);
@@ -871,8 +874,212 @@ async function signOut(base, fields, options) {
            headers: answer.headers };
 }
 
+// ---------------------------------------------------------------------------
+// THE OAUTH CONSENT SCREEN (#576): a page of the same surface.
+//
+//   GET  /oauth2/consent?consent=<id>       the shell (400 where the three
+//                                           checks refuse, as before)
+//   GET  /authn-api/consent/<id>            { view, csrf }
+//   POST /authn-api/consent/<id>            JSON, Origin, X-CSRF-Token:
+//        { action: 'allow' | 'deny', lim_t0r<n>_<member>: … }
+//        -> { ok, next: 'redirect', location }   back to the request
+//        -> { ok: false, next: 'refused', errors }
+//
+// `consentPage()` opens it as its page does and `answerConsent()` answers
+// it; `consentFor()` does both with a cookie header, and `consentWithJar()`
+// does both for a job whose browser keeps its
+// cookies in a plain object, answered in that browser's shape — a 303 to
+// the authorization request, as the form was answered.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether an address is the consent screen's.
+ *
+ * @param {string} where - an address, absolute or a path
+ * @returns {boolean} whether it is
+ */
+function isConsent(where) {
+  log.debug("Entering isConsent().");
+  log.debug("Leaving isConsent().");
+  return /\/oauth2\/consent\?(?:[^#]*&)?consent=/.test(String(where || ""));
+}
+
+/**
+ * Opens the consent screen as its page does: the shell, then the view.
+ *
+ * @param {string} where - the screen's address, absolute (the
+ *   authorization endpoint's Location, resolved)
+ * @param {object} [options] - `cookie`; `headers`, sent on every request
+ * @returns {Promise<object>} `{ status, shellStatus, shellText, json, text,
+ *   view, csrf, cookie, setCookies, id, base }`
+ */
+async function consentPage(where, options) {
+  log.debug("Entering consentPage().");
+  const opts = options || {};
+  const url = new URL(String(where));
+  const base = url.origin + url.pathname.replace(/\/oauth2\/consent$/, "");
+  const id = url.searchParams.get("consent") || "";
+  let cookie = String(opts.cookie || "");
+  const setCookies = [];
+  const extra = opts.headers || {};
+  const shell = await fetch(url.toString(), { redirect: "manual",
+    headers: Object.assign({}, extra, cookie ? { cookie: cookie } : {}) });
+  setCookiesOf(shell).forEach(function (one) {
+    setCookies.push(one);
+  });
+  cookie = foldCookies(cookie, setCookies);
+  const shellText = await shell.text();
+  const res = await fetch(base + "/authn-api/consent/" +
+    encodeURIComponent(id), { headers: Object.assign(
+      { accept: "application/json" }, extra,
+      cookie ? { cookie: cookie } : {}) });
+  setCookiesOf(res).forEach(function (one) {
+    setCookies.push(one);
+  });
+  cookie = foldCookies(cookie, setCookiesOf(res));
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in consentPage(): " + ((e && e.message) || e));
+    // Not JSON: the caller reads the status.
+    json = null;
+  }
+  log.debug("Leaving consentPage(). " + shell.status + " " + res.status);
+  return { status: res.status, shellStatus: shell.status,
+           shellText: shellText, json: json, text: text,
+           view: json && json.view, csrf: (json && json.csrf) || "",
+           cookie: cookie, setCookies: setCookies, id: id, base: base };
+}
+
+/**
+ * Answers the consent screen as its page does: Allow (the default) or
+ * Deny, with any limit lowered.
+ *
+ * @param {object} opened - a `consentPage()` answer
+ * @param {string} [decision] - `allow` or `deny`
+ * @param {object} [options] - `limits`, the controls' values by name
+ *   (`lim_t0r0_amount`); `headers`; `origin`, `contentType`, `csrf` to
+ *   send something else
+ * @returns {Promise<object>} the answer, as `act()`'s, `opened` beside it
+ */
+async function answerConsent(opened, decision, options) {
+  log.debug("Entering answerConsent(). " + (decision || "allow"));
+  const opts = options || {};
+  const answer = await act(opened.base, "/authn-api/consent/" +
+    encodeURIComponent(opened.id), Object.assign({}, opts.limits || {},
+      { action: decision === "deny" ? "deny" : "allow" }),
+    { cookie: opened.cookie,
+      csrf: opts.csrf === undefined ? opened.csrf : opts.csrf,
+      origin: opts.origin, contentType: opts.contentType,
+      setCookies: opened.setCookies, headers: opts.headers });
+  answer.opened = opened;
+  answer.view = opened.view;
+  log.debug("Leaving answerConsent(). " + answer.status + " " + answer.next);
+  return answer;
+}
+
+/**
+ * Opens and answers the consent screen in one, with a cookie header: the
+ * answer is `answerConsent()`'s — `headers` a `get()`/`getSetCookie()`
+ * pair a job's own jar `take()`s, `responseLike()` reading it as the 303
+ * the form was answered with — or, where the page drew no view (an expired
+ * consent, another person's session), `next: 'no-view'` at the status the
+ * page answered.
+ *
+ * @param {string} where - the screen's address, absolute
+ * @param {string} cookie - the cookie header the browser sends there
+ * @param {object} [options] - `decision`; `limits`; `headers`
+ * @returns {Promise<object>} the answer
+ */
+async function consentFor(where, cookie, options) {
+  log.debug("Entering consentFor().");
+  const opts = options || {};
+  const opened = await consentPage(where, { cookie: cookie,
+                                            headers: opts.headers });
+  if (!opened.view) {
+    log.debug("Leaving consentFor(). No view: " + opened.status);
+    const shown = opened.shellStatus === 200;
+    return { status: shown ? opened.status : opened.shellStatus,
+      json: opened.json, text: shown ? opened.text : opened.shellText,
+      ok: false, next: "no-view", location: "", errors:
+        (opened.json && opened.json.errors) || [], view: null,
+      cookie: opened.cookie, setCookies: opened.setCookies, opened: opened,
+      headers: {
+        get: function () {
+          return null;
+        },
+        getSetCookie: function () {
+          return opened.setCookies.slice();
+        }
+      } };
+  }
+  const answer = await answerConsent(opened, opts.decision, opts);
+  log.debug("Leaving consentFor(). " + answer.next);
+  return answer;
+}
+
+/**
+ * Opens and answers the consent screen in one, for a job with a browser
+ * of its own: its jar's cookies are sent (a plain object, name to value,
+ * written back in place) and the answer comes back as the form's was — a
+ * 303 to the authorization request (`{ status, location, text }`), or the
+ * refusal at its own status — with the API's `answer` and the page's view
+ * beside it.
+ *
+ * @param {string} where - the screen's address, absolute
+ * @param {string} [decision] - `allow` or `deny`
+ * @param {object} jar - the cookie jar, name to value; written in place
+ * @param {object} [options] - `limits`; `headers`
+ * @returns {Promise<object>} `{ status, location, text, answer, opened }`
+ */
+async function consentWithJar(where, decision, jar, options) {
+  log.debug("Entering consentWithJar().");
+  const opts = options || {};
+  const cookie = Object.keys(jar).map(function (k) {
+    return k + "=" + jar[k];
+  }).join("; ");
+  const opened = await consentPage(where, { cookie: cookie,
+                                            headers: opts.headers });
+  if (!opened.view) {
+    log.debug("Leaving consentWithJar(). No view: " + opened.status);
+    return { status: opened.shellStatus === 200 ? opened.status
+                                                : opened.shellStatus,
+             location: "", text: opened.shellStatus === 200 ? opened.text
+                                                            : opened.shellText,
+             answer: null, opened: opened };
+  }
+  const answer = await answerConsent(opened, decision, opts);
+  (answer.setCookies || []).forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    const at = pair.indexOf("=");
+    if (at <= 0) {
+      return;
+    }
+    const value = pair.slice(at + 1);
+    if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(line))) {
+      delete jar[pair.slice(0, at)];
+    } else {
+      jar[pair.slice(0, at)] = value;
+    }
+  });
+  const goes = answer.next === "redirect" && !!answer.location;
+  log.debug("Leaving consentWithJar(). " + answer.next);
+  return { status: goes ? 303 : answer.status,
+           location: goes ? answer.location : "",
+           text: typeof answer.text === "string" ? answer.text
+                                                 : JSON.stringify(answer.json),
+           answer: answer, opened: opened };
+}
+
 module.exports = {
   signOut: signOut,
+  isConsent: isConsent,
+  consentPage: consentPage,
+  answerConsent: answerConsent,
+  consentFor: consentFor,
+  consentWithJar: consentWithJar,
   pendingIdOf: pendingIdOf,
   foldCookies: foldCookies,
   screen: screen,

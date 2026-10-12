@@ -260,10 +260,12 @@ interface Operation {
   // `pending` — keyed by a pending sign-in's id; `step` — a password change
   // step's id; `mfa` — a second-factor or emailed-factor step's id (#572,
   // #573); `wallet` — a wallet sign-in's transaction (#574), keyed by its
-  // state where the path names one; `session` — the person the browser's
-  // `sts_session` cookie names, or `?username=` where naming is open (the
-  // sign-out, #577); `public` — none.
-  access: 'public' | 'pending' | 'step' | 'mfa' | 'wallet' | 'session';
+  // state where the path names one; `consent` — a pending consent's id
+  // (#576); `session` — the person the browser's `sts_session` cookie
+  // names, or `?username=` where naming is open (the sign-out, #577);
+  // `public` — none.
+  access: 'public' | 'pending' | 'step' | 'mfa' | 'wallet' | 'consent' |
+    'session';
   // The page or form control this operation is the door of, for the
   // runtime and the reader (`/account-api`'s convention, rule 7's twin).
   mirrors: string | null;
@@ -642,6 +644,74 @@ const LOGOUT_OPERATIONS: Operation[] = [
 ];
 
 OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
+
+// ---------------------------------------------------------------------------
+// THE OAUTH CONSENT SCREEN'S OPERATIONS (#576; rcbj's decision on #576: the
+// API is here, under `/authn-api`, which owns the session, rather than a
+// JSON surface of `/oauth2`). `/oauth2/consent` is a page of the sign-in
+// surface, and these are its doors; the logic is
+// `oauth-oidc/consent_screen.ts`'s (`consentView()`, `consentAct()`), as
+// the screen's is `authn.ts`'s. Keyed by the pending consent's id — a
+// bearer capability as `?consent=` always was, and answered only to the
+// browser whose session is the person it was asked of.
+//
+// THE BODY IS THE FORM'S: `action` (`allow` or `deny`) and, for an RFC 9396
+// detail that carries limits, the limit controls the page drew under their
+// own names (`lim_t0r<n>_<member>`, `common/web_limits_form.ts`), a
+// receiver's boxes as an array. Nothing else is taken.
+// ---------------------------------------------------------------------------
+const CONSENT_ANSWER = {
+  type: 'object',
+  description: '`redirect`: go to `location` with a GET — the ' +
+    'authorization request the person was asked in the middle of, which ' +
+    'issues on Allow and answers the client `access_denied` on Deny. ' +
+    '`refused` (400): `errors` says why, in English; the record is kept ' +
+    'and the page may be answered again (a limit raised, say).',
+  properties: {
+    ok: { type: 'boolean' },
+    next: { type: 'string', enum: ['redirect', 'refused'] },
+    location: { type: 'string' },
+    errors: { type: 'array', items: { type: 'string' } }
+  }
+};
+
+// A limit control's name, and what it may hold: `common/web_limits_form.ts`
+// draws one detail's controls as `lim_t0r<r>_<member>`.
+const LIMIT_FIELD = /^lim_t0r\d{1,3}_(amount|count|receiver|receiverShown|interval|notBefore|notAfter)$/;
+const LIMIT_VALUE = vz.union([vz.string().max(1024),
+                              vz.array(vz.string().max(1024)).max(64)]);
+
+// The answer itself, checked closed once the limit controls are taken off.
+// Documented open, since the controls are beside it.
+const CONSENT_BODY = vz.object({
+  action: vt.oneOf(['allow', 'deny'])
+});
+
+const CONSENT_OPERATIONS: Operation[] = [
+  { method: 'GET', path: API + '/consent/:id', operationId: 'getConsent',
+    access: 'consent', mirrors: 'GET /oauth2/consent', handler: 'consent',
+    summary: 'What the OAuth consent screen asks',
+    description: 'The consent screen\'s view, as facts and no words: who ' +
+      'is signed in, the application asking (its name and client_id), ' +
+      'each scope outstanding and the permission it resolves to, each ' +
+      'RFC 9396 authorization detail member by member, the limits a ' +
+      'person may lower, what was already agreed, and the request\'s own ' +
+      'parameters — and `csrf`. Refused (400) where nothing is pending ' +
+      'under the id, or the browser\'s session is not the person it was ' +
+      'asked of.' },
+  { method: 'POST', path: API + '/consent/:id', operationId: 'answerConsent',
+    access: 'consent', mirrors: 'POST /oauth2/consent', handler: 'consent',
+    body: CONSENT_BODY, answer: CONSENT_ANSWER,
+    summary: 'Allows or denies what the consent screen asks',
+    description: '`action: allow` writes one oauthConsent value per scope ' +
+      'onto the person\'s entry and records an RFC 9396 Allow for this one ' +
+      'request, with any limit lowered (`lim_t0r<n>_<member>`, as the page ' +
+      'draws them; a raised one is refused); `action: deny` records ' +
+      'nothing. Either way the pending consent is spent and the answer ' +
+      'names the authorization request to go back to.' }
+];
+
+OPERATIONS.push.apply(OPERATIONS, CONSENT_OPERATIONS);
 
 interface AuthnApiDeps {
   log: typeof helpers.log;
@@ -1371,6 +1441,100 @@ class AuthnApi {
   }
 
   // ---------------------------------------------------------------------------
+  // THE OAUTH CONSENT SCREEN'S OPERATIONS (#576). The view and the act are
+  // `oauth-oidc/consent_screen.ts`'s; this is the door: the id's shape, the
+  // binding of an act (checked BEFORE the id is looked up, as at every act
+  // here), and the body — `action` closed once the limit controls are taken
+  // off, each control by its name and shape. The record's three checks —
+  // it exists, it has not expired, this browser's session is the person it
+  // was asked of — are the screen's (`askedOf()`), asked by the view and
+  // the act alike, with the codes the form's refusals were recorded under.
+  //
+  // `consent_screen` is required HERE, when an operation arrives, and not at
+  // load: it is built at 8b, after this module (8-api), and a require at
+  // load would run its load-time code (its store, its default instance)
+  // ahead of its place in the require order — rule 3e's warning.
+  // ---------------------------------------------------------------------------
+  /**
+   * `GET` and `POST /authn-api/consent/{id}`: the consent screen's view, and
+   * Allow or Deny.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns nothing
+   */
+  consent(req: Json, res: Json, op: Operation): void {
+    const { log, authn, validation, errorCodes, helpers } = this.deps;
+    log.debug("Entering AuthnApi.consent(). " + op.operationId);
+    const asked = validation.checkParsed(req.params || {}, 'params',
+                                         ID_PARAMS);
+    if (!asked.ok) {
+      errorCodes.mark(res, 'STS-OAUTH-0148');
+      this.refuse(res, 400, 'That is not the id of a consent.');
+      log.debug("Leaving AuthnApi.consent(). Not an id.");
+      return;
+    }
+    const id = String(asked.value.id);
+    const screen = require('../oauth-oidc/consent_screen');
+    if (op.method === 'GET') {
+      const found = screen.askedOf(req, id, false);
+      if (!found.ok) {
+        errorCodes.mark(res, found.code);
+        // error-code: none — marked on the line above, askedOf()'s code
+        this.refuse(res, 400, String(found.why));
+        log.debug("Leaving AuthnApi.consent(). " + found.code);
+        return;
+      }
+      const record = found.record;
+      const own = authn.preferredLanguageOf(String(record.username || ''));
+      authn.answerJson(res, 200, Object.assign({ ok: true,
+        view: screen.consentView(req, record), csrf: this.csrfOf(req),
+        uiLocales: String(record.uiLocales || '') },
+        own ? { preferredLanguage: own } : {}));
+      log.debug("Leaving AuthnApi.consent(). The view.");
+      return;
+    }
+    if (!this.bound(req, res)) {
+      log.debug("Leaving AuthnApi.consent(). Refused at the door.");
+      return;
+    }
+    const raw = helpers.parseBody(req) || {};
+    const answer: Json = {};
+    const limits: Json = {};
+    let problem = '';
+    Object.keys(raw).forEach(function (name: string): void {
+      if (!/^lim_/.test(name)) {
+        answer[name] = raw[name];
+        return;
+      }
+      if (!LIMIT_FIELD.test(name)) {
+        problem = problem || 'The body has a field this operation does not ' +
+          'take: ' + name + '.';
+        return;
+      }
+      if (!LIMIT_VALUE.safeParse(raw[name]).success) {
+        problem = problem || 'The limit ' + name + ' is not a string or a ' +
+          'list of strings of a reasonable size.';
+        return;
+      }
+      limits[name] = raw[name];
+    });
+    const posted = validation.checkParsed(answer, 'body',
+                                          CONSENT_BODY.strict());
+    if (problem || !posted.ok) {
+      errorCodes.mark(res, 'STS-OAUTH-0148');
+      this.refuse(res, 400, problem || String(posted.detail ||
+                                              'The body is refused.'));
+      log.debug("Leaving AuthnApi.consent(). The body.");
+      return;
+    }
+    screen.consentAct(req, res, id, Object.assign({}, limits,
+                                                  { action: posted.value.action }));
+    log.debug("Leaving AuthnApi.consent(). Answered.");
+  }
+
+  // ---------------------------------------------------------------------------
   // THE OPENAPI DOCUMENT: a pure function over the operation table, on
   // `account-api/account_api_spec.ts`'s rule — the schemas are the
   // operations' own zod objects, converted, so a field documented and a
@@ -1414,7 +1578,11 @@ class AuthnApi {
     }
     helpers.log.debug("Leaving AuthnApi.parametersOf().");
     return [{ name: 'id', in: 'path', required: true,
-              description: op.access === 'step'
+              description: op.access === 'consent'
+                ? 'The pending consent\'s id: a bearer capability, as the ' +
+                  '`consent` the consent screen was opened with, answered ' +
+                  'only to the browser whose session is the person asked.'
+                : op.access === 'step'
                 ? 'The password change step\'s id.'
                 : op.access === 'mfa'
                 ? 'The second-factor or emailed-factor step\'s id: a ' +

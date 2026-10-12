@@ -324,18 +324,18 @@ async function signInToThePortal(base, user, log2, options) {
   // honours no global consent, asks the person (`consentScreens`).
   let consentScreens = 0;
   for (let i = 0; i < 8 && !/\/portal\/callback\?/.test(location); i++) {
-    if (at.status === 200) {
-      const page = await at.text();
-      const consentId = (page.match(/name="consent_id" value="([^"]+)"/) ||
-                         [])[1];
-      if (!consentId || opts.consent === false) {
-        break;
-      }
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+    // answered over `/authn-api/consent` through the one helper, and its
+    // answer read as the 303 the form was answered with.
+    if ((at.status === 302 || at.status === 303) &&
+        authnSignin.isConsent(location) && opts.consent !== false) {
       consentScreens += 1;
-      at = await fetchKeeping(base + "/oauth2/consent", { method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "consent_id=" + encodeURIComponent(consentId) +
-              "&action=allow" });
+      const answered = await authnSignin.consentFor(fromLocation(location),
+                                                    cookies.header());
+      cookies.keep(answered);
+      at = authnSignin.responseLike(answered);
+    } else if (at.status === 200) {
+      break;
     } else if (at.status === 302 || at.status === 303) {
       at = await fetchKeeping(fromLocation(location));
     } else {

@@ -3436,14 +3436,61 @@ answer would be filed against whoever happened to be signed in.
 
 Every one of those refusals leaves the pending record ALONE. A screen that spent
 itself on a refusal would turn each of them into a denial of service against the
-person it was asked of.
+person it was asked of. The three are `askedOf()`, asked by the shell, the view
+and the answer alike, with the codes the form's refusals were recorded under
+(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`).
 
-### Two things it deliberately is not
+### A page of the sign-in surface since #576 (2026-10-12)
 
-**IT IS NOT A SIXTH SCRIPTED PAGE.** `app.js` sets `script-src 'none'` for the
-whole service and this repository's rule is that a page wanting a script must
-argue it CANNOT work without one. This one plainly can: it is two buttons in a
-form. There is no `contentSecurityPolicy()` override anywhere in the file.
+**What changed is the page and the door; nothing the screen decides.** #569
+converts every human-facing page to a static application, and the consent
+screen is a page of the SIGN-IN SURFACE (`authn/CLAUDE.md`, *The consent
+screen*), on #571's pattern:
+
+* **`GET /oauth2/consent?consent=<id>` answers the SHELL** (`shell()`,
+  `ShellDocument`) once the three checks pass, and refuses as it always did
+  (400, `invalid_request`) when they do not — so a stale or borrowed link
+  says why without a script. **Script is required** (rcbj on #569): the
+  `<noscript>` says so and no form is drawn.
+* **The page is drawn in the browser** by the sign-in surface's bundle,
+  served here as `/oauth2/consent.js` (the same file as `/authn/signin.js`),
+  from `GET /authn-api/consent/{id}` — `consentView()`, everything
+  `consentPage()` drew as facts and no words, the limits with
+  `AccessLimits.rows()` of them — by `web_consent_screen.ts`, in the
+  `consent` catalogs' words, with the ids the page always had
+  (`consent-allow`, `consent-deny`, which the conformance suite's person and
+  `tests/vendored/consent_screen.js`'s browser surface press).
+* **`POST /oauth2/consent` IS DELETED.** Its body is `consentAct()`, moved
+  whole: the limits read back (`loweredDetails()`), the record spent either
+  way, the audit rows, `consent.record()` and the RFC 9396 Allow. It is
+  `POST /authn-api/consent/{id}` (rcbj's decision on #576: under
+  `/authn-api`, which owns the session), bound by `authn/authn_api.ts` as
+  every act there — JSON, an `Origin` of this service, and the
+  `X-CSRF-Token` of the browser's `sts_session` cookie — with `action` and
+  the limit controls by the names the page draws (`lim_t0r<n>_<member>`).
+* **THE ANSWER NAMES THE ADDRESS** the 303 sent a browser to
+  (`next: redirect`, `location`, made by `authn.locationOf()` so the realm's
+  prefix and the listener are a redirect's), with `consent_error` on it for
+  a Deny. The authorization endpoint's second pass is exactly what it was:
+  its redirects, `form_post`, JARM, PAR and the code issued are untouched.
+* **WHERE IT IS ANSWERED (#472)**: `/authn-api/consent` belongs to the OAuth
+  2.0 / OpenID Connect application in `common/hosted_applications.js`, not
+  to the sign-in service's, and the script is served at this page's own
+  address: the page, its script and its API are answered on one listener
+  whichever listener `/authn` is mapped to — no answer here is credentialed
+  to another origin (`common/cors.js`). In a service deployed as cells
+  `/authn-api/consent` is placed by affinity, as `/oauth2` is.
+
+**Tests**: `tests/authn_consent_api.js` (the shell and its three checks, the
+script, the index and the OpenAPI document, the view, every binding refusal,
+a raised and a lowered limit, Allow, a replay, Deny, the id never in an audit
+row, the form POST gone); `tests/web_surfaces.js`'s round trip over four
+consent cases; in process `tests/tools/authn_screen.js`'s `openConsent()` and
+`answerConsent()`, over HTTP `tests/vendored/authn_signin.js`'s
+`consentPage()`, `answerConsent()`, `consentFor()` and `consentWithJar()`,
+and `tests/vendored/consent_screen.js` (localised by #576).
+
+### What it deliberately is not
 
 **IT IS NOT A REFUSAL, WHICH IS WHY THE SETTING IS ON BY DEFAULT.** Every other
 policy here is off because a refusal that cannot be turned off removes a test
@@ -3456,6 +3503,11 @@ It is not a refusal and that is why: it is the screen every real authorization
 server draws on a first sign-in, and a client that has never met one has never
 run the code that survives it. It still checks nothing — the person has already
 been let in under any name they typed.
+
+**It was not a scripted page until #576**, and argued so here: two buttons
+in a form, no `contentSecurityPolicy()` override. #569's decision made every
+human-facing page a static surface, and the argument a static surface needs
+is the root `CLAUDE.md`'s rule rather than one of its own.
 
 **THE REFRESH GRANT RE-CHECKS CONSENT SINCE #172 (2026-09-23)**, and it said
 the opposite until then: *the token endpoint asks nobody anything, a grant
