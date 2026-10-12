@@ -21,7 +21,7 @@
 //   GET  /portal                                -> the shell (registers the
 //                                                  realm's /portal/callback)
 //   GET  /oauth2/authorize?…code_challenge…     -> 302 /authn/login?authn=…
-//   POST /authn/login                           -> 303 back to authorize
+//   the sign-in screen, over /authn-api (#571)  -> back to authorize
 //   GET  /oauth2/authorize                      -> 302 /portal/callback?code=…
 //   POST /oauth2/token (DPoP)                   -> a DPoP-bound access token
 //
@@ -48,6 +48,8 @@
 // ===========================================================================
 
 const assert = require("assert");
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const signin = require("./console_signin.js");
 
 const log = require("bunyan").createLogger({ name: "portal_signin",
@@ -303,33 +305,14 @@ async function signInToThePortal(base, user, log2, options) {
   if (authn) {
     assert.ok(password, "the portal's authorization request asked for a " +
       "sign-in, and this walk was given a session rather than a password");
-    const screen = await fetchKeeping(fromLocation(location));
-    const screenHtml = await screen.text();
-    const csrf =
-      (screenHtml.match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
-    at = await fetchKeeping(fromLocation(location).split("?")[0], {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "authn_id=" + encodeURIComponent(authn) +
-            "&username=" + encodeURIComponent(user) +
-            "&password=" + encodeURIComponent(password) +
-            "&action=login" +
-            (csrf ? "&csrf_token=" + encodeURIComponent(csrf) : "")
-    });
-    // A SECOND FACTOR OFFERED (#246) is ignored, as the console helper does.
-    if (at.status === 200) {
-      const offered = await at.text();
-      const setupId = /id="mfa-setup-ignore"/.test(offered)
-        ? (offered.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || ""
-        : "";
-      assert.ok(setupId, "signing in at /authn/login answered 200 and no " +
-        "Ignore button: " + offered.slice(0, 300));
-      at = await fetchKeeping(base + "/authn/mfa-setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "mfa_id=" + encodeURIComponent(setupId) + "&action=ignore"
-      });
-    }
+    // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one
+    // helper — and a second factor OFFERED (#246) ignored there, as the
+    // console helper does. The answer is read as the form's 303 was.
+    const signedIn = await authnSignin.signIn(base, fromLocation(location),
+      { action: "login", username: user, password: password },
+      { cookie: cookies.header() });
+    cookies.keep(signedIn);
+    at = authnSignin.responseLike(signedIn);
     location = at.headers.get("location") || "";
   }
   // A CONSENT SCREEN is answered Allow, and counted: the portal's seeded

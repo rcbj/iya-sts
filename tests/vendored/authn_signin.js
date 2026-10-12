@@ -424,12 +424,111 @@ async function changePassword(base, where, fields, options) {
   return answer;
 }
 
+/**
+ * Signs in and, where an administrator is OFFERED a second factor (#246's
+ * `requireSecondFactorForAdministrators: offer`), presses that step's
+ * Ignore button, as every job that only wants the person signed in on a
+ * password has done since rcbj's "just click ignore". The step's page is
+ * still server-drawn (#572), so it is fetched and posted as a form.
+ *
+ * @param {string} base - the service's base
+ * @param {string} where - the screen's address or the pending id
+ * @param {object} fields - the form's fields
+ * @param {object} [options] - `cookie`
+ * @returns {Promise<object>} the sign-in's answer, or — after an ignored
+ *   offer — `{ status, next: 'redirect', location, cookie, setCookies,
+ *   headers, ignored: true }` from the set-up step's 303
+ */
+async function signIn(base, where, fields, options) {
+  log.debug("Entering signIn().");
+  const opts = options || {};
+  const answer = await submit(base, where, fields, opts);
+  if (!(answer.next === "mfa" && answer.step === "enrol")) {
+    log.debug("Leaving signIn(). " + answer.next);
+    return answer;
+  }
+  const page = await fetch(answer.location, { redirect: "manual",
+    headers: { cookie: answer.cookie } });
+  const html = await page.text();
+  if (!/id="mfa-setup-ignore"/.test(html)) {
+    log.debug("Leaving signIn(). A required set-up step.");
+    answer.text = html;
+    return answer;
+  }
+  const mfaId = (html.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "";
+  const b = baseOf(base);
+  const ignored = await fetch(b.base + "/authn/mfa-setup", { method: "POST",
+    redirect: "manual",
+    headers: { "content-type": "application/x-www-form-urlencoded",
+               cookie: answer.cookie },
+    body: "mfa_id=" + encodeURIComponent(mfaId) + "&action=ignore" });
+  await ignored.text();
+  const own = setCookiesOf(ignored);
+  const all = answer.setCookies.concat(own);
+  const location = ignored.headers.get("location")
+    ? new URL(ignored.headers.get("location"), b.origin).toString() : "";
+  log.debug("Leaving signIn(). The offer was ignored.");
+  return { status: ignored.status, ok: ignored.status === 303,
+    next: ignored.status === 303 ? "redirect" : "refused",
+    location: location, ignored: true, json: null, errors: [],
+    view: answer.view, csrf: answer.csrf,
+    cookie: foldCookies(answer.cookie, own), setCookies: all,
+    headers: {
+      get: function (name) {
+        const n = String(name).toLowerCase();
+        if (n === "location") {
+          return location || null;
+        }
+        if (n === "set-cookie") {
+          return all.length ? all.join(", ") : null;
+        }
+        return ignored.headers.get(name);
+      },
+      getSetCookie: function () {
+        return all.slice();
+      }
+    } };
+}
+
+/**
+ * An answer read the way a job read the form's response: an answer naming
+ * where to go (`redirect`, `mfa`, `password-change`) as the 303 the form was
+ * answered with — the browser follows both with a GET — and anything else
+ * at its own status, its body the JSON's text. For a job whose flow reads
+ * `status` and `headers.get("location")` and goes on; what it asserts
+ * about the SCREEN it asserts on the answer itself.
+ *
+ * @param {object} answer - `submit()`'s, `signIn()`'s or `act()`'s answer
+ * @returns {object} `{ status, headers, text(), json(), answer }`
+ */
+function responseLike(answer) {
+  log.debug("Entering responseLike(). " + answer.next);
+  const goes = !!answer.location && ["redirect", "mfa", "password-change"]
+    .indexOf(answer.next) >= 0;
+  const body = typeof answer.text === "string" ? answer.text
+                                               : JSON.stringify(answer.json);
+  log.debug("Leaving responseLike().");
+  return {
+    status: goes ? 303 : answer.status,
+    headers: answer.headers,
+    answer: answer,
+    text: async function () {
+      return body;
+    },
+    json: async function () {
+      return JSON.parse(body);
+    }
+  };
+}
+
 module.exports = {
   pendingIdOf: pendingIdOf,
   foldCookies: foldCookies,
   screen: screen,
   act: act,
   submit: submit,
+  signIn: signIn,
+  responseLike: responseLike,
   passkeyOptions: passkeyOptions,
   changePassword: changePassword,
   bodyFor: bodyFor
