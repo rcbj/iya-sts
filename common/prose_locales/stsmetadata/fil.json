@@ -581,15 +581,15 @@
   },
   "stsmetadata.specs.vcdm.coverage": {
     "en": "9ea60338e6f757a1",
-    "text": "bahagya: ang VC-JWT encoding ng mga kredensyal na VCDM 1.1 (jwt_vc_json) at mga kredensyal na VCDM 2.0 na may naka-embed na proof (ldp_vc); at, sa W3C VC API (#194), bawat MUST ng data model na sinusuri sa isang kredensyal o presentasyong isinulat ng iba, JSON-LD safe mode sa ibabaw ng mga kasamang context, at mga naka-envelope na kredensyal at presentasyon — sinusukat sa W3C VC Data Model 2.0 test suite."
+    "text": "partial: ang VC-JWT encoding ng mga kredensyal na VCDM 1.1 (jwt_vc_json) at mga kredensyal na VCDM 2.0 na may naka-embed na proof (ldp_vc); at, sa W3C VC API (#194), bawat MUST ng data model na sinusuri sa isang kredensyal o presentasyong isinulat ng iba, JSON-LD safe mode sa ibabaw ng mga kasamang context, at mga naka-envelope na kredensyal at presentasyon — sinusukat sa W3C VC Data Model 2.0 test suite."
   },
   "stsmetadata.specs.di-jcs.coverage": {
     "en": "e298f8533eb3ccb0",
-    "text": "bahagya: pag-verify (at pagpirma, para sa mga test) ng proof ng isang holder sa isang VerifiablePresentation — P-256 at P-384, Ed25519, at ML-DSA-44 at SLH-DSA-SHA2-128s mula sa draft na Quantum-Resistant Cryptosuites — gamit ang mga verification method na did:jwk at did:key; at pagpirma at pag-verify ng delegation proof ng isang GNAP zcap token sa Ed25519, ML-DSA-44 o SLH-DSA-SHA2-128s laban sa isang Multikey controller document. Sa W3C VC API ang dalawang JCS suite ng EC at EdDSA ay nagse-secure at nagve-verify din ng mga kredensyal, na may mga proof set at proof chain (#195, #196). Ang mga RDFC suite ay di-rdfc."
+    "text": "partial: pag-verify (at pagpirma, para sa mga test) ng proof ng isang holder sa isang VerifiablePresentation — P-256 at P-384, Ed25519, at ML-DSA-44 at SLH-DSA-SHA2-128s mula sa draft na Quantum-Resistant Cryptosuites — gamit ang mga verification method na did:jwk at did:key; at pagpirma at pag-verify ng delegation proof ng isang GNAP zcap token sa Ed25519, ML-DSA-44 o SLH-DSA-SHA2-128s laban sa isang Multikey controller document. Sa W3C VC API ang dalawang JCS suite ng EC at EdDSA ay nagse-secure at nagve-verify din ng mga kredensyal, na may mga proof set at proof chain (#195, #196). Ang mga RDFC suite ay di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
     "en": "024efe640e5df490",
-    "text": "buo para sa paglalabas at pag-verify sa W3C VC API (#195, #196): Ed25519, P-256 at P-384, RDFC-1.0 sa ibabaw ng mga kasamang context sa safe mode na may null base, mga proof set at chain, VC 1.1 at 2.0 — sinusukat sa W3C EdDSA at ECDSA test suites. Ang context na hindi kasama sa serbisyong ito ay tinatanggihan, hindi kailanman kinukuha."
+    "text": "full para sa paglalabas at pag-verify sa W3C VC API (#195, #196): Ed25519, P-256 at P-384, RDFC-1.0 sa ibabaw ng mga kasamang context sa safe mode na may null base, mga proof set at chain, VC 1.1 at 2.0 — sinusukat sa W3C EdDSA at ECDSA test suites. Ang context na hindi kasama sa serbisyong ito ay tinatanggihan, hindi kailanman kinukuha."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
@@ -597,11 +597,11 @@
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
     "en": "de44817c598a2283",
-    "text": "bahagya: vc+jwt, vc+sd-jwt at vc+cose at ang kanilang mga anyong vp, sine-secure at vine-verify sa W3C VC API (#198), ang mga SD-JWT disclosure ay pinoproseso ayon sa sinasabi ng RFC 9901 seksiyon 7.1; mga key sa pamamagitan ng did:key o did:jwk kid o isang public key na pinangalanan ng tumatawag, walang kinukuha. Hindi inilalabas ng OID4VCI issuer ang mga anyong ito (ang jwt_vc_json ay VCDM 1.1), at ang Key Binding JWT sa isang SD-JWT na presentasyon ay iniuulat, hindi sinusuri."
+    "text": "partial: vc+jwt, vc+sd-jwt at vc+cose at ang kanilang mga anyong vp, sine-secure at vine-verify sa W3C VC API (#198), ang mga SD-JWT disclosure ay pinoproseso ayon sa sinasabi ng RFC 9901 seksiyon 7.1; mga key sa pamamagitan ng did:key o did:jwk kid o isang public key na pinangalanan ng tumatawag, walang kinukuha. Hindi inilalabas ng OID4VCI issuer ang mga anyong ito (ang jwt_vc_json ay VCDM 1.1), at ang Key Binding JWT sa isang SD-JWT na presentasyon ay iniuulat, hindi sinusuri."
   },
   "stsmetadata.specs.vc-api.coverage": {
     "en": "d8ffeba3e97815b9",
-    "text": "bahagya: ang mga serbisyo ng issuer (issue), holder (prove, derive), verifier (mga kredensyal at presentasyon) at status, sa ibabaw ng sariling mga cryptosuite, status list at sariling mga key ng VC API ng serbisyong ito, NAKA-OFF hangga't hindi ito ino-on ng isang realm (vcApi.enabled), sa likod ng isang OAuth 2.0 access token na may dalang vc-api:issue o vc-api:verify sa bawat mode, may rate limit bawat client, at tinatanggihan ang opsyong hindi nito nauunawaan. Hindi pa nagagawa: zcap authorization, mga workflow at exchange, mga challenge, pag-iimbak ng mga kredensyal at presentasyon (GET at DELETE ng /credentials/{id}), ang mga operation:path scope ng VCALM, at mga issuer instance na kino-configure bawat realm (nakapirmi ang mga instance, isa bawat securing mechanism at curve)."
+    "text": "partial: ang mga serbisyo ng issuer (issue), holder (prove, derive), verifier (mga kredensyal at presentasyon) at status, sa ibabaw ng sariling mga cryptosuite, status list at sariling mga key ng VC API ng serbisyong ito, NAKA-OFF hangga't hindi ito ino-on ng isang realm (vcApi.enabled), sa likod ng isang OAuth 2.0 access token na may dalang vc-api:issue o vc-api:verify sa bawat mode, may rate limit bawat client, at tinatanggihan ang opsyong hindi nito nauunawaan. Hindi pa nagagawa: zcap authorization, mga workflow at exchange, mga challenge, pag-iimbak ng mga kredensyal at presentasyon (GET at DELETE ng /credentials/{id}), ang mga operation:path scope ng VCALM, at mga issuer instance na kino-configure bawat realm (nakapirmi ang mga instance, isa bawat securing mechanism at curve)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -625,7 +625,7 @@
   },
   "stsmetadata.specs.did-core.coverage": {
     "en": "a4e9c39575ac8ed8",
-    "text": "bahagya: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, at nagre-resolve at nagde-dereference (seksiyon 7) ng did:key, did:jwk at ng sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), sinusukat sa W3C DID test suite. Walang ibang did:web na kinukuha; walang DID parameter (service, versionId, …) na sinusuportahan."
+    "text": "partial: ang serbisyong ito ay NAGPAPALATHALA ng isang did:web na dokumento na may dalawang verification method, at nagre-resolve at nagde-dereference (seksiyon 7) ng did:key, did:jwk at ng sarili nitong did:web sa parehong JSON na representasyon sa W3C VC API (#199), sinusukat sa W3C DID test suite. Walang ibang did:web na kinukuha; walang DID parameter (service, versionId, …) na sinusuportahan."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",

@@ -581,15 +581,15 @@
   },
   "stsmetadata.specs.vcdm.coverage": {
     "en": "9ea60338e6f757a1",
-    "text": "部分：VCDM 1.1 凭证的 VC-JWT 编码（jwt_vc_json）以及带嵌入证明的 VCDM 2.0 凭证（ldp_vc）；并且在 W3C VC API（#194）上，对他人编写的凭证或出示检查数据模型的每一条 MUST，在随附上下文上使用 JSON-LD 安全模式，以及信封式凭证和出示——以 W3C VC Data Model 2.0 测试套件为准。"
+    "text": "partial: VCDM 1.1 凭证的 VC-JWT 编码（jwt_vc_json）以及带嵌入证明的 VCDM 2.0 凭证（ldp_vc）；并且在 W3C VC API（#194）上，对他人编写的凭证或出示检查数据模型的每一条 MUST，在随附上下文上使用 JSON-LD 安全模式，以及信封式凭证和出示——以 W3C VC Data Model 2.0 测试套件为准。"
   },
   "stsmetadata.specs.di-jcs.coverage": {
     "en": "e298f8533eb3ccb0",
-    "text": "部分：验证（以及为测试而签名）VerifiablePresentation 上持有者的证明——P-256 和 P-384、Ed25519，以及 Quantum-Resistant Cryptosuites 草案中的 ML-DSA-44 和 SLH-DSA-SHA2-128s——使用 did:jwk 和 did:key 验证方法；以及以 Ed25519、ML-DSA-44 或 SLH-DSA-SHA2-128s 针对 Multikey 控制者文档签名和验证 GNAP zcap 令牌的委托证明。在 W3C VC API 上，EC 和 EdDSA 两个 JCS 套件也为凭证加固并验证凭证，支持证明集和证明链（#195、#196）。RDFC 套件见 di-rdfc。"
+    "text": "partial: 验证（以及为测试而签名）VerifiablePresentation 上持有者的证明——P-256 和 P-384、Ed25519，以及 Quantum-Resistant Cryptosuites 草案中的 ML-DSA-44 和 SLH-DSA-SHA2-128s——使用 did:jwk 和 did:key 验证方法；以及以 Ed25519、ML-DSA-44 或 SLH-DSA-SHA2-128s 针对 Multikey 控制者文档签名和验证 GNAP zcap 令牌的委托证明。在 W3C VC API 上，EC 和 EdDSA 两个 JCS 套件也为凭证加固并验证凭证，支持证明集和证明链（#195、#196）。RDFC 套件见 di-rdfc。"
   },
   "stsmetadata.specs.di-rdfc.coverage": {
     "en": "024efe640e5df490",
-    "text": "在 W3C VC API 上签发和验证完整支持（#195、#196）：Ed25519、P-256 和 P-384，在随附上下文上以安全模式和空基址运行 RDFC-1.0，证明集和证明链，VC 1.1 和 2.0——以 W3C EdDSA 和 ECDSA 测试套件为准。本服务未随附的上下文会被拒绝，绝不抓取。"
+    "text": "full：在 W3C VC API 上签发和验证（#195、#196）：Ed25519、P-256 和 P-384，在随附上下文上以安全模式和空基址运行 RDFC-1.0，证明集和证明链，VC 1.1 和 2.0——以 W3C EdDSA 和 ECDSA 测试套件为准。本服务未随附的上下文会被拒绝，绝不抓取。"
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
@@ -597,11 +597,11 @@
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
     "en": "de44817c598a2283",
-    "text": "部分：vc+jwt、vc+sd-jwt 和 vc+cose 及其 vp 形式，在 W3C VC API 上加固和验证（#198），SD-JWT 披露按 RFC 9901 第 7.1 节处理；密钥通过 did:key 或 did:jwk 的 kid 或调用方指定的公钥获得，不抓取任何内容。OID4VCI 签发者不签发这些形式（jwt_vc_json 为 VCDM 1.1），SD-JWT 出示上的 Key Binding JWT 只报告、不检查。"
+    "text": "partial: vc+jwt、vc+sd-jwt 和 vc+cose 及其 vp 形式，在 W3C VC API 上加固和验证（#198），SD-JWT 披露按 RFC 9901 第 7.1 节处理；密钥通过 did:key 或 did:jwk 的 kid 或调用方指定的公钥获得，不抓取任何内容。OID4VCI 签发者不签发这些形式（jwt_vc_json 为 VCDM 1.1），SD-JWT 出示上的 Key Binding JWT 只报告、不检查。"
   },
   "stsmetadata.specs.vc-api.coverage": {
     "en": "d8ffeba3e97815b9",
-    "text": "部分：签发者（issue）、持有者（prove、derive）、验证者（凭证和出示）和状态服务，基于本服务自己的密码套件、状态列表和 VC API 专用密钥；在领域开启之前处于关闭状态（vcApi.enabled），在所有模式下都需要带有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 访问令牌，按客户端限速，不理解的选项会被拒绝。尚未构建：zcap 授权、工作流和交换、挑战、凭证和出示的存储（/credentials/{id} 的 GET 和 DELETE）、VCALM 的 operation:path 范围，以及按领域配置的签发者实例（实例是固定的，每种加固机制和曲线各一个）。"
+    "text": "partial: 签发者（issue）、持有者（prove、derive）、验证者（凭证和出示）和状态服务，基于本服务自己的密码套件、状态列表和 VC API 专用密钥；在领域开启之前处于关闭状态（vcApi.enabled），在所有模式下都需要带有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 访问令牌，按客户端限速，不理解的选项会被拒绝。尚未构建：zcap 授权、工作流和交换、挑战、凭证和出示的存储（/credentials/{id} 的 GET 和 DELETE）、VCALM 的 operation:path 范围，以及按领域配置的签发者实例（实例是固定的，每种加固机制和曲线各一个）。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -625,7 +625,7 @@
   },
   "stsmetadata.specs.did-core.coverage": {
     "en": "a4e9c39575ac8ed8",
-    "text": "部分：本服务发布一个带两个验证方法的 did:web 文档，并在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准。不抓取任何其他 did:web；不支持任何 DID 参数（service、versionId 等）。"
+    "text": "partial: 本服务发布一个带两个验证方法的 did:web 文档，并在 W3C VC API（#199）上以两种 JSON 表示解析和解引用（第 7 节）did:key、did:jwk 及其自身的 did:web，以 W3C DID 测试套件为准。不抓取任何其他 did:web；不支持任何 DID 参数（service、versionId 等）。"
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",

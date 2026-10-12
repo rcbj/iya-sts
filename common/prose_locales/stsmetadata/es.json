@@ -581,15 +581,15 @@
   },
   "stsmetadata.specs.vcdm.coverage": {
     "en": "9ea60338e6f757a1",
-    "text": "parcial: la codificación VC-JWT de credenciales VCDM 1.1 (jwt_vc_json) y credenciales VCDM 2.0 con una prueba incrustada (ldp_vc); y, en la W3C VC API (#194), cada MUST del modelo de datos comprobado en una credencial o presentación escrita por otra persona, el modo seguro de JSON-LD sobre los contextos incluidos, y credenciales y presentaciones envueltas — sometido a la suite de pruebas W3C VC Data Model 2.0."
+    "text": "partial: la codificación VC-JWT de credenciales VCDM 1.1 (jwt_vc_json) y credenciales VCDM 2.0 con una prueba incrustada (ldp_vc); y, en la W3C VC API (#194), cada MUST del modelo de datos comprobado en una credencial o presentación escrita por otra persona, el modo seguro de JSON-LD sobre los contextos incluidos, y credenciales y presentaciones envueltas — sometido a la suite de pruebas W3C VC Data Model 2.0."
   },
   "stsmetadata.specs.di-jcs.coverage": {
     "en": "e298f8533eb3ccb0",
-    "text": "parcial: verificación (y firma, para pruebas) de la prueba de un titular en una VerifiablePresentation — P-256 y P-384, Ed25519, y ML-DSA-44 y SLH-DSA-SHA2-128s del borrador Quantum-Resistant Cryptosuites — con métodos de verificación did:jwk y did:key; y firma y verificación de la prueba de delegación de un token zcap de GNAP en Ed25519, ML-DSA-44 o SLH-DSA-SHA2-128s contra un documento controlador Multikey. En la W3C VC API las dos suites JCS de EC y EdDSA también aseguran y verifican credenciales, con conjuntos de pruebas y cadenas de pruebas (#195, #196). Las suites RDFC son di-rdfc."
+    "text": "partial: verificación (y firma, para pruebas) de la prueba de un titular en una VerifiablePresentation — P-256 y P-384, Ed25519, y ML-DSA-44 y SLH-DSA-SHA2-128s del borrador Quantum-Resistant Cryptosuites — con métodos de verificación did:jwk y did:key; y firma y verificación de la prueba de delegación de un token zcap de GNAP en Ed25519, ML-DSA-44 o SLH-DSA-SHA2-128s contra un documento controlador Multikey. En la W3C VC API las dos suites JCS de EC y EdDSA también aseguran y verifican credenciales, con conjuntos de pruebas y cadenas de pruebas (#195, #196). Las suites RDFC son di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
     "en": "024efe640e5df490",
-    "text": "completa para emitir y verificar en la W3C VC API (#195, #196): Ed25519, P-256 y P-384, RDFC-1.0 sobre los contextos incluidos en modo seguro con una base nula, conjuntos y cadenas de pruebas, VC 1.1 y 2.0 — sometida a las suites de pruebas W3C EdDSA y ECDSA. Un contexto que este servicio no incluye se rechaza, nunca se descarga."
+    "text": "full para emitir y verificar en la W3C VC API (#195, #196): Ed25519, P-256 y P-384, RDFC-1.0 sobre los contextos incluidos en modo seguro con una base nula, conjuntos y cadenas de pruebas, VC 1.1 y 2.0 — sometida a las suites de pruebas W3C EdDSA y ECDSA. Un contexto que este servicio no incluye se rechaza, nunca se descarga."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
@@ -597,11 +597,11 @@
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
     "en": "de44817c598a2283",
-    "text": "parcial: vc+jwt, vc+sd-jwt y vc+cose y sus formas vp, asegurados y verificados en la W3C VC API (#198), las divulgaciones SD-JWT procesadas como dice la sección 7.1 del RFC 9901; claves por un kid did:key o did:jwk o una clave pública nombrada por quien llama, sin descargar nada. El emisor OID4VCI no emite estas formas (jwt_vc_json es VCDM 1.1), y un Key Binding JWT en una presentación SD-JWT se informa, no se comprueba."
+    "text": "partial: vc+jwt, vc+sd-jwt y vc+cose y sus formas vp, asegurados y verificados en la W3C VC API (#198), las divulgaciones SD-JWT procesadas como dice la sección 7.1 del RFC 9901; claves por un kid did:key o did:jwk o una clave pública nombrada por quien llama, sin descargar nada. El emisor OID4VCI no emite estas formas (jwt_vc_json es VCDM 1.1), y un Key Binding JWT en una presentación SD-JWT se informa, no se comprueba."
   },
   "stsmetadata.specs.vc-api.coverage": {
     "en": "d8ffeba3e97815b9",
-    "text": "parcial: los servicios de emisor (issue), titular (prove, derive), verificador (credenciales y presentaciones) y estado, sobre las suites criptográficas, las listas de estado y claves propias de la VC API de este servicio, DESACTIVADA hasta que un dominio la active (vcApi.enabled), tras un token de acceso OAuth 2.0 que lleve vc-api:issue o vc-api:verify en todos los modos, con tasa limitada por cliente, y una opción que no entiende rechazada. No construido: autorización zcap, flujos de trabajo e intercambios, desafíos, almacenamiento de credenciales y presentaciones (GET y DELETE de /credentials/{id}), los ámbitos operation:path de VCALM, e instancias de emisor configuradas por dominio (las instancias son fijas, una por mecanismo de aseguramiento y curva)."
+    "text": "partial: los servicios de emisor (issue), titular (prove, derive), verificador (credenciales y presentaciones) y estado, sobre las suites criptográficas, las listas de estado y claves propias de la VC API de este servicio, DESACTIVADA hasta que un dominio la active (vcApi.enabled), tras un token de acceso OAuth 2.0 que lleve vc-api:issue o vc-api:verify en todos los modos, con tasa limitada por cliente, y una opción que no entiende rechazada. No construido: autorización zcap, flujos de trabajo e intercambios, desafíos, almacenamiento de credenciales y presentaciones (GET y DELETE de /credentials/{id}), los ámbitos operation:path de VCALM, e instancias de emisor configuradas por dominio (las instancias son fijas, una por mecanismo de aseguramiento y curva)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -625,7 +625,7 @@
   },
   "stsmetadata.specs.did-core.coverage": {
     "en": "a4e9c39575ac8ed8",
-    "text": "parcial: este servicio PUBLICA un documento did:web con dos métodos de verificación, y resuelve y desreferencia (sección 7) did:key, did:jwk y su propio did:web en ambas representaciones JSON en la W3C VC API (#199), sometido a la suite de pruebas W3C DID. No se descarga ningún otro did:web; no se admiten parámetros DID (service, versionId, …)."
+    "text": "partial: este servicio PUBLICA un documento did:web con dos métodos de verificación, y resuelve y desreferencia (sección 7) did:key, did:jwk y su propio did:web en ambas representaciones JSON en la W3C VC API (#199), sometido a la suite de pruebas W3C DID. No se descarga ningún otro did:web; no se admiten parámetros DID (service, versionId, …)."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",

@@ -581,15 +581,15 @@
   },
   "stsmetadata.specs.vcdm.coverage": {
     "en": "9ea60338e6f757a1",
-    "text": "partielle : l'encodage VC-JWT des attestations VCDM 1.1 (jwt_vc_json) et des attestations VCDM 2.0 avec une preuve intégrée (ldp_vc) ; et, à la W3C VC API (#194), chaque MUST du modèle de données vérifié sur une attestation ou une présentation écrite par quelqu'un d'autre, le mode sûr JSON-LD sur les contextes embarqués, et les attestations et présentations enveloppées — tenu à la suite de tests W3C VC Data Model 2.0."
+    "text": "partial: l'encodage VC-JWT des attestations VCDM 1.1 (jwt_vc_json) et des attestations VCDM 2.0 avec une preuve intégrée (ldp_vc) ; et, à la W3C VC API (#194), chaque MUST du modèle de données vérifié sur une attestation ou une présentation écrite par quelqu'un d'autre, le mode sûr JSON-LD sur les contextes embarqués, et les attestations et présentations enveloppées — tenu à la suite de tests W3C VC Data Model 2.0."
   },
   "stsmetadata.specs.di-jcs.coverage": {
     "en": "e298f8533eb3ccb0",
-    "text": "partielle : vérification (et signature, pour les tests) de la preuve d'un détenteur sur une VerifiablePresentation — P-256 et P-384, Ed25519, et ML-DSA-44 et SLH-DSA-SHA2-128s du brouillon Quantum-Resistant Cryptosuites — avec des méthodes de vérification did:jwk et did:key ; et signature et vérification de la preuve de délégation d'un jeton zcap GNAP en Ed25519, ML-DSA-44 ou SLH-DSA-SHA2-128s contre un document contrôleur Multikey. À la W3C VC API, les deux suites JCS EC et EdDSA sécurisent et vérifient aussi des attestations, avec des ensembles de preuves et des chaînes de preuves (#195, #196). Les suites RDFC sont di-rdfc."
+    "text": "partial: vérification (et signature, pour les tests) de la preuve d'un détenteur sur une VerifiablePresentation — P-256 et P-384, Ed25519, et ML-DSA-44 et SLH-DSA-SHA2-128s du brouillon Quantum-Resistant Cryptosuites — avec des méthodes de vérification did:jwk et did:key ; et signature et vérification de la preuve de délégation d'un jeton zcap GNAP en Ed25519, ML-DSA-44 ou SLH-DSA-SHA2-128s contre un document contrôleur Multikey. À la W3C VC API, les deux suites JCS EC et EdDSA sécurisent et vérifient aussi des attestations, avec des ensembles de preuves et des chaînes de preuves (#195, #196). Les suites RDFC sont di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
     "en": "024efe640e5df490",
-    "text": "complète pour l'émission et la vérification à la W3C VC API (#195, #196) : Ed25519, P-256 et P-384, RDFC-1.0 sur les contextes embarqués en mode sûr avec une base nulle, ensembles et chaînes de preuves, VC 1.1 et 2.0 — tenue aux suites de tests W3C EdDSA et ECDSA. Un contexte que ce service n'embarque pas est refusé, jamais récupéré."
+    "text": "full pour l'émission et la vérification à la W3C VC API (#195, #196) : Ed25519, P-256 et P-384, RDFC-1.0 sur les contextes embarqués en mode sûr avec une base nulle, ensembles et chaînes de preuves, VC 1.1 et 2.0 — tenue aux suites de tests W3C EdDSA et ECDSA. Un contexte que ce service n'embarque pas est refusé, jamais récupéré."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
@@ -597,11 +597,11 @@
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
     "en": "de44817c598a2283",
-    "text": "partielle : vc+jwt, vc+sd-jwt et vc+cose et leurs formes vp, sécurisés et vérifiés à la W3C VC API (#198), les divulgations SD-JWT traitées comme le dit la section 7.1 de la RFC 9901 ; clés par un kid did:key ou did:jwk ou une clé publique nommée par l'appelant, rien n'est récupéré. L'émetteur OID4VCI n'émet pas ces formes (jwt_vc_json est VCDM 1.1), et un Key Binding JWT sur une présentation SD-JWT est signalé, non vérifié."
+    "text": "partial: vc+jwt, vc+sd-jwt et vc+cose et leurs formes vp, sécurisés et vérifiés à la W3C VC API (#198), les divulgations SD-JWT traitées comme le dit la section 7.1 de la RFC 9901 ; clés par un kid did:key ou did:jwk ou une clé publique nommée par l'appelant, rien n'est récupéré. L'émetteur OID4VCI n'émet pas ces formes (jwt_vc_json est VCDM 1.1), et un Key Binding JWT sur une présentation SD-JWT est signalé, non vérifié."
   },
   "stsmetadata.specs.vc-api.coverage": {
     "en": "d8ffeba3e97815b9",
-    "text": "partielle : les services d'émetteur (issue), de détenteur (prove, derive), de vérificateur (attestations et présentations) et de statut, sur les suites cryptographiques, les listes de statut et des clés propres à la VC API de ce service, DÉSACTIVÉE tant qu'un domaine ne l'active pas (vcApi.enabled), derrière un jeton d'accès OAuth 2.0 portant vc-api:issue ou vc-api:verify dans tous les modes, à débit limité par client, une option qu'elle ne comprend pas étant refusée. Non construit : l'autorisation zcap, les workflows et échanges, les défis, le stockage d'attestations et de présentations (GET et DELETE de /credentials/{id}), les portées operation:path de VCALM, et des instances d'émetteur configurées par domaine (les instances sont fixes, une par mécanisme de sécurisation et par courbe)."
+    "text": "partial: les services d'émetteur (issue), de détenteur (prove, derive), de vérificateur (attestations et présentations) et de statut, sur les suites cryptographiques, les listes de statut et des clés propres à la VC API de ce service, DÉSACTIVÉE tant qu'un domaine ne l'active pas (vcApi.enabled), derrière un jeton d'accès OAuth 2.0 portant vc-api:issue ou vc-api:verify dans tous les modes, à débit limité par client, une option qu'elle ne comprend pas étant refusée. Non construit : l'autorisation zcap, les workflows et échanges, les défis, le stockage d'attestations et de présentations (GET et DELETE de /credentials/{id}), les portées operation:path de VCALM, et des instances d'émetteur configurées par domaine (les instances sont fixes, une par mécanisme de sécurisation et par courbe)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -625,7 +625,7 @@
   },
   "stsmetadata.specs.did-core.coverage": {
     "en": "a4e9c39575ac8ed8",
-    "text": "partielle : ce service PUBLIE un document did:web avec deux méthodes de vérification, et résout et déréférence (section 7) did:key, did:jwk et son propre did:web dans les deux représentations JSON à la W3C VC API (#199), tenu à la suite de tests W3C DID. Aucun autre did:web n'est récupéré ; aucun paramètre DID (service, versionId, …) n'est pris en charge."
+    "text": "partial: ce service PUBLIE un document did:web avec deux méthodes de vérification, et résout et déréférence (section 7) did:key, did:jwk et son propre did:web dans les deux représentations JSON à la W3C VC API (#199), tenu à la suite de tests W3C DID. Aucun autre did:web n'est récupéré ; aucun paramètre DID (service, versionId, …) n'est pris en charge."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",

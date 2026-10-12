@@ -581,15 +581,15 @@
   },
   "stsmetadata.specs.vcdm.coverage": {
     "en": "9ea60338e6f757a1",
-    "text": "delvis: VC-JWT-kodningen av VCDM 1.1-intyg (jwt_vc_json) och VCDM 2.0-intyg med ett inbäddat bevis (ldp_vc); och, i W3C VC API (#194), varje MUST i datamodellen kontrollerat på ett intyg eller en presentation som någon annan skrivit, JSON-LD:s säkra läge över de medföljande kontexterna, och kuverterade intyg och presentationer — hållet mot W3C:s testsvit VC Data Model 2.0."
+    "text": "partial: VC-JWT-kodningen av VCDM 1.1-intyg (jwt_vc_json) och VCDM 2.0-intyg med ett inbäddat bevis (ldp_vc); och, i W3C VC API (#194), varje MUST i datamodellen kontrollerat på ett intyg eller en presentation som någon annan skrivit, JSON-LD:s säkra läge över de medföljande kontexterna, och kuverterade intyg och presentationer — hållet mot W3C:s testsvit VC Data Model 2.0."
   },
   "stsmetadata.specs.di-jcs.coverage": {
     "en": "e298f8533eb3ccb0",
-    "text": "delvis: verifiering (och signering, för tester) av en innehavares bevis på en VerifiablePresentation — P-256 och P-384, Ed25519, samt ML-DSA-44 och SLH-DSA-SHA2-128s från utkastet Quantum-Resistant Cryptosuites — med verifieringsmetoderna did:jwk och did:key; samt signering och verifiering av delegeringsbeviset i en GNAP zcap-token i Ed25519, ML-DSA-44 eller SLH-DSA-SHA2-128s mot ett Multikey-kontrollantdokument. I W3C VC API säkrar och verifierar de två JCS-sviterna för EC och EdDSA även intyg, med bevismängder och beviskedjor (#195, #196). RDFC-sviterna är di-rdfc."
+    "text": "partial: verifiering (och signering, för tester) av en innehavares bevis på en VerifiablePresentation — P-256 och P-384, Ed25519, samt ML-DSA-44 och SLH-DSA-SHA2-128s från utkastet Quantum-Resistant Cryptosuites — med verifieringsmetoderna did:jwk och did:key; samt signering och verifiering av delegeringsbeviset i en GNAP zcap-token i Ed25519, ML-DSA-44 eller SLH-DSA-SHA2-128s mot ett Multikey-kontrollantdokument. I W3C VC API säkrar och verifierar de två JCS-sviterna för EC och EdDSA även intyg, med bevismängder och beviskedjor (#195, #196). RDFC-sviterna är di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
     "en": "024efe640e5df490",
-    "text": "fullständig för utfärdande och verifiering i W3C VC API (#195, #196): Ed25519, P-256 och P-384, RDFC-1.0 över de medföljande kontexterna i säkert läge med en nollbas, bevismängder och kedjor, VC 1.1 och 2.0 — hållen mot W3C:s testsviter för EdDSA och ECDSA. En kontext som tjänsten inte levererar med avvisas, hämtas aldrig."
+    "text": "full för utfärdande och verifiering i W3C VC API (#195, #196): Ed25519, P-256 och P-384, RDFC-1.0 över de medföljande kontexterna i säkert läge med en nollbas, bevismängder och kedjor, VC 1.1 och 2.0 — hållen mot W3C:s testsviter för EdDSA och ECDSA. En kontext som tjänsten inte levererar med avvisas, hämtas aldrig."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
@@ -597,11 +597,11 @@
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
     "en": "de44817c598a2283",
-    "text": "delvis: vc+jwt, vc+sd-jwt och vc+cose och deras vp-former, säkrade och verifierade i W3C VC API (#198), SD-JWT-röjanden behandlade som RFC 9901 avsnitt 7.1 säger; nycklar via en did:key- eller did:jwk-kid eller en publik nyckel som anroparen namnger, inget hämtas. OID4VCI-utfärdaren utfärdar inte dessa former (jwt_vc_json är VCDM 1.1), och en Key Binding JWT på en SD-JWT-presentation rapporteras, kontrolleras inte."
+    "text": "partial: vc+jwt, vc+sd-jwt och vc+cose och deras vp-former, säkrade och verifierade i W3C VC API (#198), SD-JWT-röjanden behandlade som RFC 9901 avsnitt 7.1 säger; nycklar via en did:key- eller did:jwk-kid eller en publik nyckel som anroparen namnger, inget hämtas. OID4VCI-utfärdaren utfärdar inte dessa former (jwt_vc_json är VCDM 1.1), och en Key Binding JWT på en SD-JWT-presentation rapporteras, kontrolleras inte."
   },
   "stsmetadata.specs.vc-api.coverage": {
     "en": "d8ffeba3e97815b9",
-    "text": "delvis: utfärdar- (issue), innehavar- (prove, derive), verifierar- (intyg och presentationer) och statustjänsterna, över tjänstens egna kryptosviter, statuslistor och VC API:ets egna nycklar, AV tills en domän slår på det (vcApi.enabled), bakom en OAuth 2.0-åtkomsttoken som bär vc-api:issue eller vc-api:verify i alla lägen, hastighetsbegränsat per klient, och ett alternativ det inte förstår avvisas. Inte byggt: zcap-auktorisering, arbetsflöden och utbyten, utmaningar, lagring av intyg och presentationer (GET och DELETE av /credentials/{id}), VCALM:s operation:path-omfång, och utfärdarinstanser konfigurerade per domän (instanserna är fasta, en per säkringsmekanism och kurva)."
+    "text": "partial: utfärdar- (issue), innehavar- (prove, derive), verifierar- (intyg och presentationer) och statustjänsterna, över tjänstens egna kryptosviter, statuslistor och VC API:ets egna nycklar, AV tills en domän slår på det (vcApi.enabled), bakom en OAuth 2.0-åtkomsttoken som bär vc-api:issue eller vc-api:verify i alla lägen, hastighetsbegränsat per klient, och ett alternativ det inte förstår avvisas. Inte byggt: zcap-auktorisering, arbetsflöden och utbyten, utmaningar, lagring av intyg och presentationer (GET och DELETE av /credentials/{id}), VCALM:s operation:path-omfång, och utfärdarinstanser konfigurerade per domän (instanserna är fasta, en per säkringsmekanism och kurva)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -625,7 +625,7 @@
   },
   "stsmetadata.specs.did-core.coverage": {
     "en": "a4e9c39575ac8ed8",
-    "text": "delvis: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), hållet mot W3C:s DID-testsvit. Ingen annan did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
+    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), hållet mot W3C:s DID-testsvit. Ingen annan did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
