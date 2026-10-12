@@ -112,8 +112,8 @@
     "text": "full: lahat ng walong format sa ilalim ng mga nakarehistrong pangalan nila — account, email, iss_sub, opaque, phone_number, did, uri at aliases — na ipinapatupad ang SARADONG member set ng bawat format, na siyang kalahating madalas mali sa mga implementation: ang subject na may dagdag na member ay DAPAT tanggihan ng conforming receiver, kaya tinatanggihan ito ng serbisyong ito at pinapangalanan ang member. Ipinapatupad sa halip na i-flatten ang pagbabawal ng section 3.2.8 sa paglalagay ng aliases identifier sa loob ng isa pa."
   },
   "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial: ipino-POST ng serbisyong ito ang bawat SET bilang application/secevent+jwt kasama ang naka-configure na Authorization header ng receiver, itinuturing na delivery ang 202, at binabasa ang 400 {err, description} bilang PAGTANGGI ng receiver — na ibang resulta mula sa network failure at itinatala bilang ganoon. TUMATANGGAP din ito sa profile na iyon sa POST /ssf/receive, baligtad ang mga papel, para maging transmitter ang isang client, at sinusuri ang typ, iss at aud ng dumarating. Inuulit ang nabigong push nang ssf.pushRetries beses — 0 bilang default, sinadya, tingnan ang ssf/ssf_http.ts — at pagkatapos ay napupunta sa dead-letter queue ng stream."
+    "en": "33ebb18b9c6c5a53",
+    "text": "partial: ipino-POST ng serbisyong ito ang bawat SET bilang application/secevent+jwt kasama ang naka-configure na Authorization header ng receiver, itinuturing na delivery ang 202, at binabasa ang 400 {err, description} bilang PAGTANGGI ng receiver — na ibang resulta mula sa network failure at itinatala bilang ganoon. TUMATANGGAP sa profile na iyon ang sariling mga receiver ng console at portal, at sinusuri ang typ, iss at aud ng dumarating. Inuulit ang nabigong push nang ssf.pushRetries beses — 0 bilang default, sinadya, tingnan ang ssf/ssf_http.ts — at pagkatapos ay napupunta sa dead-letter queue ng stream."
   },
   "stsmetadata.specs.caep.coverage": {
     "en": "637a8df8aa9a2d10",
@@ -344,8 +344,8 @@
     "text": "full: POST /oauth2/par sa bawat authorization server, ina-authenticate ang client nang eksakto gaya ng token endpoint (kaya ipinapatupad sa RFC 9700, OAuth 2.1 at product mode at inoobserbahan sa development), tinatanggap ang issuer, token endpoint at PAR endpoint bilang audience ng client assertion; tinatanggihan ang request_uri sa isang push; vina-validate ang ipinush na request ng sariling mga check ng authorization endpoint; ang `request` object ay vine-verify gaya ng kinakailangan ng RFC 9101, naka-bind sa na-authenticate na client, at tinatanggihan ang plain push kung saan kinakailangan ang signed object; 201 na may 256-bit na urn:ietf:params:oauth:request_uri: reference na naka-bind sa client at sa authorization server, expires_in mula sa oauth2.parRequestUriLifetimeS; 405, 413 at 429; ang hindi nakarehistrong redirect_uri ng section 2.4 para sa isang NA-AUTHENTICATE na client sa likod ng isang setting (naka-off); isang request_uri na magagamit sa mga sign-in at consent pass at nagagamit na kapag na-issue ang authorization response, ang mga expired at replayed ay tinatanggihan ng invalid_request_uri; ang require policy sa buong serbisyo, bawat client (require_pushed_authorization_requests sa registration, sa console at sa /admin-api) at bawat authorization server; ang parehong metadata member; tinatanong muli ang client policy kapag ginamit ang request_uri; at ang DPoP proof sa push ay nagba-bind sa code (RFC 9449 section 10.1). Binibilang at inililista sa /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "5996b65ceb337db8",
-    "text": "full: kinikilala ng authorization endpoint ang acr_values at max_age sa bawat mode at mayroon man o walang openid — ang session na hindi nakakatugon sa kanila ay nagpapadala sa tao para mag-sign in muli nang isang beses (pinipilit ng paghingi ng dalawang factor ang hakbang ng second factor), sumasagot ng login_required ang prompt=none, at ang requirement na hindi pa rin natutugunan pagkatapos ng sign-in na iyon ay tinatanggihan ng unmet_authentication_requirements (section 5); nakaayos ang mga acr value bilang 0 < 1 < mfa at dala ng code, ID Token at access token ang pinakagustong HINILING na halaga na natugunan; acr_values_supported sa parehong discovery document; acr at auth_time sa JWT access token (section 6.1) at sa introspection (section 6.2); at ang 401 insufficient_user_authentication challenge ng section 3 na may acr_values at max_age, ipinapadala ng sariling resource server ng serbisyong ito (UserInfo, ang mga OpenID4VCI endpoint, SCIM, SSF) laban sa oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS at ng /oauth2/step-up/resource/{application} laban sa oauthStepUpAcrValues / oauthStepUpMaxAge ng isang resource application. Mock: tatlong context class ang ginagawa ng sign-in ng serbisyong ito; ang anumang ibang acr value ay natutugunan lang ng federated sign-in na nag-uulat ng eksaktong acr na iyon. Binibilang sa /admin/oauth2/monitor."
+    "en": "56808a8c0f6588d3",
+    "text": "full: kinikilala ng authorization endpoint ang acr_values at max_age sa bawat mode at mayroon man o walang openid — ang session na hindi nakakatugon sa kanila ay nagpapadala sa tao para mag-sign in muli nang isang beses (pinipilit ng paghingi ng dalawang factor ang hakbang ng second factor), sumasagot ng login_required ang prompt=none, at ang requirement na hindi pa rin natutugunan pagkatapos ng sign-in na iyon ay tinatanggihan ng unmet_authentication_requirements (section 5); nakaayos ang mga acr value bilang 0 < 1 < mfa at dala ng code, ID Token at access token ang pinakagustong HINILING na halaga na natugunan; acr_values_supported sa parehong discovery document; acr at auth_time sa JWT access token (section 6.1) at sa introspection (section 6.2); at ang 401 insufficient_user_authentication challenge ng section 3 na may acr_values at max_age, ipinapadala ng sariling resource server ng serbisyong ito (UserInfo, ang mga OpenID4VCI endpoint, SCIM, SSF) laban sa oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; itinatala ang oauthStepUpAcrValues / oauthStepUpMaxAge ng isang resource application para ipatupad ng resource server na siyang application. Mock: tatlong context class ang ginagawa ng sign-in ng serbisyong ito; ang anumang ibang acr value ay natutugunan lang ng federated sign-in na nag-uulat ng eksaktong acr na iyon. Binibilang sa /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -843,14 +843,6 @@
     "en": "11ec8d19db18eafd",
     "text": "HINDI GNAP ENDPOINT: ang controller document na pinangangalanan ng root capability ng isang zcap access token, na may dalang verification method na pinagsusurian ng signature nito — isang Multikey sa isang Controlled Identifiers v1.0 document sa ilalim ng mga JCS suite, isang Ed25519VerificationKey2020 sa ilalim ng Ed25519Signature2020. Inihahain nang no-store."
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "Isang protektadong resource sa serbisyong ito, kung saan gagamitin ng client instance ang isang token: kapag walang token, sumasagot ito ng 401 na may WWW-Authenticate challenge ng section 9.1 na nagpapangalan sa grant endpoint; kapag mayroon, sinusuri nito ang format, ang audience, ang key binding at ang mga access right gaya ng gagawin ng isang resource server. Pinapatay ito ng gnap.demoResourceServer."
-  },
-  "stsmetadata.endpoints./gnap/rs/spend.what": {
-    "en": "dba6c3ce40e6653f",
-    "text": "Isang operasyong GUMAGASTOS laban sa mga limit ng isang karapatan (#432 phase 5): POST na may halaga, currency at receiver, sa ilalim ng token na nagbibigay ng spend sa demonstration type. Iniingatan ng resource server ang mga running total bawat grant — atomic sa buong cluster, nire-reset sa bawat hangganan ng umuulit na interval ng mga limit, ibinabalik kapag nabigo ang operasyon — at tinatanggihan ang operasyong lampas sa limit ng 403 insufficient_scope. Ang sanggunian sa kung ano ang ginagawa ng isang resource server sa isang limit. Pinapatay ito ng gnap.demoResourceServer."
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "Ang iginuguhit ng GET /admin/gnap, mula sa parehong view function."
@@ -982,14 +974,6 @@
   "stsmetadata.endpoints./ssf/poll.what": {
     "en": "24403b87bfb6de2b",
     "text": "DITO pumupunta ang receiver, kaya walang tinatawagan — kaya puwedeng maging receiver ang browser sa method na ito at hindi sa push. Sumasagot ng {sets, moreAvailable}. Pinangangalanan ng `ack` ang inimbak ng receiver at ng `setErrs` ang TINANGGIHAN nito, at parehong inaalis sa queue: ang receiver na hindi naproseso ang isang event ay hindi rin ito mapoproseso sa susunod, kaya ang muling pag-deliver ay magpo-poll-loop magpakailanman. Itinatala na lang ang pagtanggi sa stream, kung saan makikita ito ng tao. Walang stream_id member ang RFC 8936 dahil per stream ang tunay na poll endpoint; iisang URL ang inilalathala ng transmitter na ito, kaya nasa body ang id."
-  },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "BALIKTAD ANG MGA ROLE, at hindi SSF endpoint: kailangang may mapag-pu-push-an ang transmitter, kaya RECEIVER ang serbisyong ito rito para sa kapakanan ng client. TINATANGGAP nito ang SET na hindi nave-verify ang signature at iniuulat kung bakit, na eksaktong tama para sa debugger — ang receiver na tumanggi ay hindi maipapakita sa sinuman kung ano ang dumating o kung bakit hindi ito na-verify, na siyang itinatanong. Ino-on ng ssf.receiveRequireSignature ang 400 invalid_key, na siyang ginagawa ng tunay na receiver. Ang verification ay laban sa SARILING key ng serbisyong ito, ang nag-iisang hawak nito, kaya ang SET na pinirmahan ng iba ay \"hindi mave-verify dito\" sa halip na invalid."
-  },
-  "stsmetadata.endpoints./ssf/received.what": {
-    "en": "5fd7b2aac2518dc4",
-    "text": "Hindi rin SSF endpoint. Lahat ng tinanggap ng POST /ssf/receive, kasama kung ano ang na-decode mula sa bawat isa, kung na-verify ang signature nito at kung may dala itong application/secevent+jwt media type na itinatakda ng RFC 8417 section 2.3 — ang receiver na nagdi-dispatch ayon sa type, at ilan ang ganoon, ay itinatapon ang SET na ipinadala bilang plain JWT nang walang error na nakikita ng sinuman."
   },
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
@@ -1692,8 +1676,8 @@
     "text": "emit, reset-session at clear — ang parehong tatlong ipino-post ng mga form ng console, sa pamamagitan ng parehong action function, na kinukuha ang action mula sa URL sa halip na sa hidden input. Binubuo ng `emit` ang COMPLEX subject ng SSF mula sa pinangalanang session at ipinapadala sa bawat stream na parehong nagde-deliver ng type at sumasaklaw sa subject na iyon; ang type na walang stream na tumatanggap ay HINDI error, dahil ang \"nangyari ang event at walang humiling na marinig ito\" ay ibang katotohanan kaysa sa failure at siyang karaniwang totoo. SADYANG WALANG PARAAN PARA TAPUSIN ANG SESSION MULA RITO: ang pag-emit ng session-revoked ay NAGSASABING na-revoke ang isang session at hindi nagre-revoke ng isa, at ang API na gumagawa ng pareho ay pagsasamahin ang dalawang act na umiiral ang CAEP para paghiwalayin. Nag-a-await ito, gaya ng Shared Signals action sa tabi nito, dahil ang pag-emit ay pumipirma ng JWS at pagkatapos ay ipino-POST ito."
   },
   "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status, transmit, delete at clear-received — ang parehong apat na ipino-post ng mga form ng console, sa pamamagitan ng parehong action function, na kinukuha ang action mula sa URL sa halip na sa hidden input. SADYANG WALANG `create`: may dalang delivery endpoint ang stream na TATAWAGAN ng serbisyong ito, at ang nag-iisang lugar na puwedeng pagmulan ng URL na iyon ay ang receiver na humiling nito sa POST /ssf/stream — ang API na kayang gumawa ng isa ay magiging ikalawang pintong walang gate papunta sa outbound request. Ito rin ang NAG-IISANG action handler sa API na ito na nag-a-await: ang pag-transmit ay pumipirma ng JWS, posibleng sa thread pool ng libuv, at pagkatapos ay ipino-POST ito, at ang pagsagot bago mangyari ang alinman ay pag-uulat ng \"naipadala\" tungkol sa wala."
+    "en": "64dd45c6ceafaf73",
+    "text": "status, transmit, delete, revive, clear-dead-letters at verify — ang mga action na ipino-post ng mga form ng console, sa pamamagitan ng parehong action function, na kinukuha ang action mula sa URL sa halip na sa hidden input. SADYANG WALANG `create`: may dalang delivery endpoint ang stream na TATAWAGAN ng serbisyong ito, at ang nag-iisang lugar na puwedeng pagmulan ng URL na iyon ay ang receiver na humiling nito sa POST /ssf/stream — ang API na kayang gumawa ng isa ay magiging ikalawang pintong walang gate papunta sa outbound request. Ito rin ang NAG-IISANG action handler sa API na ito na nag-a-await: ang pag-transmit ay pumipirma ng JWS, posibleng sa thread pool ng libuv, at pagkatapos ay ipino-POST ito, at ang pagsagot bago mangyari ang alinman ay pag-uulat ng \"naipadala\" tungkol sa wala."
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -2754,14 +2738,6 @@
   "stsmetadata.endpoints./oauth2/par.what": {
     "en": "bfe38fea0bb9115e",
     "text": "Mag-POST ng mga parameter ng authorization request, authenticated tulad ng sa token endpoint, at makatanggap ng 201 { request_uri, expires_in } na gagamitin sa pagpapadala ng browser sa /oauth2/authorize. Vina-validate ang push tulad ng sa authorization request at tinatanggihan bilang JSON; maaaring dalhin ng `request` object ang mga parameter; itinatali ng DPoP proof ang code. 405 ang bawat ibang method."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "NON-SPEC: isang protected resource na sumasagot PARA SA rehistradong application, sa GET at POST, para mapadaan ang client sa RFC 9470 nang hindi dine-deploy ang API. Ang access token ay dapat ma-verify, maging at+jwt mula sa authorization server na inilalathala ng serbisyong ito, at pangalanan ang application sa aud nito; pagkatapos ay itinatanong ang oauthStepUpAcrValues at oauthStepUpMaxAge ng application sa acr at auth_time nito, at ang token na hindi tumutugon sa mga ito ay sinasagot ng 401 insufficient_user_authentication na may acr_values at max_age sa challenge. Ang token na tumutugon ay nakakakuha ng 200 at ng requirement at ng authentication na tinugunan nito. Walang hawak na data."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.effect": {
-    "en": "4c20d4f0b8d4754c",
-    "text": "sumasagot ng 401 na may WWW-Authenticate challenge kapag sinundan nang walang laman, at 404 para sa application na walang entry sa realm"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",

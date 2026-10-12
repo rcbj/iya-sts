@@ -7791,8 +7791,8 @@ const CODES = [
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
   // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
-  // decides; the authorization endpoint, `dpop.presentedAccessToken()` and the
-  // stand-in resource answer. Block reserved at 0500..0529.
+  // decides; the authorization endpoint and `dpop.presentedAccessToken()`
+  // answer. Block reserved at 0500..0529.
   { code: 'STS-OAUTH-0500',
     summary: 'An authorization request\'s acr_values were not met by the ' +
       'authentication performed after the person was sent to sign in again ' +
@@ -7822,18 +7822,18 @@ const CODES = [
       'challenge with max_age)' },
   { code: 'STS-OAUTH-0505',
     summary: 'The step-up stand-in resource was asked for an application ' +
-      'this realm has no entry for.',
-    spec: 'invalid_request (HTTP 404)' },
+      'this realm has no entry for. Retired 2026-10-12 (#593): the stand-in ' +
+      'resource was deleted; the test peer plays that resource server',
+    spec: 'invalid_request (HTTP 404)', retired: true },
   { code: 'STS-OAUTH-0506',
-    summary: 'An access token presented at the step-up stand-in resource ' +
-      'does not name that application in its aud (RFC 9068 section 4 step ' +
-      '4).',
+    summary: 'An access token presented to a resource answering for a ' +
+      'registered application does not name that application in its aud ' +
+      '(RFC 9068 section 4 step 4).',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0507',
     summary: 'An access token presented where only a token this realm can ' +
-      'verify is accepted — the step-up stand-in resource, or an ' +
-      'OpenID4VCI endpoint in product mode — did not verify against this ' +
-      'realm\'s signing key.',
+      'verify is accepted — an OpenID4VCI endpoint in product mode, or the ' +
+      'VC-API — did not verify against this realm\'s signing key.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0508',
     summary: 'A configured step-up requirement (oauth2.stepUpAcrValues, or ' +
@@ -14767,19 +14767,24 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0022',
     summary: 'A Security Event Token was pushed at /ssf/receive while this ' +
-      'service is not accepting pushed events (ssf.receiveEnabled).',
-    spec: 'HTTP 501 {err: invalid_request}' },
+      'service is not accepting pushed events (ssf.receiveEnabled). ' +
+      'Retired 2026-10-12 (#593): POST /ssf/receive was deleted; the test ' +
+      'peer is that push receiver',
+    spec: 'HTTP 501 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0023',
-    summary: 'A push at /ssf/receive carried an empty body.',
-    spec: 'HTTP 400 {err: invalid_request}' },
+    summary: 'A push at /ssf/receive carried an empty body. Retired ' +
+      '2026-10-12 (#593): POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0024',
     summary: 'A Security Event Token pushed at /ssf/receive did not verify, ' +
-      'in product mode or while ssf.receiveRequireSignature is on (#117).',
-    spec: 'HTTP 400 {err: invalid_key}' },
+      'in product mode or while ssf.receiveRequireSignature is on (#117). ' +
+      'Retired 2026-10-12 (#593): POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_key}', retired: true },
   { code: 'STS-SSF-0025',
     summary: 'A Security Event Token pushed at /ssf/receive could not be ' +
-      'read as a SET; it was recorded anyway.',
-    spec: 'HTTP 400 {err: invalid_request}' },
+      'read as a SET; it was recorded anyway. Retired 2026-10-12 (#593): ' +
+      'POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0026',
     summary: 'An event was not transmitted on a stream because the stream ' +
       'does not deliver that event type.',
@@ -15105,16 +15110,15 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0105',
     summary: 'A Security Event Token delivered to one of this service\'s ' +
-      'receivers carries an iss other than its stream\'s, or one ' +
-      'ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was ' +
-      'recorded and refused.',
+      'receivers carries an iss other than its stream\'s (SSF 1.0 section ' +
+      '4.1.6); it was recorded and refused.',
     spec: 'HTTP 400 {err: invalid_issuer}' },
   { code: 'STS-SSF-0106',
     summary: 'A Security Event Token pushed at POST /ssf/receive is ' +
       'addressed to no audience ssf.receiveAudiences lists; it was recorded ' +
-      'and ' +
-      'refused.',
-    spec: 'HTTP 400 {err: invalid_audience}' },
+      'and refused. Retired 2026-10-12 (#593): POST /ssf/receive was ' +
+      'deleted',
+    spec: 'HTTP 400 {err: invalid_audience}', retired: true },
   { code: 'STS-SSF-0107',
     summary: 'An access token (OAuth or GNAP) carried the Shared Signals ' +
       'scope an operation needs, and the client it was issued to no longer ' +
@@ -16953,23 +16957,33 @@ const CODES = [
       'demonstration resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0550',
     summary: 'The GNAP demonstration resource server was reached while it ' +
-      'is turned off (gnap.demoResourceServer).',
-    spec: 'HTTP 404 GNAP invalid_request' },
+      'is turned off (gnap.demoResourceServer). ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 404 GNAP invalid_request', retired: true },
   { code: 'STS-GNAP-0551',
     summary: 'The GNAP demonstration resource server was called with no ' +
       'access token; it answered with the RS-first challenge of RFC 9635 ' +
-      'section 9.1.',
+      'section 9.1. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
     spec: 'HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, ' +
-      'access, referrer' },
+      'access, referrer', retired: true },
   { code: 'STS-GNAP-0552',
     summary: 'The GNAP demonstration resource server refused a presented ' +
-      'token whose refusal carried no more specific code.',
-    spec: 'HTTP 401 invalid_token (WWW-Authenticate: GNAP)' },
+      'token whose refusal carried no more specific code. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 401 invalid_token (WWW-Authenticate: GNAP)',
+    retired: true },
   { code: 'STS-GNAP-0553',
     summary: 'A GNAP access token presented at the demonstration resource ' +
       'server does not grant the action (read or write) on its resource ' +
-      'type.',
-    spec: 'HTTP 403 insufficient_scope (WWW-Authenticate: GNAP)' },
+      'type. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 403 insufficient_scope (WWW-Authenticate: GNAP)',
+    retired: true },
   { code: 'STS-GNAP-0600',
     summary: 'A GNAP push interaction finish was not sent because ' +
       'gnap.pushFinish is off; the client learns the outcome when it ' +
@@ -17399,8 +17413,10 @@ const CODES = [
   { code: 'STS-GNAP-0876',
     summary: 'The demonstration operation failed after its spend was ' +
       'counted (asked to, with simulateFailure); the spend was refunded ' +
-      '(#432 phase 5).',
-    spec: 'HTTP 502' },
+      '(#432 phase 5). ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 502', retired: true },
   { code: 'STS-GNAP-0877',
     summary: 'A demonstration spend could not be refunded: a new period ' +
       'had begun, or the store could not be asked (#432 phase 5).',
@@ -17481,6 +17497,16 @@ const CODES = [
       'or identifier, and not at or under a registered GNAP resource ' +
       'server\'s gnapResourceServerUri — so the request was refused ' +
       'rather than the right dropped (#505).',
+    spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
+  { code: 'STS-GNAP-0904',
+    summary: 'A GNAP access token request\'s access named no resource ' +
+      'server — no registered reference, no location at or under a ' +
+      'registered resource server\'s gnapResourceServerUri, no type a ' +
+      'registered resource server declares, and not this service\'s own ' +
+      'Shared Signals transmitter — so the token would have been for nobody ' +
+      'in particular and the request was refused, in every mode. The ' +
+      'default audience (the demonstration resource server) went with it ' +
+      '(#593).',
     spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +

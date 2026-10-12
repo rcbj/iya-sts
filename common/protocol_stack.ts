@@ -1879,8 +1879,8 @@ class ProtocolStack {
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');
-    // #432 phase 5: the demonstration resource server's running totals —
-    // a library the route module spends through.
+    // #432 phase 5: a resource server's running totals of a right's
+    // limits — a library (its route caller went with #593).
     this.build('gnap/gnap_spend', require('../gnap/gnap_spend'), 'GnapSpend');
     this.build('gnap/gnap_interact', require('../gnap/gnap_interact'),
                'GnapInteract');

@@ -474,8 +474,8 @@ function clearWindow(opts) {
 //
 // The fourth shape. A GNAP access right may carry LIMITS — an amount, a
 // count, reset at each boundary of a repeating interval — and the resource
-// server keeps the running totals per grant (rcbj's decision 2 on #432); the
-// demonstration resource server is the reference, and runs on every node.
+// server keeps the running totals per grant (rcbj's decision 2 on #432);
+// `gnap/gnap_spend.ts` is the reference, and runs on every node.
 // "Spend 30 if what has been spent this period plus 30 is still within 100"
 // is none of the three shapes above: not once, not only up, and not a count
 // that every attempt increments whatever it is. Read, add and write back

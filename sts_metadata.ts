@@ -730,9 +730,9 @@ const SPECS: Spec[] = [
               'Authorization header, treats 202 as delivery, and reads a 400 ' +
               '{err, description} as the receiver REFUSING — which is a ' +
               'different outcome from a network failure and is recorded as ' +
-              'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
-              'the roles reversed, so a client can be the transmitter, ' +
-              'checking the typ, iss and aud of what arrives. A failed push ' +
+              'one. The console\'s and portal\'s own receivers RECEIVE on ' +
+              'that profile, checking the typ, iss and aud of what ' +
+              'arrives. A failed push ' +
               'is retried ssf.pushRetries times — 0 by default, ' +
               'deliberately, see ssf/ssf_http.ts — and then goes to the ' +
               'stream\'s dead-letter queue.' },
@@ -1781,10 +1781,10 @@ const SPECS: Spec[] = [
               'insufficient_user_authentication challenge with acr_values ' +
               'and max_age, sent by this service\'s own resource server ' +
               '(UserInfo, the OpenID4VCI endpoints, SCIM, SSF) against ' +
-              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS and by ' +
-              '/oauth2/step-up/resource/{application} against a resource ' +
-              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge. ' +
-              'Mock: this service\'s sign-in produces three context classes; ' +
+              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; a resource ' +
+              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge are ' +
+              'recorded for the resource server that is the application to ' +
+              'enforce. Mock: this service\'s sign-in produces three context classes; ' +
               'any other acr value is met only by a federated sign-in ' +
               'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
   { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
@@ -3703,7 +3703,10 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['rfc9767'],
     what: 'The same document for one authorization server profile.' },
   { path: '/gnap/introspect', group: 'GNAP', name: 'Token introspection',
-    specs: ['rfc9767'],
+    // `macaroons` (#593): introspection verifies a macaroon in its own
+    // format, and the demonstration resource server that also cited it is
+    // gone.
+    specs: ['rfc9767', 'macaroons'],
     what: 'RFC 9767 section 3.3: a resource server, proofed with its own ' +
           'key, asks whether a token is active and gets the section 2.1 ' +
           'token model back — in every format, including the three that are ' +
@@ -3746,29 +3749,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'Identifiers v1.0 document under the JCS suites, an ' +
           'Ed25519VerificationKey2020 under Ed25519Signature2020. Served ' +
           'no-store.' },
-  { path: '/gnap/rs/resource', group: 'GNAP', name: 'The demonstration ' +
-                                                    'resource server',
-    specs: ['rfc9635', 'rfc9767', 'macaroons'],
-    what: 'A protected resource on this service, for a client instance to ' +
-          'spend a token against: with no token it answers 401 with the ' +
-          'section 9.1 WWW-Authenticate challenge naming the grant endpoint; ' +
-          'with one it checks the format, the audience, the key binding and ' +
-          'the access rights the way a resource server would. ' +
-          'gnap.demoResourceServer turns it off.',
-    demo: true },
-  { path: '/gnap/rs/spend', group: 'GNAP', name: 'The demonstration ' +
-                                                 'resource server\'s spend',
-    specs: ['rfc9635', 'rfc9767'],
-    what: 'An operation that SPENDS against a right\'s limits (#432 phase ' +
-          '5): POST with an amount, currency and receiver, under a token ' +
-          'granting spend on the demonstration type. The resource server ' +
-          'keeps the running totals per grant — atomically across the ' +
-          'cluster, reset at each boundary of the limits\' repeating ' +
-          'interval, refunded when the operation fails — and refuses an ' +
-          'over-limit operation with 403 insufficient_scope. The reference ' +
-          'for what a resource server does with a limit. ' +
-          'gnap.demoResourceServer turns it off.',
-    demo: true },
   { path: '/admin-api/gnap', group: 'GNAP', name: 'The GNAP console page ' +
                                                   'over JSON',
     specs: ['rfc9635', 'rfc9767'],
@@ -4163,31 +4143,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'person can see it. RFC 8936 has no stream_id member because a ' +
           'real poll endpoint is per stream; this transmitter publishes one ' +
           'URL, so the id goes in the body.' },
-  { path: '/ssf/receive', group: 'Shared Signals',
-    name: 'A Security Event Token pushed AT this service',
-    specs: ['rfc8935', 'rfc8417'],
-    what: 'THE ROLES REVERSED, and not an SSF endpoint: a transmitter has to ' +
-          'have somewhere to push, so this service is a RECEIVER here for a ' +
-          'client\'s benefit. It ACCEPTS a SET whose signature does not ' +
-          'verify and reports why, which is exactly right for a debugger — a ' +
-          'receiver that refused could not show anybody what arrived or why ' +
-          'it did not verify, which is the question being asked. ' +
-          'ssf.receiveRequireSignature turns the 400 invalid_key on, which ' +
-          'is what a real receiver does. The verification is against THIS ' +
-          'service\'s own key, the only one it has, so a SET signed by ' +
-          'somebody else is "not verifiable here" rather than invalid.',
-    demo: true },
-  { path: '/ssf/received', group: 'Shared Signals', name: 'What has been ' +
-      'pushed here',
-    specs: ['rfc8935'],
-    what: 'Not an SSF endpoint either. Everything POST /ssf/receive has ' +
-          'taken, with what each one decoded to, whether its signature ' +
-          'verified and whether it carried the application/secevent+jwt ' +
-          'media type RFC 8417 section 2.3 specifies — a receiver that ' +
-          'dispatches on the type, and several do, drops a SET sent as a ' +
-          'plain JWT with no error anybody sees.',
-    demo: true },
-
   { path: '/scim', group: 'SCIM', name: 'What the SCIM surface is',
     specs: ['rfc7642', 'rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616',
             'rfc7486', 'rfc4511', 'rfc4519'],
@@ -5847,7 +5802,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/ssf/:action', group: 'Management API',
     name: 'Change a stream, or transmit an event',
     specs: ['openapi', 'ssf', 'rfc8935', 'rfc8936'],
-    what: 'status, transmit, delete and clear-received — the same four the ' +
+    what: 'status, transmit, delete, revive, clear-dead-letters and verify ' +
+          '— the actions the ' +
           'console\'s forms post, through the same action function, with the ' +
           'action taken from the URL instead of a hidden input. THERE IS ' +
           'DELIBERATELY NO `create`: a stream carries a delivery endpoint ' +
@@ -8395,23 +8351,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'validated as an authorization request would be and refused as ' +
           'JSON; a `request` object may carry the parameters; a DPoP proof ' +
           'binds the code. Every other method is 405.' },
-  { path: '/oauth2/step-up/resource/:application', group: 'OAuth 2.0 / OIDC',
-    name: 'Step-up stand-in resource',
-    specs: ['rfc9470', 'rfc9068', 'rfc6750', 'rfc9449'],
-    effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
-            'bare, and 404 for an application the realm has no entry for',
-    what: 'NON-SPEC: a protected resource answering FOR a registered ' +
-          'application, on GET and POST, so a client can be driven through ' +
-          'RFC 9470 without deploying the API. The access token must ' +
-          'verify, be an at+jwt from an authorization server this service ' +
-          'publishes, and name the application in its aud; then the ' +
-          'application\'s oauthStepUpAcrValues and oauthStepUpMaxAge are ' +
-          'asked of its acr and auth_time, and a token that does not meet ' +
-          'them is answered 401 insufficient_user_authentication with ' +
-          'acr_values and max_age in the challenge. A token that does gets ' +
-          '200 and the requirement and the authentication it met. Holds ' +
-          'no data.',
-    demo: true },
   // The authorization server's monitoring page and its two management API
   // operations (2026-09-13), `/admin/acme/monitor`'s arrangement: the page,
   // the same view over JSON, and the one control as an action.

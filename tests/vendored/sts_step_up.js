@@ -61,8 +61,8 @@
 // THE RESOURCE SERVER IS THE TEST PEER'S (#586).
 //
 // It was the service's own stand-in,
-// `/oauth2/step-up/resource/{application}`, which is development only since
-// #585 — and a resource server that is part
+// `/oauth2/step-up/resource/{application}`, development only since #585
+// and deleted by #593 — and a resource server that is part
 // of the authorization server proved less than it seemed: it read the
 // requirement off the entry the AS also reads. The API is now
 // `tests/peer/peer_stepup.js`, a separate container that knows the

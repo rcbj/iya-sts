@@ -308,7 +308,11 @@ async function test() {
   // 4. AN UNDECLARED TYPE.
   // =========================================================================
   log.info("=== 4. an undeclared type ===");
-  r = await ask([{ type: "cat-nobody-declares-this", actions: ["read"] }]);
+  // At a registered resource server's address: a right naming no resource
+  // server at all is refused invalid_request in every mode since #593
+  // (STS-GNAP-0904), which is not what this section is about.
+  r = await ask([{ type: "cat-nobody-declares-this", actions: ["read"],
+                   locations: [OTHER_URI] }]);
   if (PRODUCT) {
     check("4. product: an undeclared type is refused", function () {
       h.refused(r, "request_denied", "an undeclared type");

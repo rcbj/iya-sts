@@ -72,8 +72,7 @@ function childMain() {
     '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
     '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals', '/xacml/protected',
-    '/oauth2/step-up/resource/:application', '/gnap/rs/resource',
-    '/gnap/rs/spend', '/vc-api/issuers',
+    '/vc-api/issuers',
     '/vc-api/issuers/:issuer/credentials/issue', '/vc-api/credentials/verify',
     '/vc-api/presentations/verify',
     '/vc-api/holders/:holder/presentations/prove',
@@ -89,7 +88,6 @@ function childMain() {
     // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
     // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
     // (Monitoring → TLS connection) left with #597.
-    '/ssf/receive', '/ssf/received',
     // The SPNEGO diagnostic surface's script (#583), a demonstration like
     // the pages it draws.
     '/spnego/pages.js'];

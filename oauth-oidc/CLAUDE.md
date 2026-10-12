@@ -1889,9 +1889,10 @@ so must `admin-ui/admin.ts`.
        (`limitsRaisedBy()`, `STS-OAUTH-0917`): the Allow and the pass are two
        requests. The code, its tokens and every refresh carry the lowered
        values.
-     The demonstration resource server's spend (`POST /gnap/rs/spend`)
-     accepts GNAP tokens only — it is GNAP's reference — so an RS counting
-     RAR limits keys its totals on the token's `grant_id` the same way.
+     GNAP's reference for a resource server's totals (`gnap/gnap_spend.ts`,
+     whose route went with the demonstration resource server in #593) takes
+     GNAP tokens only, so an RS counting RAR limits keys its totals on the
+     token's `grant_id` the same way.
 
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5
@@ -1914,7 +1915,7 @@ so must `admin-ui/admin.ts`.
 
    | Asked | Chosen |
    |---|---|
-   | Who sends section 3's challenge | Both: a resource APPLICATION's `oauthStepUpAcrValues` / `oauthStepUpMaxAge`, enforced by the stand-in resource `/oauth2/step-up/resource/{application}`, and this service's own resource server through `dpop.presentedAccessToken()` |
+   | Who sends section 3's challenge | Both: a resource APPLICATION's `oauthStepUpAcrValues` / `oauthStepUpMaxAge`, enforced by the stand-in resource `/oauth2/step-up/resource/{application}` (**deleted by #593, 2026-10-12** — the API itself enforces it, and the test peer plays one), and this service's own resource server through `dpop.presentedAccessToken()` |
    | An `acr_values` nothing can meet | Refused `unmet_authentication_requirements` in EVERY mode |
    | Ordering, and the token's `acr` | `0` < `1` < `mfa`; the most preferred REQUESTED value met |
    | Monitoring and tests | A second section on `/admin/oauth2/monitor`, in-process tests |
@@ -1923,12 +1924,22 @@ so must `admin-ui/admin.ts`.
    described the application requirement as enforced in `presentedAccessToken()`.
    It cannot be reached there: those endpoints are this service's resource server
    and RFC 9068 section 4 refuses a token addressed to an API before any step-up
-   question. So an application's requirement is enforced by the stand-in
+   question. So an application's requirement was enforced by the stand-in
    resource (which passes `presentedAccessToken()` an `audience` predicate —
    `jwt_access_token.resourceServerRefusal()`'s new fourth argument replaces step
    4 and nothing else — `requireVerified`, and the requirement), and the own
    resource server's requirement is two settings, `oauth2.stepUpAcrValues` and
    `oauth2.stepUpMaxAgeS` (`-1` is off, because `0` is a real requirement).
+
+   **THE STAND-IN WAS DELETED BY #593 (2026-10-12)**, the last step of #585's
+   making it development only: an application's requirement is the
+   application's to enforce, as RFC 9470 section 3 has a resource server send
+   the challenge, and the test peer (`tests/peer/peer_stepup.js`) plays one
+   for `tests/vendored/sts_step_up.js`. The entry's two attributes stay —
+   written by an operator, read by the console — and so do `dpop.ts`'s three
+   options, the library half of such a resource server:
+   `tests/rfc9470_step_up.js` serves a stub on them. `STS-OAUTH-0505` (an
+   unknown application at the stand-in) is retired.
 
    **THE AUTHORIZATION ENDPOINT, IN ORDER** (`authorizeRequest()`, above the
    session branch): with a session and a requirement, `assessSession()`; met →
@@ -4278,7 +4289,8 @@ specification, and each fix is in EVERY mode, because none is FAPI's own rule:
   UNVERIFIED, which is safe for a refusal; development mode still only
   OBSERVES an assertion that fails its signature.
 * **`x-fapi-interaction-id`** (FAPI 1.0 Baseline section 6.2.1 items 11 and
-  13) on UserInfo, `/oauth2/grants/{id}` and the step-up stand-in: echoed
+  13) on UserInfo and `/oauth2/grants/{id}` (and the step-up stand-in until
+  #593 deleted it): echoed
   when the client sent a UUID, minted otherwise. Every mode, as a middleware
   before the routes — a named server's profile is not entered yet there, and
   the header carries nothing. A value that is not a UUID is replaced rather
@@ -5377,7 +5389,8 @@ one definition of that phrase, shared with GNAP's locations
   VC-API endpoints all read through `dpop.presentedAccessToken()`); the
   management API, by what `mgmt-api/admin_api.ts` accepts as an audience
   (its new `namesThisApi()` facade over `audienceAccepted()` and
-  `realmAudienceAccepted()`); and the GNAP demonstration resource server;
+  `realmAudienceAccepted()`); and the account API (#568) — the GNAP
+  demonstration resource server was one until #593 deleted it;
 * **or a registered application** (`appRegisteredBy`), found by its
   `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
   permission base URI (normalised), the four names
@@ -5458,6 +5471,8 @@ as a person's at mint (the subject kind is read off the grant), and the
 
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
-`/oauth2/step-up/resource/:application` (the RFC 9470 stand-in; Monitoring → OAuth's step-up section names it only where served), `/oauth2/commands/mock-rp` (both methods; its product 404 of its own is gone) and `/dpop/nonce-mode` — **both halves**: the write's 403 `STS-OAUTH-0178` is retired, and the read went with it, because RFC 9449 section 8's `use_dpop_nonce` already tells a client the policy. In product `oauth2.dpopNonceRequired` is set on `/admin/oauth2` or with `POST /admin-api/config/set`. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+`/oauth2/commands/mock-rp` (both methods; its product 404 of its own is gone) and `/dpop/nonce-mode` — **both halves**: the write's 403 `STS-OAUTH-0178` is retired, and the read went with it, because RFC 9449 section 8's `use_dpop_nonce` already tells a client the policy. In product `oauth2.dpopNonceRequired` is set on `/admin/oauth2` or with `POST /admin-api/config/set`. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an.
 
 **`/dpop/nonce-mode` left the runtime with #597 (2026-10-12)**: deleted, both halves, and `oauth2.dpopNonceRequired` is set the same way in either mode (see *`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL*, above).

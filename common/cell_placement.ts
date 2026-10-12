@@ -273,8 +273,6 @@ const ROWS: Row[] = [
     why: 'answered by the cell that minted the access token' },
   { prefix: '/oauth2/grants', strategy: 'bearer',
     why: 'the grant is held by the cell that minted the access token' },
-  { prefix: '/oauth2/step-up/resource', strategy: 'bearer',
-    why: 'the stand-in resource checks a token its minting cell holds' },
   // --- SAML, WS-Federation, WS-Trust ---
   { prefix: '/saml2', strategy: 'affinity', browser: true,
     why: 'a browser profile, served where the browser is pinned' },
@@ -446,9 +444,6 @@ const ROWS: Row[] = [
     why: 'a registration carries no token: the resource set is the global ' +
          'tier\'s, and a resource server naming itself by an instance ' +
          'identifier is served where that instance is held' },
-  { prefix: '/gnap/rs', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
-    why: 'the token\'s cell: a jwt-signed token\'s jti carries the tag, ' +
-         'and the four formats that hide it are asked of the other cells' },
   // --- certificate enrollment ---
   { prefix: '/enroll', strategy: 'handler', handler: 'acme/acme.ts',
     why: 'an ACME request names its account by its kid, a new account its ' +

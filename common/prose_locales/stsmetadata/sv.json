@@ -112,8 +112,8 @@
     "text": "full: alla åtta format under sina registrerade namn — account, email, iss_sub, opaque, phone_number, did, uri och aliases — där varje formats SLUTNA medlemsuppsättning tillämpas, vilket är den halva som implementationer gör fel: ett subjekt som bär en extra medlem är ett som en konform mottagare MÅSTE avvisa, så den här tjänsten nekar det och namnger medlemmen. Förbudet i avsnitt 3.2.8 mot att nästla en aliases-identifierare i en annan tillämpas i stället för att plattas ut."
   },
   "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial: den här tjänsten POSTar varje SET som application/secevent+jwt med mottagarens konfigurerade Authorization-huvud, behandlar 202 som leverans, och läser en 400 {err, description} som att mottagaren NEKAR — vilket är ett annat utfall än ett nätverksfel och registreras som ett sådant. Den TAR också EMOT enligt den profilen på POST /ssf/receive, med rollerna omvända, så att en klient kan vara sändaren, och kontrollerar typ, iss och aud för det som anländer. En misslyckad push försöks igen ssf.pushRetries gånger — 0 som standard, medvetet, se ssf/ssf_http.ts — och går sedan till strömmens kö för döda brev."
+    "en": "33ebb18b9c6c5a53",
+    "text": "partial: den här tjänsten POSTar varje SET som application/secevent+jwt med mottagarens konfigurerade Authorization-huvud, behandlar 202 som leverans, och läser en 400 {err, description} som att mottagaren NEKAR — vilket är ett annat utfall än ett nätverksfel och registreras som ett sådant. Konsolens och portalens egna mottagare TAR EMOT enligt den profilen och kontrollerar typ, iss och aud för det som anländer. En misslyckad push försöks igen ssf.pushRetries gånger — 0 som standard, medvetet, se ssf/ssf_http.ts — och går sedan till strömmens kö för döda brev."
   },
   "stsmetadata.specs.caep.coverage": {
     "en": "637a8df8aa9a2d10",
@@ -344,8 +344,8 @@
     "text": "full: POST /oauth2/par vid varje auktoriseringsserver, som autentiserar klienten exakt som tokenslutpunkten gör (alltså tillämpat i RFC 9700-, OAuth 2.1- och produktläge och observerat i utvecklingsläge), och accepterar utfärdaren, tokenslutpunkten och PAR-slutpunkten som målgrupp för ett klientintyg; request_uri nekas i en push; den pushade förfrågan valideras av auktoriseringsslutpunktens egna kontroller; ett `request`-objekt verifieras som RFC 9101 kräver, bundet till den autentiserade klienten, och en vanlig push nekas där ett signerat objekt krävs; 201 med en 256-bitars referens urn:ietf:params:oauth:request_uri: bunden till klienten och auktoriseringsservern, expires_in från oauth2.parRequestUriLifetimeS; 405, 413 och 429; avsnitt 2.4:s oregistrerade redirect_uri för en AUTENTISERAD klient bakom en inställning (av); en request_uri som kan användas genom inloggnings- och samtyckesstegen och förbrukas när ett auktoriseringssvar utfärdas, där utgångna och återuppspelade nekas med invalid_request_uri; kravpolicyn globalt, per klient (require_pushed_authorization_requests vid registrering, i konsolen och på /admin-api) och per auktoriseringsserver; båda metadatamedlemmarna; klientpolicyn tillfrågas igen när request_uri används; och ett DPoP-bevis vid pushen som binder koden (RFC 9449 avsnitt 10.1). Räknas och listas på /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "5996b65ceb337db8",
-    "text": "full: auktoriseringsslutpunkten respekterar acr_values och max_age i varje läge och med eller utan openid — en session som inte uppfyller dem skickar personen att logga in igen en gång (där ett krav på två faktorer framtvingar steget för andra faktorn), prompt=none svarar login_required, och ett krav som fortfarande inte är uppfyllt efter den inloggningen nekas med unmet_authentication_requirements (avsnitt 5); acr-värden ordnas 0 < 1 < mfa och koden, ID Token och åtkomsttoken bär det mest föredragna BEGÄRDA värde som uppfyllts; acr_values_supported i båda upptäcktsdokumenten; acr och auth_time i JWT-åtkomsttoken (avsnitt 6.1) och i introspektion (avsnitt 6.2); och avsnitt 3:s utmaning 401 insufficient_user_authentication med acr_values och max_age, skickad av den här tjänstens egen resursserver (UserInfo, OpenID4VCI-slutpunkterna, SCIM, SSF) mot oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS och av /oauth2/step-up/resource/{application} mot en resursapplikations oauthStepUpAcrValues / oauthStepUpMaxAge. Mock: den här tjänstens inloggning ger tre kontextklasser; vilket annat acr-värde som helst uppfylls endast av en federerad inloggning som rapporterar exakt det acr-värdet. Räknas på /admin/oauth2/monitor."
+    "en": "56808a8c0f6588d3",
+    "text": "full: auktoriseringsslutpunkten respekterar acr_values och max_age i varje läge och med eller utan openid — en session som inte uppfyller dem skickar personen att logga in igen en gång (där ett krav på två faktorer framtvingar steget för andra faktorn), prompt=none svarar login_required, och ett krav som fortfarande inte är uppfyllt efter den inloggningen nekas med unmet_authentication_requirements (avsnitt 5); acr-värden ordnas 0 < 1 < mfa och koden, ID Token och åtkomsttoken bär det mest föredragna BEGÄRDA värde som uppfyllts; acr_values_supported i båda upptäcktsdokumenten; acr och auth_time i JWT-åtkomsttoken (avsnitt 6.1) och i introspektion (avsnitt 6.2); och avsnitt 3:s utmaning 401 insufficient_user_authentication med acr_values och max_age, skickad av den här tjänstens egen resursserver (UserInfo, OpenID4VCI-slutpunkterna, SCIM, SSF) mot oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; en resursapplikations oauthStepUpAcrValues / oauthStepUpMaxAge registreras för att resursservern som är applikationen ska upprätthålla dem. Mock: den här tjänstens inloggning ger tre kontextklasser; vilket annat acr-värde som helst uppfylls endast av en federerad inloggning som rapporterar exakt det acr-värdet. Räknas på /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -843,14 +843,6 @@
     "en": "11ec8d19db18eafd",
     "text": "INTE EN GNAP-SLUTPUNKT: kontrollantdokumentet som en zcap-åtkomsttokens rotkapabilitet namnger, med den verifieringsmetod som dess signatur kontrolleras mot — en Multikey i ett Controlled Identifiers v1.0-dokument under JCS-sviterna, en Ed25519VerificationKey2020 under Ed25519Signature2020. Serveras no-store."
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "En skyddad resurs på den här tjänsten, som en klientinstans kan förbruka en token mot: utan token svarar den 401 med WWW-Authenticate-utmaningen i avsnitt 9.1 som namnger beviljandeslutpunkten; med en token kontrollerar den formatet, målgruppen, nyckelbindningen och åtkomsträttigheterna så som en resursserver skulle göra. gnap.demoResourceServer stänger av den."
-  },
-  "stsmetadata.endpoints./gnap/rs/spend.what": {
-    "en": "dba6c3ce40e6653f",
-    "text": "En operation som FÖRBRUKAR mot en rättighets gränser (#432 fas 5): POST med ett belopp, en valuta och en mottagare, under en token som beviljar spend på demonstrationstypen. Resursservern håller löpande summor per beviljande — atomärt över klustret, nollställda vid varje gräns i gränsernas återkommande intervall, återbetalda när operationen misslyckas — och nekar en operation över gränsen med 403 insufficient_scope. Referensen för vad en resursserver gör med en gräns. gnap.demoResourceServer stänger av den."
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "Det som GET /admin/gnap ritar, ur samma vyfunktion."
@@ -982,14 +974,6 @@
   "stsmetadata.endpoints./ssf/poll.what": {
     "en": "24403b87bfb6de2b",
     "text": "Mottagaren kommer HIT, så ingenting ringas upp — vilket är varför en webbläsare kan vara mottagare över den här metoden men inte över push. Svarar {sets, moreAvailable}. `ack` namnger vad mottagaren lagrade och `setErrs` vad den AVVISADE, och båda tas bort från kön: en mottagare som inte kunde behandla en händelse kommer inte att behandla den nästa gång heller, så en omleverans skulle polla i en evig slinga. Avvisningen registreras i stället på strömmen, där en person kan se den. RFC 8936 har ingen medlem stream_id eftersom en riktig pollningsslutpunkt är per ström; den här sändaren publicerar en URL, så id:t går i kroppen."
-  },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "ROLLERNA OMVÄNDA, och inte en SSF-slutpunkt: en sändare måste ha någonstans att pusha till, så den här tjänsten är en MOTTAGARE här till förmån för en klient. Den ACCEPTERAR en SET vars signatur inte verifieras och rapporterar varför, vilket är precis rätt för en felsökare — en mottagare som nekade kunde inte visa någon vad som kom fram eller varför det inte verifierades, vilket är just frågan som ställs. ssf.receiveRequireSignature slår på 400 invalid_key, vilket är vad en riktig mottagare gör. Verifieringen görs mot DEN HÄR tjänstens egen nyckel, den enda den har, så en SET signerad av någon annan är \"inte verifierbar här\" snarare än ogiltig."
-  },
-  "stsmetadata.endpoints./ssf/received.what": {
-    "en": "5fd7b2aac2518dc4",
-    "text": "Inte heller en SSF-slutpunkt. Allt som POST /ssf/receive har tagit emot, med vad var och en avkodades till, om dess signatur verifierades och om den bar mediatypen application/secevent+jwt som RFC 8417 avsnitt 2.3 anger — en mottagare som väljer utifrån typen, och flera gör det, kastar en SET som skickats som ett vanligt JWT utan något fel som någon ser."
   },
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
@@ -1692,8 +1676,8 @@
     "text": "emit, reset-session och clear — samma tre som konsolens formulär postar, via samma åtgärdsfunktion, med åtgärden hämtad från URL:en i stället för från ett dolt fält. `emit` sätter samman SSF:s KOMPLEXA subjekt från den namngivna sessionen och skickar på varje ström som både levererar typen och täcker det subjektet; en typ som ingen ström tar är INTE ett fel, eftersom \"händelsen inträffade och ingen hade bett att få höra om den\" är ett annat faktum än ett fel och är det som oftast är sant. DET FINNS AVSIKTLIGT INGET SÄTT ATT AVSLUTA EN SESSION HÄRIFRÅN: att sända en session-revoked SÄGER att en session återkallades och återkallar ingen, och ett API som gjorde båda skulle slå ihop de två handlingar som CAEP finns för att hålla isär. Den väntar in (await), liksom Shared Signals-åtgärden bredvid, eftersom sändningen signerar en JWS och sedan POSTar den."
   },
   "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status, transmit, delete och clear-received — samma fyra som konsolens formulär postar, via samma åtgärdsfunktion, med åtgärden hämtad från URL:en i stället för från ett dolt fält. DET FINNS AVSIKTLIGT INGEN `create`: en ström bär en leveransslutpunkt som den här tjänsten kommer att RINGA UPP, och det enda stället den URL:en får komma ifrån är en mottagare som bad om den på POST /ssf/stream — ett API som kunde prägla en vore en andra, ogrindad dörr till den utgående begäran. Det är också den ENDA åtgärdshanteraren i det här API:t som väntar in (await): sändning signerar en JWS, möjligen på libuv:s trådpool, och POSTar den sedan, och att svara innan något av det hade hänt vore att rapportera \"skickat\" om ingenting."
+    "en": "64dd45c6ceafaf73",
+    "text": "status, transmit, delete, revive, clear-dead-letters och verify — de åtgärder som konsolens formulär postar, via samma åtgärdsfunktion, med åtgärden hämtad från URL:en i stället för från ett dolt fält. DET FINNS AVSIKTLIGT INGEN `create`: en ström bär en leveransslutpunkt som den här tjänsten kommer att RINGA UPP, och det enda stället den URL:en får komma ifrån är en mottagare som bad om den på POST /ssf/stream — ett API som kunde prägla en vore en andra, ogrindad dörr till den utgående begäran. Det är också den ENDA åtgärdshanteraren i det här API:t som väntar in (await): sändning signerar en JWS, möjligen på libuv:s trådpool, och POSTar den sedan, och att svara innan något av det hade hänt vore att rapportera \"skickat\" om ingenting."
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -2754,14 +2738,6 @@
   "stsmetadata.endpoints./oauth2/par.what": {
     "en": "bfe38fea0bb9115e",
     "text": "POST parametrarna för en auktoriseringsbegäran, autentiserad som vid tokenslutpunkten, och få 201 { request_uri, expires_in } att skicka webbläsaren till /oauth2/authorize med. Pushen valideras som en auktoriseringsbegäran skulle valideras och vägras som JSON; ett `request`-objekt kan bära parametrarna; ett DPoP-bevis binder koden. Varje annan metod ger 405."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "NON-SPEC: en skyddad resurs som svarar FÖR en registrerad applikation, på GET och POST, så att en klient kan drivas genom RFC 9470 utan att driftsätta API:t. Åtkomsttokenet måste verifieras, vara en at+jwt från en auktoriseringsserver som den här tjänsten publicerar, och namnge applikationen i sin aud; sedan ställs applikationens oauthStepUpAcrValues och oauthStepUpMaxAge mot dess acr och auth_time, och en token som inte uppfyller dem besvaras med 401 insufficient_user_authentication med acr_values och max_age i utmaningen. En token som uppfyller dem får 200 och kravet och den autentisering den uppfyllde. Innehåller inga data."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.effect": {
-    "en": "4c20d4f0b8d4754c",
-    "text": "svarar 401 med en WWW-Authenticate-utmaning när den följs utan token, och 404 för en applikation som sfären inte har någon post för"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",

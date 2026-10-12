@@ -147,8 +147,8 @@ const CAPABILITIES = [
           'signature are spent once across the cluster.' },
   { id: 'gnap.limits', section: '2',
     by: 'gnap/gnap_spend.ts',
-    what: 'The demonstration resource server spends a GNAP right\'s limits ' +
-          'against one budget per grant across the cluster (#432).' },
+    what: 'A GNAP right\'s limits are spent against one budget per grant ' +
+          'across the cluster (#432).' },
   { id: 'kerberos.replay-cache', section: '2',
     by: 'kerberos/krb5_service.js',
     what: 'A Kerberos AP-REQ authenticator is accepted once across the ' +

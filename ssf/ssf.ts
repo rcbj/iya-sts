@@ -55,10 +55,12 @@
 //   POST /ssf/subjects/remove             remove one
 //   POST /ssf/verify                      ask for a verification event
 //   POST /ssf/poll                        RFC 8936 delivery
-//   POST /ssf/receive                     THE ROLES REVERSED: a SET pushed AT
-//                                         this service, so the debugger can be
-//                                         the transmitter
-//   GET  /ssf/received                    what has arrived that way
+//
+// `POST /ssf/receive` and `GET /ssf/received` — the roles reversed, a SET
+// pushed AT this service so the debugger could be the transmitter — were
+// deleted by #593 (2026-10-12): the test peer is that push receiver, and the
+// console's and portal's own receivers (`ssf_receivers.ts`) are this
+// service's.
 //
 // **THE SUBJECT PATHS USE A SLASH AND NOT A COLON.** SSF's own examples write
 // `/subjects:add`, and express reads `:add` as a ROUTE PARAMETER — so a route
@@ -155,14 +157,9 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
 // `allSigningKeys`, `STS`, node's `crypto` and `common/crypto` left this list
 // on 2026-09-10 with the three functions that read a received SET — they are
-// `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
-// the note above POST /ssf/receive.
+// `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -213,9 +210,6 @@ import ssfCluster = require('./ssf_cluster');
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
 import errorCodes = require('../common/error_codes');
-// For `refusesUnverifiedSignals()` at /ssf/receive (#117). A leaf that
-// requires only config.
-import mode = require('../common/mode');
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
 
@@ -310,12 +304,12 @@ class SharedSignals {
    */
   static readonly WELL_KNOWN = '/.well-known/ssf-configuration';
 
-  // The seven actions of the signals slot; see consoleAction().
+  // The six actions of the signals slot; see consoleAction().
   /**
    * The actions of the signals console and `POST /admin-api/ssf/:action`.
    */
   static readonly CONSOLE_ACTIONS: string[] = ['status', 'delete', 'transmit',
-    'clear-received', 'revive', 'clear-dead-letters', 'verify'];
+    'revive', 'clear-dead-letters', 'verify'];
 
   // The three actions of the CAEP slot; see caepAction().
   /**
@@ -2143,20 +2137,6 @@ class SharedSignals {
     return record;
   }
 
-  // A csv setting read as a list, with `fallback` when it is empty — what
-  // `/ssf/receive`'s issuer and audience checks accept.
-  private receiveList(key: string, fallback: string): string[] {
-    const { log, config } = this.deps;
-    log.debug('Entering SharedSignals.receiveList(). ' + key);
-    const asked = config.value(key);
-    const list = (Array.isArray(asked) ? asked : String(asked || '')
-      .split(',')).map(function (one) {
-      return String(one).trim();
-    }).filter(Boolean);
-    log.debug('Leaving SharedSignals.receiveList().');
-    return list.length ? list : [fallback];
-  }
-
   private updateRoute(req: Req, res: Res, mode: string): void {
     const { log, audit, streams, errorCodes } = this.deps;
     log.debug('Entering SharedSignals.updateRoute(). ' + mode);
@@ -2833,198 +2813,6 @@ class SharedSignals {
                 ' set(s).');
     });
 
-    // -----------------------------------------------------------------------
-    // THE ROLES REVERSED: A SET PUSHED **AT** THIS SERVICE.
-    //
-    // The debugger can be a transmitter, and something has to be at the far
-    // end of its push. This is that, and it is what makes the debugger's
-    // "send an event" half testable at all.
-    //
-    // **IT ACCEPTS A SET WHOSE SIGNATURE DOES NOT VERIFY, BY DEFAULT, AND
-    // REPORTS WHY.** That is this service's ordinary posture and it is
-    // exactly right for a debugger: a receiver that refused an unverifiable
-    // event could not show anybody WHAT arrived or WHY it did not verify,
-    // which is the question being asked. `ssf.receiveRequireSignature` turns
-    // the 400 on, which is what a real receiver does and is the negative a
-    // transmitter needs to be able to reach. **PRODUCT MODE ALWAYS REFUSES
-    // (#117, 2026-09-23)**: there it was an unauthenticated write into a
-    // stored inbox (`mode.refusesUnverifiedSignals()`).
-    //
-    // The verification is against THIS SERVICE'S OWN key, because that is the
-    // only key it has. A SET signed by somebody else is reported as "not
-    // verifiable here" rather than as invalid — those are different sentences
-    // and conflating them would be a receiver blaming a transmitter for its
-    // own missing key.
-    // -----------------------------------------------------------------------
-    // THE READING AND THE VERIFICATION ARE `ssf_events.js`'s SINCE 2026-09-10,
-    // AND THEY MOVED BECAUSE A SECOND RECEIVER ARRIVED.
-    // `publicKeyForHeader()`, `verifyReceivedSet()` and `readSetForDisplay()`
-    // were private to this file while this endpoint was the only thing in the
-    // service that ever read a SET it was handed. The admin console and the
-    // user portal are receivers of their own now (`ssf/ssf_receivers.ts`),
-    // with a receive endpoint each, and three receivers reading a SET three
-    // ways would be three opinions about what arrived. `events.readSet()` and
-    // `events.verifySet()` are the same code in the file that owns the
-    // envelope — building a SET and reading one back are the two directions
-    // of one format.
-
-    app.post('/ssf/receive', demoOnly, (req, res) => {
-      log.debug('Entering POST /ssf/receive.');
-      if (this.offCheck(res)) {
-        log.debug('Leaving POST /ssf/receive. Off.');
-        return;
-      }
-      if (!config.value('ssf.receiveEnabled')) {
-        errorCodes.mark(res, 'STS-SSF-0022');
-        this.fail(res, 501, 'invalid_request',
-          'This service is not accepting pushed events (ssf.receiveEnabled). ' +
-          'It is a RECEIVER only for the debugger\'s benefit — the roles ' +
-          'reversed — and turning it off leaves the transmitter half working.');
-        log.debug('Leaving POST /ssf/receive. Off.');
-        return;
-      }
-      const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8')
-        : (typeof req.body === 'string' ? req.body
-          : String((req.body && req.body.token) || ''));
-      const token = raw.trim();
-      if (!token) {
-        errorCodes.mark(res, 'STS-SSF-0023');
-        this.fail(res, 400, 'invalid_request',
-          'The body is empty. RFC 8935 section 2.1 puts the Security Event ' +
-          'Token in the body as application/secevent+jwt, with no form ' +
-          'encoding and no JSON wrapper around it.');
-        log.debug('Leaving POST /ssf/receive. Empty body.');
-        return;
-      }
-      const contentType = String((req.headers || {})['content-type'] || '')
-        .split(';')[0].trim().toLowerCase();
-      const read: Json = events.readSet(token);
-      const verdict: Json = events.verifySet(token, read.header);
-      const verified = verdict.verified;
-      const verificationNote = verdict.note;
-      // Refused in product mode whatever the setting says (#117).
-      if (!verified && mode.refusesUnverifiedSignals()) {
-        errorCodes.mark(res, 'STS-SSF-0024');
-        this.fail(res, 400, 'invalid_key', verificationNote);
-        log.debug('Leaving POST /ssf/receive. Signature required.');
-        return;
-      }
-      // ---------------------------------------------------------------------
-      // WHAT A RECEIVER MUST CHECK, AND THIS ONE DID NOT (#144): the explicit
-      // type (SSF 1.0 section 4.1.1), the issuer (section 4.1.6) and the
-      // audience (RFC 8417 section 2.2, SSF section 4.1.8). There is no
-      // stream behind this endpoint to read an issuer or an audience off, so
-      // they are settings — `ssf.receiveIssuers` and `ssf.receiveAudiences` —
-      // and each defaults to the one value this receiver can stand behind:
-      // this realm's own transmitter issuer (the only issuer whose key it
-      // holds) and this endpoint's own URL. Each failure is RECORDED and then
-      // refused, because what arrived is still the question a person at
-      // /admin/ssf is asking.
-      // ---------------------------------------------------------------------
-      const claims: Json = read.claims || {};
-      const acceptedIssuers = this.receiveList('ssf.receiveIssuers',
-                                               this.issuerFor(req));
-      const acceptedAudiences = this.receiveList('ssf.receiveAudiences',
-        this.ssfBase(req) + '/receive');
-      const typOk = !read.problem && receivers.isSetTyp(read.header);
-      const issuerOk = !read.problem &&
-        acceptedIssuers.indexOf(String(claims.iss || '')) >= 0;
-      const audienceOk = !read.problem &&
-        receivers.audienceNames(claims.aud).some(function (one: string) {
-          return acceptedAudiences.indexOf(one) >= 0;
-        });
-      const entry = {
-        at: iso(),
-        token: token,
-        contentType: contentType,
-        correctMediaType: contentType === transport.SET_MEDIA_TYPE,
-        header: read.header,
-        claims: read.claims,
-        problem: read.problem,
-        verified: verified,
-        verificationNote: verificationNote,
-        typOk: typOk,
-        issuerOk: issuerOk,
-        audienceOk: audienceOk,
-        summary: read.claims ? events.describeSet(read.claims) : null
-      };
-      streams.recordReceived(entry);
-      audit.audit({ action: 'ssf.event.receive', category: 'signals',
-        protocol: 'SSF', channel: 'http',
-        outcome: (read.problem || !typOk || !issuerOk || !audienceOk)
-          ? 'failure' : 'success',
-        errorCode: read.problem ? 'STS-SSF-0025'
-          : (!typOk ? 'STS-SSF-0104' : (!issuerOk ? 'STS-SSF-0105'
-            : (!audienceOk ? 'STS-SSF-0106' : ''))),
-        target: String((read.claims || {}).jti || ''),
-        summary: 'A Security Event Token was pushed at this service' +
-          (verified ? ' and verified' : ''),
-        detail: { types: Object.keys((read.claims || {}).events || {}),
-          contentType: contentType } });
-      if (read.problem) {
-        errorCodes.mark(res, 'STS-SSF-0025');
-        this.fail(res, 400, 'invalid_request', read.problem +
-          ' It has been recorded anyway and is on /admin/ssf, because what ' +
-          'arrived is the question being asked.');
-        log.debug('Leaving POST /ssf/receive. Malformed.');
-        return;
-      }
-      if (!typOk) {
-        errorCodes.mark(res, 'STS-SSF-0104');
-        this.fail(res, 400, 'invalid_request', 'The header\'s typ is ' +
-          JSON.stringify((read.header || {}).typ || null) + '; SSF 1.0 ' +
-          'section 4.1.1 requires "secevent+jwt". It has been recorded and ' +
-          'is on /admin/ssf.');
-        log.debug('Leaving POST /ssf/receive. Not explicitly typed.');
-        return;
-      }
-      if (!issuerOk) {
-        errorCodes.mark(res, 'STS-SSF-0105');
-        this.fail(res, 400, 'invalid_issuer', 'The iss is ' +
-          JSON.stringify(claims.iss || null) + ', and this receiver accepts ' +
-          acceptedIssuers.map(function (one) {
-            return JSON.stringify(one);
-          }).join(', ') + ' (ssf.receiveIssuers). It has been recorded and ' +
-          'is on /admin/ssf.');
-        log.debug('Leaving POST /ssf/receive. Wrong issuer.');
-        return;
-      }
-      if (!audienceOk) {
-        errorCodes.mark(res, 'STS-SSF-0106');
-        this.fail(res, 400, 'invalid_audience', 'The aud is ' +
-          JSON.stringify(claims.aud || null) + ', and this receiver answers ' +
-          'to ' + acceptedAudiences.map(function (one) {
-            return JSON.stringify(one);
-          }).join(', ') + ' (ssf.receiveAudiences). It has been recorded and ' +
-          'is on /admin/ssf.');
-        log.debug('Leaving POST /ssf/receive. Wrong audience.');
-        return;
-      }
-      // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says. A
-      // document here would be something a transmitter could come to depend
-      // on that no receiver has to send.
-      res.status(202).set('Cache-Control', 'no-store').end();
-      log.debug('Leaving POST /ssf/receive. Accepted.');
-    });
-
-    app.get('/ssf/received', demoOnly, ssfCluster.spendGnapProof,
-            (req, res) => {
-      log.debug('Entering GET /ssf/received.');
-      if (this.offCheck(res)) {
-        log.debug('Leaving GET /ssf/received. Off.');
-        return;
-      }
-      const decision = this.gate(req, res, 'read');
-      if (!decision) {
-        log.debug('Leaving GET /ssf/received. Refused.');
-        return;
-      }
-      res.status(200).type('application/json')
-         .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ received: streams.listReceived() }, null, 2));
-      log.debug('Leaving GET /ssf/received.');
-    });
-
     // THE DESCRIPTION PAGE (#584): not an SSF endpoint, as it says, and so
     // a static surface's shell since #584, drawn in the browser
     // (`web_ssf_description.ts`) from the document `?format=json` answers.
@@ -3131,7 +2919,6 @@ class SharedSignals {
           counters: record.counters, createdAt: record.createdAt,
           lastPushError: record.lastPushError };
       }),
-      received: streams.listReceived().length,
       endpoints: [
         { method: 'GET', path: WELL_KNOWN,
           what: 'The transmitter configuration metadata. NEVER gated — a ' +
@@ -3169,12 +2956,7 @@ class SharedSignals {
                 'stream has.' },
         { method: 'POST', path: base + '/poll',
           what: 'RFC 8936 poll delivery. ack what you stored, setErrs what ' +
-                'you refused.' },
-        { method: 'POST', path: base + '/receive',
-          what: 'THE ROLES REVERSED: a SET pushed AT this service, so a ' +
-                'client can be the transmitter. Not an SSF endpoint.' },
-        { method: 'GET', path: base + '/received',
-          what: 'What has arrived that way. Not an SSF endpoint either.' }
+                'you refused.' }
       ],
       reachableNegatives: [
         { what: 'Create a stream asking for delivery.method "push"',
@@ -3254,7 +3036,7 @@ class SharedSignals {
   // ---------------------------------------------------------------------------
   /**
    * Builds `/admin/ssf`'s report: the description plus every stream's detail,
-   * its queue, dead letters and log, and what this service has received.
+   * its queue, dead letters and log.
    *
    * @param req - the request
    * @returns the report
@@ -3324,7 +3106,6 @@ class SharedSignals {
       deadStreamTimeoutS: config.value('ssf.deadStreamTimeoutS'),
       pushes: transport.pushGateState()
     };
-    info.receivedDetail = streams.listReceived().slice().reverse();
     log.debug('Leaving SharedSignals.consoleReport().');
     return info;
   }
@@ -3495,12 +3276,6 @@ class SharedSignals {
             : report.why,
           report: report };
       });
-    }
-    if (name === 'clear-received') {
-      const gone = streams.clearReceived();
-      log.debug('Leaving SharedSignals.consoleAction(). Cleared.');
-      return Promise.resolve({ ok: true, errors: [],
-        message: gone + ' received event(s) dropped.' });
     }
     // REVIVE A DEAD PUSH STREAM BY HAND (2026-09-14): it is pushed to again at
     // once. Refused for a stream that is not dead, which is a refusal a caller

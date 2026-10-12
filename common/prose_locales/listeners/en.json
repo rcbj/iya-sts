@@ -61,7 +61,7 @@
   "listeners.applications.scim.label": "SCIM 2.0",
   "listeners.applications.scim.what": "Provisioning into the directory.",
   "listeners.applications.ssf.label": "Shared Signals",
-  "listeners.applications.ssf.what": "The Shared Signals transmitter and receiver.",
+  "listeners.applications.ssf.what": "The Shared Signals transmitter.",
   "listeners.applications.gnap.label": "GNAP",
   "listeners.applications.gnap.what": "The GNAP authorization server and its interaction pages.",
   "listeners.applications.xacml.label": "XACML",

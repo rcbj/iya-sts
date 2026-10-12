@@ -31,6 +31,7 @@
   "result.lookAgain": "Look again",
   "result.lookAgainEnd": ".",
   "result.nothingLeft": "Nothing. This service is holding no live session or credential for {key} that it can still see.",
+  "result.toPortal": "Go to your account in the user portal",
   "tab.signOut": "Sign out",
   "tab.details": "Details",
   "list.colProtocol": "Protocol",

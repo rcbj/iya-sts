@@ -6978,7 +6978,7 @@ class AdminViews {
                                deadLetters: 0 },
                paging: { streams: this.pagingJson(this.pagingOf(
                  req.query || {}, 0, { name: 'streams', noun: 'streams' })) },
-               receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
+               settings: configSettingsJson('/admin/ssf'),
                statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals Framework.' };

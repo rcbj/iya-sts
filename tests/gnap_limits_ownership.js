@@ -13,7 +13,7 @@
 //      a repeating interval's periods (fixed and calendar), millionths.
 //   B. THE CATALOGUE READS IT FOR BOTH PROTOCOLS: a GNAP right (STS-GNAP-
 //      0860) and an RFC 9396 detail (STS-OAUTH-0916) whose limits mean
-//      nothing, the demonstration type's built-in limits schema.
+//      nothing; the demonstration type no longer built in (#593).
 //   C. OWNERSHIP FROM A REGISTERED RESOURCE SET: the person, a member of the
 //      owner group, somebody else; what a DN may name.
 //   D. OWNERSHIP BY A LOOKUP the resource server declares, through a stubbed
@@ -318,15 +318,11 @@ function conformance(t) {
   t.check(parse([{ type: 'lo-acct', actions: ['spend'],
                    limits: { count: 1 } }]).ok,
           'B4. RFC 9396: readable limits are accepted');
-  const demo = rights.entryOf({ type: rights.DEMO_TYPE });
-  t.check(demo && !!demo.validateLimits &&
-          rights.conformanceRefusal(tok([{ type: rights.DEMO_TYPE,
-            limits: { count: 5 } }])) === null &&
-          errorCodes.codeOf(rights.conformanceRefusal(tok([{
-            type: rights.DEMO_TYPE, limits: { colour: 'red' } }]))) ===
-            'STS-GNAP-0814',
-          'B5. the demonstration type declares a limits schema of the ' +
-          'vocabulary and nothing else');
+  // The demonstration type went with the demonstration resource server
+  // (#593): nothing catalogues it, in either mode.
+  t.check(rights.DEMO_TYPE === undefined &&
+          !rights.entryOf({ type: 'urn:iya-sts:gnap:demo' }),
+          'B5. the demonstration type is no longer built in (#593)');
   log.debug("Leaving conformance().");
 }
 

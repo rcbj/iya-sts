@@ -1866,9 +1866,11 @@ const SCHEMA = {
     // RESOURCE: what it requires of the authentication behind an access token
     // addressed to it. RFC 9470 defines no registration or metadata member for
     // either — section 3 is a challenge a resource server sends — so they are
-    // written by an operator, never by a registration. ENFORCED by the stand-in
-    // resource `/oauth2/step-up/resource/{identifier}`, which answers for this
-    // application; READ through `stepUpRequirementOf()` below, whose grammar is
+    // written by an operator, never by a registration. ENFORCED by the
+    // resource server the application is — somebody else's process (the
+    // stand-in resource that answered for it here went with #593); drawn on
+    // the monitor, and READ through `stepUpRequirementOf()` below, whose
+    // grammar is
     // `oauth-oidc/step_up.ts`'s header's. Family-scoped for the introspection
     // attributes' reason.
     { name: 'oauthStepUpAcrValues', kind: 'single',

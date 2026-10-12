@@ -167,10 +167,6 @@
     "en": "ad4b982edb070f2c",
     "text": "五種存取權杖格式，其中三種不是 JWT。jwt-signed 經過與此處所有其他 JWT 相同的簽署器，其標頭 `typ` 為 gnap-at+jwt（#157）；biscuit 以領域的 Ed25519 金鑰簽署（Biscuit 本身的區塊簽章）；ZCAP-LD 能力攜帶 gnap.zcapCryptosuite 所指名套件的 Data Integrity 證明——預設為 eddsa-jcs-2022，搭配領域的後量子金鑰時為 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或為相容性而使用 Ed25519Signature2020；macaroon 是以每個資源伺服器衍生的金鑰建立的 HMAC-SHA256 鏈。當客戶端實例要求時，它也會以 RFC 9421 簽署 HTTP 回應。"
   },
-  "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "客戶端實例發出的每個請求，依其出示的金鑰驗證：RFC 9421 HTTP 訊息簽章（本文由 RFC 9530 Content-Digest 涵蓋）、相互 TLS 證書（會查詢撤銷狀態；在 gnap.mtlsTrust=pki——產品模式的預設——下，須有通往客戶端信任庫的證書鏈並繫結到應用程式項目）、對本文的分離式 JWS，或攜帶本文的附加式 JWS。金鑰輪替會在「兩把」金鑰下驗證。呼叫內省或註冊的資源伺服器以相同方式證明，而每種權杖格式都會在內省時與示範資源伺服器上驗證。"
-  },
   "crypto.families.gnap.hashes": {
     "en": "a478d2fd912623b6",
     "text": "Content-Digest 使用 SHA-256 與 SHA-512；第 4.2.3 節的互動雜湊可使用 node 能計算的任何 Named Information 雜湊方法（SHA-2 與 SHA-3，包括截斷形式）；JWK 指紋、證書指紋與已記住核准的摘要使用 SHA-256；JWS 證明中的 `ath` 使用存取權杖的 SHA-256。"

@@ -777,12 +777,10 @@ function opensTestControls() {
 // Are the DEMONSTRATION, MOCK AND TEST-CONTROL ENDPOINTS here at all (#585,
 // rcbj 2026-10-12)? The mock relying parties and service provider, the demo
 // issuer and verifier pages, the protected Kerberos service and SPNEGO page,
-// the embedded PEP's demonstration, the step-up stand-in, the GNAP
-// demonstration resource server, the VC-API test endpoints, the OpenID4VCI
-// readbacks, the SSF receiver and
-// the rest of `demo-endpoints`' list below. Development serves and lists
-// them. Product neither serves nor lists one: each answers EXACTLY as an
-// unrouted path does — Express's own `Cannot GET …` 404, because the route
+// the embedded PEP's demonstration, the VC-API test endpoints, the OpenID4VCI
+// readbacks and the rest of `demo-endpoints`' list below. Development serves
+// and lists them. Product neither serves nor lists one: each answers EXACTLY
+// as an unrouted path does — Express's own `Cannot GET …` 404, because the route
 // calls `next('route')` (`common/app.js`, `demoOnly`) — and no page,
 // document or log line names it.
 //
@@ -2082,7 +2080,8 @@ function observesRiskOnly() {
 // product inbox should not hold forgeries either). Development keeps the
 // debugger's posture — accept it and say why it did not verify, which is the
 // question a person testing a transmitter is asking — unless the setting
-// turns the refusal on. `/ssf/receive` and `ssf/ssf_receivers.ts` ask it.
+// turns the refusal on. `ssf/ssf_receivers.ts` and `ssf/ssf_transmitters.ts`
+// ask it.
 /**
  * Tells whether a receiver here refuses a Security Event Token whose signature
  * does not verify.
@@ -2170,7 +2169,7 @@ const REQUIREMENTS = [
   { id: 'unverified-signals',
     what: 'A received Security Event Token whose signature does not verify ' +
           'is refused',
-    development: 'POST /ssf/receive and the console\'s and portal\'s own ' +
+    development: 'The console\'s and portal\'s own ' +
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
                  'ssf.receiveRequireSignature is on. Nothing acts on it. A ' +
@@ -2182,13 +2181,12 @@ const REQUIREMENTS = [
     product: 'The console\'s and portal\'s receivers answer 400 ' +
              'invalid_key, whatever ssf.receiveRequireSignature says ' +
              '(#117), and keep it on their inbox marked refused. ' +
-             '/ssf/receive is a development endpoint and is not there ' +
-             '(#585). A federation partner\'s unverified SET is refused ' +
+             'A federation partner\'s unverified SET is refused ' +
              'invalid_key too — HTTP 400 to a push to ' +
              '/federation/signals/{id}, and in setErrs on the next poll ' +
              'request for a polled one — kept on the relationship\'s inbox ' +
              'marked refused, and never acted on.',
-    where: 'ssf/ssf.ts, ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
+    where: 'ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -3012,14 +3010,15 @@ const REQUIREMENTS = [
                  'authorization, PAR and token endpoints and becomes the ' +
                  'token\'s aud; a GNAP location that names no resource ' +
                  'server is left out of the token\'s audience and the ' +
-                 'right is granted.',
+                 'right is granted, while something else in the token ' +
+                 'names one — a token whose access names none is refused ' +
+                 'invalid_request in every mode (STS-GNAP-0904).',
     product: 'A resource (outside a token exchange, whose targets are the ' +
              'policy\'s unregistered-target) and every location of a GNAP ' +
              'access right must name a registered target: one of this ' +
              'service\'s own resource servers (the default resource ' +
              'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; the GNAP demonstration resource server ' +
-             'where it is served) ' +
+             'accept; /admin-api; /account-api) ' +
              'or an application registered ahead of time (appRegisteredBy ' +
              'set — a sighting is not a registration), by its ' +
              'oauthAudience, permission base URI, client_id or identifier ' +
@@ -3066,9 +3065,7 @@ const REQUIREMENTS = [
                  'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
                  'endpoints, the protected Kerberos service (/krb5/service ' +
                  'and its TCP socket), /krb5/principals, /spnego and ' +
-                 '/spnego/protected, /xacml/protected, the step-up ' +
-                 'stand-in resource, the GNAP demonstration resource server, ' +
-                 'and /ssf/receive and /ssf/received.',
+                 '/spnego/protected, and /xacml/protected.',
     product: 'None of them is served or listed. Each answers exactly as a ' +
              'path nothing is registered on does — Express\'s own 404 ' +
              '"Cannot GET" — and no metadata page, console page, document ' +

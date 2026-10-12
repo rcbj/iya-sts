@@ -620,8 +620,8 @@
     "text": "LOS CINCO FORMATOS DE TOKEN DE ACCESO, tres de los cuales no son JWT. jwt-signed pasa por el mismo firmante que cualquier otro JWT de aquí, con su cabecera `typ` gnap-at+jwt (#157); un biscuit se firma con la clave Ed25519 del dominio (la propia firma de bloque de Biscuit); una capacidad ZCAP-LD lleva una prueba Data Integrity en la suite que indica gnap.zcapCryptosuite — eddsa-jcs-2022 de forma predeterminada, mldsa44-jcs-2024 o slhdsa128-jcs-2024 con la clave poscuántica del dominio, o Ed25519Signature2020 por compatibilidad; un macaroon es una cadena HMAC-SHA256 bajo una clave derivada por servidor de recursos. También firma una respuesta HTTP con RFC 9421 cuando una instancia cliente lo pide."
   },
   "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "CADA SOLICITUD QUE HACE UNA INSTANCIA CLIENTE, con la clave que presentó: una firma de mensaje HTTP RFC 9421 (con el cuerpo cubierto por un Content-Digest RFC 9530), un certificado de TLS mutuo (con revocación consultada; una cadena hasta el almacén de confianza de clientes y una vinculación a la entrada de aplicación con gnap.mtlsTrust=pki, el valor predeterminado en producto), un JWS separado sobre el cuerpo o un JWS adjunto que lo transporta. Una rotación de clave se verifica con AMBAS claves. Un servidor de recursos que llama a la introspección o al registro se prueba de la misma manera, y cada formato de token se verifica en la introspección y en el servidor de recursos de demostración."
+    "en": "0128ae60345397de",
+    "text": "CADA SOLICITUD QUE HACE UNA INSTANCIA CLIENTE, con la clave que presentó: una firma de mensaje HTTP RFC 9421 (con el cuerpo cubierto por un Content-Digest RFC 9530), un certificado de TLS mutuo (con revocación consultada; una cadena hasta el almacén de confianza de clientes y una vinculación a la entrada de aplicación con gnap.mtlsTrust=pki, el valor predeterminado en producto), un JWS separado sobre el cuerpo o un JWS adjunto que lo transporta. Una rotación de clave se verifica con AMBAS claves. Un servidor de recursos que llama a la introspección o al registro se prueba de la misma manera, y cada formato de token se verifica en la introspección."
   },
   "crypto.families.gnap.encrypts": {
     "en": "fd3d73b7072a0617",
@@ -642,10 +642,6 @@
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "NO ACEPTA UNA SOLICITUD SIN PRUEBA PARA UN TOKEN VINCULADO, y no hay ningún ajuste que lo haga: una prueba de clave GNAP es el protocolo y no una opción de endurecimiento. Lo opcional es un token AL PORTADOR, que gnap.bearerTokens desactiva. Los caveats de terceros de macaroon, los bloques de terceros de Biscuit y las pruebas de invocación ZCAP no están implementados."
-  },
-  "crypto.families.gnap.verifiesWithoutDemos": {
-    "en": "0128ae60345397de",
-    "text": "CADA SOLICITUD QUE HACE UNA INSTANCIA CLIENTE, con la clave que presentó: una firma de mensaje HTTP RFC 9421 (con el cuerpo cubierto por un Content-Digest RFC 9530), un certificado de TLS mutuo (con revocación consultada; una cadena hasta el almacén de confianza de clientes y una vinculación a la entrada de aplicación con gnap.mtlsTrust=pki, el valor predeterminado en producto), un JWS separado sobre el cuerpo o un JWS adjunto que lo transporta. Una rotación de clave se verifica con AMBAS claves. Un servidor de recursos que llama a la introspección o al registro se prueba de la misma manera, y cada formato de token se verifica en la introspección."
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -1124,8 +1120,8 @@
     "text": "CADA SECURITY EVENT TOKEN, y es el documento de este servicio en el que más vale la pena pensar el algoritmo. Un SET registra que algo OCURRIÓ y la sección 4.1.4 de RFC 8417 le prohíbe caducar, así que se lee mucho después de escribirse — que es justamente el caso al que se refiere el argumento de recolectar ahora y descifrar después. La firma pasa por el MISMO firmante que cualquier otro JWT de aquí, así que `ssf.signingAlgorithm` alcanza toda la tabla: RS256 de forma predeterminada, las familias PS y ES, EdDSA, y los poscuánticos — ML-DSA en tres tamaños, SLH-DSA en dos, y los seis algoritmos compuestos ML-DSA + tradicional. Una firma SLH-DSA tarda hasta un segundo y se ejecuta en el pool de hilos de libuv, así que este servicio sigue respondiendo todo el tiempo y es el receptor quien espera."
   },
   "crypto.families.shared-signals.verifies": {
-    "en": "13ecd58a54cbb372",
-    "text": "Un Security Event Token enviado A este servicio en `POST /ssf/receive` — con los papeles invertidos — contra su propio JWKS, que es la única clave que tiene. Un SET firmado por cualquier otro se informa como NO VERIFICABLE AQUÍ en lugar de como no válido, y se ACEPTA de todos modos salvo que `ssf.receiveRequireSignature` esté activado: un receptor que lo rechazara no podría mostrar a nadie qué llegó ni por qué no se verificó, que es la pregunta que se está haciendo. También verifica el token de acceso en cada llamada de gestión de flujos, mediante la misma comprobación que usa cualquier otro endpoint protegido de aquí."
+    "en": "eb64e2686979148b",
+    "text": "El token de acceso en cada llamada de gestión del flujo, mediante la misma comprobación que usa cualquier otro endpoint protegido aquí, y un SET enviado al receptor propio de la consola o del portal, con el JWKS de este servicio."
   },
   "crypto.families.shared-signals.encrypts": {
     "en": "3a0ce36975e5d5a1",
@@ -1142,10 +1138,6 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "FIRMA MAL A PROPÓSITO CUANDO SE LE PIDE. `ssf.breakSetSignature` cambia UN CARÁCTER de la firma tras firmar, así que un receptor que no verifica acepta un evento que nada firmó. Es un carácter y no un truncamiento de forma deliberada: una firma truncada falla la decodificación base64url y se informa como un token MAL FORMADO, que es un error distinto de uno incorrecto para quien se esté probando. Solo en modo desarrollo: un dominio en producto lo ignora y rechaza que se establezca (#104)."
-  },
-  "crypto.families.shared-signals.verifiesWithoutDemos": {
-    "en": "09b792e4c0821046",
-    "text": "El token de acceso en cada llamada de gestión del flujo, mediante la misma comprobación que usa cualquier otro endpoint protegido aquí, y un SET enviado al receptor propio de la consola o del portal, con el JWKS de este servicio. /ssf/receive es un endpoint de desarrollo (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

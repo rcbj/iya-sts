@@ -620,8 +620,8 @@
     "text": "五種存取權杖格式，其中三種不是 JWT。jwt-signed 經過與此處所有其他 JWT 相同的簽署器，其標頭 `typ` 為 gnap-at+jwt（#157）；biscuit 以領域的 Ed25519 金鑰簽署（Biscuit 本身的區塊簽章）；ZCAP-LD 能力攜帶 gnap.zcapCryptosuite 所指名套件的 Data Integrity 證明——預設為 eddsa-jcs-2022，搭配領域的後量子金鑰時為 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或為相容性而使用 Ed25519Signature2020；macaroon 是以每個資源伺服器衍生的金鑰建立的 HMAC-SHA256 鏈。當用戶端執行個體要求時，它也會以 RFC 9421 簽署 HTTP 回應。"
   },
   "crypto.families.gnap.verifies": {
-    "en": "bf54255b814ec628",
-    "text": "用戶端執行個體發出的每個請求，依其出示的金鑰驗證：RFC 9421 HTTP 訊息簽章（本文由 RFC 9530 Content-Digest 涵蓋）、相互 TLS 憑證（會查詢撤銷狀態；在 gnap.mtlsTrust=pki——產品模式的預設——下，須有通往用戶端信任庫的憑證鏈並繫結到應用程式項目）、對本文的分離式 JWS，或攜帶本文的附加式 JWS。金鑰輪替會在「兩把」金鑰下驗證。呼叫內省或註冊的資源伺服器以相同方式證明，而每種權杖格式都會在內省時與示範資源伺服器上驗證。"
+    "en": "0128ae60345397de",
+    "text": "用戶端執行個體發出的每個請求，依其出示的金鑰驗證：RFC 9421 HTTP 訊息簽章（本文由 RFC 9530 Content-Digest 涵蓋）、相互 TLS 憑證（會查詢撤銷狀態；在 gnap.mtlsTrust=pki——產品模式的預設——下，須有通往用戶端信任庫的憑證鏈並繫結到應用程式項目）、對本文的分離式 JWS，或攜帶本文的附加式 JWS。金鑰輪替會在「兩把」金鑰下驗證。呼叫內省或註冊的資源伺服器以相同方式證明，而每種權杖格式都會在內省時驗證。"
   },
   "crypto.families.gnap.encrypts": {
     "en": "fd3d73b7072a0617",
@@ -642,10 +642,6 @@
   "crypto.families.gnap.whatItDoesNot": {
     "en": "a0a7f11d9b8bed02",
     "text": "它不接受未經證明的繫結權杖請求，也沒有任何設定可以讓它接受：GNAP 金鑰證明就是協定本身，而不是一個強化選項。可選的是「持有人」權杖，可由 gnap.bearerTokens 關閉。未實作 Macaroon 第三方附註、Biscuit 第三方區塊與 ZCAP 調用證明。"
-  },
-  "crypto.families.gnap.verifiesWithoutDemos": {
-    "en": "0128ae60345397de",
-    "text": "用戶端執行個體發出的每個請求，依其出示的金鑰驗證：RFC 9421 HTTP 訊息簽章（本文由 RFC 9530 Content-Digest 涵蓋）、相互 TLS 憑證（會查詢撤銷狀態；在 gnap.mtlsTrust=pki——產品模式的預設——下，須有通往用戶端信任庫的憑證鏈並繫結到應用程式項目）、對本文的分離式 JWS，或攜帶本文的附加式 JWS。金鑰輪替會在「兩把」金鑰下驗證。呼叫內省或註冊的資源伺服器以相同方式證明，而每種權杖格式都會在內省時驗證。"
   },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
@@ -1124,8 +1120,8 @@
     "text": "每一個 Security Event Token，而它是本服務中最值得思考演算法的文件。SET 記錄某件事「已經發生」，而 RFC 8417 section 4.1.4 禁止它過期，因此它會在寫入很久之後才被讀取——這正是「先擷取、後解密」論點真正所指的情況。簽章經過此處所有其他 JWT 所經過的「同一個」簽署器，因此 `ssf.signingAlgorithm` 可使用整張表：預設為 RS256，以及 PS 與 ES 系列、EdDSA 與後量子演算法——三種大小的 ML-DSA、兩種的 SLH-DSA，以及六種 ML-DSA + 傳統演算法的複合演算法。SLH-DSA 簽章最多需時一秒，並在 libuv 的執行緒集區上執行，因此本服務在此期間持續回應，而接收端則等待。"
   },
   "crypto.families.shared-signals.verifies": {
-    "en": "13ecd58a54cbb372",
-    "text": "在 `POST /ssf/receive` 推送「給」本服務的 Security Event Token——角色互換——對照它自己的 JWKS，這是它唯一擁有的金鑰。由其他任何人簽署的 SET 會被回報為「無法在此驗證」而非無效，而且除非開啟 `ssf.receiveRequireSignature`，否則仍會「被接受」：一個拒絕的接收端無法向任何人展示收到了什麼、或為何無法驗證，而這正是被提出的問題。它也會在每次串流管理呼叫時驗證存取權杖，使用與此處其他每個受保護端點相同的檢查。"
+    "en": "eb64e2686979148b",
+    "text": "每次串流管理呼叫中的存取權杖（透過此處所有其他受保護端點使用的同一檢查），以及推送至主控台或入口網站自身接收者的 SET（對照本服務的 JWKS）。"
   },
   "crypto.families.shared-signals.encrypts": {
     "en": "3a0ce36975e5d5a1",
@@ -1142,10 +1138,6 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "被要求時，它會刻意做出錯誤的簽章。`ssf.breakSetSignature` 會在簽署後變更簽章中的「一個字元」，使不驗證的接收端接受一個沒有任何人簽署的事件。刻意改一個字元而非截斷：截斷的簽章會在 base64url 解碼時失敗，並被回報為「格式錯誤」的權杖，對受測者而言，這是與錯誤簽章不同的錯誤。僅限開發模式：產品模式的領域會忽略它，並拒絕設定它（#104）。"
-  },
-  "crypto.families.shared-signals.verifiesWithoutDemos": {
-    "en": "09b792e4c0821046",
-    "text": "每次串流管理呼叫中的存取權杖（透過此處所有其他受保護端點使用的同一檢查），以及推送至主控台或入口網站自身接收者的 SET（對照本服務的 JWKS）。/ssf/receive 是開發端點（#585）。"
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

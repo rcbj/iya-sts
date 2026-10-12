@@ -1268,7 +1268,7 @@ where it was:
   to apply.
 * **TWO ACCUMULATORS WERE NEVER FANNED IN** — `admin_stats.scimCounts`
   (`scimCountsAll()`, a deep merge) and `ssf_streams.received`
-  (`listReceived()`). The users register had the same defect and was fixed in
+  (`listReceived()`, deleted with `POST /ssf/receive` by #593). The users register had the same defect and was fixed in
   its own change (`tests/user_register_fan_in.js`).
 * **THREE STORES WERE NEVER PERSISTED** — see the table above.
 

@@ -547,14 +547,6 @@
     "en": "092878a48c170524",
     "text": "Si un token de acceso GNAP en formato jwt-signed o jwt-encrypted nombra la cadena de certificados de la clave que lo firmó — en el JWS en ambos casos, nunca en el JWE que envuelve a jwt-encrypted, que está cifrado para la clave de un servidor de recursos o para un secreto. Los macaroons, los biscuits y las capacidades ZCAP-LD no son JWS y no se ven afectados. `x5u` — el valor predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso es lo que necesita una parte que confía que solo tiene el token para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. La sección 4.1.5 de RFC 7515 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Los encabezados JWE nunca reciben uno — ninguna clave certificada de este servicio cifra nada. Se puede definir por dominio."
   },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "Ejecutar el servidor de recursos de demostración"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource: evalúa un token presentado en cualquiera de los cinco formatos y responde al desafío RS-first de la sección 9.1. Solo en modo de desarrollo: un dominio de producto no tiene servidor de recursos de demostración (#585)."
-  },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
     "text": "Caché de búsqueda de propietario (segundos)"
@@ -6772,8 +6764,8 @@
     "text": "Eventos recibidos conservados"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "Cuántos SET conserva POST /ssf/receive para que los muestre /admin/ssf. Ese endpoint es este servicio actuando como RECEPTOR, que es a donde envía push el depurador cuando los papeles están invertidos; superado este número se descartan los más antiguos."
+    "en": "2c503bd8b26764ea",
+    "text": "Cuántos SET entregados conserva en su bandeja de entrada cada uno de los receptores propios de este servicio (el de la consola y el del portal), por dominio de confianza; superado este número se descartan los más antiguos."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6798,30 +6790,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "El ámbito necesario para crear, actualizar o eliminar un flujo, para añadir o quitar un sujeto, para cambiar un estado o para pedir un evento de verificación. Un ámbito de lectura no basta para ninguna de esas acciones, lo que hace de este el primer lugar de este servicio, además de SCIM, en que dos ámbitos difieren en lo que permiten."
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "Aceptar eventos enviados por push"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "Si POST /ssf/receive acepta un Security Event Token enviado por push HACIA este servicio — con los papeles invertidos, siendo el depurador el transmisor. Verifica la firma cuando puede encontrar una clave e informa de lo que leyó en cualquier caso, porque un receptor que rechazara un evento no verificable no podría mostrar a una persona POR QUÉ no era verificable. Desactivado responde 501. Solo en modo de desarrollo: un dominio de producto no tiene /ssf/receive (#585)."
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "Audiencias a las que responde POST /ssf/receive"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "Los valores `aud` que acepta el receptor orientado al depurador en POST /ssf/receive. Un SET dirigido a ninguno de ellos se registra y se rechaza con invalid_audience, como lo rechaza un receptor real. VACÍO significa la propia URL del endpoint en este dominio, que es el nombre que un transmisor puede descubrir sin que se le indique ninguno."
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "Emisores que acepta POST /ssf/receive"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "Los valores `iss` que acepta POST /ssf/receive (SSF 1.0 sección 4.1.6: un receptor DEBE comprobar el emisor). Un SET de cualquier otro emisor se registra y se rechaza con invalid_issuer. VACÍO significa el emisor de transmisor propio de este dominio — el único emisor cuyos SET puede verificar este receptor, ya que no tiene ninguna otra clave."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

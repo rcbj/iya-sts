@@ -547,14 +547,6 @@
     "en": "092878a48c170524",
     "text": "Indique si un jeton d’accès GNAP au format jwt-signed ou jwt-encrypted nomme la chaîne de certificats de la clé qui l’a signé — sur le JWS dans les deux cas, jamais sur le JWE qui entoure jwt-encrypted, chiffré pour la clé d’un serveur de ressources ou pour un secret. Les macaroons, les biscuits et les capacités ZCAP-LD ne sont pas des JWS et ne sont pas concernés. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, une centaine d’octets ; `x5c` est la chaîne en ligne, la feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans les deux cas, c’est ce dont a besoin une partie de confiance qui ne détient que le jeton pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée sous l’AC émettrice JOSE de ce domaine, et une signature HMAC, n’en reçoivent aucun. RFC 7515 section 4.1.5 exige que la récupération `x5u` utilise TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
   },
-  "gnap.demoResourceServer|label": {
-    "en": "5d96e4174339db0e",
-    "text": "Exécuter le serveur de ressources de démonstration"
-  },
-  "gnap.demoResourceServer|description": {
-    "en": "f449d29bef46a299",
-    "text": "GET/POST /gnap/rs/resource : évalue un jeton présenté dans l’un des cinq formats et répond par le défi RS-first de la section 9.1. Mode développement uniquement : un realm en mode produit n’a pas de serveur de ressources de démonstration (#585)."
-  },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
     "text": "Cache de recherche du propriétaire (secondes)"
@@ -6772,8 +6764,8 @@
     "text": "Événements reçus conservés"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "93b031cbec0dcaa0",
-    "text": "Le nombre de SET que POST /ssf/receive conserve pour que /admin/ssf les affiche. Cet endpoint est ce service agissant comme RÉCEPTEUR, celui vers lequel pousse le débogueur lorsque les rôles sont inversés ; au-delà, les plus anciens sont abandonnés."
+    "en": "2c503bd8b26764ea",
+    "text": "Le nombre de SET remis que chacun des récepteurs propres à ce service (celui de la console et celui du portail) conserve dans sa boîte de réception, par domaine de confiance ; au-delà, les plus anciens sont abandonnés."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -6798,30 +6790,6 @@
   "ssf.authScopeWrite|description": {
     "en": "ea33015fd3877e72",
     "text": "La portée requise pour créer, mettre à jour ou supprimer un flux, ajouter ou retirer un sujet, modifier un statut ou demander un événement de vérification. Une portée de lecture ne suffit pour aucune de ces opérations ; c’est, après SCIM, le premier endroit de ce service où deux portées diffèrent dans ce qu’elles permettent."
-  },
-  "ssf.receiveEnabled|label": {
-    "en": "b1ba5a96993b4538",
-    "text": "Accepter les événements poussés"
-  },
-  "ssf.receiveEnabled|description": {
-    "en": "f031c3db7a13549d",
-    "text": "Indique si POST /ssf/receive accepte un Security Event Token poussé VERS ce service — rôles inversés, le débogueur étant l’émetteur. Il vérifie la signature lorsqu’il trouve une clé et rend compte de ce qu’il a lu dans tous les cas, car un récepteur qui refuserait un événement invérifiable serait incapable de montrer à une personne POURQUOI il l’était. Désactivé répond 501. Mode développement uniquement : un realm en mode produit n’a pas de /ssf/receive (#585)."
-  },
-  "ssf.receiveAudiences|label": {
-    "en": "26d54185c0e2e81a",
-    "text": "Audiences auxquelles répond POST /ssf/receive"
-  },
-  "ssf.receiveAudiences|description": {
-    "en": "6ca6ba4a63ddef93",
-    "text": "Les valeurs `aud` qu’accepte le récepteur destiné au débogueur à POST /ssf/receive. Un SET adressé à aucune d’elles est enregistré et refusé avec invalid_audience, comme le refuse un véritable récepteur. VIDE signifie l’URL propre de l’endpoint dans ce domaine, qui est le nom qu’un émetteur peut découvrir sans qu’on le lui indique."
-  },
-  "ssf.receiveIssuers|label": {
-    "en": "2041998780ce3d52",
-    "text": "Émetteurs qu’accepte POST /ssf/receive"
-  },
-  "ssf.receiveIssuers|description": {
-    "en": "f17ab5dd8ed31e92",
-    "text": "Les valeurs `iss` qu’accepte POST /ssf/receive (SSF 1.0 section 4.1.6 : un récepteur DOIT vérifier l’émetteur). Un SET provenant de tout autre émetteur est enregistré et refusé avec invalid_issuer. VIDE signifie l’émetteur du transmetteur propre à ce domaine — le seul émetteur dont ce récepteur peut vérifier les SET, puisqu’il ne détient aucune autre clé."
   },
   "ssf.receiveRequireSignature|label": {
     "en": "925c518024a9feda",

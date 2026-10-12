@@ -40,12 +40,12 @@
     "text": "签名无法通过验证的已接收 Security Event Token 会被拒绝"
   },
   "mode.requirements.unverified-signals.development": {
-    "en": "298534c9f2c4f318",
-    "text": "POST /ssf/receive 以及控制台和门户自己的接收方会接受它、记录它，并说明它为何未通过验证——这是调试器的姿态——除非 ssf.receiveRequireSignature 已开启。不会据此采取任何行动。联合伙伴的 Shared Signals——无论是推送到 /federation/signals/{id} 还是通过轮询获取——也同样对待：未经验证的 SET 会以“未经验证”的状态记录在该关系的收件箱中，不会据此采取任何行动，除非 ssf.receiveRequireSignature 已开启。"
+    "en": "d0b1b34847fe54b1",
+    "text": "控制台和门户自己的接收方会接受它、记录它，并说明它为何未通过验证——这是调试器的姿态——除非 ssf.receiveRequireSignature 已开启。不会据此采取任何行动。联合伙伴的 Shared Signals——无论是推送到 /federation/signals/{id} 还是通过轮询获取——也同样对待：未经验证的 SET 会以“未经验证”的状态记录在该关系的收件箱中，不会据此采取任何行动，除非 ssf.receiveRequireSignature 已开启。"
   },
   "mode.requirements.unverified-signals.product": {
-    "en": "7823c19f4b2f69fb",
-    "text": "无论 ssf.receiveRequireSignature 如何设置，控制台和门户的接收方都应答 400 invalid_key（#117），并把它保存在收件箱中、标记为已拒绝。/ssf/receive 是开发端点，在此不存在（#585）。联合伙伴未经验证的 SET 同样以 invalid_key 被拒绝——对推送到 /federation/signals/{id} 的请求应答 HTTP 400；对通过轮询获取的 SET，则在下一次轮询请求的 setErrs 中报告——它会保存在该关系的收件箱中、标记为已拒绝，且绝不会据此采取任何行动。"
+    "en": "369551d9ee637c3c",
+    "text": "无论 ssf.receiveRequireSignature 如何设置，控制台和门户的接收方都应答 400 invalid_key（#117），并把它保存在收件箱中、标记为已拒绝。联合伙伴未经验证的 SET 同样以 invalid_key 被拒绝——对推送到 /federation/signals/{id} 的请求应答 HTTP 400；对通过轮询获取的 SET，则在下一次轮询请求的 setErrs 中报告——它会保存在该关系的收件箱中、标记为已拒绝，且绝不会据此采取任何行动。"
   },
   "mode.requirements.signal-reactions.what": {
     "en": "25aa56c5f929fe05",
@@ -700,12 +700,12 @@
     "text": "RFC 8707 资源和 GNAP 权限的位置指明已注册的目标（#505）"
   },
   "mode.requirements.unregistered-resource-targets.development": {
-    "en": "09b7259e14c7de50",
-    "text": "在授权、PAR 和令牌端点，任何绝对 URI 都被接受为资源并成为令牌的 aud；未指明任何资源服务器的 GNAP 位置会被排除在令牌受众之外，但权限照样授予。"
+    "en": "fd6dc100e791e280",
+    "text": "在授权、PAR 和令牌端点，任何绝对 URI 都被接受为资源并成为令牌的 aud；未指明任何资源服务器的 GNAP 位置会被排除在令牌受众之外，但只要令牌中另有内容指明了资源服务器，权限照样授予——访问未指明任何资源服务器的令牌在每种模式下都以 invalid_request 拒绝（STS-GNAP-0904）。"
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "a5fd26a9d49203a6",
-    "text": "资源（令牌交换除外，其目标属于策略的 unregistered-target）以及 GNAP 访问权限的每个位置都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源指示符；/admin-api；GNAP 演示资源服务器（在提供它的地方）），或事先注册的应用（appRegisteredBy 已设置——被观察到不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——嵌入式调试器的 api 就是其中之一，植入时即已注册。位于已注册资源服务器的 gnapResourceServerUri 处或其下的 GNAP 位置也指明该服务器。否则为 invalid_target：从授权端点重定向，在 PAR 返回 400（STS-OAUTH-0950），在令牌端点于消耗任何内容之前返回 400（STS-OAUTH-0951）；对于 GNAP，请求以 invalid_request 拒绝（STS-GNAP-0903），而不是丢弃该权限。"
+    "en": "f943835ab2da2836",
+    "text": "资源（令牌交换除外，其目标属于策略的 unregistered-target）以及 GNAP 访问权限的每个位置都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源指示符；/admin-api；/account-api），或事先注册的应用（appRegisteredBy 已设置——被观察到不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——嵌入式调试器的 api 就是其中之一，植入时即已注册。位于已注册资源服务器的 gnapResourceServerUri 处或其下的 GNAP 位置也指明该服务器。否则为 invalid_target：从授权端点重定向，在 PAR 返回 400（STS-OAUTH-0950），在令牌端点于消耗任何内容之前返回 400（STS-OAUTH-0951）；对于 GNAP，请求以 invalid_request 拒绝（STS-GNAP-0903），而不是丢弃该权限。"
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",
@@ -724,8 +724,8 @@
     "text": "演示、模拟和测试控制端点存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "3125d137228d033e",
-    "text": "提供并列出：命令模拟依赖方（/oauth2/commands/mock-rp），演示颁发方和验证方页面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回读端点，/did/generate，VC-API 测试端点，受保护的 Kerberos 服务（/krb5/service 及其 TCP 套接字），/krb5/principals，/spnego 和 /spnego/protected，/xacml/protected，升级认证替身资源，GNAP 演示资源服务器，以及 /ssf/receive 和 /ssf/received。"
+    "en": "f576a305a27eb0c9",
+    "text": "提供并列出：命令模拟依赖方（/oauth2/commands/mock-rp），演示颁发方和验证方页面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回读端点，/did/generate，VC-API 测试端点，受保护的 Kerberos 服务（/krb5/service 及其 TCP 套接字），/krb5/principals，/spnego 和 /spnego/protected，以及 /xacml/protected。"
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

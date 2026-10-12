@@ -24,10 +24,17 @@
 //        a. discovery — acr_values_supported in both documents;
 //        b. acr and auth_time in the access token and in introspection
 //           (section 6);
-//        c. the stand-in resource — 401 insufficient_user_authentication with
-//           acr_values and max_age, and what it refuses before asking: no
-//           token, an unknown application, a token for another audience, a
-//           token this service did not sign;
+//        c. a resource server answering for a registered application — 401
+//           insufficient_user_authentication with acr_values and max_age,
+//           and what it refuses before asking: no token, an unknown
+//           application, a token for another audience, a token this service
+//           did not sign. Since #593 deleted the service's own stand-in
+//           (`/oauth2/step-up/resource/{application}`; the test peer plays
+//           it over HTTP, `tests/vendored/sts_step_up.js`) it is a STUB this
+//           file serves on the same app, built on what the stand-in was built
+//           on: `dpop.presentedAccessToken()`'s `audience`,
+//           `requireVerified` and `stepUp` options and the entry's
+//           requirement (`applications.stepUpRequirementOf()`);
 //        d. STEP-UP FOR A SECOND FACTOR, end to end — a one-factor session
 //           sent to sign in again, the screen demanding the factor, the code,
 //           the marker on the return, a token carrying acr "mfa", the
@@ -334,6 +341,44 @@ function childMain() {
     const monitor = require(ROOT + '/oauth-oidc/oauth2_monitor');
     const monitorConsole = require(ROOT + '/oauth-oidc/oauth2_monitor_console');
     const par = require(ROOT + '/oauth-oidc/par');
+    const dpop = require(ROOT + '/oauth-oidc/dpop');
+
+    // THE STUB RESOURCE SERVER (#593): what the deleted stand-in did, on the
+    // library half it was built on, served on the same app so the token's
+    // issuer is this listener's. A path no route of the service has.
+    const stubResource = function (req, res) {
+      res.set('Cache-Control', 'no-store');
+      const id = String(req.params.application || '');
+      const entry = applications.get(id) || applications.forClientId(id);
+      if (!entry) {
+        res.status(404).json({ error: 'invalid_request',
+                               error_description: 'no application ' + id });
+        return;
+      }
+      const requirement = applications.stepUpRequirementOf(entry);
+      const presented = dpop.presentedAccessToken(req, res,
+        'the stub resource for "' + entry.identifier + '"', {
+          requireVerified: true,
+          audience: {
+            label: 'the application "' + entry.identifier + '"',
+            names: function (audiences) {
+              return applications.audienceNamesEntry(entry, audiences);
+            }
+          },
+          stepUp: requirement
+        });
+      if (!presented) {
+        return;
+      }
+      const claims = presented.claims || {};
+      res.status(200).json({ resource: entry.identifier,
+        requirement: { acr_values: requirement.acrValues.join(' ') || null,
+                       max_age: requirement.maxAge },
+        met: true,
+        token: { client_id: claims.client_id || null, acr: claims.acr || null,
+                 auth_time: claims.auth_time || null } });
+    };
+    app.get('/rfc9470-stub/resource/:application', stubResource);
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -426,7 +471,7 @@ function childMain() {
                 redirect_uri: REDIRECT, code_verifier: VERIFIER } });
     };
     const resource = function (b, token, app) {
-      return b.go('GET', '/oauth2/step-up/resource/' + (app || 'su-api'), {
+      return b.go('GET', '/rfc9470-stub/resource/' + (app || 'su-api'), {
         noCookies: true,
         headers: token ? { authorization: 'Bearer ' + token } : {} });
     };
@@ -469,7 +514,7 @@ function childMain() {
          '3b4. section 6.2: introspection carries acr and auth_time',
          r.status + ' ' + r.text.slice(0, 300));
 
-    // --- c. the stand-in resource --------------------------------------------
+    // --- c. the stub resource server ------------------------------------------
     r = await resource(anon, oneFactorToken);
     const challenge = String(r.headers['www-authenticate'] || '');
     note(r.status === 401 &&
@@ -799,7 +844,7 @@ module.exports = {
   describe: 'RFC 9470: the levels and the challenge, the two application ' +
             'attributes, re-authentication for acr_values and max_age, ' +
             'unmet_authentication_requirements, acr and auth_time in tokens ' +
-            'and introspection, the stand-in resource, UserInfo under the ' +
+            'and introspection, a stub resource server, UserInfo under the ' +
             'two settings, and the counters',
   run: run
 };

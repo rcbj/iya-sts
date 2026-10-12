@@ -1275,6 +1275,83 @@ class GnapGrants {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // AN ACCESS TOKEN FOR NOBODY IN PARTICULAR IS REFUSED (#593, rcbj's
+  // decision 4 on #591), IN EVERY MODE.
+  //
+  // A token's audience is the resource servers its rights resolve to
+  // (`resourceServersFor()`: a registered reference, a location at or under
+  // a resource server's `gnapResourceServerUri`, or the owner of a
+  // catalogued type). Where they resolved to none, the token used to be
+  // audienced to the demonstration resource server at `/gnap/rs/resource`
+  // — a default audience that named the one resource server every client
+  // here could be pointed at. #593 deleted that resource server (the test
+  // peer plays one), and with it the default: a token whose access names
+  // no resource server would be a token for nobody, or for everybody, which
+  // is the confused deputy RFC 9767's audience exists to prevent.
+  //
+  // **THE ONE RESOURCE SERVER THAT NEEDS NO ENTRY IS THIS SERVICE'S OWN
+  // SHARED SIGNALS TRANSMITTER.** Its access is a reference string naming
+  // `ssf.authScopeRead` or `ssf.authScopeWrite`, or an object of type
+  // `ssf` (`ssf/ssf_auth.ts`'s `gnapCovers()`), and it REFUSES a token
+  // issued for a named resource server (STS-SSF-0079) — so a right of that
+  // shape names a resource server, this service's, and is not refused here.
+  //
+  // **`invalid_request`, HTTP 400** (STS-GNAP-0904): RFC 9635 section 3.6
+  // defines no error for an access request a resource server does not
+  // answer to, and its `invalid_request` is "the request is missing a
+  // required parameter, includes an invalid parameter value or is otherwise
+  // malformed" — what a request is when nothing in it says where the token
+  // is to be used. It is the code a location naming no registered resource
+  // server already gets (STS-GNAP-0903), for the same reason; section 3.6's
+  // `request_denied` is a refusal by policy or by the resource owner, and
+  // neither was asked. Asked at the request stage, AFTER the issuance
+  // policy's questions (so a right the policy refuses keeps its own, more
+  // specific refusal) and of what the policy left, at creation, modification
+  // and derivation alike and before anybody is asked to approve; a request
+  // for no access token is not asked at all.
+  // ---------------------------------------------------------------------------
+  private noResourceServerRefusal(tokens) {
+    const { log, config } = this.deps;
+    log.debug("Entering GnapGrants.noResourceServerRefusal().");
+    // `gnap_rights.ts`'s `protectedFacts()` reads the same two, the same
+    // way.
+    const ownScopes = [
+      String(config.value('ssf.authScopeRead') || 'ssf:read'),
+      String(config.value('ssf.authScopeWrite') || 'ssf:write')];
+    const namesTransmitter = function (right) {
+      log.debug("Entering namesTransmitter().");
+      log.debug("Leaving namesTransmitter().");
+      return typeof right === 'string' ? ownScopes.indexOf(right) >= 0
+        : !!(right && typeof right === 'object' && right.type === 'ssf');
+    };
+    for (let t = 0; t < (tokens || []).length; t++) {
+      const access = tokens[t].access || [];
+      if (!access.length) {
+        continue;
+      }
+      if (this.resourceServersFor(access).length ||
+          access.some(namesTransmitter)) {
+        continue;
+      }
+      log.debug("Leaving GnapGrants.noResourceServerRefusal(). " +
+                "access_token" + (tokens.length > 1 ? '[' + t + ']' : '') +
+                " names no resource server.");
+      return this.refusal('STS-GNAP-0904', 'access_token' +
+        (tokens.length > 1 ? '[' + t + ']' : '') + '.access names no ' +
+        'resource server, so the token would be for nobody in particular, ' +
+        'and this authorization server issues none. Name one: a reference ' +
+        'a resource server registered (RFC 9767 section 3.4), a location ' +
+        'at or under a registered resource server\'s gnapResourceServerUri, ' +
+        'or a type a registered resource server declares (RFC 9635 section ' +
+        '8) — or this service\'s Shared Signals transmitter, by "' +
+        ownScopes.join('" or "') + '" or an object of ' +
+        'type "ssf".', 'invalid_request', 400);
+    }
+    log.debug("Leaving GnapGrants.noResourceServerRefusal(). None.");
+    return null;
+  }
+
   // The request stage (#432 phase 3): the catalogue's well-formedness, then
   // one policy question per right. A refusal, or the tokens as the policy
   // left them and what it narrowed.
@@ -1297,8 +1374,20 @@ class GnapGrants {
     // The owner lookups first (#432 phase 5): the question is synchronous.
     ctx.owners = await rights.owners(tokens, ctx);
     const judged = rights.judge(tokens, ctx, rights.STAGES.REQUEST);
-    log.debug("Leaving GnapGrants.judgeRequested(). " +
-              (judged.ok ? 'Judged.' : 'Refused.'));
+    if (!judged.ok) {
+      log.debug("Leaving GnapGrants.judgeRequested(). Refused.");
+      return judged;
+    }
+    // #593: in every mode, a token whose access names no resource server —
+    // asked of what the policy left, and AFTER it, so a right the policy
+    // refuses (an uncatalogued type in product, STS-GNAP-0810) keeps its
+    // own, more specific refusal.
+    const nobody = this.noResourceServerRefusal(judged.tokens || tokens);
+    if (nobody) {
+      log.debug("Leaving GnapGrants.judgeRequested(). No resource server.");
+      return nobody;
+    }
+    log.debug("Leaving GnapGrants.judgeRequested(). Judged.");
     return judged;
   }
 
@@ -1520,15 +1609,12 @@ class GnapGrants {
       }
       const keyDescriptor = keys.describe(grant.client.key,
                                           this.referenceResolver);
+      // NO DEFAULT AUDIENCE (#593): a request whose access named no
+      // resource server was refused at the request stage
+      // (`noResourceServerRefusal()`), and what reaches here empty is a
+      // token for this service's own Shared Signals transmitter, which
+      // accepts only a token issued for no named resource server.
       const audience = rsIds.slice();
-      if (!audience.length && mode.servesDemoEndpoints() &&
-          (config.value('gnap.demoResourceServer') !== false)) {
-        // A token for nobody in particular is valid at the demonstration RS,
-        // which is how a client can present one somewhere at all — where the
-        // demonstration RS is SERVED (#585): a product realm has none, so its
-        // default audience names nothing that does not exist.
-        audience.push(helpers.rebaseTo(base, 'gnap') + '/gnap/rs/resource');
-      }
       const model = {
         jti: store.handle(16),
         iss: grant.grantEndpoint,

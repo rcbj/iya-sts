@@ -112,8 +112,8 @@
     "text": "full: los ocho formatos con sus nombres registrados — account, email, iss_sub, opaque, phone_number, did, uri y aliases — con el conjunto CERRADO de miembros de cada formato aplicado, que es la mitad que las implementaciones hacen mal: un sujeto con un miembro adicional es uno que un receptor conforme DEBE rechazar, así que este servicio lo rechaza y nombra el miembro. La prohibición de la sección 3.2.8 de anidar un identificador aliases dentro de otro se aplica en lugar de aplanarse."
   },
   "stsmetadata.specs.rfc8935.coverage": {
-    "en": "be8ad58144fd7a8b",
-    "text": "partial: este servicio envía por POST cada SET como application/secevent+jwt con el encabezado Authorization configurado del receptor, trata 202 como entrega, y lee un 400 {err, description} como un RECHAZO del receptor — que es un resultado distinto de un fallo de red y se registra como tal. También RECIBE en ese perfil en POST /ssf/receive, con los papeles invertidos, para que un cliente pueda ser el transmisor, verificando el typ, iss y aud de lo que llega. Un envío fallido se reintenta ssf.pushRetries veces — 0 de forma predeterminada, deliberadamente, vea ssf/ssf_http.ts — y luego va a la cola de mensajes fallidos del flujo."
+    "en": "33ebb18b9c6c5a53",
+    "text": "partial: este servicio envía por POST cada SET como application/secevent+jwt con el encabezado Authorization configurado del receptor, trata 202 como entrega, y lee un 400 {err, description} como un RECHAZO del receptor — que es un resultado distinto de un fallo de red y se registra como tal. Los receptores propios de la consola y del portal RECIBEN en ese perfil, verificando el typ, iss y aud de lo que llega. Un envío fallido se reintenta ssf.pushRetries veces — 0 de forma predeterminada, deliberadamente, vea ssf/ssf_http.ts — y luego va a la cola de mensajes fallidos del flujo."
   },
   "stsmetadata.specs.caep.coverage": {
     "en": "637a8df8aa9a2d10",
@@ -344,8 +344,8 @@
     "text": "full: POST /oauth2/par en cada servidor de autorización, autenticando al cliente exactamente como lo hace el endpoint de token (es decir, aplicado en los modos RFC 9700, OAuth 2.1 y producto, y observado en desarrollo), aceptando el emisor, el endpoint de token y el endpoint PAR como audiencia de una aserción de cliente; request_uri rechazado en un envío; la solicitud enviada validada por las propias comprobaciones del endpoint de autorización; un objeto `request` verificado como exige RFC 9101, vinculado al cliente autenticado, y un envío sin firmar rechazado donde se exige un objeto firmado; 201 con una referencia urn:ietf:params:oauth:request_uri: de 256 bits vinculada al cliente y al servidor de autorización, expires_in desde oauth2.parRequestUriLifetimeS; 405, 413 y 429; la redirect_uri no registrada de la sección 2.4 para un cliente AUTENTICADO tras un ajuste (desactivado); una request_uri utilizable a lo largo de los pasos de inicio de sesión y consentimiento y consumida cuando se emite una respuesta de autorización, rechazando las caducadas y repetidas con invalid_request_uri; la política de exigencia globalmente, por cliente (require_pushed_authorization_requests en el registro, en la consola y en /admin-api) y por servidor de autorización; ambos miembros de metadatos; la política del cliente consultada de nuevo cuando se usa la request_uri; y una prueba DPoP en el envío que vincula el código (RFC 9449 sección 10.1). Se cuenta y se lista en /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "5996b65ceb337db8",
-    "text": "full: el endpoint de autorización respeta acr_values y max_age en todos los modos y con o sin openid — una sesión que no los cumple envía a la persona a iniciar sesión de nuevo una vez (una exigencia de dos factores fuerza el paso del segundo factor), prompt=none responde login_required, y un requisito aún incumplido tras ese inicio de sesión se rechaza con unmet_authentication_requirements (sección 5); los valores acr se ordenan 0 < 1 < mfa y el código, el ID Token y el token de acceso llevan el valor SOLICITADO de mayor preferencia que se cumplió; acr_values_supported en ambos documentos de descubrimiento; acr y auth_time en el token de acceso JWT (sección 6.1) y en la introspección (sección 6.2); y el desafío 401 insufficient_user_authentication de la sección 3 con acr_values y max_age, enviado por el propio servidor de recursos de este servicio (UserInfo, los endpoints de OpenID4VCI, SCIM, SSF) según oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS y por /oauth2/step-up/resource/{application} según el oauthStepUpAcrValues / oauthStepUpMaxAge de una aplicación de recursos. Simulado: el inicio de sesión de este servicio produce tres clases de contexto; cualquier otro valor acr solo lo cumple un inicio de sesión federado que informe exactamente ese acr. Se cuenta en /admin/oauth2/monitor."
+    "en": "56808a8c0f6588d3",
+    "text": "full: el endpoint de autorización respeta acr_values y max_age en todos los modos y con o sin openid — una sesión que no los cumple envía a la persona a iniciar sesión de nuevo una vez (una exigencia de dos factores fuerza el paso del segundo factor), prompt=none responde login_required, y un requisito aún incumplido tras ese inicio de sesión se rechaza con unmet_authentication_requirements (sección 5); los valores acr se ordenan 0 < 1 < mfa y el código, el ID Token y el token de acceso llevan el valor SOLICITADO de mayor preferencia que se cumplió; acr_values_supported en ambos documentos de descubrimiento; acr y auth_time en el token de acceso JWT (sección 6.1) y en la introspección (sección 6.2); y el desafío 401 insufficient_user_authentication de la sección 3 con acr_values y max_age, enviado por el propio servidor de recursos de este servicio (UserInfo, los endpoints de OpenID4VCI, SCIM, SSF) según oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; el oauthStepUpAcrValues / oauthStepUpMaxAge de una aplicación de recursos se registran para que los haga cumplir el servidor de recursos que es la propia aplicación. Simulado: el inicio de sesión de este servicio produce tres clases de contexto; cualquier otro valor acr solo lo cumple un inicio de sesión federado que informe exactamente ese acr. Se cuenta en /admin/oauth2/monitor."
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -843,14 +843,6 @@
     "en": "11ec8d19db18eafd",
     "text": "NO ES UN ENDPOINT DE GNAP: el documento del controlador que nombra la capacidad raíz de un token de acceso zcap, con el método de verificación contra el que se comprueba su firma: un Multikey en un documento Controlled Identifiers v1.0 con los conjuntos JCS, o un Ed25519VerificationKey2020 con Ed25519Signature2020. Se sirve con no-store."
   },
-  "stsmetadata.endpoints./gnap/rs/resource.what": {
-    "en": "8b1a8e5a44cadf17",
-    "text": "Un recurso protegido de este servicio contra el que una instancia de cliente puede gastar un token: sin token responde 401 con el desafío WWW-Authenticate de la sección 9.1 que nombra el endpoint de concesión; con uno comprueba el formato, la audiencia, la vinculación de clave y los derechos de acceso como lo haría un servidor de recursos. gnap.demoResourceServer lo desactiva."
-  },
-  "stsmetadata.endpoints./gnap/rs/spend.what": {
-    "en": "dba6c3ce40e6653f",
-    "text": "Una operación que GASTA contra los límites de un derecho (#432 fase 5): POST con un importe, una moneda y un destinatario, con un token que concede spend sobre el tipo de demostración. El servidor de recursos lleva los totales acumulados por concesión (de forma atómica en todo el clúster, reiniciados en cada límite del intervalo repetitivo de los límites y reembolsados cuando la operación falla) y rechaza una operación que supera el límite con 403 insufficient_scope. La referencia de lo que hace un servidor de recursos con un límite. gnap.demoResourceServer lo desactiva."
-  },
   "stsmetadata.endpoints./admin-api/gnap.what": {
     "en": "42628a10e9f2ed4a",
     "text": "Lo que dibuja GET /admin/gnap, a partir de la misma función de vista."
@@ -982,14 +974,6 @@
   "stsmetadata.endpoints./ssf/poll.what": {
     "en": "24403b87bfb6de2b",
     "text": "El receptor viene AQUÍ, así que no se establece ninguna conexión saliente; por eso un navegador puede ser receptor con este método y no puede serlo con push. Responde {sets, moreAvailable}. `ack` nombra lo que el receptor almacenó y `setErrs` lo que RECHAZÓ, y ambos salen de la cola: un receptor que no pudo procesar un evento tampoco lo procesará la próxima vez, así que volver a entregarlo crearía un bucle de sondeo infinito. En su lugar, el rechazo se registra en el flujo, donde una persona puede verlo. RFC 8936 no tiene un miembro stream_id porque un endpoint de sondeo real es por flujo; este transmisor publica una URL, así que el id va en el cuerpo."
-  },
-  "stsmetadata.endpoints./ssf/receive.what": {
-    "en": "83ab0455f6d83a87",
-    "text": "LOS PAPELES INVERTIDOS, y no un endpoint de SSF: un transmisor tiene que tener algún sitio adonde enviar, así que aquí este servicio es un RECEPTOR en beneficio de un cliente. ACEPTA un SET cuya firma no se verifica e informa del motivo, que es exactamente lo correcto para un depurador: un receptor que lo rechazara no podría mostrar a nadie qué llegó ni por qué no se verificó, que es la pregunta que se plantea. ssf.receiveRequireSignature activa el 400 invalid_key, que es lo que hace un receptor real. La verificación se hace contra la propia clave de ESTE servicio, la única que tiene, así que un SET firmado por otro es \"no verificable aquí\" en lugar de inválido."
-  },
-  "stsmetadata.endpoints./ssf/received.what": {
-    "en": "5fd7b2aac2518dc4",
-    "text": "Tampoco es un endpoint de SSF. Todo lo que ha recibido POST /ssf/receive, con lo que decodificó cada uno, si su firma se verificó y si llevaba el tipo de medio application/secevent+jwt que especifica la sección 2.3 de RFC 8417: un receptor que despacha según el tipo, y varios lo hacen, descarta un SET enviado como JWT simple sin ningún error visible para nadie."
   },
   "stsmetadata.endpoints./scim.what": {
     "en": "45bc7df482a040d6",
@@ -1692,8 +1676,8 @@
     "text": "emit, reset-session y clear: las mismas tres que envían los formularios de la consola, mediante la misma función de acción, con la acción tomada de la URL en lugar de un campo oculto. `emit` compone el sujeto COMPLEJO de SSF a partir de la sesión nombrada y lo envía en cada flujo que entrega el tipo y además cubre ese sujeto; un tipo que ningún flujo acepta NO es un error, porque \"el evento ocurrió y nadie había pedido enterarse\" es un hecho distinto de un fallo y es el que suele ser cierto. DELIBERADAMENTE NO HAY FORMA DE TERMINAR UNA SESIÓN DESDE AQUÍ: emitir un session-revoked DICE que se revocó una sesión y no revoca ninguna, y una API que hiciera ambas cosas fundiría los dos actos que CAEP existe para separar. Espera, como la acción de Shared Signals a su lado, porque emitir firma un JWS y luego lo envía por POST."
   },
   "stsmetadata.endpoints./admin-api/ssf/:action.what": {
-    "en": "4607fb30b4224310",
-    "text": "status, transmit, delete y clear-received: las mismas cuatro que envían los formularios de la consola, mediante la misma función de acción, con la acción tomada de la URL en lugar de un campo oculto. DELIBERADAMENTE NO HAY `create`: un flujo lleva un endpoint de entrega al que este servicio SE CONECTARÁ, y el único lugar del que puede venir esa URL es un receptor que la pidió en POST /ssf/stream; una API que pudiera generar uno sería una segunda puerta, sin control de acceso, hacia la solicitud saliente. También es el ÚNICO manejador de acciones de esta API que espera: transmitir firma un JWS, posiblemente en el grupo de hilos de libuv, y luego lo envía por POST, y responder antes de que hubiera ocurrido cualquiera de las dos cosas sería informar \"enviado\" sobre nada."
+    "en": "64dd45c6ceafaf73",
+    "text": "status, transmit, delete, revive, clear-dead-letters y verify: las acciones que envían los formularios de la consola, mediante la misma función de acción, con la acción tomada de la URL en lugar de un campo oculto. DELIBERADAMENTE NO HAY `create`: un flujo lleva un endpoint de entrega al que este servicio SE CONECTARÁ, y el único lugar del que puede venir esa URL es un receptor que la pidió en POST /ssf/stream; una API que pudiera generar uno sería una segunda puerta, sin control de acceso, hacia la solicitud saliente. También es el ÚNICO manejador de acciones de esta API que espera: transmitir firma un JWS, posiblemente en el grupo de hilos de libuv, y luego lo envía por POST, y responder antes de que hubiera ocurrido cualquiera de las dos cosas sería informar \"enviado\" sobre nada."
   },
   "stsmetadata.endpoints./admin-api/spiffe.what": {
     "en": "e93f09c4667fd734",
@@ -2754,14 +2738,6 @@
   "stsmetadata.endpoints./oauth2/par.what": {
     "en": "bfe38fea0bb9115e",
     "text": "POST de los parámetros de una solicitud de autorización, autenticado como en el endpoint de token, que devuelve 201 { request_uri, expires_in } con el que enviar el navegador a /oauth2/authorize. El envío se valida como lo sería una solicitud de autorización y se rechaza como JSON; un objeto `request` puede llevar los parámetros; una prueba DPoP vincula el código. Cualquier otro método es 405."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.what": {
-    "en": "e844e62fd1ebee95",
-    "text": "NON-SPEC: un recurso protegido que responde EN NOMBRE DE una aplicación registrada, en GET y POST, para que se pueda llevar a un cliente por RFC 9470 sin desplegar la API. El token de acceso debe verificar, ser un at+jwt de un servidor de autorización que publica este servicio y nombrar la aplicación en su aud; después se exigen los oauthStepUpAcrValues y oauthStepUpMaxAge de la aplicación a su acr y auth_time, y un token que no los cumple se responde con 401 insufficient_user_authentication con acr_values y max_age en el desafío. Un token que sí los cumple recibe 200 y el requisito y la autenticación que lo cumplió. No guarda datos."
-  },
-  "stsmetadata.endpoints./oauth2/step-up/resource/:application.effect": {
-    "en": "4c20d4f0b8d4754c",
-    "text": "responde 401 con un desafío WWW-Authenticate cuando se sigue sin más, y 404 para una aplicación de la que el dominio no tiene entrada"
   },
   "stsmetadata.endpoints./admin-api/oauth2/monitor.what": {
     "en": "171d2c4a5f0353d0",

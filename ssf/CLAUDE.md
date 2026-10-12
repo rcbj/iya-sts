@@ -6,7 +6,7 @@ family here and the first one that TALKS BACK.
 
 | File | What it is |
 |---|---|
-| `ssf.ts` | The routes. The metadata document, the stream management API, status, subjects, verification, poll delivery, and the two endpoints that are not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, which are this service acting as a RECEIVER so that a client can be the transmitter. |
+| `ssf.ts` | The routes. The metadata document, the stream management API, status, subjects, verification and poll delivery. The two endpoints that were not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, this service acting as a RECEIVER so that a client could be the transmitter — were deleted by #593 (see *The roles reversed are the test peer's*, below). |
 | `ssf_subjects.js` | **RFC 9493** subject identifiers: the eight formats with their CLOSED member sets, SSF's complex subject, and the nesting ban. A LIBRARY. |
 | `ssf_events.js` | The event vocabulary — SSF's two — and the **RFC 8417** Security Event Token they travel in. A LIBRARY. |
 | `ssf_streams.ts` | The streams, their subjects and their queues, per trust realm — the queue as a row per SET since 2026-09-13. A LIBRARY. |
@@ -1088,9 +1088,9 @@ stream IDs and aud values"; nothing here did.
   build.
 
 The receivers still CHECK `aud`, and now `iss` and `typ` too (sections 4.1.6 and
-4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values, and
-`/ssf/receive` against `ssf.receiveIssuers` / `ssf.receiveAudiences`, which
-default to the only issuer whose key it holds and to the endpoint's own URL.
+4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values.
+`/ssf/receive` checked them against `ssf.receiveIssuers` /
+`ssf.receiveAudiences` until #593 deleted it with both settings.
 
 ---
 
@@ -2629,9 +2629,9 @@ on `ssf_streams.ts`'s three filters, so the real emitters build each event);
 `tests/vendored/sts_application_signals.js` subscribes a receiver to an
 application and rotates its secret over the wire.
 
-## Development only: this family's demonstrations (#585, 2026-10-12)
+## The roles reversed are the test peer's (#593, 2026-10-12)
 
-`POST /ssf/receive` and `GET /ssf/received`, the receiver "for the debugger's benefit"; `ssf.receiveEnabled` now governs a development endpoint. The console's and portal's own receivers are not demonstrations and are unchanged; the product job's receiver is the test peer (#586). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+`POST /ssf/receive` and `GET /ssf/received` were the receiver "for the debugger's benefit": a SET pushed AT this service, recorded whether or not it verified, with `typ`, `iss` and `aud` checked against `ssf.receiveIssuers` / `ssf.receiveAudiences`. #585 made them development only; #593 deleted them, because the test peer (`tests/peer/peer_ssf.js`, #586) is an SSF push receiver that talks to this service only through the protocol, and this service's own receivers are the console's and the portal's (`ssf_receivers.ts`), which are not demonstrations and are unchanged. What went with them: the inbox store (`ssf_streams.received`, a `merge: 'own'` accumulator), the console's *Pushed at this service* section and its `clear-received` action (and `POST /admin-api/ssf/clear-received`), the settings `ssf.receiveEnabled`, `ssf.receiveIssuers` and `ssf.receiveAudiences`, and `STS-SSF-0022`–`0025` and `0106` (retired). `ssf.receiveRequireSignature` stays — the console's and portal's receivers and a federation partner's signals read it through `mode.refusesUnverifiedSignals()` — and so does `ssf.maxReceivedEvents`, the receivers' inbox cap. **Owed by the parent project**: its `caep_page.js` pushes at `/ssf/receive`.
 
 ## The description page is a static surface's shell (#584, 2026-10-12)
 

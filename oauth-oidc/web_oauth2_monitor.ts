@@ -365,11 +365,9 @@ class OAuth2MonitorPage {
       ' — ' +
       '<a href="/admin/oauth2">' + t.html('consoleOauth2Monitor.ownLink') +
       '</a>' +
-      // The stand-in's sentence only where this realm is served it (#585).
-      (section.standInResource
-        ? t.html('consoleOauth2Monitor.ownApi',
-                 { path: section.standInResource })
-        : '.') + '</p>' +
+      // A registered API enforces its own requirement: the stand-in resource
+      // that answered for one here went with #593.
+      t.html('consoleOauth2Monitor.ownApi') + '</p>' +
       '<h3>' + t.html('consoleOauth2Monitor.everyCounter') + '</h3>' +
       self.countersHtml(section, t) +
       '<h3>' + t.html('consoleOauth2Monitor.byClient') + '</h3>' +

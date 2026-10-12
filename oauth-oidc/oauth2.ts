@@ -26,8 +26,6 @@
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
 //   GET  /oauth2/check_session  the OP iframe, and its script beside it
 //                            (Session Management, #121; off by default)
-//   *    /oauth2/step-up/resource/:application
-//                            NON-SPEC: RFC 9470's stand-in resource server
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
 //                            is on, and every requirement it does and does not
 //                            enforce (oauth2_bcp.js)
@@ -12413,90 +12411,6 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.userinfoResponse(). Answering.");
   }
 
-  // ---------------------------------------------------------------------------
-  // GET|POST /oauth2/step-up/resource/{application} — RFC 9470's STAND-IN
-  // RESOURCE (2026-09-13).
-  //
-  // NON-SPEC, AND IT IS THE RESOURCE SERVER HALF OF A SPECIFICATION WHOSE OTHER
-  // HALF IS HERE. A registered API declares what it requires of the
-  // authentication behind a token (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`)
-  // and this answers FOR it: the token must verify, be an `at+jwt` from an
-  // authorization server this service publishes, and be addressed to that
-  // application (RFC 9068 section 4, with step 4 asked of the application);
-  // then section 3's question, whose "no" is the 401 challenge a client turns
-  // into an authorization request. Its "yes" is 200 and what it decided on.
-  //
-  // It exists because the real API is somebody else's process: a client
-  // developer testing a step-up flow against this service needs a resource that
-  // challenges, and an operator configuring a requirement on an entry needs to
-  // see what that requirement does to a token without deploying the API. It
-  // holds no data and grants nothing — the body is the token's own claims about
-  // authentication, read back to the person who presented it.
-  //
-  // **THE APPLICATION IS NAMED BY ITS REGISTRY IDENTIFIER OR ITS client_id**,
-  // the two spellings `/admin/applications` shows. One that names no entry is
-  // 404; an entry requiring nothing answers every valid token 200, and says so.
-  // ---------------------------------------------------------------------------
-  private stepUpResource(req: Req, res: Res): Json {
-    const { log, STS, dpop, applications, errorCodes, stepUp } = this.deps;
-    const self = this;
-    log.debug("Entering OAuth2Server.stepUpResource().");
-    res.set('Cache-Control', 'no-store');
-    const id = String(req.params.application || '');
-    const entry = applications.get(id) || applications.forClientId(id);
-    if (!entry) {
-      log.debug("Leaving OAuth2Server.stepUpResource(). No such application.");
-      errorCodes.mark(res, 'STS-OAUTH-0505');
-      return self.oauthError(res, 404, 'invalid_request', 'No application "' +
-        id.slice(0, 200) + '" is registered in this realm, so there is no ' +
-        'resource here to answer for it. The path names an application by ' +
-        'its ' +
-        'identifier or client_id, as /admin/applications lists it.');
-    }
-    const requirement = applications.stepUpRequirementOf(entry);
-    const presented = dpop.presentedAccessToken(req, res, 'the step-up ' +
-      'resource for "' + entry.identifier + '"', {
-      requireVerified: true,
-      audience: {
-        label: 'the application "' + entry.identifier + '"',
-        names: function (audiences) {
-          log.debug("Entering names().");
-          log.debug("Leaving names().");
-          return applications.audienceNamesEntry(entry, audiences);
-        }
-      },
-      stepUp: requirement
-    });
-    if (!presented) {
-      log.debug("Leaving OAuth2Server.stepUpResource(). The token was " +
-                "refused or " +
-                "challenged.");
-      return undefined;
-    }
-    const claims = presented.claims || {};
-    const now = Math.floor(Date.now() / 1000);
-    res.status(200).type('application/json').send(JSON.stringify({
-      resource: entry.identifier,
-      requirement: {
-        acr_values: requirement.acrValues.join(' ') || null,
-        max_age: requirement.maxAge
-      },
-      met: true,
-      token: {
-        client_id: claims.client_id || null,
-        sub: claims.sub || null,
-        acr: claims.acr || null,
-        amr: claims.amr || null,
-        auth_time: claims.auth_time || null,
-        authenticated_seconds_ago: claims.auth_time
-          ? now - Number(claims.auth_time) : null,
-        scheme: presented.scheme
-      }
-    }, null, 2));
-    log.debug("Leaving OAuth2Server.stepUpResource(). Met.");
-    return undefined;
-  }
-
   // --- what became of an authorization code
   // ----------------------------------- The functions behind the relaxation
   // described where `redeemedCodes` is declared. They are here rather than
@@ -20477,7 +20391,7 @@ class OAuth2Server {
     // #46). `dpop.ts` registers nothing (rule 3), so the middleware it builds
     // is registered HERE, above this module's first route — and so above every
     // route that verifies a proof: the token endpoint, the PAR endpoint,
-    // UserInfo and the step-up stand-in below, and the credential endpoints,
+    // UserInfo below, and the credential endpoints,
     // SCIM and Shared Signals, all registered after this module (rule 1:
     // middleware applies only to routes added after it). Nothing required above
     // this module reads a DPoP header. It does nothing for a request without
@@ -20557,19 +20471,18 @@ class OAuth2Server {
     // FAPI 1.0 Baseline section 6.2.1 items 11 and 13: a resource server
     // "shall set the response header x-fapi-interaction-id to the value
     // received from the corresponding FAPI client request header or to a
-    // RFC4122 UUID value if the request header was not provided". UserInfo,
-    // Grant Management's `/oauth2/grants/{id}` and the step-up stand-in are
-    // the resources this service serves, and the OpenID conformance suite's
-    // FAPI 1.0 plans read the header off UserInfo. In EVERY mode rather than
+    // RFC4122 UUID value if the request header was not provided". UserInfo
+    // and Grant Management's `/oauth2/grants/{id}` are the resources this
+    // service serves, and the OpenID conformance suite's FAPI 1.0 plans read
+    // the header off UserInfo. In EVERY mode rather than
     // under a FAPI profile: the header is a correlation id that carries
     // nothing, and asking a named server's profile here, before its route has
     // entered it, would be the one place that could get it wrong. A value the
     // client sent is echoed only when it has the UUID's shape, so this never
     // reflects arbitrary text into a header.
     // -------------------------------------------------------------------------
-    app.use(['/oauth2/userinfo', '/oauth2/grants', '/oauth2/step-up/resource',
-             '/:as/oauth2/userinfo', '/:as/oauth2/grants',
-             '/:as/oauth2/step-up/resource'],
+    app.use(['/oauth2/userinfo', '/oauth2/grants',
+             '/:as/oauth2/userinfo', '/:as/oauth2/grants'],
             function (req: Req, res: Res, next: () => void): void {
       log.debug("Entering the x-fapi-interaction-id middleware.");
       const sent = String(req.headers['x-fapi-interaction-id'] || '');
@@ -20786,12 +20699,6 @@ class OAuth2Server {
     app.get('/oauth2/userinfo', self.userinfoResponse.bind(self));
 
     app.post('/oauth2/userinfo', self.userinfoResponse.bind(self));
-
-    app.get('/oauth2/step-up/resource/:application', demoOnly,
-            self.stepUpResource.bind(self));
-
-    app.post('/oauth2/step-up/resource/:application', demoOnly,
-             self.stepUpResource.bind(self));
 
     // --- token endpoint
     // ---------------------------------------------------------

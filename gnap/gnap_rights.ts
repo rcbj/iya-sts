@@ -116,39 +116,6 @@ interface GnapRightsDeps {
   stepUp: Json;
 }
 
-// THE DEMONSTRATION RESOURCE SERVER'S TYPE (`gnap.ts`'s `/gnap/rs/resource`),
-// defined here so the route module and the catalogue read one spelling. It is
-// THIS SERVICE'S OWN API, so it is catalogued by this service — the way RFC
-// 9396's `openid_credential` is built in — while `gnap.demoResourceServer` is
-// on: product mode's uncatalogued rule would otherwise refuse the one API
-// every GNAP client here can be pointed at. It declares nothing beyond its
-// existence and owns no audience (a token for it is audienced as before).
-const DEMO_TYPE = 'urn:iya-sts:gnap:demo';
-
-// THE DEMONSTRATION TYPE'S LIMITS (#432 phase 5): the six members
-// `common/access_limits.ts` gives a meaning to and nothing else, so the
-// demonstration resource server — the reference for what a resource server
-// does with a limit (rcbj's decision 2) — can be asked for every one of
-// them. Read through the catalogue's own grammar
-// (`applications.authorizationDetailsTypeOf()`), so it is compiled and held
-// to the limits subset exactly as an operator's would be.
-const DEMO_DEFINITION = JSON.stringify({
-  type: DEMO_TYPE,
-  limits: {
-    type: 'object',
-    properties: {
-      amount: { type: ['string', 'number'] },
-      currency: { type: 'string' },
-      count: { type: 'integer', minimum: 0 },
-      receiver: { type: ['string', 'array'] },
-      interval: { type: 'string' },
-      window: { type: 'object' }
-    },
-    additionalProperties: false
-  }
-});
-let demoDefinition: Json = null;
-
 // The array dimensions of a right (RFC 9635 section 8) a narrowing may take
 // values off, by the obligation's name for them.
 const DIMENSIONS = ['actions', 'locations', 'datatypes', 'privileges'];
@@ -233,27 +200,6 @@ class GnapRights {
   entryOf(right: Json): Json {
     const { log, catalogue } = this.deps;
     log.debug("Entering GnapRights.entryOf().");
-    // Catalogued only where the demonstration RS is SERVED (#585): a product
-    // realm has none, so the type names an API that is not there.
-    if (right && typeof right === 'object' && right.type === DEMO_TYPE &&
-        this.deps.mode.servesDemoEndpoints() &&
-        this.deps.config.value('gnap.demoResourceServer') !== false) {
-      log.debug("Leaving GnapRights.entryOf(). The demonstration type.");
-      if (!demoDefinition) {
-        demoDefinition = this.deps.applications
-          .authorizationDetailsTypeOf(DEMO_DEFINITION);
-      }
-      // `builtIn` keeps the owner rules out (no resource server declares
-      // it); the limits are checked like any catalogued type's.
-      return { type: DEMO_TYPE, builtIn: true, identifier: '', clientId: '',
-               identifiers: [], actions: null, datatypes: null,
-               privileges: null, required: [], interaction: 'default',
-               consentActions: [], bearer: null, maxLifetimeS: null, acr: '',
-               derivableFrom: [], introspectionClaims: [],
-               limits: demoDefinition.limits,
-               validateLimits: demoDefinition.validateLimits,
-               validate: null };
-    }
     const found = right && typeof right === 'object'
       ? catalogue.typeOf(right.type) : null;
     log.debug("Leaving GnapRights.entryOf(). " + !!found);
@@ -990,7 +936,6 @@ export = {
   installInstance: (instance: GnapRights): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   STAGES: GnapRights.STAGES,
-  DEMO_TYPE: DEMO_TYPE,
   entryOf: slot.forward('entryOf'),
   conformanceRefusal: slot.forward('conformanceRefusal'),
   narrowed: slot.forward('narrowed'),

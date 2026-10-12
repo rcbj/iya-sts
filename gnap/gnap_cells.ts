@@ -52,7 +52,7 @@
 //     not hold is asked of the other cells, and the request relayed to the
 //     one that holds it.
 //   /gnap/token/{handle} (section 6): the edge, by the handle's tag.
-//   /gnap/rs/resource, /gnap/introspect (RFC 9767 section 3.3): the cell that
+//   /gnap/introspect (RFC 9767 section 3.3): the cell that
 //     holds the access token. A `jwt-signed` token's `jti` carries the tag
 //     and is read without verifying; the other four formats hide it (an
 //     encrypted JWT, a macaroon, a biscuit, a ZCAP), so a token this cell
@@ -438,9 +438,8 @@ class GnapCells {
   }
 
   /**
-   * Places a request that presents an access token: at the demonstration
-   * resource server (in `Authorization`), at introspection (in the body) and
-   * as a token to derive from.
+   * Places a request that presents an access token: at introspection (in the
+   * body) and as a token to derive from.
    *
    * @param req - the request
    * @param res - the response

@@ -40,11 +40,14 @@
 //                  token issued FOR anybody — Kerberos's S4U2Self passes
 //                  none either, `kerberos/krb5_delegation.ts`); R = each
 //                  resource server the requested rights resolve to
-//                  (`gnap_grants.ts`'s `resourceServersFor()`), or the client
-//                  itself where they resolve to none — S4U2Self's "a ticket
-//                  to yourself", which still needs impersonation in the
-//                  client's allowed semantics, because here the token is
-//                  presentable;
+//                  (`gnap_grants.ts`'s `resourceServersFor()`). It was the
+//                  client itself where they resolved to none — S4U2Self's "a
+//                  ticket to yourself" — until #593: a request whose rights
+//                  name no resource server is refused at the request stage
+//                  now (STS-GNAP-0904), before this is asked — except a
+//                  right naming this service's own Shared Signals
+//                  transmitter, which has no application entry to resolve
+//                  to, so R is still the client there;
 //   derivation     actor = S = the deriving resource server's entry; subject
 //                  = the person the original token is about (its client
 //                  application where it is about nobody); R = each downstream

@@ -59,29 +59,7 @@ class SsfPage {
       kit.tile(totals.dead || 0, t.text('consoleSsf.tile.deadStreams')) +
       kit.tile(totals.deadLetters || 0,
         t.text('consoleSsf.tile.deadLetters')) +
-      kit.tile((json.receivedDetail || []).length,
-        t.text('consoleSsf.tile.received')) +
       '</div>';
-
-    const receivedRows = (json.receivedDetail || []).length
-      ? json.receivedDetail.slice(0, 25).map(function (row) {
-          return '<tr><td class="sub">' + kit.esc(row.at) + '</td><td>' +
-            kit.esc(row.summary ? row.summary.name
-              : t.text('consoleSsf.received.unreadable')) +
-            '</td>' +
-            '<td><code>' + kit.esc(row.summary ? row.summary.jti : '') +
-            '</code></td>' +
-            '<td class="' + (row.verified ? 'state-valid' : 'sub') + '">' +
-            kit.esc(row.verified ? t.text('consoleSsf.received.verified')
-              : t.text('consoleSsf.received.notVerified')) +
-            '</td>' +
-            '<td class="' + (row.correctMediaType ? 'sub' : 'state-invalid') +
-            '"><code>' + kit.esc(row.contentType ||
-              t.text('consoleSsf.received.none')) +
-            '</code></td></tr>';
-        }).join('')
-      : '<tr><td colspan="5">' + t.html('consoleSsf.received.nothing') +
-        '</td></tr>';
 
     const inner = (!json.installed
         ? '<div class="err">' + t.html('consoleSsf.notLoaded') + '</div>'
@@ -132,21 +110,6 @@ class SsfPage {
                          json.metadata.configuration_endpoint) ||
                         '/ssf/stream' }))) +
           streamNav.foot
-        : '') +
-
-      (json.installed
-        ? '<h2>' + t.html('consoleSsf.pushed.heading') + '</h2>' +
-          kit.note(t.html('consoleSsf.pushed.note')) +
-          '<table><tr><th>' + t.html('consoleSsf.th.when') + '</th><th>' +
-          t.html('consoleSsf.th.event') + '</th><th>jti</th>' +
-          '<th>' + t.html('consoleSsf.th.signature') +
-          '</th><th>Content-Type</th></tr>' + receivedRows +
-          '</table>' +
-          '<form method="post" action="/admin/ssf"><div class="formrow">' +
-          '<input type="hidden" name="action" value="clear-received">' +
-          '<button class="secondary">' +
-          t.html('consoleSsf.pushed.clear') + '</button>' +
-          '</div></form>'
         : '') +
 
       SettingsForms.forms(json.settings, '/admin/ssf', settingsGroups, t) +
