@@ -85,6 +85,9 @@ const RESTORE_KEY = 'sts-console-restore';
 const RESTORE_MAX_AGE_MS = 30 * 60 * 1000;
 // What `sendOnce()` answers when the request needs a sign-in first.
 const NEEDS_SIGN_IN = { needsSignIn: true };
+// The calls that negotiate the console's language (#543), which are sent
+// the browser's own Accept-Language rather than the console's answer.
+const LANGUAGE_CALLS = /\/admin-api\/console(\/language)?([?#]|$)/;
 
 /**
  * The static console's runtime: sign-in, DPoP, routing and forms.
@@ -1163,6 +1166,14 @@ class ConsoleRuntime {
         'DPoP': await this.proof(method, target, this.accessToken),
         'Accept': 'application/json'
       };
+      // THE LANGUAGE THE CONSOLE NEGOTIATED, NAMED TO THE API (#543), which
+      // translates the prose it writes into a view only when a request
+      // names one. Not on the two calls that NEGOTIATE it — the shell and
+      // the language chooser's — which must see the browser's own
+      // preference, or "follow the browser" would follow the old answer.
+      if (this.t && this.t.lang && !LANGUAGE_CALLS.test(target)) {
+        headers['Accept-Language'] = this.t.lang;
+      }
       let payload = undefined;
       if (body !== undefined && body !== null) {
         if (typeof FormData !== 'undefined' && body instanceof FormData) {
