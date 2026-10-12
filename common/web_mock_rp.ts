@@ -55,7 +55,8 @@ class MockRpSurfaceRuntime extends WebSurface {
   constructor(env: Json) {
     super(env, { base: MockRpSurfaceRuntime.baseOf(env), api: '',
                  pages: MockRpPagesModule.PAGES as Json,
-                 namespaces: ['mockRp'] });
+                 namespaces: ['mockRp'],
+                 frame: MockRpPagesModule.frame });
   }
 
   /**

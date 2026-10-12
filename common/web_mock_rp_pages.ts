@@ -390,6 +390,22 @@ class MockRpPages {
   }
 
   /**
+   * Wraps a page (and the chooser) in the surface's card: the shell's
+   * `<div class="card mockrp">` is replaced with the body when a page is
+   * drawn. A problem page draws its own card, and is handed no view.
+   *
+   * @param body - the page's body, the chooser first
+   * @param ctx - the render context, its `view` where a page is drawn
+   * @returns the framed markup
+   */
+  static frame(body: string, ctx: Json): string {
+    if (!ctx || !ctx.view) {
+      return body;
+    }
+    return '<div class="card mockrp">' + body + '</div>';
+  }
+
+  /**
    * Draws a family's page from its view, by the view's `kind`.
    *
    * @param family - `wsfed`, `saml2` or `saml11`
@@ -485,5 +501,6 @@ export = {
   PAGES: PAGES,
   BASES: BASES,
   MockRpPages: MockRpPages,
+  frame: MockRpPages.frame,
   render: MockRpPages.render
 };

@@ -139,7 +139,7 @@ class WebCardCss {
     'ground:#f4f4f8;border:1px solid #e2e2ea;border-radius:5px;padding:.6re' +
     'm;font-size:.75rem;overflow-x:auto;white-space:pre-wrap;word-break:bre' +
     'ak-all}.mockrp code{background:#f4f4f8;padding:.1rem .25rem;border-rad' +
-    'ius:3px;word-break:break-all}.mockrp a{color:#12107c}.mockrp ul{margin' +
+    'ius:3px;overflow-wrap:anywhere}.mockrp a{color:#12107c}.mockrp ul{margin' +
     ':.3em 0;padding-left:1.2em}.mockrp li{margin:.2em 0}.mockrp a.button{d' +
     'isplay:inline-block;padding:9px 14px;border-radius:5px;border:1px soli' +
     'd #12107c;background:#12107c;color:#fff;text-decoration:none;font-size' +
