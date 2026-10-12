@@ -821,10 +821,30 @@ async function main() {
 
   // -------------------------------------------------------------------------
   heading('the pages a person reaches by clicking');
+  // SINCE #584 THE PAGE IS DRAWN IN THE BROWSER: the shell carries the
+  // profile's description as its view in data-sts-state, and the sentences
+  // a person reads come from the page's catalog, served as static JSON under
+  // /web. Both halves are asserted, the words from the English catalog.
+  const stateMatch = /data-sts-state="([^"]*)"/.exec(reachable.body);
+  let described = null;
+  try {
+    described = stateMatch ? JSON.parse(stateMatch[1].replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')) : null;
+  } catch (e) {
+    log.debug('Caught in main(): ' + ((e && e.message) || e));
+    described = null;
+  }
+  const profileView = (described && described.view) || {};
+  const words = await request('GET',
+                              '/web/locales/describeSaml11/en.json');
   check('GET /saml11 describes the profile',
-        /inter-site transfer service/i.test(reachable.body));
+        profileView.kind === 'saml11' && profileView.paths &&
+        /\/saml11\/sso/.test(String(profileView.paths.sso)) &&
+        /inter-site transfer service/i.test(words.body),
+        JSON.stringify(profileView).slice(0, 200));
   check('it says up front that SAML 1.1 has no request message',
-        /no request message/i.test(reachable.body));
+        /no request message/i.test(words.body), 'catalog ' + words.status);
   let res = await request('GET', '/saml11/sso');
   check('GET /saml11/sso with no parameters describes itself rather than 400ing',
         res.status === 200 && /TARGET/.test(res.body), 'status ' + res.status);
