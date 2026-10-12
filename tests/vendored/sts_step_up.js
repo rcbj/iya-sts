@@ -465,13 +465,16 @@ async function signInScreen(b, location, who, code) {
     return b.go(m, u);
   });
   let totpPage = null;
-  if (posted.status === 200 && /name="mfa_id"/.test(posted.text)) {
+  // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): its view, and the code
+  // sent to its act.
+  if (posted.step && posted.step.view && posted.step.view.page === "totp") {
     totpPage = posted;
     if (code) {
-      const mfaId = (posted.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1];
-      posted = await b.go("POST", R + "/authn/totp",
-                          form({ mfa_id: mfaId, code: code }));
+      const a = await authnSignin.stepAct(posted.step, "totp",
+        { code: code }, { cookie: jarHeader(b) });
+      keepCookies(b, a);
+      posted = { status: a.next === "redirect" ? 303 : a.status,
+                 location: a.location, text: a.text };
     }
   }
   log.debug("Leaving signInScreen(). " + posted.status + " " +
