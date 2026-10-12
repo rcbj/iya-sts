@@ -809,3 +809,7 @@ single-cell service accepts and ignores it.
 
 **What has no test yet**: a two-cell run over HTTP. `tests/cell_handlers_c.js`
 drives the placement in process with the routing and the channel stubbed.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /scim` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `scim/web_scim_description.ts` from the `describeScim` catalogs, with `/scim/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds whether the realm verifies a credential (per mode, #543 round 2) and the SCIM base path. `/scim/v2/*` is SCIM's and unchanged. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

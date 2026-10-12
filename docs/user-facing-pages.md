@@ -248,6 +248,15 @@ specification defines it: every SAML 2.0 and SAML 1.1 endpoint — the bare
 `/.well-known/ssf-configuration` and the stream endpoints, `/scim/v2/*`, and
 the SPIFFE bundle endpoints.
 
+**Since #584 the six pages are static pages**, drawn in the browser's own
+language from the view the page carries, so they need JavaScript; with
+scripts blocked they say so. The facts a page shows — the endpoint
+descriptions, the lists of what is and is not checked — are each family's
+description document and stay in English. Every one answers its
+description as JSON to `?format=json` or to an `Accept` that prefers
+`application/json`; for SAML 2.0 and SAML 1.1 that form is new. `/xacml`
+keeps its gate, over the page, its script and its JSON alike.
+
 ## Pages that are not for end users
 
 They are listed so the list above is complete. None is planned for
@@ -259,7 +268,8 @@ translation:
   credential issuer ("Mock University") at `/issuer` and the sample
   verifier ("The Bar Door") at `/oid4vp/verifier`, translated since #582 —
   see *The demonstration issuer and verifier* above.
-- **Operator and diagnostic views**: `/tls` and its sub-pages, `/xacml`, and
-  the SPIFFE, SCIM and Shared Signals status pages.
+- **Operator and diagnostic views**: `/tls` and its sub-pages. The XACML,
+  SPIFFE, SCIM, Shared Signals and SAML description pages are translated
+  since #584 — see *The protocol families' description pages* above.
 - **Error pages**: "This request could not be completed" and every other
   refusal. These are English by design.

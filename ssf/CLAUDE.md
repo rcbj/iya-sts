@@ -2632,3 +2632,7 @@ application and rotates its secret over the wire.
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
 `POST /ssf/receive` and `GET /ssf/received`, the receiver "for the debugger's benefit"; `ssf.receiveEnabled` now governs a development endpoint. The console's and portal's own receivers are not demonstrations and are unchanged; the product job's receiver is the test peer (#586). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /ssf` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `ssf/web_ssf_description.ts` from the `describeSsf` catalogs, with `/ssf/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds each stream's delivery method by name. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
