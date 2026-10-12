@@ -53,7 +53,9 @@ function rsaPair() {
 function serial() {
   log.debug("Entering serial().");
   const bytes = nodeCrypto.randomBytes(16);
-  bytes[0] = bytes[0] & 0x7f;
+  // Positive and minimal: a zero first byte would make a DER INTEGER with a
+  // superfluous leading 0x00, which OpenSSL refuses ("illegal padding").
+  bytes[0] = (bytes[0] & 0x7f) || 0x01;
   log.debug("Leaving serial().");
   return bytes.toString("hex");
 }

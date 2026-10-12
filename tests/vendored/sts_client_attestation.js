@@ -258,7 +258,10 @@ function certificate(subject, publicKey, issuer, signingKey, ca) {
   log.debug("Entering certificate(). " + subject);
   const cert = forge.pki.createCertificate();
   cert.publicKey = publicKey;
-  cert.serialNumber = "0" + nodeCrypto.randomBytes(8).toString("hex");
+  // "01" and not "0": forge pads an odd-length hex serial to 00 xx..., a
+  // non-minimal DER INTEGER OpenSSL refuses as "illegal padding" whenever
+  // xx < 0x80 (an intermittent failure of this job).
+  cert.serialNumber = "01" + nodeCrypto.randomBytes(8).toString("hex");
   cert.validity.notBefore = new Date(Date.now() - 3600 * 1000);
   cert.validity.notAfter = new Date(Date.now() + 86400 * 1000);
   cert.setSubject([{ name: "commonName", value: subject }]);
