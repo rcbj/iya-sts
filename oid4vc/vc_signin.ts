@@ -46,8 +46,9 @@
 // none of them is written to a log line here, and `common/audit.js` redacts
 // them from the paths and queries a row or the call log records.
 //
-// The Verifier at `/oid4vp/verifier` checked presentations properly and then
-// said yes on a web page and stopped; that was a row of the root `CLAUDE.md`'s
+// The Verifier (then the bar door at `/oid4vp/verifier`, a demonstration that
+// left on #594) checked presentations properly and then said yes on a web
+// page and stopped; that was a row of the root `CLAUDE.md`'s
 // *Things this service deliberately does not do* until this module existed.
 // It is `kerberos/spnego_authn.ts`'s shape, followed on purpose: a door in
 // `/authn/*` that `authn.ts` links to and does not require, reached with an

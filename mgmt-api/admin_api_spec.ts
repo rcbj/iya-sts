@@ -3701,7 +3701,7 @@ const SCHEMAS = {
     }),
 
   VerifierRequest: openObject(
-    'What the mock OID4VP Verifier at /oid4vp/verifier asks a wallet for, ' +
+    'What the OID4VP Verifier asks a wallet for, ' +
     'and in which credential format. It reaches the wire as the `dcql_query` ' +
     'of the next Authorization Request and is then what the presentation is ' +
     'checked against.',

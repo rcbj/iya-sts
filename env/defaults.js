@@ -781,7 +781,6 @@ var config = {
     txCodeMaxAttempts: 5,                                  // Wrong Transaction Codes before the code is spent (product)
     offerTtlS: 600,                                        // Credential Offer lifetime (s)
     walletIssuancePath: "/vc-issuance-1.html",             // Wallet issuance page
-    allowedWalletUrls: "",                                 // Other wallet URLs an offer link may name (product)
     requestEncryptionKeyBits: 2048,                        // Request encryption key size (bits)
     requestEncryptionEncValues: "A128GCM,A256GCM",         // Request encryption: enc values
     responseEncryptionEncValues: "A128GCM,A256GCM",        // Response encryption: enc values
@@ -795,7 +794,6 @@ var config = {
     cNonceCacheSize: 10000,                                // c_nonce values held (per realm)
     issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
     domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
-    generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
     sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply
     ldpVcIssuerDid: false,                                 // Name the ldp_vc issuer by DID; restart to apply
     statusListTtlS: 300,                                   // Status list time to live (s)

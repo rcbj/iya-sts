@@ -9610,9 +9610,10 @@ const SETTINGS = [
 
   // -------------------------------------------------------------------------
   // THE 2026-09-12 SWEEP, OID4VCI HALF. Every `dflt` below is the literal it
-  // replaced. The two that are policy rather than a number —
-  // `oid4vci.txCodeMaxAttempts` and `oid4vci.allowedWalletUrls` — are READ
-  // ONLY IN PRODUCT MODE, and say so.
+  // replaced. The one that is policy rather than a number —
+  // `oid4vci.txCodeMaxAttempts` — is READ ONLY IN PRODUCT MODE, and says so
+  // (`oid4vci.allowedWalletUrls`, the other, went with the demonstration's
+  // offer page on #594).
   // -------------------------------------------------------------------------
   { key: 'oid4vci.txCodeLength', group: 'OID4VCI',
     label: 'Transaction Code length (digits)',
@@ -9649,17 +9650,6 @@ const SETTINGS = [
     dflt: '/vc-issuance-1.html', runtime: true,
     description: 'The page under the wallet URL that a Credential Offer is ' +
                  'handed to. The default is the debugger\'s own wallet page.' },
-
-  { key: 'oid4vci.allowedWalletUrls', group: 'OID4VCI',
-    label: 'Other wallet URLs an offer link may name (product)',
-    env: 'OID4VCI_ALLOWED_WALLET_URLS', type: 'csv', dflt: '', runtime: true,
-    description: 'IN PRODUCT MODE, the wallet URLs besides oid4vci.walletUrl ' +
-                 'that the `wallet` query parameter on /issuer/offer may ' +
-                 'name. Any other is refused, because an offer link that ' +
-                 'sends the End-User wherever its query string says is an ' +
-                 'open redirect carrying a pre-authorized code. Development ' +
-                 'accepts any URL, which is how a wallet on a laptop is ' +
-                 'pointed at this service.' },
 
   { key: 'oid4vci.requestEncryptionKeyBits', group: 'OID4VCI',
     label: 'Request encryption key size (bits)',
@@ -9730,8 +9720,7 @@ const SETTINGS = [
                  'are signed with — post-quantum ones included — and the ' +
                  'one this realm\'s status lists are signed with, and the ' +
                  'one the DID Configuration\'s ' +
-                 'Domain Linkage Credential and /did/generate\'s did:web ' +
-                 'credential use. The metadata\'s ' +
+                 'Domain Linkage Credential uses. The metadata\'s ' +
                  'credential_signing_alg_values_supported names it, ' +
                  '/oauth2/jwks and /.well-known/did.json publish the key, ' +
                  'and the mock Verifier checks against it. ldp_vc is ' +
@@ -9799,13 +9788,6 @@ const SETTINGS = [
                  '/.well-known/did-configuration.json says it is valid. It ' +
                  'is signed per request, so this is the window a cached copy ' +
                  'may be believed for.' },
-
-  { key: 'oid4vci.generatedDidCredentialLifetimeS', group: 'OID4VCI',
-    label: '/did/generate credential lifetime (s)',
-    env: 'OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S', type: 'int',
-    dflt: 3600, min: 60, max: 31536000, runtime: true,
-    description: 'How long the SD-JWT VC that /did/generate signs with the ' +
-                 'DID it hands back is valid.' },
 
   // ---------------------------------------------------------------------
   // THE TWO DID FLAGS, which were the last two environment variables in this
@@ -9932,8 +9914,8 @@ const SETTINGS = [
                  'in x5c. x509_hash: the SHA-256 of that certificate. Both ' +
                  'sign with oid4vp.x509SigningAlgorithm; ' +
                  '/oid4vp/verifier-certificate shows the certificate and ' +
-                 'both Client Identifiers. /oid4vp/start?client_id_prefix= ' +
-                 'chooses per request. ' +
+                 'both Client Identifiers. A verification start\'s ' +
+                 'client_id_prefix chooses per request. ' +
                  'An unsigned request always uses redirect_uri.' },
 
   { key: 'oid4vp.x509DnsName', group: 'OID4VP',
@@ -10286,8 +10268,8 @@ const SETTINGS = [
     label: 'Other wallet URLs a request link may name (product)',
     env: 'OID4VP_ALLOWED_WALLET_URLS', type: 'csv', dflt: '', runtime: true,
     description: 'IN PRODUCT MODE, the wallet URLs besides oid4vp.walletUrl ' +
-                 'that the `wallet` query parameter on the Verifier\'s start ' +
-                 'page may name; any other is refused as an open redirect. ' +
+                 'that a verification start\'s `wallet` may name; any other ' +
+                 'is refused as an open redirect. ' +
                  'Development accepts any URL.' },
 
   { key: 'oid4vp.trustedIssuerCertificates', group: 'OID4VP',
@@ -10346,7 +10328,8 @@ const SETTINGS = [
                  'credential from any other issuer, or one issued on an ' +
                  'access token this service did not issue, still verifies ' +
                  'and signs nobody in. Off removes the button and closes ' +
-                 'the door; the Verifier at /oid4vp/verifier is unaffected.' },
+                 'the door; a verification an administrator starts is ' +
+                 'unaffected.' },
 
   { key: 'oid4vp.signInTtlS', group: 'OID4VP',
     label: 'Wallet sign-in lifetime (s)',

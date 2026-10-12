@@ -4028,14 +4028,14 @@ const CODES = [
       'its key: a DNS name a certificate cannot carry, a wildcard (the ' +
       'certificate names one host), or no signing key (#230).',
     spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at POST ' +
-      '/vc-demo-api/start' },
+      '/admin-api/verifications/start' },
   { code: 'STS-PKI-0205',
     summary: 'A realm already holds the most OpenID4VP Verifier ' +
       'certificates it keeps (one per DNS name, sixteen), so none was ' +
       'issued for another name — set oid4vp.x509DnsName or pin ' +
       'global.publicBaseUrl (#230).',
     spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at POST ' +
-      '/vc-demo-api/start' },
+      '/admin-api/verifications/start' },
   { code: 'STS-PKI-0206',
     summary: 'A key pair was not pinned in a slot that certifies a key the ' +
       'realm signs with: a pinned key does not sign, and the pin would have ' +
@@ -14202,19 +14202,24 @@ const CODES = [
       'credential_accepted, credential_failure or credential_deleted.',
     spec: 'invalid_notification_request (HTTP 400)' },
   { code: 'STS-VC-0024',
-    summary: 'The non-spec notification inspection endpoint was asked for a ' +
-      'notification_id that does not exist.',
-    spec: 'invalid_notification_id (HTTP 404)' },
+    summary: 'GET /admin-api/oid4vci/notifications was asked for a ' +
+      'notification_id this issuer did not issue, or one expired (#594; ' +
+      'until then the non-spec notification inspection endpoint).',
+    spec: 'HTTP 404 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0025',
     summary: 'The demonstration Credential Offer\'s query parameters (or, ' +
       'since #582, the body of POST /vc-demo-api/offer) failed input ' +
-      'validation.',
-    spec: 'HTTP 400 JSON { ok: false, errors } at /vc-demo-api/offer' },
+      'validation. ' +
+      'Retired by #594: the demonstration issuer\'s pages left for ' +
+      'the development companion.',
+    spec: '', retired: true },
   { code: 'STS-VC-0026',
     summary: 'Where only registered addresses are accepted, the Credential ' +
       'Offer\'s wallet parameter named a URL that is neither ' +
-      'oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls.',
-    spec: 'HTTP 400 JSON { ok: false, errors } at /vc-demo-api/offer' },
+      'oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. ' +
+      'Retired by #594, with the demonstration\'s offer page and ' +
+      'oid4vci.allowedWalletUrls.',
+    spec: '', retired: true },
   { code: 'STS-VC-0027',
     summary: 'A pre-authorized (cross-device or deferred) Credential Offer ' +
       'was requested from a session that continued without signing ' +
@@ -14240,20 +14245,15 @@ const CODES = [
       'read and is ignored by the Verifier.',
     spec: '' },
   { code: 'STS-VC-0032',
-    summary: 'The OID4VP Verifier page\'s or presentation start endpoint\'s ' +
-      'query parameters — or the body of POST ' +
-      '/admin-api/verifications/start, which starts one the same way ' +
-      '(#587), or of POST /vc-demo-api/start (#582) — failed input ' +
-      'validation.',
-    spec: 'HTTP 400 JSON { ok: false, errors } at /vc-demo-api and at ' +
-      '/admin-api' },
+    summary: 'The body of POST /admin-api/verifications/start (#587) — or, ' +
+      'until #594, the demonstration Verifier\'s pages\' query — failed ' +
+      'input validation.',
+    spec: 'HTTP 400 JSON { ok: false, errors } at /admin-api' },
   { code: 'STS-VC-0033',
-    summary: 'Where only registered addresses are accepted, the presentation ' +
-      'start\'s wallet parameter (or POST /admin-api/verifications/start\'s ' +
-      '`wallet`) named a URL that is neither ' +
-      'oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls.',
-    spec: 'HTTP 400 JSON { ok: false, errors } at /vc-demo-api/start and ' +
-      'at /admin-api' },
+    summary: 'Where only registered addresses are accepted, POST ' +
+      '/admin-api/verifications/start\'s `wallet` named a URL that is ' +
+      'neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls.',
+    spec: 'HTTP 400 JSON { ok: false, errors } at /admin-api' },
   { code: 'STS-VC-0034',
     summary: 'The QR code for a cross-device OID4VP Authorization Request ' +
       'could not be rendered. Retired by #582: the browser draws the code ' +
@@ -14291,10 +14291,10 @@ const CODES = [
       'audience, validity or requested claims).',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-VC-0042',
-    summary: 'The non-spec presentation result endpoint — or GET ' +
-      '/admin-api/verifications?state= (#587) — was asked for a ' +
-      'state it has no record of.',
-    spec: 'invalid_request (HTTP 404); HTTP 404 JSON `errors` at /admin-api' },
+    summary: 'GET /admin-api/verifications?state= (#587) — or, until #594, ' +
+      'the non-spec presentation result endpoint — was asked for a state ' +
+      'it has no record of.',
+    spec: 'HTTP 404 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0043',
     summary: 'The key credentials are signed with is not in this realm\'s ' +
       'key set, so the DID document cannot publish it.',
@@ -14308,8 +14308,10 @@ const CODES = [
     spec: 'not_found (HTTP 404)' },
   { code: 'STS-VC-0046',
     summary: 'The DID generator was asked for a method other than jwk or ' +
-      'web.',
-    spec: 'invalid_request (HTTP 400)' },
+      'web. ' +
+      'Retired by #594: /did/generate was deleted; test tooling makes ' +
+      'its own keys.',
+    spec: '', retired: true },
   { code: 'STS-VC-0047',
     summary: 'The embedded directory threw while being read for a person\'s ' +
       'credential claims; the credential is built without directory ' +
@@ -14614,7 +14616,7 @@ const CODES = [
       'Host a request arrived with is not certified there — whoever sent ' +
       'it would choose the host a signed, trusted request sends ' +
       'presentations to (#230).',
-    spec: 'HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
       '/admin-api/verifications/start; the sign-in door\'s 500 ' +
       'page; 409 JSON at /oid4vp/verifier-certificate' },
   { code: 'STS-VC-0111',
@@ -14623,7 +14625,7 @@ const CODES = [
       'wallet that does not otherwise trust the Client Identifier require ' +
       'the response_uri\'s FQDN to be it, so such a request would be ' +
       'refused by every such wallet (#230).',
-    spec: 'HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
       '/admin-api/verifications/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0112',
@@ -14631,14 +14633,14 @@ const CODES = [
       'was not in place over the key the Request Object is signed with ' +
       'when it was built, so no x509_san_dns or x509_hash request was ' +
       'made (#230).',
-    spec: 'HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
       '/admin-api/verifications/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0113',
     summary: 'oid4vp.x509SigningAlgorithm names an algorithm this realm ' +
       'holds no signing key for, so no x509_san_dns or x509_hash request ' +
       'can be signed (#230).',
-    spec: 'HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
       '/admin-api/verifications/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0114',
@@ -14656,21 +14658,36 @@ const CODES = [
     summary: 'An act on the OpenID4VC demonstration\'s API (POST ' +
       '/vc-demo-api/offer or /vc-demo-api/start, #582) did not carry a ' +
       'JSON body (Content-Type: application/json), which a cross-site ' +
-      'form cannot send.',
-    spec: 'HTTP 415, { ok: false, errors }' },
+      'form cannot send. ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
   { code: 'STS-VC-0117',
     summary: 'An act on the OpenID4VC demonstration\'s API (#582) carried ' +
-      'no Origin, or an origin this service does not answer on.',
-    spec: 'HTTP 403, { ok: false, errors }' },
+      'no Origin, or an origin this service does not answer on. ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
   { code: 'STS-VC-0118',
     summary: 'An act on the OpenID4VC demonstration\'s API (#582) carried ' +
       'no X-CSRF-Token, or one not bound to the browser\'s sts_session ' +
-      'cookie (or the browser holds no session).',
-    spec: 'HTTP 403, { ok: false, errors }' },
+      'cookie (or the browser holds no session). ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
   { code: 'STS-VC-0119',
     summary: 'An operation of the OpenID4VC demonstration\'s API ' +
-      '(/vc-demo-api, #582) failed with an unexpected error.',
-    spec: 'HTTP 500, { ok: false, errors }' },
+      '(/vc-demo-api, #582) failed with an unexpected error. ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
+  { code: 'STS-VC-0120',
+    summary: 'A verification start named a redirect_uri (#594) that is not ' +
+      'an absolute http(s) URL without a fragment, or — where only ' +
+      'registered addresses are accepted — not one of the calling ' +
+      'client\'s registered redirect URIs.',
+    spec: 'HTTP 400 JSON { ok: false, errors } at ' +
+      '/admin-api/verifications/start' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

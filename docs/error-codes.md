@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4296** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4290** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 116
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 117
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 47
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -896,8 +896,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
-| `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /vc-demo-api/start |
-| `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /vc-demo-api/start |
+| `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /admin-api/verifications/start |
+| `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /admin-api/verifications/start |
 | `STS-PKI-0206` | A key pair was not pinned in a slot that certifies a key the realm signs with: a pinned key does not sign, and the pin would have replaced that key's published certificate (#245). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0207` | A key pair was not pinned as a signer: its key type does not match the slot's algorithm (an RSA key under 2048 bits, a curve other than the slot's, a post-quantum key of another parameter set) (#263). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0208` | A key pair was not pinned as a signer: the slot is not one a pinned key can sign from — a signer-group slot, a composite post-quantum algorithm, or an xml slot other than RS256 (#263). | console / /admin-api refusal (HTTP 400) |
@@ -3325,16 +3325,16 @@ Raised from: oid4vc/.
 | `STS-VC-0021` | A Notification Request body is not JSON. | invalid_notification_request (HTTP 400) |
 | `STS-VC-0022` | A Notification Request named a notification_id this issuer never issued or that has expired. | invalid_notification_id (HTTP 400) |
 | `STS-VC-0023` | A Notification Request's event is not one of credential_accepted, credential_failure or credential_deleted. | invalid_notification_request (HTTP 400) |
-| `STS-VC-0024` | The non-spec notification inspection endpoint was asked for a notification_id that does not exist. | invalid_notification_id (HTTP 404) |
-| `STS-VC-0025` | The demonstration Credential Offer's query parameters (or, since #582, the body of POST /vc-demo-api/offer) failed input validation. | HTTP 400 JSON { ok: false, errors } at /vc-demo-api/offer |
-| `STS-VC-0026` | Where only registered addresses are accepted, the Credential Offer's wallet parameter named a URL that is neither oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. | HTTP 400 JSON { ok: false, errors } at /vc-demo-api/offer |
+| `STS-VC-0024` | GET /admin-api/oid4vci/notifications was asked for a notification_id this issuer did not issue, or one expired (#594; until then the non-spec notification inspection endpoint). | HTTP 404 JSON `errors` at /admin-api |
+| `STS-VC-0025` *(retired)* | The demonstration Credential Offer's query parameters (or, since #582, the body of POST /vc-demo-api/offer) failed input validation. Retired by #594: the demonstration issuer's pages left for the development companion. | — |
+| `STS-VC-0026` *(retired)* | Where only registered addresses are accepted, the Credential Offer's wallet parameter named a URL that is neither oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. Retired by #594, with the demonstration's offer page and oid4vci.allowedWalletUrls. | — |
 | `STS-VC-0027` *(retired)* | A pre-authorized (cross-device or deferred) Credential Offer was requested from a session that continued without signing in, where test controls are closed. Retired by #589: where the test controls are closed /issuer/offer makes no pre-authorized offer and sends the browser to /portal/wallet. | — |
 | `STS-VC-0028` *(retired)* | The QR code for a cross-device Credential Offer could not be rendered. Retired by #582: the browser draws the code from the offer URI (common/web_qr.ts), and the server renders none. | — |
 | `STS-VC-0029` | A Credential Offer fetched by reference (credential_offer_uri) does not exist or has expired. | invalid_request (HTTP 404) |
 | `STS-VC-0030` | Product mode: a pre-authorized code was spent after reaching oid4vci.txCodeMaxAttempts wrong Transaction Codes. | — |
 | `STS-VC-0031` | A certificate in oid4vp.trustedIssuerCertificates could not be read and is ignored by the Verifier. | — |
-| `STS-VC-0032` | The OID4VP Verifier page's or presentation start endpoint's query parameters — or the body of POST /admin-api/verifications/start, which starts one the same way (#587), or of POST /vc-demo-api/start (#582) — failed input validation. | HTTP 400 JSON { ok: false, errors } at /vc-demo-api and at /admin-api |
-| `STS-VC-0033` | Where only registered addresses are accepted, the presentation start's wallet parameter (or POST /admin-api/verifications/start's `wallet`) named a URL that is neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls. | HTTP 400 JSON { ok: false, errors } at /vc-demo-api/start and at /admin-api |
+| `STS-VC-0032` | The body of POST /admin-api/verifications/start (#587) — or, until #594, the demonstration Verifier's pages' query — failed input validation. | HTTP 400 JSON { ok: false, errors } at /admin-api |
+| `STS-VC-0033` | Where only registered addresses are accepted, POST /admin-api/verifications/start's `wallet` named a URL that is neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls. | HTTP 400 JSON { ok: false, errors } at /admin-api |
 | `STS-VC-0034` *(retired)* | The QR code for a cross-device OID4VP Authorization Request could not be rendered. Retired by #582: the browser draws the code from the request URI (common/web_qr.ts), and the server renders none. | — |
 | `STS-VC-0035` | An OID4VP Request Object fetched by request_uri does not exist. | invalid_request (HTTP 404) |
 | `STS-VC-0036` | An OID4VP Authorization Response was posted with a state for which no Authorization Request is outstanding. | invalid_request (HTTP 400) |
@@ -3343,11 +3343,11 @@ Raised from: oid4vc/.
 | `STS-VC-0039` | A presented SD-JWT Disclosure is not base64url-encoded JSON. | invalid_request (HTTP 400), as part of a refused presentation |
 | `STS-VC-0040` | A presented SD-JWT Disclosure hashes to a digest the issuer never signed. | invalid_request (HTTP 400), as part of a refused presentation |
 | `STS-VC-0041` | A presentation failed one or more of the OID4VP Verifier's checks (issuer signature, disclosures, key binding, nonce, audience, validity or requested claims). | invalid_request (HTTP 400) |
-| `STS-VC-0042` | The non-spec presentation result endpoint — or GET /admin-api/verifications?state= (#587) — was asked for a state it has no record of. | invalid_request (HTTP 404); HTTP 404 JSON `errors` at /admin-api |
+| `STS-VC-0042` | GET /admin-api/verifications?state= (#587) — or, until #594, the non-spec presentation result endpoint — was asked for a state it has no record of. | HTTP 404 JSON `errors` at /admin-api |
 | `STS-VC-0043` | The key credentials are signed with is not in this realm's key set, so the DID document cannot publish it. | — |
 | `STS-VC-0044` | The BBS public key could not be published in the DID document. | — |
 | `STS-VC-0045` | The path-form /did.json was requested for a DID that has no path; did:web resolves it at the well-known location. | not_found (HTTP 404) |
-| `STS-VC-0046` | The DID generator was asked for a method other than jwk or web. | invalid_request (HTTP 400) |
+| `STS-VC-0046` *(retired)* | The DID generator was asked for a method other than jwk or web. Retired by #594: /did/generate was deleted; test tooling makes its own keys. | — |
 | `STS-VC-0047` | The embedded directory threw while being read for a person's credential claims; the credential is built without directory values. | — |
 | `STS-VC-0048` | Populating the embedded directory for the current credential claim set threw. | — |
 | `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
@@ -3408,16 +3408,17 @@ Raised from: oid4vc/.
 | `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
 | `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
 | `STS-VC-0109` | A DID the VC-API resolver was asked for could not be resolved, or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a method it does not support, a representation it does not produce, or a did:web other than this realm's own, which it does not fetch (notFound) (#199). | HTTP 400 / 404 / 501 with the resolution result's error |
-| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST /admin-api/verifications/start; the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 JSON `errors` at POST /vc-demo-api/start and at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
 | `STS-VC-0114` | An application DID document was asked for and none is advertised: no such application in this realm, one not declared for the did family, or one with no key in didPublicKeyJwk. | HTTP 404 JSON at /applications/{application}/did.json |
 | `STS-VC-0115` | An application Domain Linkage Credential could not be signed: the application has no DID document, the origin is not one of its LinkedDomains services, or none of its published keys has a private half this service kept. | none (a console or management API refusal, HTTP 400) |
-| `STS-VC-0116` | An act on the OpenID4VC demonstration's API (POST /vc-demo-api/offer or /vc-demo-api/start, #582) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. | HTTP 415, { ok: false, errors } |
-| `STS-VC-0117` | An act on the OpenID4VC demonstration's API (#582) carried no Origin, or an origin this service does not answer on. | HTTP 403, { ok: false, errors } |
-| `STS-VC-0118` | An act on the OpenID4VC demonstration's API (#582) carried no X-CSRF-Token, or one not bound to the browser's sts_session cookie (or the browser holds no session). | HTTP 403, { ok: false, errors } |
-| `STS-VC-0119` | An operation of the OpenID4VC demonstration's API (/vc-demo-api, #582) failed with an unexpected error. | HTTP 500, { ok: false, errors } |
+| `STS-VC-0116` *(retired)* | An act on the OpenID4VC demonstration's API (POST /vc-demo-api/offer or /vc-demo-api/start, #582) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0117` *(retired)* | An act on the OpenID4VC demonstration's API (#582) carried no Origin, or an origin this service does not answer on. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0118` *(retired)* | An act on the OpenID4VC demonstration's API (#582) carried no X-CSRF-Token, or one not bound to the browser's sts_session cookie (or the browser holds no session). Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0119` *(retired)* | An operation of the OpenID4VC demonstration's API (/vc-demo-api, #582) failed with an unexpected error. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0120` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
 
 ## STS-SSF
 

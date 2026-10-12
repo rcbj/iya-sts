@@ -1315,8 +1315,8 @@ function recordSvid(kind, detail) {
 //   * The SPIRE Server API's OWN server SVID, minted in spiffe_grpc.js to bind
 //     the mutual-TLS port. It never reaches this function because that call
 //     site records no artifact either, and it must not: filing this service's
-//     own listener among the people is the mistake didPlan() already refuses
-//     for `/did/generate?method=web`.
+//     own listener among the people is the mistake didPlan() already refused
+//     for this service's own did:web.
 //   * A downstream CA from NewDownstreamX509CA. It is an intermediate belonging
 //     to whoever asked for it, not an identity in this trust domain, and
 //     spiffe_ca.js deliberately does not add it to this service's authorities
@@ -2291,8 +2291,7 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 //
 // It matters here because the Decentralized Identity endpoints present
 // identities of exactly this shape: an ldp_vc names its subject `did:jwk:…`,
-// the OID4VP Verifier reports whatever DID presented to it, and /did/generate
-// mints one. RFC 3986 says the method name is lowercase ALPHA and DIGIT; the
+// and the OID4VP Verifier reports whatever DID presented to it. RFC 3986 says the method name is lowercase ALPHA and DIGIT; the
 // `i` flag is here because this test is deciding how to file a person and not
 // validating a DID.
 const DID_SHAPED = /^did:[a-z0-9]+:/i;
