@@ -300,6 +300,10 @@ import federation = require('../federation/federation');
 // document's closed sets are its START_VOCABULARY. A converted route module
 // loaded at 11–14, so this is a cache hit that registers nothing (rule 1).
 import vcVerifier = require('../oid4vc/vc_verifier');
+// THE OPENID4VCI ISSUER (#594): the two reads of what it saw, which were
+// non-spec routes of its own until then. Loaded at 11–14 and converted, so
+// this is a cache hit that registers nothing (rule 1).
+import vcIssuer = require('../oid4vc/vc_issuer');
 // And six LEAVES the filters and the PKI and XACML actions are held to (#86):
 // the audit vocabulary, the delegation register's types, the used-assertion
 // history's formats, the issuance kinds, the ISO 3166 alpha-2 codes and
@@ -11243,13 +11247,12 @@ class AdminApi {
       // ---------------------------------------------------------------------
       // STARTING A VERIFICATION AND READING ITS OUTCOME (#587, 2026-10-12).
       //
-      // The administrator's twin of the demonstration Verifier's
-      // `/oid4vp/start` and `/oid4vp/result/:state`, which become
-      // development-only (#585) — and an operator in product mode still needs
-      // a way to ask a wallet for a presentation and read what was decided.
-      // Both call the Verifier's own `startVerification()` and
-      // `verificationOutcome()`, the functions those pages call, so the
-      // request built here is the request the page builds.
+      // Was the administrator's twin of the demonstration Verifier's
+      // `/oid4vp/start` and `/oid4vp/result/:state`; since #594 those left
+      // for the development companion (`companion/`), which starts its bar
+      // door's verifications HERE, as an application holding Admin Write,
+      // and names its own completion page (`redirect_uri`). Both call the
+      // Verifier's own `startVerification()` and `verificationOutcome()`.
       //
       // THE START CALLS THE VERIFIER RATHER THAN AN `admin-core` ACTION, and
       // that is the one departure from "every operation that changes
@@ -11290,8 +11293,22 @@ class AdminApi {
           if (body.format) {
             body.format = String(body.format).replace(/ /g, '+');
           }
+          // WHERE THE WALLET IS SENT AFTERWARDS (#594): the caller's own
+          // page, held to the calling client's registered redirect URIs
+          // wherever only registered addresses are accepted.
+          const completion: any = vcVerifier.completionUriFor(
+            body.redirect_uri, String(res.locals.apiClientId || ''));
+          delete body.redirect_uri;
+          if (completion.error) {
+            errorCodes.mark(res, 'STS-VC-0120');
+            self.sendJson(res, 400, { ok: false,
+                                      errors: [completion.error] });
+            log.debug("Leaving the management API verification start. " +
+                      "An unregistered completion address.");
+            return;
+          }
           const started: any = await vcVerifier.startVerification(req, body,
-                                                                  'body');
+            'body', { completionUri: completion.uri });
           if (!started.ok) {
             errorCodes.mark(res, started.code);
             self.sendJson(res, started.status,
@@ -11322,7 +11339,8 @@ class AdminApi {
             wallet: started.wallet,
             walletUrl: started.walletUrl,
             requestUri: started.requestUri,
-            query: started.query
+            query: started.query,
+            redirectUri: completion.uri
           };
           if (record.byReference) {
             answer.request_uri = baseUrlOf(req) + '/oid4vp/request/' +
@@ -11336,10 +11354,9 @@ class AdminApi {
           { action: 'start', operationId: 'startVerification',
             summary: 'Start an OpenID4VP verification: build a request for a ' +
                      'wallet',
-            description: 'Builds a presentation request exactly as the ' +
-                         'Verifier\'s `/oid4vp/start` does — the same ' +
-                         'function — and answers how a wallet is handed it ' +
-                         'instead of sending a browser there: `walletUrl` ' +
+            description: 'Builds a presentation request — the one ' +
+                         'door a verification starts at since #594 — and ' +
+                         'answers how a wallet is handed it: `walletUrl` ' +
                          '(the ' +
                          'wallet\'s presentation address with the request on ' +
                          'its query, what a same-device start redirects to), ' +
@@ -11363,6 +11380,15 @@ class AdminApi {
                          'to `oid4vp.walletUrl` and ' +
                          '`oid4vp.allowedWalletUrls` ' +
                          'wherever only registered addresses are accepted).' +
+                         '\n\n`redirect_uri` (#594) is the caller\'s own ' +
+                         'page the Response Endpoint sends the wallet to ' +
+                         'once it has answered (OpenID4VP 1.0 section 8.2). ' +
+                         'Wherever only registered addresses are accepted it ' +
+                         'must be one of the CALLING CLIENT\'s registered ' +
+                         'redirect URIs, matched whole (400, STS-VC-0120); ' +
+                         'left off, the Response Endpoint answers no ' +
+                         '`redirect_uri` — what a wallet on another device ' +
+                         'wants.' +
                          '\n\nWhat the request ASKS FOR is the Verifier ' +
                          'request\'s configuration (`/verifier-request`), ' +
                          'frozen onto the transaction now. Refused as the ' +
@@ -11403,9 +11429,19 @@ class AdminApi {
                         enum: vcVerifier.START_VOCABULARY.mode },
                 wallet: { type: 'string',
                           description: 'Where to send the holder, if not ' +
-                                       '`oid4vp.walletUrl`.' }
+                                       '`oid4vp.walletUrl`.' },
+                redirect_uri: { type: 'string', maxLength: 2048,
+                                description: 'The caller\'s page the ' +
+                                             'wallet is sent to once the ' +
+                                             'Verifier has answered (#594); ' +
+                                             'a registered redirect URI of ' +
+                                             'the calling client wherever ' +
+                                             'only registered addresses are ' +
+                                             'accepted.' }
               },
-              examples: [{ format: 'dc+sd-jwt', by: 'reference' }],
+              examples: [{ format: 'dc+sd-jwt', by: 'reference' },
+                         { mode: 'same-device',
+                           redirect_uri: 'https://rp.example/verified' }],
               additionalProperties: false
             },
             responseDescription: '`state`, `walletUrl`, `requestUri`, ' +
@@ -11415,7 +11451,8 @@ class AdminApi {
                                  '`responseType`, `responseMode`, ' +
                                  '`byReference`, `clientId`, `requested`, ' +
                                  '`dcql_query`, `expiresAt`, `wallet`, ' +
-                                 '`walletUrl`, `requestUri`, `query` and, ' +
+                                 '`walletUrl`, `requestUri`, `query`, ' +
+                                 '`redirectUri` (\'\' for none) and, ' +
                                  'by reference, `request_uri`.' }
         ] },
 
@@ -11424,15 +11461,14 @@ class AdminApi {
         operationId: 'getVerifications',
         summary: 'A verification\'s outcome, or the verifications still ' +
                  'open',
-        description: 'With `state`: what the Verifier decided — the object ' +
-                     '`/oid4vp/result/:state` answers, from the same ' +
-                     'function, with `found: true`: `state`, `nonce`, ' +
+        description: 'With `state`: what the Verifier decided, with ' +
+                     '`found: true`: `state`, `nonce`, ' +
                      '`client_id`, `requested`, `dcql_query`, `received` ' +
                      '(whether a wallet has answered) and `verdict` (`ok`, ' +
                      '`checks`, `claims`, `disclosed`, …, null until it ' +
                      'answers). A state this realm holds no record of is ' +
-                     '404 with `found: false` (STS-VC-0042), as on the ' +
-                     'result page.\n\nWithout `state`: the realm\'s open ' +
+                     '404 with `found: false` (STS-VC-0042).\n\nWithout ' +
+                     '`state`: the realm\'s open ' +
                      'verifications, newest first — at most `limit` of ' +
                      '`total` — each its `state`, what was asked ' +
                      '(`format`, `responseType`, `responseMode`, ' +
@@ -11470,6 +11506,85 @@ class AdminApi {
           }
           self.sendJson(res, 200, json);
           log.debug("Leaving the management API verifications endpoint.");
+        } },
+
+      // ---------------------------------------------------------------------
+      // WHAT THE CREDENTIAL ISSUER SAW (#594). The non-spec `GET
+      // /oid4vci/last_request` and `GET /oid4vci/notification/:id` answered
+      // these to anybody, in a development realm only; they are an
+      // administrator's facts, so they are Admin Read reads here, in every
+      // mode. `oid4vc/vc_issuer.ts`'s `lastCredentialRequest()` and
+      // `notificationRecord()` argue what each says. No console page draws
+      // them: a wallet under test, and the job driving it, are who ask.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/oid4vci/last-request',
+        tag: 'OpenID4VCI',
+        operationId: 'getLastCredentialRequest',
+        summary: 'How the OpenID4VCI issuer\'s last Credential Request ' +
+                 'arrived',
+        description: 'The media type the last Credential Request in this ' +
+                     'realm arrived with, and for an encrypted one (OpenID4VCI ' +
+                     '1.0 section 10) the `kid`, `alg` and `enc` of its JWE ' +
+                     '— never the request itself. `seen: false` before any. ' +
+                     'A wallet cannot prove it encrypted: with ' +
+                     '`encryption_required` false the issuer accepts the ' +
+                     'plaintext and issues, so only the issuer knows what ' +
+                     'arrived. Until #594 the non-spec ' +
+                     '`/oid4vci/last_request`.',
+        mirrors: 'no console page — a wallet under test asks it',
+        responseDescription: 'The record.',
+        responseSchema: { type: 'object',
+          description: '`seen`, and when seen `encrypted`, `contentType`, ' +
+                       '`kid`, `alg`, `enc` and when it arrived.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API last credential request " +
+                    "endpoint.");
+          self.sendJson(res, 200, vcIssuer.lastCredentialRequest());
+          log.debug("Leaving the management API last credential request " +
+                    "endpoint.");
+        } },
+
+      { method: 'GET', path: BASE + '/oid4vci/notifications',
+        tag: 'OpenID4VCI',
+        operationId: 'getCredentialNotification',
+        summary: 'What a wallet told the OpenID4VCI issuer about one ' +
+                 'credential',
+        description: 'The record the Notification Endpoint (OpenID4VCI 1.0 ' +
+                     'section 11) keeps for the `notification_id` a ' +
+                     'Credential Response carried: `event` ' +
+                     '(`credential_accepted`, `credential_failure` or ' +
+                     '`credential_deleted`; null until the wallet notifies), ' +
+                     '`event_description` and `notified_at`. An id this ' +
+                     'issuer did not issue, or one expired, is 404 ' +
+                     '(STS-VC-0024). Until #594 the non-spec ' +
+                     '`/oid4vci/notification/:id`.',
+        mirrors: 'no console page — a wallet under test asks it',
+        parameters: [
+          { name: 'id', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The `notification_id`.' }
+        ],
+        responseDescription: 'The notification record.',
+        responseSchema: { type: 'object',
+          description: '`notification_id`, `event`, `event_description`, ' +
+                       '`notified_at`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API credential notification " +
+                    "endpoint.");
+          const record: any = vcIssuer.notificationRecord(
+            String(req.query.id || ''));
+          if (!record) {
+            errorCodes.mark(res, 'STS-VC-0024');
+            self.sendJson(res, 404, { ok: false, errors: [
+              'No such notification_id: this issuer did not issue it, or ' +
+              'it has expired.'] });
+            log.debug("Leaving the management API credential notification " +
+                      "endpoint. Unknown.");
+            return;
+          }
+          self.sendJson(res, 200, record);
+          log.debug("Leaving the management API credential notification " +
+                    "endpoint.");
         } },
 
       // The authorization server profiles — what each discovery document

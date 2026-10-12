@@ -272,9 +272,9 @@ class WebVcSignin {
  */
 class WalletFlow {
   // PROTECTED, NOT PRIVATE (#582): the OpenID4VC demonstration's runtime
-  // (`web_vc_demo.ts`) runs this flow's poll over its own QR page — one
-  // timer at a time, re-armed by the answer — by overriding what a page
-  // starts (`onPut()`) and what the poll asks (`check()`).
+  // ran this flow's poll over its own QR page by overriding what a page
+  // starts (`onPut()`) and what the poll asks (`check()`); it left for the
+  // development companion on #594, and a subclass may still.
   protected surface: Json;
   // The poll's pending timer, and the page it was armed for.
   protected timer: Json;

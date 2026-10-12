@@ -10,22 +10,19 @@
 //
 // Appendix H.1 "Credential Offer - Same-Device": the End-User is browsing the
 // issuer's site, follows a "request your digital diploma" link, and is taken to
-// their Wallet with a Credential Offer in hand. That is what these three
-// endpoints are:
+// their Wallet with a Credential Offer in hand. The issuer's SITE is not this
+// service's any more: `/issuer` and `/issuer/offer`, the demonstration's pages,
+// moved to the development companion on #594 (`companion/`), which makes the
+// same-device offer itself — an authorization_code grant with no issuer_state,
+// which section 4.1.1 allows — and leaves the authorization to
+// `/oauth2/authorize`. What stays here is the protocol's:
 //
-//   GET /issuer                     the issuer's web page, with the link
-//   GET /issuer/offer               builds an offer and sends the browser to
-//                                   the wallet, by value (credential_offer) or
-//                                   by reference (credential_offer_uri)
-//
-// (both a demonstration's pages, development only (#585), and a static
-// surface since #582: the shell, drawn from `/vc-demo-api` in the browser,
-// which makes the offer through `offerAct()` below)
 //   GET /oid4vci/credential-offer/:id  serves an offer fetched by reference
 //
-// A person's OWN pre-authorized offer is made on the user portal since #589
-// (`POST /account-api/credentials/offers`, `portal/portal_wallet.ts`), through
-// this module's `makeOffer()` — the one function `/issuer/offer` calls too.
+// and the state an offer creates, which the token and authorization endpoints
+// redeem. A person's OWN pre-authorized offer is made on the user portal since
+// #589 (`POST /account-api/credentials/offers`, `portal/portal_wallet.ts`),
+// through this module's `makeOffer()`.
 //
 // The offer names this issuer, the credential configuration(s) on offer, and
 // the grant. For H.1 that grant is authorization_code carrying an issuer_state,
@@ -50,9 +47,9 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `VcOffers` takes the helpers it uses, the settings, the mode, the
-// signer, the error codes, the cluster claims, the validator, a loader for the
-// authentication service (still required lazily, inside the offer page) and
-// the five stores through its constructor, and registers the three pages from
+// signer, the error codes, the cluster claims, a loader for the
+// authentication service (still required lazily, inside `makeOffer()`) and
+// the five stores through its constructor, and registers its one route from
 // `registerRoutes(app)`. The stores stay module-scope `realms.map()`
 // declarations. Loading the module registers nothing (#50, R1) — the module
 // exports `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at
@@ -75,17 +72,12 @@ import cellLocator = require('../common/cell_locator');
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
-import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
-// THE MODE (2026-09-12), for two questions only — are the test controls open
-// (an anonymous offer page), and may a response go to an address the request
-// named (the `wallet` parameter). A LEAF requiring only `config`.
+// THE MODE (2026-09-12), for one question since #594 — does this realm verify
+// credentials (the Transaction Code's attempts). A LEAF requiring only
+// `config`.
 import mode = require('../common/mode');
 // Constant-time comparison, for the Transaction Code. A leaf.
 import stsCrypto = require('../common/crypto');
@@ -99,13 +91,6 @@ import vcConfigs = require('./vc_configs');
 // route and requires persistence lazily, so it closes no cycle.
 import clusterClaims = require('../cluster/cluster_claims');
 
-// The input validator. A LEAF (rule 3): registers no route, closes no cycle.
-import validation = require('../common/validation');
-// THE DEMONSTRATION'S SHELL (#582): what `/issuer` and `/issuer/offer`
-// answer. A library over libraries; it requires nothing of this family.
-import VcDemoShell = require('./vc_demo_shell');
-
-const { VCI_CONFIG_ID } = vcConfigs;
 
 // The parts of a `realms.map()` store this module uses.
 interface Store {
@@ -132,7 +117,6 @@ interface VcOffersDeps {
   stsCrypto: typeof stsCrypto;
   errorCodes: typeof errorCodes;
   clusterClaims: typeof clusterClaims;
-  validation: typeof validation;
   // The authentication service, required when first needed — see the offer
   // page.
   loadAuthn(): any;
@@ -143,12 +127,6 @@ interface VcOffersDeps {
   deferredAccessTokenStore: Store;
 }
 
-// The credential formats this issuer actually offers, read off the table that
-// defines them rather than written out again.
-const VCI_FORMATS = Array.from(new Set(
-  Object.keys(vcConfigs.VCI_CONFIGS).map(function (id) {
-    return vcConfigs.VCI_CONFIGS[id].format;
-  }).filter(Boolean)));
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
@@ -279,37 +257,6 @@ const OFFER_TTL_MS = 10 * 60 * 1000;
 // ---------------------------------------------------------------------------
 const CLAIM_SKEW_MS = 60 * 1000;
 
-// The issuer's own web page — where H.1 starts.
-// ---------------------------------------------------------------------------
-// THE FOUR SCALAR PARAMETERS THESE PAGES TAKE.
-//
-// **THE FORMAT LIST IS DERIVED FROM `VCI_CONFIGS` AND NEVER RETYPED.** Which
-// credential formats this issuer offers is that table's statement — three of
-// them today (`dc+sd-jwt`, `jwt_vc_json`, `ldp_vc`) — and a list written out
-// here would be the second copy that goes stale the day a fourth is added.
-// Same argument `sts_metadata.js` makes about reading the router.
-//
-// **`wallet` IS TYPED AS A URI AND THAT IS THE ONE THAT MATTERS.** It is a URL
-// this service builds into a link and a QR code for somebody to follow, so a
-// `javascript:` or `data:` scheme here is script execution on the machine of
-// whoever scans it. `vt.uri` refuses the executable schemes; it deliberately
-// does NOT constrain the host, because pointing this at a wallet on a laptop is
-// the whole reason the parameter exists.
-//
-// `mode` and `by` are CASE-SENSITIVE, matching their call sites, which compare
-// with `===` and lower-case nothing.
-// ---------------------------------------------------------------------------
-const OID4VC_QUERY = validation.z.looseObject({
-  mode: validation.types.opt(validation.types.oneOf(
-    ['same-device', 'cross-device', 'deferred', 'direct'])),
-  by: validation.types.opt(validation.types.oneOf(['value', 'reference'])),
-  format: validation.types.opt(validation.types.oneOf(VCI_FORMATS)),
-  wallet: validation.types.opt(validation.types.uri),
-  state: validation.types.opt(validation.types.opaque),
-  credential_configuration_ids: validation.types.opt(
-    validation.z.string().max(validation.CAP.SCOPE))
-});
-
 /**
  * Credential Offer (OID4VCI section 4), the issuer-initiated half of issuance:
  * the issuer's page, the offer built and handed to the wallet by value or by
@@ -338,7 +285,7 @@ class VcOffers {
   };
 
   /**
-   * Builds the offer pages from the modules and stores they read.
+   * Builds the offers from the modules and stores they read.
    *
    * @param deps - the modules the composition root passes
    */
@@ -403,7 +350,6 @@ class VcOffers {
       stsCrypto: stsCrypto,
       errorCodes: errorCodes,
       clusterClaims: clusterClaims,
-      validation: validation,
       loadAuthn: function () {
         return require('../authn/authn');
       },
@@ -701,60 +647,6 @@ class VcOffers {
                           'Offer.' };
   }
 
-  // ---------------------------------------------------------------------------
-  // WHERE THE END-USER IS SENT: the wallet URL and the page under it.
-  //
-  // The page is `oid4vci.walletIssuancePath` (2026-09-12). The `wallet` query
-  // parameter overrides the configured URL — which is how a wallet on a laptop
-  // is pointed at this service without reconfiguring it, and in DEVELOPMENT
-  // that stays true for any absolute URL. In a realm that accepts only
-  // registered addresses (`mode.acceptsUnregisteredAddresses()` false) it is AN
-  // OPEN REDIRECT carrying a pre-authorized code or an issuer_state, so it must
-  // name the configured wallet or one listed in `oid4vci.allowedWalletUrls`,
-  // and anything else is refused by name rather than silently replaced.
-  //
-  // Compared with trailing slashes removed, which is the only normalisation the
-  // URL gets before it is used, so what is compared is what is dialled.
-  // ---------------------------------------------------------------------------
-  /**
-   * Returns where the End-User is sent: the configured wallet URL, or the
-   * `wallet` query parameter — which, where only registered addresses are
-   * accepted, must name the configured wallet or an allowed one.
-   *
-   * @param req - the request
-   * @param named - the wallet a caller named in a body (#582: the
-   *   demonstration's `POST /vc-demo-api/offer`); the query's `wallet`
-   *   where left out
-   * @returns `{ url }`, or `{ error }` naming the refused wallet
-   */
-  walletFor(req: any, named?: unknown) {
-    const { log, walletBaseUrl, config, mode } = this.deps;
-    log.debug("Entering VcOffers.walletFor().");
-    const configured = String(walletBaseUrl() || '').replace(/\/+$/, '');
-    const given = named === undefined
-      ? (req && req.query ? req.query.wallet : '') : named;
-    const asked = given ? String(given).replace(/\/+$/, '') : '';
-    if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
-      const allowed = (config.value('oid4vci.allowedWalletUrls') || []).map(
-          (one) => {
-        return String(one).replace(/\/+$/, '');
-      });
-      if (allowed.indexOf(asked) < 0) {
-        log.debug("Leaving VcOffers.walletFor(). An unregistered wallet URL " +
-                  "was refused.");
-        return { error: 'The wallet URL "' + asked + '" is neither ' +
-                        'oid4vci.walletUrl nor one listed in ' +
-                        'oid4vci.allowedWalletUrls, and this realm does not ' +
-                        'send an offer to an address the request named. Add ' +
-                        'it ' +
-                        'to that setting, or leave the wallet parameter off.' };
-      }
-    }
-    const path = String(config.value('oid4vci.walletIssuancePath') || '');
-    log.debug("Leaving VcOffers.walletFor().");
-    return { url: (asked || configured) + path };
-  }
-
   // A pre-authorized offer is made to an End-User the issuer has ALREADY
   // identified (H.2: they uploaded documents to an employee portal days
   // before), so the issuer knows the subject without anyone signing in.
@@ -787,8 +679,8 @@ class VcOffers {
   // `options.user` (2026-09-12) is WHO a pre-authorized offer is for. Absent,
   // it is `oid4vci.offerUsername` — the H.2 story, where the issuer identified
   // the End-User out of band — which is what this function always did and what
-  // development still does. The offer page passes the signed-in person in a
-  // realm whose test controls are closed; see that route.
+  // development still does. The portal's offer passes the signed-in person
+  // (#589).
   /**
    * Builds a Credential Offer for one of the Appendix H use cases:
    * `same-device` (authorization code and issuer state), `cross-device`
@@ -875,17 +767,16 @@ class VcOffers {
   }
 
   // ---------------------------------------------------------------------------
-  // MAKING AN OFFER, FOR BOTH OF ITS DOORS (#589, 2026-10-12).
+  // MAKING AN OFFER (#589, 2026-10-12).
   //
-  // A Credential Offer is made in two places: `GET /issuer/offer`, the demo
-  // issuer's page, and `POST /account-api/credentials/offers`, where a person
-  // signed in to the portal puts a credential about THEMSELVES into their own
-  // wallet (`portal/portal_wallet.ts`). **ONE FUNCTION MAKES IT FOR BOTH**,
-  // and that is the point of this method rather than a convenience: what an
-  // offer is — the code minted, whom it names, how long it lives, the
-  // expired state swept, the reference stored and stamped for its cell, the
-  // `openid-credential-offer://` URI and the wallet link — is said once, so
-  // the portal's offer and the issuer page's cannot come to differ.
+  // A Credential Offer is made at `POST /account-api/credentials/offers`,
+  // where a person signed in to the portal puts a credential about
+  // THEMSELVES into their own wallet (`portal/portal_wallet.ts`); the demo
+  // issuer's `GET /issuer/offer` was a second door until #594. What an offer
+  // is — the code minted, whom it names, how long it lives, the expired
+  // state swept, the reference stored and stamped for its cell, the
+  // `openid-credential-offer://` URI and the wallet link — is said here,
+  // once.
   //
   // **THE SESSION IS PRESENTED HERE, BEFORE ANYTHING IS MINTED** (#240): a
   // pre-authorized code IS the authorization for a credential about the
@@ -893,20 +784,17 @@ class VcOffers {
   // the person already holds is what it rests on, and CAEP's
   // `session-presented` says so, naming OpenID4VCI. The caller passes the
   // session when there is one the offer is made on: the portal's operation
-  // always does (the sign-on session its token was issued on); the issuer
-  // page, which since #589 makes a pre-authorized offer only where the test
-  // controls are open, for `oid4vci.offerUsername`, never does.
+  // always does (the sign-on session its token was issued on).
   //
   // `byReference` also stores the offer under a 128-bit id and answers its
   // `credential_offer_uri` (#65: fetching it hands over the offer and its
-  // code, so it is a bearer value like the code). The issuer page asks for
-  // the one form its `by` names; the portal's operation asks for both, so a
-  // person's screen can show a QR code small enough to scan beside a link
-  // that carries the offer whole.
+  // code, so it is a bearer value like the code). The portal's operation
+  // asks for both, so a person's screen can show a QR code small enough to
+  // scan beside a link that carries the offer whole.
   // ---------------------------------------------------------------------------
   /**
-   * Makes a Credential Offer — for the issuer page and the portal's account
-   * API alike — and the forms it is handed to a wallet in.
+   * Makes a Credential Offer — for the portal's account API — and the forms
+   * it is handed to a wallet in.
    *
    * @param req - the request (its realm and its base URL)
    * @param ask - `configurationIds`, `mode` (`same-device`, `cross-device`
@@ -995,145 +883,12 @@ class VcOffers {
                                '');
   }
 
-  // ---------------------------------------------------------------------------
-  // THE DEMONSTRATION ISSUER'S PAGES, AS VIEWS AND AN ACT (#582, 2026-10-12).
-  //
-  // `/issuer` and `/issuer/offer` were pages this module drew until #582 —
-  // the issuer's page with its four links, and the offer: a 302 to the
-  // wallet on this device, or a page drawing the offer as a QR code (a PNG
-  // the `qrcode` package made here) beside the Transaction Code. They are
-  // routes of the demonstration's static surface now (`vc_demo_shell.ts`,
-  // drawn by `web_vc_demo*.ts`), and these are what `/vc-demo-api`
-  // (`vc_demo_api.ts`) answers them with:
-  //
-  //   * `issuerView()` — the issuer's page: the configuration on offer, the
-  //     wallet a same-device offer goes to, and this issuer's identifier.
-  //   * `offerChecked()` — what an offer's query or body asked, checked as
-  //     the page checked its query (`STS-VC-0025` for what the schema
-  //     refuses, `STS-VC-0026` for a wallet this realm will not send to), and
-  //     NOTHING MINTED: the start page's view asks it, and a GET must create
-  //     nothing (#574's rule, since a prefetcher follows a GET).
-  //   * `offerAct()` — the act: `makeOffer()` exactly as the page called it,
-  //     answered as `location` (the wallet, on this device — the address the
-  //     302 named) or as the QR page's view (the offer URI, the wallet link
-  //     and the Transaction Code; the browser draws the code from the URI).
-  //
-  // **WHAT A WALLET IS HANDED IS NOT CHANGED**: the offer, its
-  // `openid-credential-offer://` URI and the wallet link are `makeOffer()`'s,
-  // to the byte, as they were when this page sent them.
-  //
-  // **WHO A PRE-AUTHORIZED OFFER IS FOR (#589, #585).** A cross-device or
-  // deferred offer carries a pre-authorized code, and that code IS the
-  // authorization: whoever redeems it is issued a credential about the
-  // person it names. This demonstration mints one for
-  // `oid4vci.offerUsername` and shows the Transaction Code beside it — H.2's
-  // story ("they uploaded documents to an employee portal days before"), a
-  // credential about a fixed person for the asking, and so a test control,
-  // served in a development realm only (`common/app.js`'s `demoOnly`). A
-  // person's own offer into their own wallet is the portal's
-  // (`/portal/wallet`, `portal/portal_wallet.ts`), through `makeOffer()` too.
-  // ---------------------------------------------------------------------------
+  // The one route left (`/issuer` and `/issuer/offer`, the demonstration
+  // issuer's pages, moved to the development companion on #594). Called by
+  // `common/protocol_stack.ts`.
   /**
-   * The demonstration issuer's page's view.
-   *
-   * @param req - the request (its realm and its base URL)
-   * @returns `{ kind: 'issuer', configurationId, wallet, issuer }`
-   */
-  issuerView(req: any) {
-    const { log, baseUrlOf, walletBaseUrl } = this.deps;
-    log.debug("Entering VcOffers.issuerView().");
-    log.debug("Leaving VcOffers.issuerView().");
-    return { kind: 'issuer', configurationId: VCI_CONFIG_ID,
-             wallet: String(walletBaseUrl() || ''),
-             issuer: baseUrlOf(req) };
-  }
-
-  /**
-   * Checks what a demonstration offer asks for — the offer page's query, or
-   * the act's body — and mints nothing.
-   *
-   * @param req - the request
-   * @param asked - `mode`, `by`, `wallet`, `credential_configuration_ids`
-   * @param where - the input group's name for a refusal (`query`, `body`)
-   * @returns `{ ok: true, configurationIds, mode, byReference, wallet }`, or
-   *   `{ ok: false, status, code, error }`
-   */
-  offerChecked(req: any, asked: any, where: string) {
-    const { log, validation } = this.deps;
-    log.debug("Entering VcOffers.offerChecked(). where=" + where);
-    const checked = validation.checkParsed(asked || {}, where, OID4VC_QUERY);
-    if (!checked.ok) {
-      log.debug("Leaving VcOffers.offerChecked(). " + checked.detail);
-      return { ok: false, status: 400, code: 'STS-VC-0025',
-               error: String(checked.detail) };
-    }
-    const given: any = checked.value;
-    const walletChoice = this.walletFor(req, String(given.wallet || ''));
-    if (walletChoice.error) {
-      log.debug("Leaving VcOffers.offerChecked(). " + walletChoice.error);
-      return { ok: false, status: 400, code: 'STS-VC-0026',
-               error: walletChoice.error };
-    }
-    const configurationIds = given.credential_configuration_ids
-      ? String(given.credential_configuration_ids).split(',')
-          .filter(Boolean)
-      : [VCI_CONFIG_ID];
-    log.debug("Leaving VcOffers.offerChecked().");
-    return { ok: true, configurationIds: configurationIds,
-             mode: String(given.mode || 'same-device'),
-             byReference: String(given.by || '') === 'reference',
-             wallet: String(walletChoice.url) };
-  }
-
-  /**
-   * Makes the demonstration's Credential Offer and says how the page hands
-   * it to the wallet.
-   *
-   * @param req - the request
-   * @param asked - what was asked, as `offerChecked()` reads it
-   * @param where - the input group's name for a refusal
-   * @returns `{ ok: true, location }` (same device: the wallet), `{ ok:
-   *   true, view }` (another device: the QR page's view), or `{ ok: false,
-   *   status, code, error }`
-   */
-  offerAct(req: any, asked: any, where: string) {
-    const { log } = this.deps;
-    log.debug("Entering VcOffers.offerAct(). where=" + where);
-    const checked: any = this.offerChecked(req, asked, where);
-    if (!checked.ok) {
-      log.debug("Leaving VcOffers.offerAct(). Refused.");
-      return checked;
-    }
-    const made = this.makeOffer(req, {
-      configurationIds: checked.configurationIds, mode: checked.mode,
-      byReference: checked.byReference, wallet: checked.wallet });
-    const built = made.built;
-    // How the offer reaches the wallet: in the URL, or behind a URI it
-    // fetches.
-    const handed = made.byReference || made.byValue;
-    // Same device (H.1): the wallet is right here, so the browser goes to
-    // it — the address the 302 named.
-    if (built.mode !== 'cross-device' && built.mode !== 'deferred') {
-      log.debug("Leaving VcOffers.offerAct(). Same device.");
-      return { ok: true, location: handed.walletUrl };
-    }
-    // Cross device (H.2 / H.3): the wallet is on the End-User's OTHER
-    // device, so the offer is shown for it to scan — as the
-    // openid-credential-offer URI a wallet registers for — and the
-    // Transaction Code is shown beside it, on the issuer's screen, never in
-    // the offer.
-    log.debug("Leaving VcOffers.offerAct(). Another device.");
-    return { ok: true,
-             view: { kind: 'offer', mode: built.mode,
-                     offerUri: handed.offerUri, walletUrl: handed.walletUrl,
-                     txCode: built.txCode } };
-  }
-
-  // The three pages, in the order they were registered at load before
-  // #50's R1. Called by `common/protocol_stack.ts`.
-  /**
-   * Registers the three offer routes — `/issuer`, `/issuer/offer` and
-   * `/oid4vci/credential-offer/:id` — in the order they were always registered.
+   * Registers `/oid4vci/credential-offer/:id`, where an offer passed by
+   * reference is fetched.
    *
    * Called by `common/protocol_stack.ts`, just before `oauth2`'s routes.
    *
@@ -1142,20 +897,6 @@ class VcOffers {
   registerRoutes(app: any) {
     const { log, vciError, errorCodes, credentialOffers } = this.deps;
     log.debug("Entering VcOffers.registerRoutes().");
-    // THE ISSUER'S PAGE AND THE OFFER (#582): the demonstration's shell;
-    // the runtime draws each from `/vc-demo-api` and makes the offer there.
-    app.get('/issuer', demoOnly, (req, res) => {
-      log.debug("Entering the issuer web page.");
-      VcDemoShell.send(req, res, 'Mock University — digital diploma');
-      log.debug("Leaving the issuer web page.");
-    });
-
-    app.get('/issuer/offer', demoOnly, (req, res) => {
-      log.debug("Entering the credential offer page.");
-      VcDemoShell.send(req, res, 'Mock University — your digital diploma');
-      log.debug("Leaving the credential offer page.");
-    });
-
     app.get('/oid4vci/credential-offer/:id', (req, res) => {
       log.debug("Entering the credential offer retrieval endpoint. id=" +
                 req.params.id);
@@ -1298,16 +1039,10 @@ export = {
   offerTtlMs: slot.forward('offerTtlMs'),
   checkTxCode: slot.forward('checkTxCode'),
   spendPreAuthorizedCode: slot.forward('spendPreAuthorizedCode'),
-  walletFor: slot.forward('walletFor'),
   vciOfferUsername: slot.forward('vciOfferUsername'),
   buildCredentialOffer: slot.forward('buildCredentialOffer'),
-  // #589: the one maker of an offer, for /issuer/offer and the portal's
-  // `POST /account-api/credentials/offers`; and the configured wallet.
+  // #589: the maker of an offer, for the portal's `POST
+  // /account-api/credentials/offers`; and the configured wallet.
   makeOffer: slot.forward('makeOffer'),
-  configuredWalletUrl: slot.forward('configuredWalletUrl'),
-  // #582: the demonstration issuer's pages' views and act, for
-  // `oid4vc/vc_demo_api.ts`.
-  issuerView: slot.forward('issuerView'),
-  offerChecked: slot.forward('offerChecked'),
-  offerAct: slot.forward('offerAct')
+  configuredWalletUrl: slot.forward('configuredWalletUrl')
 };

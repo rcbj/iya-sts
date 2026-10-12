@@ -11,32 +11,25 @@
 // The other half of the SD-JWT VC story: the issuance flow (vc_issuer.ts) puts
 // a credential in a wallet, and this is the Verifier that asks for part of it.
 //
-//   GET  /oid4vp/verifier          the Verifier's web page (where a
-//                                  presentation starts, same device)
-//   GET  /oid4vp/start             builds an Authorization Request and either
-//                                  sends the browser to the wallet with it or
-//                                  displays it as a QR code (cross device)
-//                                  — both, and /oid4vp/done, a static
-//                                  surface's shells since #582, drawn from
-//                                  /vc-demo-api (`verifierView()`,
-//                                  `startAct()`, `doneView()` below)
 //   GET  /oid4vp/request/:id       the signed Request Object, fetched by
 //                                  reference (RFC 9101 / OID4VP request_uri)
 //   POST /oid4vp/response          the Response URI: response_mode direct_post,
 //                                  where the vp_token arrives and is VERIFIED
-//   GET  /oid4vp/result/:state     non-spec: the verdict, so the wallet page and
-//                                  the tests can read what the Verifier decided
-//   GET  /oid4vp/done              the Verifier's "thank you" page
 //
-// **`/oid4vp/start` AND `/oid4vp/result/:state` HAVE AN ADMINISTRATOR'S
-// TWIN SINCE #587 (2026-10-12)**: `POST /admin-api/verifications/start` and
-// `GET /admin-api/verifications`. Both doors call the same two methods —
-// `startVerification()` builds the request and `verificationOutcome()` reads
-// the verdict — so the demonstration pages and the operations cannot
-// disagree about what a request is or what was decided. The pages are a
-// demonstration and become development-only (#585); the operations are an
-// administrator's and answer in every mode, which is what a product-mode job
-// (and an operator) starts a verification with.
+// **WHO STARTS A VERIFICATION, AND WHERE THE WALLET GOES AFTERWARDS (#594,
+// 2026-10-12).** An administrator, or an application holding Admin Write,
+// at `POST /admin-api/verifications/start` (#587) — `startVerification()`
+// builds the request — and the verdict is read at `GET
+// /admin-api/verifications?state=` (`verificationOutcome()`). The bar
+// door's own pages (`/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`)
+// and the non-spec `/oid4vp/result/:state` were a demonstration and left the
+// service for the development companion (`companion/`, #591's decision 1).
+// What the Response Endpoint answers is OpenID4VP 1.0 section 8.2's: a
+// `redirect_uri` when the STARTER named one (`completionUriFor()`, held to
+// the starting client's registered redirect URIs wherever only registered
+// addresses are accepted), and an empty object when it named none — the
+// section's "MAY", where the service used to name its own demonstration
+// page, which a product realm did not serve.
 //
 // **AND SINCE 2026-09-17 (#38) A PRESENTATION CAN SIGN SOMEBODY IN** — not
 // from these endpoints, which answer a wallet, but from `/authn/wallet`
@@ -90,7 +83,7 @@
 // shape: `VcVerifier` takes the helpers it uses, the settings, the mode, the
 // error codes, the revocation check, the identity registry, the request
 // configuration, the signer and verifier, and the two stores through its
-// constructor, and registers its six endpoints from `registerRoutes(app)`.
+// constructor, and registers its three endpoints from `registerRoutes(app)`.
 // Loading the module does not call it (#50, R1): the module exports it, and
 // `common/protocol_stack.ts` calls it at the point in the route order where
 // requiring this module used to register the endpoints. The stores stay
@@ -115,14 +108,6 @@ import realms = require('../common/realms');
 import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
-import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
-// THE DEMONSTRATION'S SHELL (#582): what the bar door's three pages answer.
-// A library over libraries; it requires nothing of this family.
-import VcDemoShell = require('./vc_demo_shell');
 import helpers = require('../common/helpers');
 import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
@@ -842,9 +827,9 @@ class VcVerifier {
     const { log, config, mode } = this.deps;
     log.debug("Entering VcVerifier.vpWalletFor().");
     const configured = String(this.vpWalletUrl() || '').replace(/\/+$/, '');
-    // THE WALLET A CALLER NAMED (#587): `/oid4vp/start` names it in its
-    // query, `POST /admin-api/verifications/start` in its body, and the
-    // second passes it here — so the rule below is one rule for both doors.
+    // THE WALLET A CALLER NAMED (#587): `POST /admin-api/verifications/
+    // start` names it in its body and passes it here (the demonstration's
+    // `/oid4vp/start` named it in its query until #594).
     const wanted = named !== undefined ? named : req.query.wallet;
     const asked = wanted ? String(wanted).replace(/\/+$/, '') : '';
     if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
@@ -1005,8 +990,7 @@ class VcVerifier {
   //   x509_hash                 the base64url SHA-256 of that certificate's
   //                             DER (#230).
   //
-  // `asked` is the prefix one request named (`/oid4vp/start`'s
-  // `client_id_prefix`); the realm's setting otherwise. An x509 prefix also
+  // `asked` is the prefix one start named (its `client_id_prefix`); the realm's setting otherwise. An x509 prefix also
   // answers the `algorithm` the request must be signed with, because the
   // certificate is over the realm key for that algorithm and no other.
   //
@@ -2008,45 +1992,47 @@ class VcVerifier {
   }
 
   // ---------------------------------------------------------------------------
-  // STARTING A VERIFICATION, FOR BOTH DOORS (#587, 2026-10-12).
+  // STARTING A VERIFICATION (#587, 2026-10-12; the one door since #594).
   //
-  // `/oid4vp/start` (the demonstration page's link) and `POST
-  // /admin-api/verifications/start` (an administrator's act) build the SAME
-  // request through this one method: the same validation of what was asked,
-  // the same certificate issued first for an x509 Client Identifier, the same
-  // `buildVpRequest()`, the same query and the same wallet rule. What differs
-  // is only how the answer is SENT — a redirect or a QR page from the page, a
-  // JSON document from the API — which is why this returns what was built and
-  // sends nothing.
+  // `POST /admin-api/verifications/start` — an administrator's act, or an
+  // application's holding Admin Write (the development companion's bar door
+  // among them, #594) — builds the request through this method: the
+  // validation of what was asked, the certificate issued first for an x509
+  // Client Identifier, `buildVpRequest()`, the query and the wallet rule. It
+  // returns what was built and sends nothing; the operation answers it as
+  // JSON. Until #594 the demonstration's `/oid4vp/start` was a second door
+  // onto it.
   //
   // It takes the REQUEST because the request's origin is read a dozen times
   // below it — the response URI, the did:web, the OpenID Federation entity
   // identifier, the x509 name — and a request is what each of those asks for.
-  // `asked` is the page's query or the operation's body, the same names in
-  // both: `format`, `by`, `client_id_prefix`, `response_type`,
-  // `response_mode`, `mode` and `wallet`.
+  // `asked` is the operation's body: `format`, `by`, `client_id_prefix`,
+  // `response_type`, `response_mode`, `mode` and `wallet`. `options`
+  // carries what the operation checked itself: `completionUri`, the
+  // address the Response Endpoint names afterwards (`completionUriFor()`).
   //
-  // A REFUSAL IS A VALUE, `{ ok: false, status, code, error }`, with the
-  // status and the code the page always answered: 400 STS-VC-0032 for what
-  // the schema refuses, 500 with the builder's own code for a request that
-  // cannot be built (a Verifier Attestation this realm cannot use, an x509
-  // Client Identifier with nothing to certify — STS-VC-0092, STS-VC-0110 to
-  // STS-VC-0113), and 400 STS-VC-0033 for a wallet this realm will not send
-  // a request to.
+  // A REFUSAL IS A VALUE, `{ ok: false, status, code, error }`: 400
+  // STS-VC-0032 for what the schema refuses, 500 with the builder's own
+  // code for a request that cannot be built (a Verifier Attestation this
+  // realm cannot use, an x509 Client Identifier with nothing to certify —
+  // STS-VC-0092, STS-VC-0110 to STS-VC-0113), and 400 STS-VC-0033 for a
+  // wallet this realm will not send a request to.
   // ---------------------------------------------------------------------------
   /**
-   * Builds a presentation request as `/oid4vp/start` and `POST
-   * /admin-api/verifications/start` both do, and says how a wallet is handed
-   * it.
+   * Builds a presentation request as `POST /admin-api/verifications/start`
+   * asks, and says how a wallet is handed it.
    *
    * @param req - the request, whose origin and realm the request is built on
    * @param asked - what was asked: `format`, `by`, `client_id_prefix`,
    *   `response_type`, `response_mode`, `mode` and `wallet`
    * @param where - the input group's name for a refusal (`query`, `body`)
+   * @param options - `completionUri`: where the Response Endpoint sends the
+   *   wallet afterwards, already checked by `completionUriFor()`
    * @returns `{ ok: true, record, query, wallet, walletUrl, requestUri,
    *   mode }`, or `{ ok: false, status, code, error }`
    */
-  async startVerification(req: any, asked: any, where: string) {
+  async startVerification(req: any, asked: any, where: string,
+                          options?: { completionUri?: string }) {
     const { log, vpConfig } = this.deps;
     log.debug("Entering VcVerifier.startVerification(). where=" + where);
     const checked = validation.checkParsed(asked || {}, where, OID4VC_QUERY);
@@ -2104,6 +2090,13 @@ class VcVerifier {
                error: walletChoice.error };
     }
     const wallet = walletChoice.url;
+    // WHERE THE WALLET GOES AFTERWARDS (#594): on the transaction, through
+    // the store, so the node that answers the wallet's POST reads it.
+    const completion = String((options && options.completionUri) || '');
+    if (completion) {
+      record.completionUri = completion;
+      this.saveTransaction(record);
+    }
     log.debug("Leaving VcVerifier.startVerification(). state=" +
               record.state + ", mode=" + startMode);
     return {
@@ -2119,8 +2112,83 @@ class VcVerifier {
   }
 
   // ---------------------------------------------------------------------------
-  // WHAT THE VERIFIER DECIDED, FOR BOTH DOORS (#587). `/oid4vp/result/:state`
-  // and `GET /admin-api/verifications?state=` answer exactly this. It reads
+  // WHERE THE WALLET IS SENT ONCE THE VERIFIER HAS ANSWERED (#594).
+  //
+  // OpenID4VP 1.0 section 8.2: the Response Endpoint MAY answer a
+  // `redirect_uri`, and the wallet then sends the End-User's browser there.
+  // Whose page that is belongs to whoever STARTED the verification, so the
+  // start names it (`redirect_uri` in its body) — the service's own
+  // demonstration page that every verification used to name left with the
+  // demonstration. Held to the rule every other return address here obeys
+  // (`mode.acceptsUnregisteredAddresses()`): where only registered
+  // addresses are accepted, it must be one of the STARTING CLIENT's
+  // registered redirect URIs (`applications.clientConfigOf()`, the register
+  // the authorization endpoint holds its own redirect URIs to), matched
+  // whole; anywhere else any absolute http(s) URL with no fragment. Refused
+  // `STS-VC-0120` either way, never replaced. A start that names none is
+  // answered by the Response Endpoint with no `redirect_uri`, which the
+  // section allows and which is what another device's wallet wants.
+  // ---------------------------------------------------------------------------
+  /**
+   * Checks the address a verification's starter names for its wallet to be
+   * sent to afterwards.
+   *
+   * @param asked - the `redirect_uri` the start named ('' for none)
+   * @param clientId - the starting client's id, '' when unknown
+   * @returns `{ uri }` ('' for none), or `{ error }`
+   */
+  completionUriFor(asked: unknown, clientId: string) {
+    const { log, mode } = this.deps;
+    log.debug("Entering VcVerifier.completionUriFor().");
+    const uri = String(asked || '');
+    if (!uri) {
+      log.debug("Leaving VcVerifier.completionUriFor(). None.");
+      return { uri: '' };
+    }
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(uri);
+    } catch (e) {
+      log.debug("Caught in VcVerifier.completionUriFor(): " +
+                ((e && e.message) || e));
+      // Refused below, by name.
+      parsed = null;
+    }
+    if (!parsed || !/^https?:$/.test(parsed.protocol) || parsed.hash ||
+        uri.indexOf('#') >= 0) {
+      log.debug("Leaving VcVerifier.completionUriFor(). Not a URL.");
+      return { error: 'redirect_uri must be an absolute http or https URL ' +
+                      'with no fragment.' };
+    }
+    if (mode.acceptsUnregisteredAddresses()) {
+      log.debug("Leaving VcVerifier.completionUriFor(). Accepted.");
+      return { uri: uri };
+    }
+    // Lazily: the register is a library every family has loaded by the
+    // time a verification is started, and a top-level require here is one
+    // more edge for a cycle to close through.
+    const registered = clientId
+      ? (require('../common/applications').clientConfigOf(clientId)
+          .redirect_uris || []).map(String)
+      : [];
+    if (registered.indexOf(uri) < 0) {
+      log.debug("Leaving VcVerifier.completionUriFor(). Unregistered.");
+      return { error: 'redirect_uri "' + uri + '" is not one of the ' +
+                      'redirect URIs registered for ' +
+                      (clientId ? 'the client "' + clientId + '"'
+                                : 'the caller') +
+                      ', and this realm does not send a wallet to an ' +
+                      'address a request named. Register it on the ' +
+                      'application, or leave redirect_uri off.' };
+    }
+    log.debug("Leaving VcVerifier.completionUriFor(). Registered.");
+    return { uri: uri };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE VERIFIER DECIDED (#587). `GET /admin-api/verifications?state=`
+  // answers exactly this (and the demonstration's `/oid4vp/result/:state`
+  // did, until #594). It reads
   // the store directly rather than through `transactionFor()`, as the result
   // page always has: an expired transaction is still reported until the
   // sweep removes it, because "what did it decide" outlives "may it still be
@@ -2214,191 +2282,6 @@ class VcVerifier {
               " open.");
     return { verifications: rows.slice(0, cap), total: rows.length,
              limit: cap };
-  }
-
-  // ---------------------------------------------------------------------------
-  // THE BAR DOOR'S PAGES, AS VIEWS AND AN ACT (#582, 2026-10-12).
-  //
-  // `/oid4vp/verifier`, `/oid4vp/start` and `/oid4vp/done` were pages this
-  // module drew until #582 — the door with its links, the start (a 302 to
-  // the wallet on this device, or a page drawing the request as a QR code,
-  // a PNG the `qrcode` package made here) and the closing page. They are
-  // routes of the demonstration's static surface now (`vc_demo_shell.ts`,
-  // drawn by `web_vc_demo*.ts`), and these are what `/vc-demo-api`
-  // (`vc_demo_api.ts`) answers them with:
-  //
-  //   * `verifierView()` — the door: what it asks for (the claims, the
-  //     credential's type, what an `ldp_vc` request leaves out), in which
-  //     format, and where the wallet is and posts to — read HERE, when the
-  //     page is drawn, so the page and the request the start builds cannot
-  //     disagree, as before.
-  //   * `startChecked()` — what a start asks, checked as `startVerification()`
-  //     checks it (`STS-VC-0032`) and NOTHING BUILT: the start page's view
-  //     asks it, and a GET must create nothing (#574's rule).
-  //   * `startAct()` — the act: `startVerification()`, shared with `POST
-  //     /admin-api/verifications/start` (#587), answered as `location` (the
-  //     wallet on this device — the address the 302 named) or as the QR
-  //     page's view (the request's URI, the wallet link, and the state the
-  //     page polls `doneView()` with). The browser draws the code from the
-  //     URI.
-  //   * `doneView()` — the closing page: what the Verifier decided for a
-  //     state, the claims as text. Also what the QR page polls: a
-  //     presentation made on the other device sends the page on to it.
-  //
-  // **WHAT A WALLET IS HANDED IS NOT CHANGED**: the request, its
-  // `openid4vp://` (or `siopv2://`) URI, the wallet link and the
-  // `redirect_uri` the response endpoint names (`/oid4vp/done?state=…`) are
-  // `startVerification()`'s and `afterResponseUri()`'s, to the byte.
-  // ---------------------------------------------------------------------------
-  /**
-   * The bar door's view: what it asks for, and in which format.
-   *
-   * @param req - the request (its realm and its base URL)
-   * @param asked - the page's query: `format`
-   * @returns `{ ok: true, view }`, or `{ ok: false, status, code, error }`
-   */
-  verifierView(req: any, asked: any) {
-    const { log, baseUrlOf, vpConfig } = this.deps;
-    log.debug("Entering VcVerifier.verifierView().");
-    // Which format this verifier will ask for. A wallet arriving from the
-    // debugger's presentation step 0 names the format it is actually
-    // holding, because the format is the VERIFIER's choice and a wallet
-    // cannot convert a credential into another one; the page's links carry
-    // it through.
-    const checked = validation.checkParsed(asked || {}, 'query',
-                                           OID4VC_QUERY);
-    if (!checked.ok) {
-      log.debug("Leaving VcVerifier.verifierView(). " + checked.detail);
-      return { ok: false, status: 400, code: 'STS-VC-0032',
-               error: String(checked.detail) };
-    }
-    const given: any = checked.value;
-    // Recognised through the configuration's own lookup rather than
-    // compared here, which is what makes `?format=dc+sd-jwt` work: a plus
-    // in a query string is a space by the time it is parsed, so a literal
-    // comparison answered "no such format" for the one format whose id
-    // contains one.
-    const named = vpConfig.formatById(String(given.format || ''));
-    const knownFormat = named ? named.id : '';
-    const askingFor = vpConfig.formatOf(knownFormat);
-    // What the request will name the credential by: a vct for an SD-JWT
-    // VC, a type array for the two W3C formats — read from the
-    // configuration rather than decided again here.
-    const base = baseUrlOf(req);
-    const view = {
-      kind: 'verifier',
-      // The format the page's links carry, '' where none was named.
-      format: knownFormat,
-      askingFor: askingFor,
-      askingType: vpConfig.formatById(askingFor).identifierText,
-      // What this door is configured to ask for, read when the page is
-      // drawn: the console can change it between the page and the start.
-      claims: vpConfig.requestedClaims(),
-      // The claims an ldp_vc request will NOT carry, because the vendored
-      // JSON-LD context defines no term for them — said on the page rather
-      // than left to be found in a presentation that disclosed less.
-      ldpOmitted: askingFor === 'ldp_vc' ? vpConfig.ldpOmitted() : [],
-      responseUri: base + '/oid4vp/response',
-      wallet: String(this.vpWalletUrl() || '')
-    };
-    log.debug("Leaving VcVerifier.verifierView().");
-    return { ok: true, view: view };
-  }
-
-  /**
-   * Checks what a demonstration start asks for, and builds nothing.
-   *
-   * @param asked - the start page's query
-   * @returns `{ ok: true, mode }`, or `{ ok: false, status, code, error }`
-   */
-  startChecked(asked: any) {
-    const { log } = this.deps;
-    log.debug("Entering VcVerifier.startChecked().");
-    const checked = validation.checkParsed(asked || {}, 'query',
-                                           OID4VC_QUERY);
-    if (!checked.ok) {
-      log.debug("Leaving VcVerifier.startChecked(). " + checked.detail);
-      return { ok: false, status: 400, code: 'STS-VC-0032',
-               error: String(checked.detail) };
-    }
-    const given: any = checked.value;
-    log.debug("Leaving VcVerifier.startChecked().");
-    return { ok: true,
-             mode: String(given.mode || '') === 'cross-device'
-               ? 'cross-device' : 'same-device' };
-  }
-
-  /**
-   * Starts the bar door's presentation, and says how the page hands it to
-   * the wallet.
-   *
-   * @param req - the request
-   * @param asked - what was asked, as `startVerification()` reads it
-   * @param pollSeconds - how often the QR page asks whether it was answered
-   * @returns `{ ok: true, location }` (same device), `{ ok: true, view }`
-   *   (another device), or `{ ok: false, status, code, error }`
-   */
-  async startAct(req: any, asked: any, pollSeconds: number) {
-    const { log } = this.deps;
-    log.debug("Entering VcVerifier.startAct().");
-    const started: any = await this.startVerification(req, asked, 'body');
-    if (!started.ok) {
-      log.debug("Leaving VcVerifier.startAct(). " + started.error);
-      return started;
-    }
-    if (started.mode !== 'cross-device') {
-      // Same device: the browser IS the wallet's user agent, so it goes
-      // there — the address the 302 named.
-      log.debug("Leaving VcVerifier.startAct(). Same device.");
-      return { ok: true, location: started.walletUrl };
-    }
-    // Cross device: the request is shown for the wallet on the other device
-    // to scan, as the URI a wallet registers for.
-    log.debug("Leaving VcVerifier.startAct(). Another device.");
-    return { ok: true,
-             view: { kind: 'request', requestUri: started.requestUri,
-                     walletUrl: started.walletUrl,
-                     state: String(started.record.state),
-                     pollSeconds: pollSeconds } };
-  }
-
-  /**
-   * The bar door's closing page: what was decided for a state. A state with
-   * no record, or none answered yet, is `received: false`, as the page
-   * always said "nothing has been presented".
-   *
-   * @param state - the request's state
-   * @returns `{ kind: 'done', received, accepted, claims, requested }`, the
-   *   claims as `{ name, value }` with an object value as its JSON
-   */
-  doneView(state: unknown) {
-    const { log, vpTransactions } = this.deps;
-    log.debug("Entering VcVerifier.doneView().");
-    const key = String(state || '');
-    const record = key ? vpTransactions.get(key) : null;
-    // A WALLET SIGN-IN'S TRANSACTION IS NOT THE BAR DOOR'S (#582): its
-    // wallet is sent back to the sign-in's own page, never here, and its
-    // verdict names a person — `recentVerifications()` leaves it out for
-    // that reason, and so does this page now, where the server-drawn page
-    // showed whatever state it was handed.
-    const verdict = record && record.signIn ? null : record && record.verdict;
-    if (!verdict) {
-      log.debug("Leaving VcVerifier.doneView(). Nothing yet.");
-      return { kind: 'done', received: false, accepted: false, claims: [],
-               requested: [] };
-    }
-    const claims = verdict.claims || {};
-    log.debug("Leaving VcVerifier.doneView(). ok=" + !!verdict.ok);
-    return {
-      kind: 'done', received: true, accepted: !!verdict.ok,
-      claims: Object.keys(claims).map(function (name) {
-        const value = claims[name];
-        return { name: name,
-                 value: typeof value === 'object' ? JSON.stringify(value)
-                                                  : String(value) };
-      }),
-      requested: (verdict.requested || []).map(String)
-    };
   }
 
   // ---------------------------------------------------------------------------
@@ -3321,17 +3204,19 @@ class VcVerifier {
   }
 
   // Where a wallet sends the End-User once this Verifier has answered: the
-  // bar door's thank-you page, or — for a sign-in — back to the page the
-  // browser that started it is waiting on, carrying the `response_code` when
-  // there is one. The path is the one the sign-in module put on the
+  // page the verification's starter named (#594, `completionUriFor()`), or
+  // nothing — '' — when it named none; or, for a sign-in, back to the page
+  // the browser that started it is waiting on, carrying the `response_code`
+  // when there is one. The path is the one the sign-in module put on the
   // transaction; this module does not know it.
   private afterResponseUri(req: any, record: any, responseCode: string) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.afterResponseUri().");
     const base = baseUrlOf(req);
     if (!record.signIn || !record.signIn.completePath) {
-      log.debug("Leaving VcVerifier.afterResponseUri(). The bar door.");
-      return base + '/oid4vp/done?state=' + encodeURIComponent(record.state);
+      log.debug("Leaving VcVerifier.afterResponseUri(). The starter's: " +
+                (record.completionUri ? 'named' : 'none'));
+      return String(record.completionUri || '');
     }
     log.debug("Leaving VcVerifier.afterResponseUri(). A sign-in.");
     const path = String(record.signIn.completePath);
@@ -4151,6 +4036,16 @@ class VcVerifier {
       if (!ok) {
         errorCodes.mark(res, 'STS-VC-0090');
       }
+      if (!next) {
+        // The starter named no page (#594): the browser that posted is
+        // told, in plain text, that the answer arrived, and sent nowhere.
+        res.status(200).type('text/plain').set('Cache-Control', 'no-store')
+           .send('The Verifier received your wallet\'s answer. You may ' +
+                 'close this page.');
+        log.debug("Leaving VcVerifier.answerSelfIssued(). form_post, no " +
+                  "page named, ok=" + ok);
+        return;
+      }
       res.redirect(303, next);
       log.debug("Leaving VcVerifier.answerSelfIssued(). form_post, ok=" + ok);
       return;
@@ -4169,8 +4064,8 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.answerSelfIssued(). Refused.");
       return;
     }
-    res.status(200).type('application/json').send(JSON.stringify({
-      redirect_uri: next }));
+    res.status(200).type('application/json').send(JSON.stringify(
+      this.responseAnswer(next)));
     log.debug("Leaving VcVerifier.answerSelfIssued(). Accepted.");
   }
 
@@ -4285,7 +4180,19 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.saveTransaction().");
   }
 
-  // The six endpoints, in the order they were registered at load before
+  // The Response Endpoint's 200 body (OpenID4VP 1.0 section 8.2): the
+  // `redirect_uri` when there is a page to send the wallet to, and an empty
+  // object when the starter named none (#594).
+  private responseAnswer(next: string): Record<string, string> {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.responseAnswer().");
+    log.debug("Leaving VcVerifier.responseAnswer(). " +
+              (next ? 'A page.' : 'None.'));
+    return next ? { redirect_uri: next } : {};
+  }
+
+  // The three endpoints (the bar door's pages and the result left for the
+  // companion, #594), in the order they were registered at load before
   // #50's R1. Called by `common/protocol_stack.ts`.
   /**
    * Registers the Verifier's routes under `/oid4vp`, in the order they were
@@ -4300,21 +4207,6 @@ class VcVerifier {
             errorCodes, stats, vpConfig, vpTransactions,
             vpRequests } = this.deps;
     log.debug("Entering VcVerifier.registerRoutes().");
-    // THE BAR DOOR AND ITS START (#582): the demonstration's shell; the
-    // runtime draws each from `/vc-demo-api` and starts the presentation
-    // there (`startAct()`, through `startVerification()`).
-    app.get('/oid4vp/verifier', demoOnly, (req, res) => {
-      log.debug("Entering the verifier web page.");
-      VcDemoShell.send(req, res, 'The Bar Door — are you over 21?');
-      log.debug("Leaving the verifier web page.");
-    });
-
-    app.get('/oid4vp/start', demoOnly, (req, res) => {
-      log.debug("Entering the presentation start page.");
-      VcDemoShell.send(req, res, 'The Bar Door — present your credential');
-      log.debug("Leaving the presentation start page.");
-    });
-
     // The Request Object, fetched by reference (request_uri). Signed, and
     // served with the media type RFC 9101 defines for it.
     app.get('/oid4vp/request/:id', (req, res) => {
@@ -4494,9 +4386,8 @@ class VcVerifier {
         // outstanding for ever.
         vpTransactions.set(state, record);
         errorCodes.mark(res, 'STS-VC-0037');
-        res.status(200).type('application/json').send(JSON.stringify({
-          redirect_uri: this.afterResponseUri(req, record, '')
-        }));
+        res.status(200).type('application/json').send(JSON.stringify(
+          this.responseAnswer(this.afterResponseUri(req, record, ''))));
         log.debug("Leaving the OID4VP response endpoint. The wallet refused: " +
                   body.error);
         return;
@@ -4650,42 +4541,10 @@ class VcVerifier {
                     'in — a wallet signs in at /authn/wallet.')
         });
       }
-      res.status(200).type('application/json').send(JSON.stringify({
-        redirect_uri: this.afterResponseUri(req, record, responseCode)
-      }));
+      res.status(200).type('application/json').send(JSON.stringify(
+        this.responseAnswer(this.afterResponseUri(req, record,
+                                                  responseCode))));
       log.debug("Leaving the OID4VP response endpoint. Accepted.");
-    });
-
-    // Not in the spec: the verdict, so the wallet's own page (and the test
-    // suite) can show what this Verifier decided and why. A real Verifier tells
-    // the End-User in its own UI; this makes the same information
-    // machine-readable. Its CORS header is `common/cors.js`'s decision
-    // (2026-09-13) — the `*` this route set for itself would have let any page
-    // read a presentation's verdict.
-    app.get('/oid4vp/result/:state', demoOnly, (req, res) => {
-      log.debug("Entering the presentation result endpoint. state=" +
-                req.params.state);
-      // `GET /admin-api/verifications?state=` answers the same object
-      // (#587).
-      const outcome = this.verificationOutcome(req.params.state);
-      if (!outcome) {
-        log.debug("Leaving the presentation result endpoint. Unknown state.");
-        errorCodes.mark(res, 'STS-VC-0042');
-        return oauthError(res, 404, 'invalid_request', 'No such presentation.');
-      }
-      res.status(200).type('application/json').send(JSON.stringify(outcome));
-      log.debug("Leaving the presentation result endpoint. received=" +
-                outcome.received);
-    });
-
-    // Where the wallet sends the End-User once the Verifier has answered:
-    // the demonstration's shell (#582), drawn from `GET
-    // /vc-demo-api/done?state=` (`doneView()`). The address the response
-    // endpoint names is unchanged.
-    app.get('/oid4vp/done', demoOnly, (req, res) => {
-      log.debug("Entering the verifier done page.");
-      VcDemoShell.send(req, res, 'The Bar Door');
-      log.debug("Leaving the verifier done page.");
     });
 
     log.debug("Leaving VcVerifier.registerRoutes().");
@@ -4756,8 +4615,8 @@ export = {
   // through the one store.
   signInDcqlQuery: slot.forward('signInDcqlQuery'),
   vpRequestQuery: slot.forward('vpRequestQuery'),
-  // THE ADMINISTRATOR'S TWIN OF `/oid4vp/start` AND `/oid4vp/result`
-  // (#587), for `mgmt-api/admin_api.ts` and `admin-core/admin_views.ts`.
+  // THE START AND THE OUTCOME (#587; the only doors since #594), for
+  // `mgmt-api/admin_api.ts` and `admin-core/admin_views.ts`.
   startVerification: slot.forward('startVerification'),
   // What a start may name, read by `POST /admin-api/verifications/start`'s
   // document so its closed sets are these lists rather than copies (#86).
@@ -4770,12 +4629,8 @@ export = {
     client_id_prefix: SIGNED_CLIENT_ID_PREFIXES.slice()
   },
   verificationOutcome: slot.forward('verificationOutcome'),
-  // THE BAR DOOR'S PAGES' VIEWS AND ACT (#582), for
-  // `oid4vc/vc_demo_api.ts`.
-  verifierView: slot.forward('verifierView'),
-  startChecked: slot.forward('startChecked'),
-  startAct: slot.forward('startAct'),
-  doneView: slot.forward('doneView'),
+  // Where a starter's wallet is sent afterwards (#594), for the start.
+  completionUriFor: slot.forward('completionUriFor'),
   recentVerifications: slot.forward('recentVerifications'),
   vpWalletFor: slot.forward('vpWalletFor'),
   signInOutcome: slot.forward('signInOutcome'),
