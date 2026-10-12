@@ -32,7 +32,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_portal_kit');
-import WebQr = require('./web_qr');
+import WebQr = require('../common/web_qr');
 
 type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;

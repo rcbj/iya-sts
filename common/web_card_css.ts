@@ -43,6 +43,23 @@ class WebCardCss {
     'bel{display:inline;margin:0 4px 0 0}';
 
   /**
+   * What the sign-in surface's steps draw beyond the screen (#572, #573):
+   * the notice a resend leaves, the warning of a set of recovery codes
+   * running low, the set-up step's headings, a code's wide field, the ways
+   * round a factor, the technical fold and the QR code. They were in each
+   * step page's own stylesheet while the server drew the steps.
+   */
+  static readonly STEP_CSS =
+    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:' +
+    '8px 10px;border-radius:5px;font-size:.85em;margin-bottom:12px}.warn{bac' +
+    'kground:#fff8e6;border:1px solid #f0dca8;color:#7a5a00;padding:8px 10px' +
+    ';border-radius:5px;font-size:.85em;margin-bottom:12px}.card h2{font-siz' +
+    'e:1em;margin:18px 0 6px}input.code{font-size:1.4em;letter-spacing:.35em' +
+    ';text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monosp' +
+    'ace}.links div{margin:6px 0;font-size:.85em}details summary{cursor:poin' +
+    'ter;color:#12107c}.qr{text-align:center;margin:12px 0}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen.
    */
@@ -69,7 +86,7 @@ class WebCardCss {
     'order:1px solid #12107c;color:#12107c;background:#fff;text-decoration:no' +
     'ne;font-size:.9em}a.fedbtn span{display:block;font-size:.75em;color:#777' +
     '}' +
-    WebCardCss.CHOOSER_CSS;
+    WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS;
 }
 
 export = WebCardCss;

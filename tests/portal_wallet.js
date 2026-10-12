@@ -263,7 +263,7 @@ function childMain() {
 // A. The encoder against the `qrcode` package, for every level and mask.
 function qrMatchesTheReference(t) {
   log.debug("Entering qrMatchesTheReference().");
-  const WebQr = require('../portal/web_qr');
+  const WebQr = require('../common/web_qr');
   const QRCode = require('qrcode');
   const lengths = [1, 14, 15, 40, 100, 130, 200, 400, 900, 1500, 2300];
   let compared = 0;

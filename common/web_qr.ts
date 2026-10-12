@@ -15,6 +15,10 @@
 // URI — not a picture of it. So the picture is made here, from the URI,
 // rather than by the server as an image the answer would have to carry.
 //
+// AND THE SIGN-IN SURFACE'S SET-UP STEP (#572) draws an authenticator app's
+// `otpauth:` URI the same way, which is why this is in `common/` — it was
+// `portal/web_qr.ts` until then — and is a module both bundles carry.
+//
 // **WHY NOT THE `qrcode` PACKAGE THE SERVER USES**: a `web_` module requires
 // other `web_` modules only (`portal/CLAUDE.md`), so that the bundle a
 // browser loads is this repository's code and nothing it pulled in; and the
