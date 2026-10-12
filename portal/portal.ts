@@ -58,6 +58,7 @@ import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import signals = require('../ssf/ssf_receivers');
 import listenerMap = require('../common/listener_map');
+import ShellDocument = require('../common/shell_document');
 import kit = require('./web_portal_kit');
 
 type Json = any;
@@ -207,32 +208,17 @@ class Portal {
   /**
    * The bundle and its precompressed forms.
    *
-   * @returns `{ raw, br, gz }`, each a Buffer or null
+   * @returns `ShellDocument.readFile()`'s `{ raw, br, gzip, built }`
    */
   bundle(): Json {
     const { log } = this.deps;
     log.debug("Entering Portal.bundle().");
     if (!this.script) {
-      const fs = require('fs');
-      const path = require('path');
-      const read = function (name: string): Json {
-        try {
-          return fs.readFileSync(path.join(__dirname, name));
-        } catch (e) {
-          // Not built: answered by the placeholder below.
-          log.debug("Caught in Portal.bundle(): " + ((e && e.message) || e));
-          return null;
-        }
-      };
       // `portal-spa.js` and not `portal.js`, which is this module compiled.
-      this.script = { raw: read('portal-spa.js'),
-                      br: read('portal-spa.js.br'),
-                      gz: read('portal-spa.js.gz') };
-      if (!this.script.raw) {
-        this.script.raw = Buffer.from('document.body.textContent = "This ' +
-          'service has no portal script (portal/portal-spa.js): it was not ' +
-          'built by build-typescript.sh.";');
-      }
+      this.script = ShellDocument.readFile(__dirname, 'portal-spa.js',
+        'document.body.textContent = "This service has no portal script ' +
+        '(portal/portal-spa.js): it was not built by ' +
+        'build-typescript.sh.";');
     }
     log.debug("Leaving Portal.bundle().");
     return this.script;
@@ -279,25 +265,27 @@ class Portal {
     log.debug("Entering Portal.shellDocument().");
     const refused = registered && registered.ok === false;
     const there = elsewhere || {};
-    const data = (there.oauth ? ' data-sts-oauth="' + kit.esc(there.oauth) +
-                                '"' : '') +
-                 (there.authn ? ' data-sts-authn="' + kit.esc(there.authn) +
-                                '"' : '');
-    const html = '<!DOCTYPE html>\n<html lang="en"' + data + '><head>' +
-      '<meta charset="utf-8"><meta name="viewport" ' +
-      'content="width=device-width,initial-scale=1"><title>Your account — ' +
-      'IYA STS</title><link rel="stylesheet" href="' + BASE + '/portal.css">' +
-      (refused ? '' : '<script src="' + BASE + '/portal.js" defer></script>') +
-      '</head><body><div class="wrap"><div class="card">' +
-      '<h1>Your account</h1>' +
-      (refused
+    // ONE WRITER FOR EVERY STATIC SURFACE'S SHELL (#570): the bytes are
+    // what this method drew by hand until then.
+    const html = ShellDocument.document({
+      title: 'Your account — IYA STS',
+      attributes: [['data-sts-oauth', there.oauth || ''],
+                   ['data-sts-authn', there.authn || '']],
+      viewport: 'width=device-width,initial-scale=1',
+      stylesheets: [BASE + '/portal.css'],
+      script: BASE + '/portal.js',
+      open: '<div class="wrap"><div class="card"><h1>Your account</h1>',
+      close: '</div></div>',
+      refusal: refused
         ? '<div class="err">' + kit.esc(registered.why ||
             'The portal cannot sign in at this address.') + '</div>'
-        : '<noscript><div class="err">This portal is a script that runs in ' +
-          'your browser and draws every page from <code>/account-api</code>' +
-          '; with scripts blocked there is nothing it can show.</div>' +
-          '</noscript><p class="sub">Loading&hellip;</p>') +
-      '</div></div></body></html>\n';
+        : null,
+      noscript: '<div class="err">This portal is a script that runs in ' +
+        'your browser and draws every page from <code>/account-api</code>' +
+        '; with scripts blocked there is nothing it can show.</div>',
+      loading: '<p class="sub">Loading&hellip;</p>',
+      esc: kit.esc
+    });
     log.debug("Leaving Portal.shellDocument().");
     return html;
   }
@@ -354,18 +342,11 @@ class Portal {
     });
     target.get(BASE + '/portal.js', function (req: Json, res: Json) {
       log.debug("Entering the portal's script.");
-      const file = self.bundle();
-      const accepted = String(req.headers['accept-encoding'] || '');
-      const coding = file.br && /\bbr\b/.test(accepted) ? 'br'
-        : (file.gz && /\bgzip\b/.test(accepted) ? 'gzip' : '');
-      res.set('Cache-Control', 'no-cache').set('Vary', 'Accept-Encoding')
-         .type('application/javascript');
-      if (coding) {
-        res.set('Content-Encoding', coding);
-      }
-      res.send(coding === 'br' ? file.br
-                               : (coding === 'gzip' ? file.gz : file.raw));
-      log.debug("Leaving the portal's script. " + (coding || 'identity'));
+      // Brotli, gzip or neither, by the request's Accept-Encoding, from the
+      // build's precompressed files (`ShellDocument.sendFile()`, #570).
+      ShellDocument.sendFile(req, res, self.bundle(),
+                             'application/javascript');
+      log.debug("Leaving the portal's script.");
     });
     target.get(BASE + '/portal.css', function (req: Json, res: Json) {
       log.debug("Entering the portal's stylesheet.");
@@ -409,21 +390,15 @@ class Portal {
       // client entry in the realm the request is under, as the console's is.
       const registered = oidcRp.ensureSurfaceCallback(req, 'portal');
       const elsewhere = self.serversElsewhere(req);
-      const origins = [elsewhere.oauth].filter(Boolean)
-        .map(function (one: string): string {
-          return new URL(one).origin;
-        });
-      res.set('Content-Security-Policy', app.contentSecurityPolicy({
-        'script-src': "'self'",
-        'connect-src': ["'self'"].concat(origins).join(' '),
-        'style-src': "'self' 'unsafe-inline'",
+      // The policy through `app.contentSecurityPolicy()`, `no-store`, and the
+      // document uncompressed, so `app.js`'s `send()` puts the realm's
+      // prefix on its links as on every page (`ShellDocument.serve()`).
+      ShellDocument.serve(app, req, res,
+                          self.shellDocument(registered, elsewhere), {
+        connect: ShellDocument.originsOf([elsewhere.oauth]),
         // A QR code is a server-drawn SVG in a `data:` image.
-        'img-src': "'self' data:"
-      }));
-      res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         // The realm's prefix goes on the shell's links in `app.js`'s
-         // `send()`, as on every page.
-         .send(self.shellDocument(registered, elsewhere));
+        csp: { 'img-src': "'self' data:" }
+      });
       log.debug("Leaving the portal shell.");
     };
     // GET for the document, and the methods a form could send for the
@@ -470,5 +445,7 @@ export = {
   // Filled by `ldap/ldap_server.js` — see setDirectory().
   setDirectory: slot.forward('setDirectory'),
   personEntry: slot.forward('personEntry'),
-  paths: slot.forward('paths')
+  paths: slot.forward('paths'),
+  // The shell (#570: `tests/web_foundation.js` holds its bytes).
+  shellDocument: slot.forward('shellDocument')
 };

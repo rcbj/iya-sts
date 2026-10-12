@@ -89,7 +89,8 @@
 // and no refusal text.
 //
 // A LIBRARY (rule 3) AND A LEAF: `helpers` (the logger), `error_codes`, the
-// instance slot, `fs` and `path`. It registers nothing.
+// instance slot, `fs` and `path`, and the two `web_` modules below. It
+// registers nothing.
 // ---------------------------------------------------------------------------
 
 import fs = require('fs');
@@ -99,7 +100,8 @@ import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
 // The formatter and the translator (#539 phase 5): a `web_` module, which
 // requires nothing, so this stays a leaf.
-import webMessages = require('../admin-ui/web_messages');
+import webMessages = require('./web_messages');
+import WebLocale = require('./web_locale');
 
 const { log } = helpers;
 
@@ -177,10 +179,16 @@ const INLINE_ELEMENTS = ['strong', 'em', 'code', 'br'];
  */
 const SOURCE = 'en';
 
-// THE TRANSLATOR AND THE FORMATTER ARE `admin-ui/web_messages.ts`'S (#539
+// THE TRANSLATOR AND THE FORMATTER ARE `common/web_messages.ts`'S (#539
 // phase 5): one implementation, which the admin console runs in a browser
 // and this module builds for every page it draws. This module keeps the
-// catalogs, the negotiation and the problem log.
+// catalogs and the problem log.
+//
+// AND THE TAGS AND THE NEGOTIATION ARE `common/web_locale.ts`'S (#570): the
+// static surfaces negotiate in the browser (rcbj's decision 3 on #570),
+// against the same `catalogs.json` served as static JSON, so the code is
+// one copy. The methods below keep their names and their log lines and hand
+// the work to it; the reasoning above is unchanged.
 const WebTranslator = webMessages.WebTranslator;
 type Translator = InstanceType<typeof WebTranslator>;
 
@@ -420,20 +428,9 @@ class I18n {
    */
   static canonical(tag: unknown): string {
     log.debug("Entering I18n.canonical().");
-    const text = String(tag == null ? '' : tag).trim();
-    if (!text || text.length > 64 || text === '*') {
-      log.debug("Leaving I18n.canonical(). Empty or a wildcard.");
-      return '';
-    }
-    try {
-      const out = Intl.getCanonicalLocales(text)[0] || '';
-      log.debug("Leaving I18n.canonical(). " + out);
-      return out;
-    } catch (e) {
-      log.debug("Caught in I18n.canonical(): " + ((e && e.message) || e));
-      log.debug("Leaving I18n.canonical(). Not a language tag.");
-      return '';
-    }
+    const out = WebLocale.canonical(tag);
+    log.debug("Leaving I18n.canonical(). " + (out || 'Not a language tag.'));
+    return out;
   }
 
   /**
@@ -445,26 +442,10 @@ class I18n {
    */
   static partsOf(tag: string): TagParts {
     log.debug("Entering I18n.partsOf(). " + tag);
-    const given = new Intl.Locale(tag);
-    let full: Intl.Locale = given;
-    try {
-      full = given.maximize();
-    } catch (e) {
-      log.debug("Caught in I18n.partsOf(): " + ((e && e.message) || e));
-      full = given;
-    }
-    const info = (full as any).textInfo ||
-      (typeof (full as any).getTextInfo === 'function'
-        ? (full as any).getTextInfo() : null);
-    const out: TagParts = {
-      tag: tag,
-      language: full.language,
-      script: full.script || '',
-      region: full.region || '',
-      explicitRegion: given.region || '',
-      direction: info && info.direction === 'rtl' ? 'rtl' : 'ltr'
-    };
-    log.debug("Leaving I18n.partsOf(). " + full.toString());
+    const out: TagParts = WebLocale.partsOf(tag);
+    log.debug("Leaving I18n.partsOf(). " + out.language +
+              (out.script ? '-' + out.script : '') +
+              (out.region ? '-' + out.region : ''));
     return out;
   }
 
@@ -479,35 +460,7 @@ class I18n {
    */
   static acceptLanguage(value: unknown): string[] {
     log.debug("Entering I18n.acceptLanguage().");
-    const rows: { tag: string; q: number; at: number }[] = [];
-    String(value == null ? '' : value).split(',').slice(0, 32)
-      .forEach(function (part, at) {
-        const bits = part.trim().split(';');
-        const tag = I18n.canonical(bits[0]);
-        if (!tag) {
-          return;
-        }
-        let q = 1;
-        bits.slice(1).forEach(function (param) {
-          const m = /^\s*q\s*=\s*([0-9.]+)\s*$/i.exec(param);
-          if (m) {
-            q = Number(m[1]);
-          }
-        });
-        if (!(q > 0)) {
-          return;
-        }
-        rows.push({ tag: tag, q: Math.min(q, 1), at: at });
-      });
-    rows.sort(function (a, b) {
-      return b.q - a.q || a.at - b.at;
-    });
-    const out: string[] = [];
-    rows.forEach(function (row) {
-      if (out.indexOf(row.tag) < 0) {
-        out.push(row.tag);
-      }
-    });
+    const out = WebLocale.acceptLanguage(value);
     log.debug("Leaving I18n.acceptLanguage(). " + out.join(' '));
     return out;
   }
@@ -521,14 +474,7 @@ class I18n {
    */
   static uiLocales(value: unknown): string[] {
     log.debug("Entering I18n.uiLocales().");
-    const out: string[] = [];
-    String(value == null ? '' : value).split(/\s+/).slice(0, 32)
-      .forEach(function (part) {
-        const tag = I18n.canonical(part);
-        if (tag && out.indexOf(tag) < 0) {
-          out.push(tag);
-        }
-      });
+    const out = WebLocale.uiLocales(value);
     log.debug("Leaving I18n.uiLocales(). " + out.join(' '));
     return out;
   }
@@ -548,38 +494,25 @@ class I18n {
   chainFor(tag: string): { chain: string[]; matched: boolean;
                            direction: 'ltr' | 'rtl' } {
     log.debug("Entering I18n.chainFor(). " + tag);
+    const out = WebLocale.chainFor(tag, this.parts());
+    log.debug("Leaving I18n.chainFor(). " + out.chain.join(' > '));
+    return out;
+  }
+
+  /**
+   * Every catalog's parts, in `catalogs.json`'s order: what `web_locale.ts`
+   * negotiates against, taken apart once when the catalogs were loaded.
+   *
+   * @returns the parts
+   */
+  parts(): TagParts[] {
+    log.debug("Entering I18n.parts().");
     this.load();
-    let want: TagParts;
-    try {
-      want = I18n.partsOf(tag);
-    } catch (e) {
-      log.debug("Caught in I18n.chainFor(): " + ((e && e.message) || e));
-      log.debug("Leaving I18n.chainFor(). Not a tag.");
-      return { chain: [SOURCE], matched: false, direction: 'ltr' };
-    }
-    const sameLanguage = this.index.catalogs.filter((info) => {
-      const has = this.catalogParts[info.tag];
-      return has.language === want.language && has.script === want.script;
+    const out = this.index.catalogs.map((info) => {
+      return this.catalogParts[info.tag];
     });
-    const regional = sameLanguage.filter((info) => {
-      const has = this.catalogParts[info.tag];
-      return has.explicitRegion && has.explicitRegion === want.region;
-    });
-    const bases = sameLanguage.filter((info) => {
-      return !this.catalogParts[info.tag].explicitRegion;
-    });
-    const chain: string[] = [];
-    regional.concat(bases).forEach(function (info) {
-      if (chain.indexOf(info.tag) < 0) {
-        chain.push(info.tag);
-      }
-    });
-    const matched = chain.length > 0;
-    if (chain.indexOf(SOURCE) < 0) {
-      chain.push(SOURCE);
-    }
-    log.debug("Leaving I18n.chainFor(). " + chain.join(' > '));
-    return { chain: chain, matched: matched, direction: want.direction };
+    log.debug("Leaving I18n.parts(). " + out.length);
+    return out;
   }
 
   /**
@@ -594,22 +527,10 @@ class I18n {
    */
   negotiate(preferences: string[], lastResort?: string): Negotiated {
     log.debug("Entering I18n.negotiate(). " + preferences.join(' '));
-    const tried = preferences.concat(lastResort ? [lastResort] : []);
-    for (const raw of tried) {
-      const tag = I18n.canonical(raw);
-      if (!tag) {
-        continue;
-      }
-      const found = this.chainFor(tag);
-      if (found.matched) {
-        log.debug("Leaving I18n.negotiate(). " + tag);
-        return { locale: tag, chain: found.chain, catalog: found.chain[0],
-                 direction: found.direction, matched: true };
-      }
-    }
-    log.debug("Leaving I18n.negotiate(). Nothing answered; English.");
-    return { locale: SOURCE, chain: [SOURCE], catalog: SOURCE,
-             direction: 'ltr', matched: false };
+    const out = WebLocale.negotiate(preferences, lastResort, this.parts());
+    log.debug("Leaving I18n.negotiate(). " +
+              (out.matched ? out.locale : 'Nothing answered; English.'));
+    return out;
   }
 
   /**
@@ -659,7 +580,7 @@ class I18n {
   // -------------------------------------------------------------------------
   /**
    * Parses a message into nodes, or throws on one that is malformed.
-   * `admin-ui/web_messages.ts`'s parser, here for the catalog test.
+   * `common/web_messages.ts`'s parser, here for the catalog test.
    *
    * @param message - the message
    * @returns the nodes
@@ -743,6 +664,7 @@ export = {
   messagesOf: slot.forward('messagesOf'),
   problems: slot.forward('problems'),
   chainFor: slot.forward('chainFor'),
+  parts: slot.forward('parts'),
   negotiate: slot.forward('negotiate'),
   translator: slot.forward('translator'),
   catalogData: slot.forward('catalogData'),

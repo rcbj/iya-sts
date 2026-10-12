@@ -11280,7 +11280,9 @@ case." His answers on the ticket, D1–D6, are what this section holds to.
 * **`hosted_applications.js` IS THE CATALOGUE, CLOSED.** An application is an
   id, a label and the paths it answers (prefixes on a segment boundary, and
   exact paths); `classify(path)` answers which, for a path without its realm
-  prefix. `/healthcheck` is `EVERYWHERE`, a path nobody claims is null and
+  prefix. `/healthcheck` is `EVERYWHERE`, and so is everything under `/web`
+  since #570 (the public surfaces' card and catalogs, 3cl), a path nobody
+  claims is null and
   admitted everywhere (so Express's `Cannot GET` body is unchanged). Named
   authorization servers (`/<as>/oauth2`, `/<as>/gnap`) are matched on their
   second segment. **`tests/hosted_applications.js` holds it to the router**:
@@ -11614,8 +11616,8 @@ reasons for the shape:
 * **`ui_locales`** is carried on the pending sign-in record, and discovery's
   `ui_locales_supported` lists the offered locales.
 * **The admin console (phases 5 and 6) runs the SAME formatter.**
-  - `admin-ui/web_messages.ts` holds the parser, renderer and translator as
-    a `web_` module. `common/i18n.ts` keeps the catalogs and the
+  - `common/web_messages.ts` holds the parser, renderer and translator as
+    a `web_` module (`admin-ui/web_messages.ts` until #570). `common/i18n.ts` keeps the catalogs and the
     negotiation, and builds `WebTranslator`s, so there is one parser.
   - `GET /admin-api/console` answers a `locale` member: the negotiation for
     the administrator and `sts-admin-console`, and every `console*`
@@ -11859,3 +11861,75 @@ sources and the policies. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
 Kerberos, federation, PKI, encryption, secrets, database, mode, realms,
 audit, roles, delegation, devices, GNAP, listeners, the crypto report,
 scheduler jobs, caches, node health), then `sts_metadata.ts`.
+
+## 3cl. WHAT EVERY STATIC SURFACE STANDS ON: `web_page.ts`, `web_spa_client.ts`, `web_messages.ts`, `web_locale.ts`, `web_i18n.ts`, `web_surface.ts`, `web_card_css.ts`, `shell_document.ts`, `public_assets.ts` (#570, 2026-10-12)
+
+#569 converts every human-facing page outside `/admin` and `/portal` into a
+static application on the console's pattern; #570 is the foundation, and
+**nothing a person sees changed in it**: the console and the portal moved onto
+it byte for byte, and no public page is converted until its own ticket (#579,
+the front door, is the first). rcbj's three decisions on #570:
+
+1. **The shared runtime lives in `common/web_*.ts`**, held to the console's
+   rule — a `web_` module requires nothing but other `web_` modules, logs
+   nothing (browser code is exempt from Entering/Leaving), and is bundled by
+   esbuild for a browser, where reaching a server module fails the build.
+   `tests/console_web_bundle.js` A2 reads every `web_*.ts` in the tree for it.
+2. **One bundle per surface**, each over the shared runtime.
+3. **The browser translates**: the catalogs served as static JSON, the
+   runtime choosing the locale in #539's order, the APIs language-free and
+   errors English.
+
+And from #569: **script is required** (the shell's `<noscript>` says so, and
+there is no server-drawn fallback), **the cutover is per surface**, and **a
+specification's endpoint is never converted**.
+
+### The modules, and what each answers
+
+| Module | What it is |
+|---|---|
+| `web_page.ts` (`WebPage`) | The base of every runtime, client or not: `basesOf()`/`attribute()` read the shell's `data-sts-*`; `prefixAt(pathname, base)` the realm prefix; `queryOf()`; `url(path)` — this origin and prefix, or the base of the listener that answers the path (#472); `publicJson(method, path, body)` → `{ status, json, res }` with `json` null for a body that is not JSON; `realmLinks(html, prefix)`, `app.js`'s `withRealmLinks()` in the browser; `formFields(form, submitter)` — a form as an operation's JSON, the pressed button included and `csrf_token` left out; `targetFragment()`; `saveBase64()`. The console's and the portal's copies of each were deleted and both inherit these. |
+| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. |
+| `web_messages.ts` | The formatter and translator (#539 phase 5), moved from `admin-ui/`. |
+| `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
+| `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
+| `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. |
+| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. |
+| `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). |
+| `public_assets.ts` (`PublicAssets`, server) | `/web/card.css`, `/web/locales/catalogs.json` and `/web/locales/<ns>/<catalog>.json`, from what `i18n.ts` loaded — **nothing read from disk by a requested name**, an unknown name a 404 (`STS-I18N-0012`), a known pair with no file `{}`. `?v=<build>` equal to this build's version is `immutable` for a year, anything else `no-cache`. `/web` is `EVERYWHERE` in `hosted_applications.js` and `local` in `cell_placement.ts`. Registered at 6a-web. |
+
+`PageLocale.shellAttributes(req, application)` answers the three language
+attributes a translated surface's shell carries — `data-sts-version`,
+`data-sts-lang` (canonical, never as the request sent it) and
+`data-sts-locale-default`.
+
+### How a public surface is added — the recipe #579 follows
+
+1. **The API** its pages are drawn from, language-free, answering each page's
+   view to a GET and listing its POST operations with what each `mirrors` at
+   its index (the `/account-api` conventions: `view`, `go`, `location`,
+   `message`, `errors`; `preferredLanguage: { value, populated }` where it
+   knows the person). Errors English, each with its code.
+2. **The renderers**: `web_<surface>_*.ts` beside the surface's server module,
+   a page table module exporting `PAGES` and `render(path, view, ctx)` (the
+   bundle's global), and an entry `web_<surface>.ts` that builds
+   `new WebSurface(env, { base, api, pages, namespaces, frame?, brand? })`
+   from the browser's objects and calls `start()`. Words from a catalog
+   namespace of its own in `common/locales/<ns>/`.
+3. **The build**: one `bundle_surface` line in `build-typescript.sh`, with the
+   runtime's output named explicitly and never the name of a compiled server
+   module (the portal's is `portal-spa.js` because `portal.js` is
+   `portal.ts`), and one row in `tests/tools/web_surfaces.js` — with `cases`
+   for `tests/web_surfaces.js`'s round trip (view → JSON → bundle, byte-equal
+   to the compiled module), or `heldBy` naming the test that draws every page
+   from its API's answers.
+4. **The server**: the shell through `ShellDocument.document()` with
+   `stylesheets: ['/web/card.css']`, `attributes`
+   `PageLocale.shellAttributes(req, app)` plus `data-sts-prefix` (and the
+   `data-sts-authn`/`data-sts-oauth` bases where those are elsewhere),
+   `ShellDocument.serve()` with `csp: { 'style-src': "'self'" }`, and the
+   bundle with `readFile()` and `sendFile()`; every path in `sts_metadata.ts`,
+   in `hosted_applications.js`'s application, in `cell_placement.ts`.
+5. **The docs**: its row in the root `CLAUDE.md`'s static-surface table, and
+   the server-drawn rows it replaces taken out.
+

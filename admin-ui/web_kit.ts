@@ -47,7 +47,7 @@
 
 // THE CONSOLE'S TRANSLATOR (#539 phase 5): a `web_` module, as everything
 // here may require.
-import webMessages = require('./web_messages');
+import webMessages = require('../common/web_messages');
 
 // About one rendered line of `.note` text in this console's content column.
 // The column is 62rem at `.note`'s .78em, so a line is nearer 130 characters

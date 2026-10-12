@@ -5203,7 +5203,7 @@ nothing else".
 more pieces, each found by running the FAPI jobs with the static portal:
 
 * **PAR (RFC 9126)** where the metadata requires it (FAPI 2.0): the runtimes
-  push from the browser (`admin-ui/web_spa_client.ts`,
+  push from the browser (`common/web_spa_client.ts`,
   `authorizationRequestUrl()`), with NO DPoP proof on the push — one there
   binds the code to a key the callback's page load does not hold — and
   FAPI 2.0's *a push authenticates its client* (`parAuthenticationRefusal`)

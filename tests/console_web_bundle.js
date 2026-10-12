@@ -59,7 +59,6 @@ function childMain() {
   const OUT = process.env.AG_OUT;
   const fsC = require('fs');
   const pathC = require('path');
-  const vm = require('vm');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
@@ -341,35 +340,26 @@ function childMain() {
          proseDiffers.join(', '));
 
     // --- C. the bundle -------------------------------------------------------
+    // Loaded by the round-trip harness every static surface shares (#570):
+    // no require, process, module or Buffer, which is what a browser has
+    // not.
+    const harness = require(ROOT_DIR + '/tests/tools/web_round_trip');
     const bundlePath = pathC.join(dir, 'console.bundle.js');
-    let code = '';
-    try {
-      code = fsC.readFileSync(bundlePath, 'utf8');
-    } catch (e) {
-      // No bundle: C1 reports it.
-      code = '';
-    }
+    const loaded = harness.loadBundle(bundlePath, 'StsConsole');
+    const code = loaded.code;
     note(code.length > 500,
          'C1. the image build wrote the browser bundle',
          bundlePath + ' ' + code.length + ' byte(s)');
-    let StsConsole = null;
-    let loadProblem = '';
-    try {
-      // No require, process, module or Buffer: what a browser has not.
-      const sandbox = vm.createContext({});
-      StsConsole = vm.runInContext(code + '\n;StsConsole;', sandbox,
-                                   { filename: 'console.bundle.js' });
-      // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
-      // the page's own (`applyLocale()`), so a helper handed no translator
-      // draws in the reader's language. Here there is no runtime, so the
-      // bundle is given node's — English — and the two draw the same words.
-      if (StsConsole && StsConsole.messages) {
-        StsConsole.messages.WebTranslator.setDefault(function () {
-          return WebKit.context().t;
-        });
-      }
-    } catch (e) {
-      loadProblem = String((e && e.message) || e);
+    const StsConsole = loaded.value;
+    const loadProblem = loaded.problem;
+    // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
+    // the page's own (`applyLocale()`), so a helper handed no translator
+    // draws in the reader's language. Here there is no runtime, so the
+    // bundle is given node's — English — and the two draw the same words.
+    if (StsConsole && StsConsole.messages) {
+      StsConsole.messages.WebTranslator.setDefault(function () {
+        return WebKit.context().t;
+      });
     }
     note(!!StsConsole && Array.isArray(StsConsole.PAGES) &&
          typeof StsConsole.render === 'function',

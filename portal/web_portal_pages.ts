@@ -43,7 +43,7 @@ import ClaimSourcesPages = require('./web_claim_sources');
 import ActivationPages = require('./web_activation');
 import ResetPages = require('./web_reset');
 
-import WebMessages = require('../admin-ui/web_messages');
+import WebMessages = require('../common/web_messages');
 import PortalShell = require('./web_portal_shell');
 import PortalKit = require('./web_portal_kit');
 

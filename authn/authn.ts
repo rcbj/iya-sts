@@ -530,6 +530,7 @@ import passkeyPolicy = require('../common/passkey_policy');
 // The language a page is drawn in, and the chooser (#539). Libraries.
 import i18n = require('../common/i18n');
 import PageLocale = require('../common/page_locale');
+import WebCardCss = require('../common/web_card_css');
 // THE ATTESTATION STATEMENT, VERIFIED (#105). Rule 3 as well: a library that
 // requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
 // the FIDO metadata and revocation lazily — nothing that reaches back here.
@@ -860,50 +861,20 @@ const MAX_SESSION_EVENTS = 20;
 // runs a line of script. The WebAuthn step is the exception this service
 // already argues at length, and it is not one of these two.
 // ---------------------------------------------------------------------------
+// THE TWO STYLESHEETS LIVE IN `common/web_card_css.ts` SINCE #570, a `web_`
+// module, so the static public surfaces of #569 are drawn with the same card
+// a server-drawn page here carries inline — served once, as
+// `/web/card.css` (`common/public_assets.ts`), rather than copied.
 /**
- * The language chooser's stylesheet (#539), small and to one side: a page's
- * first business is its own form. A constant of its own because the second
- * factor pages carry stylesheets of their own, and each appends this one —
- * their `button{width:100%}` and `input{width:100%}` would otherwise stretch
- * the chooser across the card.
+ * The language chooser's stylesheet (#539): `WebCardCss.CHOOSER_CSS`.
  */
-const CHOOSER_CSS =
-  'form.language-chooser{float:right;font-size:.75em;margin:0 0 6px 8px}' +
-  'form.language-chooser select,form.language-chooser button{width:auto;' +
-  'display:inline;padding:2px 6px;margin:0;font-size:1em}' +
-  'form.language-chooser label{display:inline;margin:0 4px 0 0}';
+const CHOOSER_CSS = WebCardCss.CHOOSER_CSS;
 
 /**
  * The stylesheet of the sign-in screen and the federation chooser, shared with
- * the consent screen.
+ * the consent screen: `WebCardCss.CARD_CSS`.
  */
-const CARD_CSS =
-  'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
-  'background:#f4f4f7;margin:0;display:flex;align-items:center;' +
-  'justify-content:center;min-height:100vh;color:#222}.card{background:#fff;' +
-  'border:1px solid #d5d5dd;border-radius:10px;padding:28px ' +
-  '32px;width:380px;box-shadow:0 6px 24px ' +
-  'rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
-  '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
-  '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
-  '4px}input[type=text],input[type=password]{width:100%;' +
-  'box-sizing:border-box;padding:8px 10px;border:1px solid #bbb;' +
-  'border-radius:5px;font-size:1em}.row{display:flex;gap:10px;' +
-  'margin-top:20px}button{flex:1;padding:9px ' +
-  '12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
-  'color:#fff;font-size:.95em;cursor:pointer}' +
-  'button.secondary{background:#fff;color:#12107c}.err{background:#fdecea;' +
-  'border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-  'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;padding-top:14px;' +
-  'border-top:1px solid ' +
-  '#eee;font-size:.75em;color:#777;word-break:break-all}.meta div{margin:2px ' +
-  '0}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
-  '.fed{margin-top:18px;padding-top:14px;border-top:1px solid #eee}.fed ' +
-  'p{font-size:.78em;color:#666;margin:0 0 ' +
-  '8px}a.fedbtn{display:block;text-align:center;padding:9px 12px;margin:6px ' +
-  '0;border-radius:5px;border:1px solid #12107c;color:#12107c;' +
-  'background:#fff;text-decoration:none;font-size:.9em}a.fedbtn ' +
-  'span{display:block;font-size:.75em;color:#777}' + CHOOSER_CSS;
+const CARD_CSS = WebCardCss.CARD_CSS;
 
 const PENDING_ID_QUERY = vz.object({
   authn: vt.opt(vt.base64url)

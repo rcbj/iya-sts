@@ -16,9 +16,9 @@ way, and the console-session adoption dropped.
 
 | Files | What they are |
 |---|---|
-| `portal.ts` | The server half that is left: the shell, its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
+| `portal.ts` | The server half that is left: the shell (drawn and sent through `common/shell_document.ts` since #570, its bytes unchanged), its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
 | `account_*.ts` (seven), `portal_*.ts` (thirteen) | Each page family's `/account-api` operations — the page's view and its forms — with the reasoning below. The seven `account_*` modules are the pages that were in `portal.ts`. |
-| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row) and one renderer module per family. |
+| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn; since #570 `PortalRuntime extends SpaClient extends WebPage`, `common/web_spa_client.ts` and `common/web_page.ts`, whose `publicJson()`, `formFields()`, `realmLinks()`, `targetFragment()` and `saveBase64()` it inherits — `common/CLAUDE.md`, 3cl), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row) and one renderer module per family. |
 
 **WHAT THE SECTIONS BELOW SAY THAT IS NO LONGER SO**, read with this table
 rather than rewritten one by one, because most of each section is about what
