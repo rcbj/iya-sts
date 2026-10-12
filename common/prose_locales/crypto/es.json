@@ -511,6 +511,10 @@
     "en": "a0a7f11d9b8bed02",
     "text": "NO ACEPTA UNA SOLICITUD SIN PRUEBA PARA UN TOKEN VINCULADO, y no hay ningún ajuste que lo haga: una prueba de clave GNAP es el protocolo y no una opción de endurecimiento. Lo opcional es un token AL PORTADOR, que gnap.bearerTokens desactiva. Los caveats de terceros de macaroon, los bloques de terceros de Biscuit y las pruebas de invocación ZCAP no están implementados."
   },
+  "crypto.families.gnap.verifiesWithoutDemos": {
+    "en": "0128ae60345397de",
+    "text": "CADA SOLICITUD QUE HACE UNA INSTANCIA CLIENTE, con la clave que presentó: una firma de mensaje HTTP RFC 9421 (con el cuerpo cubierto por un Content-Digest RFC 9530), un certificado de TLS mutuo (con revocación consultada; una cadena hasta el almacén de confianza de clientes y una vinculación a la entrada de aplicación con gnap.mtlsTrust=pki, el valor predeterminado en producto), un JWS separado sobre el cuerpo o un JWS adjunto que lo transporta. Una rotación de clave se verifica con AMBAS claves. Un servidor de recursos que llama a la introspección o al registro se prueba de la misma manera, y cada formato de token se verifica en la introspección."
+  },
   "crypto.families.gnap.algorithms.0.what": {
     "en": "0acd0a9999d15131",
     "text": "Formatos de token de acceso"
@@ -775,6 +779,10 @@
     "en": "035395f48a6d34a3",
     "text": "SAML 1.1 no tiene ningún cifrado — `<EncryptedAssertion>` llegó con 2.0 — ni ningún mensaje de solicitud sobre el que verificar una firma. El URI de referencia nombra `AssertionID` o `ResponseID`, que es el único motivo por el que el firmante compartido resuelve un id BUSCANDO uno en lugar de que le digan su nombre."
   },
+  "crypto.families.saml-1-1.verifiesWithoutDemos": {
+    "en": "f11251a4b826b873",
+    "text": "Nada: SAML 1.1 no tiene mensaje de solicitud en el que verificar una firma."
+  },
   "crypto.families.saml-1-1.algorithms.0.what": {
     "en": "f1a73e2204a11407",
     "text": "Firma"
@@ -794,6 +802,10 @@
   "crypto.families.ws-federation.whatItDoesNot": {
     "en": "c0aea7549def7066",
     "text": "No falsea ningún `wauth` — una exigencia que la sesión no puede cumplir es una elevación, y un AuthenticationMethod es lo que hizo la sesión — y no desreferencia ningún `wreqptr` — descargar una URL que alguien registró es una falsificación de solicitudes del lado del servidor con una cita adjunta."
+  },
+  "crypto.families.ws-federation.verifiesWithoutDemos": {
+    "en": "02c1a08782ac0629",
+    "text": "Nada: una solicitud de inicio de sesión no lleva firma."
   },
   "crypto.families.ws-federation.algorithms.0.what": {
     "en": "f1a73e2204a11407",
@@ -966,6 +978,10 @@
   "crypto.families.shared-signals.whatItDoesNot": {
     "en": "66fb8f17d972a92b",
     "text": "FIRMA MAL A PROPÓSITO CUANDO SE LE PIDE. `ssf.breakSetSignature` cambia UN CARÁCTER de la firma tras firmar, así que un receptor que no verifica acepta un evento que nada firmó. Es un carácter y no un truncamiento de forma deliberada: una firma truncada falla la decodificación base64url y se informa como un token MAL FORMADO, que es un error distinto de uno incorrecto para quien se esté probando. Solo en modo desarrollo: un dominio en producto lo ignora y rechaza que se establezca (#104)."
+  },
+  "crypto.families.shared-signals.verifiesWithoutDemos": {
+    "en": "09b792e4c0821046",
+    "text": "El token de acceso en cada llamada de gestión del flujo, mediante la misma comprobación que usa cualquier otro endpoint protegido aquí, y un SET enviado al receptor propio de la consola o del portal, con el JWKS de este servicio. /ssf/receive es un endpoint de desarrollo (#585)."
   },
   "crypto.families.shared-signals.algorithms.0.what": {
     "en": "e1abd835e83344ac",

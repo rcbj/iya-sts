@@ -552,8 +552,8 @@
     "text": "Patakbuhin ang demonstration resource server"
   },
   "gnap.demoResourceServer|description": {
-    "en": "447206adf29b67b8",
-    "text": "GET/POST /gnap/rs/resource: hinuhusgahan ang ipinakitang token sa alinman sa limang format at sinasagot ang RS-first challenge ng section 9.1."
+    "en": "f449d29bef46a299",
+    "text": "GET/POST /gnap/rs/resource: hinuhusgahan ang ipinakitang token sa alinman sa limang format at sinasagot ang RS-first challenge ng section 9.1. Sa development mode lamang: walang demonstration resource server ang isang product realm (#585)."
   },
   "gnap.ownerLookupCacheS|label": {
     "en": "6d666a20da9e7e69",
@@ -5564,8 +5564,8 @@
     "text": "Port ng test service"
   },
   "krb5.servicePort|description": {
-    "en": "bcfc656f7bfa6a4f",
-    "text": "Ang Kerberized na test service na tumatanggap ng AP-REQ."
+    "en": "f520a63e9c191a86",
+    "text": "Ang Kerberized na test service na tumatanggap ng AP-REQ. Isang demonstration: hindi ito sinisimulan ng isang product process (#585)."
   },
   "krb5.servicePort|restartReason": {
     "en": "e92026b5264f72ad",
@@ -6376,8 +6376,8 @@
     "text": "Ang ginagawa ng embedded PEP sa hindi Permit"
   },
   "xacml.pepBias|description": {
-    "en": "cdf7ffde654d4319",
-    "text": "DESISYON ITO NG PEP AT HINDI NG PDP, na siyang buong dahilan kung bakit ito setting. Pinapayagan ng XACML section 7.2 ang PEP na maging deny-biased (anumang hindi Permit ay pagtanggi) o permit-biased (anumang hindi Deny ay pinapayagan), at nagkakaiba ang mga tunay na deployment. Deny-biased ang default dahil iyon ang dapat na PEP na nagpoprotekta ng anuman; umiiral ang permit-biased para makita ng client kung ano ang ginagawa ng ibang pagpipilian sa isang Indeterminate, na siyang kaso kung saan nagkakaiba ang dalawa at ang walang sinumang sumusubok."
+    "en": "ad0594c9ac4f34c1",
+    "text": "DESISYON ITO NG PEP AT HINDI NG PDP, na siyang buong dahilan kung bakit ito setting. Pinapayagan ng XACML section 7.2 ang PEP na maging deny-biased (anumang hindi Permit ay pagtanggi) o permit-biased (anumang hindi Deny ay pinapayagan), at nagkakaiba ang mga tunay na deployment. Deny-biased ang default dahil iyon ang dapat na PEP na nagpoprotekta ng anuman; umiiral ang permit-biased para makita ng client kung ano ang ginagawa ng ibang pagpipilian sa isang Indeterminate, na siyang kaso kung saan nagkakaiba ang dalawa at ang walang sinumang sumusubok. Sa development mode lamang: ang nag-iisang bumabasa nito, ang /xacml/protected, ay isang demonstration endpoint (#585)."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -6820,8 +6820,8 @@
     "text": "Tumanggap ng mga ipinush na event"
   },
   "ssf.receiveEnabled|description": {
-    "en": "009081399f67bac5",
-    "text": "Kung tumatanggap ang POST /ssf/receive ng Security Event Token na ipinush SA serbisyong ito — baligtad ang mga papel, ang debugger ang transmitter. Vine-verify nito ang pirma kapag nakakahanap ito ng key at iniuulat ang nabasa nito alinman dito, dahil ang receiver na tumanggi sa hindi ma-verify na event ay hindi makakapagpakita sa tao KUNG BAKIT hindi ito ma-verify. Sumasagot ng 501 ang Off."
+    "en": "f031c3db7a13549d",
+    "text": "Kung tumatanggap ang POST /ssf/receive ng Security Event Token na ipinush SA serbisyong ito — baligtad ang mga papel, ang debugger ang transmitter. Vine-verify nito ang pirma kapag nakakahanap ito ng key at iniuulat ang nabasa nito alinman dito, dahil ang receiver na tumanggi sa hindi ma-verify na event ay hindi makakapagpakita sa tao KUNG BAKIT hindi ito ma-verify. Sumasagot ng 501 ang Off. Sa development mode lamang: walang /ssf/receive ang isang product realm (#585)."
   },
   "ssf.receiveAudiences|label": {
     "en": "26d54185c0e2e81a",

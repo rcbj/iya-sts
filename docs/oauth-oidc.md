@@ -4,6 +4,8 @@ title: OAuth 2.0 & OpenID Connect
 
 # OAuth 2.0 and OpenID Connect
 
+> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/gnap/rs/spend`, `/dpop/nonce-mode` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 iya-sts is a full **OAuth 2.0 authorization server**
 ([RFC 6749](https://www.rfc-editor.org/rfc/rfc6749)) and **OpenID Connect
 provider** ([OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)),

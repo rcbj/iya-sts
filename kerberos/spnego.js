@@ -188,7 +188,13 @@ function spn() {
   return exchange.SPN;
 }
 
-app.get('/spnego', function (req, res) {
+// A DEMONSTRATION (#585): both pages carry `common/app.js`'s `demoOnly` mark,
+// so a product realm answers as for a path nothing is registered on. The
+// sign-in that turns a ticket into a session is `/authn/spnego`
+// (`spnego_authn.ts`), which is not a demonstration and stays. The mark is a
+// member of the app this file already requires, so the parent project's COPY
+// closure gains no file.
+app.get('/spnego', app.demoOnly, function (req, res) {
   log.debug('Entering GET /spnego.');
   const principal = spn() + '@' + principals.REALM;
   if (String(req.query.format || '').toLowerCase() === 'json') {
@@ -547,7 +553,7 @@ async function handleProtected(req, res) {
   log.debug('Leaving handleProtected(). ' + verdict.code + '.');
 }
 
-app.get('/spnego/protected', function (req, res) {
+app.get('/spnego/protected', app.demoOnly, function (req, res) {
   log.debug('Entering GET /spnego/protected.');
   handleProtected(req, res).catch(function (e) {
     // The no-response branch must answer. This handler is async and every

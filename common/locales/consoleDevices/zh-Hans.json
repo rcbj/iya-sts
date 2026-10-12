@@ -146,7 +146,7 @@
   "registrationHtml.doorTest": "测试控制",
   "registrationHtml.testOpen": "开放（开发）",
   "registrationHtml.testRefused": "拒绝（产品）",
-  "registrationHtml.testHow": "<code>{path}</code>，无需凭据，仅限开发（<code>mode.opensTestControls()</code>）。来源 <code>test-control</code>。",
+  "registrationHtml.testHow": "<code>{path}</code>，无需凭据，仅限开发（<code>mode.servesDemoEndpoints()</code>）。来源 <code>test-control</code>。",
   "registrationHtml.doorCaep": "收到的 CAEP device-compliance-change",
   "registrationHtml.caepBefore": "来自本领域接收其 Shared Signals 的联合伙伴——设备管理器是一个 <code>ssf</code> 关系，位于",
   "registrationHtml.federation": "联合",

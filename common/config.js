@@ -1650,7 +1650,8 @@ const SETTINGS = [
     runtime: true,
     description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
                  'any of the five formats and answers the RS-first challenge ' +
-                 'of section 9.1.' },
+                 'of section 9.1. Development mode only: a product realm ' +
+                 'has no demonstration resource server (#585).' },
   { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
       'cache (seconds)',
     path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
@@ -10614,7 +10615,9 @@ const SETTINGS = [
   { key: 'krb5.servicePort', group: 'Kerberos', label: 'Test service port',
     env: 'KRB5_SERVICE_PORT', type: 'port', dflt: 8888, runtime: false,
     restartReason: 'the socket is bound when the process starts',
-    description: 'The Kerberized test service that accepts an AP-REQ.' },
+    description: 'The Kerberized test service that accepts an AP-REQ. A ' +
+                 'demonstration: a product process does not start it ' +
+                 '(#585).' },
 
   { key: 'krb5.servicePrincipal', group: 'Kerberos', label: 'Service principal',
     env: 'KRB5_SERVICE_PRINCIPAL', type: 'string',
@@ -11809,6 +11812,11 @@ const SETTINGS = [
     env: 'STS_XACML_PEP_BIAS', type: 'enum',
     enumValues: ['deny-biased', 'permit-biased'], dflt: 'deny-biased',
     runtime: true,
+    // DEVELOPMENT-ONLY (#585): the one reader is /xacml/protected, a
+    // demonstration endpoint product does not serve, so a product realm
+    // holding permit-biased would be a value nothing reads that looks like a
+    // policy loosened.
+    onlyWhile: 'servesDemoEndpoints',
     description: 'THIS IS THE PEP\'S DECISION AND NOT THE PDP\'S, which is ' +
                  'the whole reason it is a setting. XACML section 7.2 lets a ' +
                  'PEP be deny-biased (anything that is not Permit is a ' +
@@ -11817,7 +11825,9 @@ const SETTINGS = [
                  'default because it is what a PEP protecting anything ' +
                  'should be; permit-biased exists so that a client can see ' +
                  'what the other choice does to an Indeterminate, which is ' +
-                 'the case the two disagree about and the one nobody tests.' },
+                 'the case the two disagree about and the one nobody tests. ' +
+                 'Development mode only: its one reader, /xacml/protected, ' +
+                 'is a demonstration endpoint (#585).' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',
@@ -12563,7 +12573,8 @@ const SETTINGS = [
                  'when it can find a key and reports what it read either ' +
                  'way, because a receiver that refused an unverifiable ' +
                  'event would be unable to show a person WHY it was ' +
-                 'unverifiable. Off answers 501.' },
+                 'unverifiable. Off answers 501. Development mode only: a ' +
+                 'product realm has no /ssf/receive (#585).' },
 
   { key: 'ssf.receiveAudiences', group: 'SSF',
     label: 'Audiences POST /ssf/receive answers to',

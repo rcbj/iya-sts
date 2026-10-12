@@ -233,7 +233,10 @@ class GnapRights {
   entryOf(right: Json): Json {
     const { log, catalogue } = this.deps;
     log.debug("Entering GnapRights.entryOf().");
+    // Catalogued only where the demonstration RS is SERVED (#585): a product
+    // realm has none, so the type names an API that is not there.
     if (right && typeof right === 'object' && right.type === DEMO_TYPE &&
+        this.deps.mode.servesDemoEndpoints() &&
         this.deps.config.value('gnap.demoResourceServer') !== false) {
       log.debug("Leaving GnapRights.entryOf(). The demonstration type.");
       if (!demoDefinition) {

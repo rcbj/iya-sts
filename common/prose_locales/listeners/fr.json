@@ -232,8 +232,8 @@
     "text": "Attestations vérifiables"
   },
   "listeners.applications.oid4vc.what": {
-    "en": "a1d8ad40056dfc8f",
-    "text": "OpenID4VCI, OpenID4VP, les DID, les listes de statut et les points de terminaison de test VC-API."
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, les DID et les listes de statut."
   },
   "listeners.applications.scim.label": {
     "en": "98fe74b2a48a690f",
@@ -304,8 +304,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "ce095930c49505f7",
-    "text": "MS-KKDCP, la page de négociation SPNEGO et les principaux."
+    "en": "49ef797d2558967c",
+    "text": "MS-KKDCP et les vues HTTP de Kerberos."
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",

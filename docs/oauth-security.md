@@ -4,6 +4,8 @@ title: OAuth security
 
 # OAuth security
 
+> **Development mode only (#585):** `/oauth2/step-up/resource/…`, `/dpop/nonce-mode`, `/tls`, `/tls/forwarded`, `/tls/trust` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+
 This page covers what makes iya-sts's [authorization server](oauth-oidc.md)
 **strict**. There are two compliance modes:
 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) (the OAuth 2.0 Security
@@ -1267,9 +1269,9 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
   refresh tokens, and the authorization code and refresh grants only.
 * OAuth 2.1 mode, FAPI and the five sender-constraint settings are **not**
   implied by product mode. Turn them on explicitly.
-* `POST /dpop/nonce-mode` is a development test control. Product mode refuses
-  it, and `oauth2.dpopNonceRequired` is then changed only through
-  `/admin/oauth2` or `POST /admin-api/config/set`.
+* `/dpop/nonce-mode` is a development test control, and a realm in product
+  mode does not have it (#585); `oauth2.dpopNonceRequired` is then changed only
+  through `/admin/oauth2` or `POST /admin-api/config/set`.
 * RFC 8705's declared refusals, RFC 9068 and RFC 9470 apply **in every mode**.
 * Certificate revocation is **soft-fail** in development and **hard-fail** in
   product (`pki.revocationCheck=auto`). This decides whether a certificate from

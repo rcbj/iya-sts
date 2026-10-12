@@ -587,10 +587,14 @@ class SpnegoAuthn {
           'ticket, and <code>krb5.spnegoAuthentication</code> is set to ' +
           'false.</div><p>Turn it on at <a ' +
           'href="/admin/kerberos">/admin/kerberos</a>, or with <code>POST ' +
-          '/admin-api/config/set</code>. Nothing else changes when it is ' +
-          'off: <a href="/spnego/protected">/spnego/protected</a> still ' +
-          'performs the whole handshake and shows you both halves of it ' +
-          '&mdash; what it will not do is give you a session.</p>' +
+          '/admin-api/config/set</code>.' +
+          // The demonstration page only where this realm is served it
+          // (#585).
+          (app.demoPathHidden('/spnego/protected') ? '' :
+            ' Nothing else changes when it is off: <a ' +
+            'href="/spnego/protected">/spnego/protected</a> still performs ' +
+            'the whole handshake and shows you both halves of it &mdash; ' +
+            'what it will not do is give you a session.') + '</p>' +
           this.fallbackHtml(record)));
       log.debug('Leaving SpnegoAuthn.handleSignIn(). The door is closed.');
       return;

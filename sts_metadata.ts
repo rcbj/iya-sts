@@ -186,6 +186,11 @@ interface EndpointEntry {
   what: string;
   effect?: string;
   coverage?: string;
+  // A DEMONSTRATION, MOCK OR TEST-CONTROL ENDPOINT (#585): served and listed
+  // only where `mode.servesDemoEndpoints()` says so. The route carries
+  // `common/app.js`'s mark; this flag is the description's half, and
+  // `describeEndpoints()` reports the two disagreeing.
+  demo?: boolean;
 }
 
 // One protocol family's card. See the header above PROTOCOLS.
@@ -196,6 +201,10 @@ interface Protocol {
   what: string;
   sockets?: string;
   notAProtocol?: boolean;
+  // What the card says where the demonstration endpoints are NOT served
+  // (#585), for a card whose `what` names one: a product realm's page must
+  // not send anybody to an endpoint that is not there.
+  whatWithoutDemos?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -3354,12 +3363,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'Also the account policy — any username authenticates, every user ' +
           'shares one password, and this is where that password is written ' +
           'down. Not a real Kerberos endpoint — a KDC publishes none of ' +
-          'this.' },
+          'this.',
+    demo: true },
   { path: '/krb5/service', group: 'Kerberos', name: 'The protected service',
     specs: ['rfc4120'],
     what: 'What the AP-REQ acceptor is, where its raw TCP socket is ' +
           'listening, and the ordered checks it applies to a ticket. Not a ' +
-          'real Kerberos endpoint either.' },
+          'real Kerberos endpoint either.',
+    demo: true },
   { path: '/spnego', group: 'Kerberos', name: 'A SPNEGO-protected page is ' +
                                               'advertised here',
     specs: ['rfc4559', 'rfc4178', 'rfc4120'],
@@ -3369,7 +3380,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'is in the protocol exchange itself — a client has to derive the ' +
           'SPN from the URL and find the KDC from its own configuration, ' +
           'which is why so many SPNEGO failures leave no evidence on the ' +
-          'wire. Add ?format=json.' },
+          'wire. Add ?format=json.',
+    demo: true },
   { path: '/spnego/protected', group: 'Kerberos',
     name: 'The protected resource',
     // rfc3961 is linked because the AP-REQ inside the mechToken, its
@@ -3380,7 +3392,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'unauthenticated request, and 200 with an AP-REP in that header to ' +
           'a valid one. The Kerberos checks are krb5_service.js\'s, ' +
           'unchanged — this endpoint adds the negotiation and the HTTP that ' +
-          'carries it and no protocol code of its own.' },
+          'carries it and no protocol code of its own.',
+    demo: true },
 
   // --- LDAP ---
   //
@@ -3472,7 +3485,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'in ?subject= is what the PEP then enforces about. Keeping them ' +
           'apart is what lets an admitted caller ask about somebody the ' +
           'policy refuses and watch it refuse — which is the whole ' +
-          'demonstration.' },
+          'demonstration.',
+    demo: true },
   { path: '/xacml/pep/register', group: 'XACML',
     name: 'A remote PEP registers', specs: ['xacml30'],
     what: 'A Policy Enforcement Point in ANOTHER PROCESS says it exists, ' +
@@ -3678,7 +3692,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'section 9.1 WWW-Authenticate challenge naming the grant endpoint; ' +
           'with one it checks the format, the audience, the key binding and ' +
           'the access rights the way a resource server would. ' +
-          'gnap.demoResourceServer turns it off.' },
+          'gnap.demoResourceServer turns it off.',
+    demo: true },
   { path: '/gnap/rs/spend', group: 'GNAP', name: 'The demonstration ' +
                                                  'resource server\'s spend',
     specs: ['rfc9635', 'rfc9767'],
@@ -3690,7 +3705,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'interval, refunded when the operation fails — and refuses an ' +
           'over-limit operation with 403 insufficient_scope. The reference ' +
           'for what a resource server does with a limit. ' +
-          'gnap.demoResourceServer turns it off.' },
+          'gnap.demoResourceServer turns it off.',
+    demo: true },
   { path: '/admin-api/gnap', group: 'GNAP', name: 'The GNAP console page ' +
                                                   'over JSON',
     specs: ['rfc9635', 'rfc9767'],
@@ -4090,7 +4106,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'ssf.receiveRequireSignature turns the 400 invalid_key on, which ' +
           'is what a real receiver does. The verification is against THIS ' +
           'service\'s own key, the only one it has, so a SET signed by ' +
-          'somebody else is "not verifiable here" rather than invalid.' },
+          'somebody else is "not verifiable here" rather than invalid.',
+    demo: true },
   { path: '/ssf/received', group: 'Shared Signals', name: 'What has been ' +
       'pushed here',
     specs: ['rfc8935'],
@@ -4099,7 +4116,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'verified and whether it carried the application/secevent+jwt ' +
           'media type RFC 8417 section 2.3 specifies — a receiver that ' +
           'dispatches on the type, and several do, drops a SET sent as a ' +
-          'plain JWT with no error anybody sees.' },
+          'plain JWT with no error anybody sees.',
+    demo: true },
 
   { path: '/scim', group: 'SCIM', name: 'What the SCIM surface is',
     specs: ['rfc7642', 'rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616',
@@ -4300,7 +4318,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'connection report they served. What a certificate is worth is ' +
           'decided where it is USED: GET /tls/sign-in for a session, the ' +
           'token endpoint for RFC 8705, /xacml and /scim/v2 for theirs. Add ' +
-          '?format=json.' },
+          '?format=json.',
+    demo: true },
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
     specs: ['rfc8446', 'rfc5280'],
@@ -4331,7 +4350,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'the setting is. NO CLIENT CERTIFICATE IS EVER READ FROM A HEADER ' +
           'in either mode — a certificate in a header is one anybody can ' +
           'forge — and the ones a request carried are listed so that ' +
-          'ignoring them is visible rather than silent. Add ?format=json.' },
+          'ignoring them is visible rather than silent. Add ?format=json.',
+    demo: true },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -4373,7 +4393,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'is reachable before anything is trusted. POST only. A ' +
           'DEVELOPMENT TEST CONTROL: it ' +
           'needs no credential, so product mode refuses it and names the ' +
-          'gated doors — /admin/tls/trust and POST /admin-api/tls/trust/add.' },
+          'gated doors — /admin/tls/trust and POST /admin-api/tls/trust/add.',
+    demo: true },
   { path: '/tls/trust/clear', group: 'TLS', name: 'Empty the client truststore',
     specs: ['rfc5280'],
     what: 'Removes every anchor — a tls.trustAnchorsFile one until the ' +
@@ -4382,7 +4403,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'tls.trustIssuedClientCertificates is on) still verifies. POST ' +
           'only. A development test ' +
           'control that product mode refuses; the gated doors remove one ' +
-          'anchor at a time and have no clear.' },
+          'anchor at a time and have no clear.',
+    demo: true },
 
   // --- service ---
   { path: '/', group: 'Service', name: 'The front page',
@@ -6875,7 +6897,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'own realm, the validity window, and the wctx round trip (an ' +
           'identity provider that re-encoded it produces the same symptom as ' +
           'a lost session). Also answers wa=wsignoutcleanup1.0, which is the ' +
-          'direction that message is really defined for.' },
+          'direction that message is really defined for.',
+    demo: true },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -7049,7 +7072,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'validity window, the bearer SubjectConfirmationData that section ' +
           '4.1.4.2 requires, and the RelayState round trip. It also resolves ' +
           'an artifact, in process rather than by this service making a SOAP ' +
-          'call to itself.' },
+          'call to itself.',
+    demo: true },
 
   // --- SAML 1.1 ---
   { path: '/saml11', group: 'SAML 1.1', name: 'What the profile is',
@@ -7162,7 +7186,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'DoNotCacheCondition that Browser/POST carries and the artifact ' +
           'profile does not. It resolves an artifact IN PROCESS rather than ' +
           'by this service making a SOAP call to itself, and reloading the ' +
-          'result page demonstrates the one-shot rule rather than erroring.' },
+          'result page demonstrates the one-shot rule rather than erroring.',
+    demo: true },
 
   // --- Federation ---
   //
@@ -7931,7 +7956,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'CAEP device-compliance-change it reacts to. PRODUCT MODE REFUSES ' +
           'IT with 403 (mode.opensTestControls(), STS-DEVICE-0035): there ' +
           'the feed at /admin-api/device-compliance, under its scope, is ' +
-          'the door.' },
+          'the door.',
+    demo: true },
   { path: '/dpop/nonce-mode', group: 'OAuth 2.0 / OIDC',
     name: 'DPoP nonce switch (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests and for trying the handshake by hand: turns ' +
@@ -7943,7 +7969,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'switch for the whole process until 2026-09-12). PRODUCT MODE ' +
           'REFUSES THE POST with 403, because it is a test control: there ' +
           'the setting is changed through /admin/oauth2 or POST ' +
-          '/admin-api/config/set.' },
+          '/admin-api/config/set.',
+    demo: true },
   { path: '/oauth2/consent', group: 'OAuth 2.0 / OIDC', name: 'Consent screen',
     specs: ['oidc', 'rfc6749'],
     effect: 'needs a pending consent id — answers 400 when followed bare',
@@ -8206,7 +8233,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'them is answered 401 insufficient_user_authentication with ' +
           'acr_values and max_age in the challenge. A token that does gets ' +
           '200 and the requirement and the authentication it met. Holds ' +
-          'no data.' },
+          'no data.',
+    demo: true },
   // The authorization server's monitoring page and its two management API
   // operations (2026-09-13), `/admin/acme/monitor`'s arrangement: the page,
   // the same view over JSON, and the one control as an action.
@@ -8260,7 +8288,8 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC, development only (#151): a relying party\'s ' +
           'command_endpoint that checks a Command Token as section 9 asks ' +
           'and answers every account and tenant command, streams included; ' +
-          'GET shows what it holds. 404 in product mode.' },
+          'GET shows what it holds. 404 in product mode.',
+    demo: true },
   { path: '/admin-api/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page over JSON',
     specs: ['oidc-claims-aggregation'],
@@ -8399,7 +8428,8 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['vc-api', 'bitstring-status-list'],
     what: 'The W3C suites\' "publish the list now". A list here is computed ' +
           'on every read, so 204 and nothing else; a test control, behind ' +
-          'vc-api:issue.' },
+          'vc-api:issue.',
+    demo: true },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -8413,17 +8443,20 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oid4vci/notification/:id', group: 'VC Issuance (OID4VCI)',
     name: 'Notification readback (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests: what the wallet reported against a ' +
-          'notification_id.' },
+          'notification_id.',
+    demo: true },
   { path: '/oid4vci/last_request', group: 'VC Issuance (OID4VCI)',
     name: 'Last Credential Request (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests: whether the last Credential Request arrived ' +
-          'encrypted, and how.' },
+          'encrypted, and how.',
+    demo: true },
   { path: '/oid4vci/credential-offer/:id', group: 'VC Issuance (OID4VCI)',
     name: 'Credential Offer by reference', specs: ['oid4vci'],
     what: 'Serves an offer fetched via credential_offer_uri.' },
   { path: '/issuer', group: 'VC Issuance (OID4VCI)', name: 'Issuer web page',
     specs: ['oid4vci'], what: 'Appendix H.1: where an End-User starts an ' +
-                              'issuer-initiated flow.' },
+                              'issuer-initiated flow.',
+    demo: true },
   { path: '/issuer/offer', group: 'VC Issuance (OID4VCI)', name: 'Build a ' +
       'Credential Offer',
     specs: ['oid4vci'], effect: 'mints an offer and redirects the browser to ' +
@@ -8431,7 +8464,8 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Builds an offer and either sends the browser to the wallet or ' +
           'renders a QR code. ?mode=cross-device (H.2) and ?mode=deferred ' +
           '(H.3) select the pre-authorized code grant with a Transaction ' +
-          'Code.' },
+          'Code.',
+    demo: true },
   { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
     name: 'BBS public key',
     specs: ['di-bbs'],
@@ -8448,7 +8482,8 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC listing, for the suite jobs: each issuer this adapter ' +
           'offers — a securing mechanism and the realm key it signs with — ' +
           'with its did:key and endpoint. A development realm only; ' +
-          'vc-api:issue.' },
+          'vc-api:issue.',
+    demo: true },
   { path: '/vc-api/issuers/:issuer/credentials/issue',
     group: 'W3C VC-API (test endpoints)',
     name: 'Issue a credential (VC-API, test control)',
@@ -8462,7 +8497,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'sd-jwt-p256, cose-p256). The credential\'s issuer must be the ' +
           'key\'s did:key; options.credentialStatus allocates an index in ' +
           'the realm\'s Bitstring Status Lists. A development realm only; ' +
-          'vc-api:issue. 201 { verifiableCredential }.' },
+          'vc-api:issue. 201 { verifiableCredential }.',
+    demo: true },
   { path: '/vc-api/credentials/verify', group: 'W3C VC-API (test endpoints)',
     name: 'Verify a credential (VC-API, test control)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
@@ -8471,7 +8507,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'and chain (verification methods did:key and did:jwk, nothing ' +
           'fetched) or the envelope, and — asked, or named — the ' +
           'credential\'s status in this realm\'s lists. 200 or 400 ' +
-          '{ verified, checks, warnings, errors }. vc-api:verify.' },
+          '{ verified, checks, warnings, errors }. vc-api:verify.',
+    demo: true },
   { path: '/vc-api/presentations/verify',
     group: 'W3C VC-API (test endpoints)',
     name: 'Verify a presentation (VC-API, test control)',
@@ -8479,38 +8516,44 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'The presentation\'s own proof (authentication, the challenge ' +
           'and domain asked for) or envelope (its nonce and aud), and every ' +
           'credential in it as /vc-api/credentials/verify checks one. ' +
-          'vc-api:verify.' },
+          'vc-api:verify.',
+    demo: true },
   { path: '/vc-api/holders/:holder/presentations/prove',
     group: 'W3C VC-API (test endpoints)',
     name: 'Prove a presentation (VC-API, test control)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
     what: 'Secures a presentation as the realm key\'s did:key: a Data ' +
           'Integrity proof with the challenge and domain given, or a ' +
-          'VC-JOSE-COSE envelope. vc-api:issue.' },
+          'VC-JOSE-COSE envelope. vc-api:issue.',
+    demo: true },
   { path: '/vc-api/credentials/derive', group: 'W3C VC-API (test endpoints)',
     name: 'Derive a selective disclosure (VC-API, test control)',
     specs: ['vc-api', 'di-ecdsa-sd'],
     what: 'An ecdsa-sd-2023 derived proof from a base proof, revealing the ' +
           'mandatory statements and options.selectivePointers. ' +
-          'vc-api:issue.' },
+          'vc-api:issue.',
+    demo: true },
   { path: '/vc-api/credentials/status', group: 'W3C VC-API (test endpoints)',
     name: 'Change a credential\'s status (VC-API, test control)',
     specs: ['vc-api', 'bitstring-status-list'],
     what: 'Revokes, suspends or lifts a suspension of a credential this ' +
           'adapter issued with a status — the act /admin/vc-status ' +
           'performs, one of the three that disown a credential. A ' +
-          'revocation is final. vc-api:issue.' },
+          'revocation is final. vc-api:issue.',
+    demo: true },
   { path: '/vc-api/resolve', group: 'W3C VC-API (test endpoints)',
     name: 'Resolve a DID (test control)', specs: ['did-core', 'vc-api'],
     what: 'DID Core section 7.1\'s resolve or resolveRepresentation ' +
           '(?function=) for did:key, did:jwk and this realm\'s own did:web, ' +
           'answering the resolution result; any other did:web is notFound ' +
-          'rather than fetched. vc-api:verify.' },
+          'rather than fetched. vc-api:verify.',
+    demo: true },
   { path: '/vc-api/dereference', group: 'W3C VC-API (test endpoints)',
     name: 'Dereference a DID URL (test control)', specs: ['did-core',
                                                           'vc-api'],
     what: 'DID Core section 7.2: the document, or the verification method a ' +
-          'fragment names. vc-api:verify.' },
+          'fragment names. vc-api:verify.',
+    demo: true },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',
@@ -8556,7 +8599,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'credential signed by it; ?method=web returns this service\'s own ' +
           'did:web with one signed by the RS256 key its document publishes. ' +
           'A DID with nothing signed by it could only be parsed, not ' +
-          'verified.' },
+          'verified.',
+    demo: true },
   { path: '/.well-known/did-configuration.json', group: 'Decentralized ' +
                                                         'Identifiers',
     name: 'Domain Linkage Credential', specs: ['did-config', 'vcdm', 'rfc7519'],
@@ -8569,7 +8613,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Verifier ' +
       'web page',
     specs: ['oid4vp'], what: 'Where a presentation starts: the verifier ' +
-                             'asks, the wallet answers.' },
+                             'asks, the wallet answers.',
+    demo: true },
   { path: '/oid4vp/start', group: 'VC Presentation (OID4VP)', name: 'Build ' +
       'an Authorization Request',
     specs: ['oid4vp'], effect: 'builds a request and redirects the browser ' +
@@ -8578,7 +8623,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'response_mode=direct_post, passed by value or by reference, with ' +
           'a QR screen for cross-device. `client_id_prefix` names the ' +
           'Client Identifier Prefix of THIS request (section 5.9) and makes ' +
-          'it signed; an x509 prefix certifies the Verifier first (#230).' },
+          'it signed; an x509 prefix certifies the Verifier first (#230).',
+    demo: true },
   { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
     name: 'The Verifier\'s x509 identity',
     specs: ['oid4vp', 'rfc5280'],
@@ -8617,12 +8663,14 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/oid4vp/result/:state', group: 'VC Presentation (OID4VP)',
     name: 'Verification verdict (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
-          'verdict for a presentation.' },
+          'verdict for a presentation.',
+    demo: true },
   { path: '/oid4vp/done', group: 'VC Presentation (OID4VP)',
     name: 'Presentation ' +
       'complete page',
     specs: ['oid4vp'], what: 'Where the End-User lands after a cross-device ' +
-                             'presentation.' },
+                             'presentation.',
+    demo: true },
   // ===== ACME endpoints (acme/) =====
   { path: '/enroll/acme/directory', group: 'ACME', name: 'The ACME directory',
     specs: ['rfc8555', 'acme-profiles', 'rfc9773'],
@@ -9214,7 +9262,10 @@ const PROTOCOLS: Protocol[] = [
     what: 'The 1.2 Web (Passive) Requestor Profile: /wsfed dispatching on ' +
           'wa, the sign-in screen, signed federation metadata at the AD FS ' +
           'path, wsignout1.0, and a mock relying party that shows what was ' +
-          'sent to it.' },
+          'sent to it.',
+    whatWithoutDemos: 'The 1.2 Web (Passive) Requestor Profile: /wsfed ' +
+          'dispatching on wa, the sign-in screen, signed federation ' +
+          'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],
     specs: ['ws-trust', 'wss-username', 'xmldsig'],
     what: 'RST / RSTR over SOAP at /sts, in all four versions (1.0 through ' +
@@ -9227,6 +9278,11 @@ const PROTOCOLS: Protocol[] = [
           'constrained delegation. The rows on this page are its HTTP views ' +
           'and its MS-KKDCP proxy, which exists because a browser cannot ' +
           'open a socket.',
+    whatWithoutDemos: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +
+          'encryption types, a Microsoft PAC in the ticket, cross-realm ' +
+          'referrals and constrained delegation. The row on this page is ' +
+          'its MS-KKDCP proxy, which exists because a browser cannot open a ' +
+          'socket.',
     sockets: 'The KDC itself is TCP and UDP port 88, which this page cannot ' +
              'see.' },
   { name: 'SPNEGO', groups: ['Kerberos'], specs: ['rfc4178', 'rfc4559'],
@@ -9234,6 +9290,11 @@ const PROTOCOLS: Protocol[] = [
           'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser or ' +
           'a client sends back, and accepts the AP-REQ inside it against the ' +
           'service principal\'s key.',
+    whatWithoutDemos: 'Kerberos over HTTP: /authn/spnego answers 401 ' +
+          'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser ' +
+          'sends back, accepts the AP-REQ inside it against the service ' +
+          'principal\'s key, and signs its client in (the Authentication ' +
+          'group).',
     sockets: 'The ticket it accepts comes from the KDC on port 88.' },
   { name: 'SPIFFE', groups: ['SPIFFE'],
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
@@ -9466,6 +9527,11 @@ const PROSE_ROUTES = ['/admin-api/sts-metadata'];
 interface RegisteredRoute {
   path: string;
   methods: string[];
+  // `common/app.js`'s demonstration mark on the route (#585), and whether
+  // the ambient realm is answered there — false only for a marked route a
+  // product realm passes on to Express's own 404.
+  demo?: boolean;
+  served?: boolean;
 }
 
 // Everything a `StsMetadata` reads. The shared app is here because the page
@@ -9540,7 +9606,8 @@ class StsMetadata {
   /**
    * Extracts the stsmetadata namespace (#543 phase 3): every
    * specification's coverage note and `what`, every endpoint's `what`,
-   * `effect` and `coverage`, every protocol card's `what` and `sockets`,
+   * `effect` and `coverage`, every protocol card's `what`, `sockets` and
+   * `whatWithoutDemos` (#585),
    * and the sentences this module makes.
    *
    * NOT HARVESTED, because each is a join key or a name rather than prose:
@@ -9567,8 +9634,9 @@ class StsMetadata {
                  coverage: one.coverage };
       }), ['what', 'effect', 'coverage']),
       harvest('stsmetadata.protocols', PROTOCOLS.map(function (one) {
-        return { key: one.name, what: one.what, sockets: one.sockets };
-      }), ['what', 'sockets']),
+        return { key: one.name, what: one.what, sockets: one.sockets,
+                 whatWithoutDemos: one.whatWithoutDemos };
+      }), ['what', 'sockets', 'whatWithoutDemos']),
       harvest('stsmetadata.sentence', SENTENCES, Object.keys(SENTENCES)),
       { 'stsmetadata.param.aParameter': A_PARAMETER });
     helpers.log.debug("Leaving StsMetadata.prose(). " +
@@ -9610,19 +9678,34 @@ class StsMetadata {
   // The protocol list, joined to what is actually on the page: how many
   // endpoint rows each family has here, and the three kinds of drift a
   // hand-written list on a derived page can carry.
-  private protocolReport(rows) {
+  private protocolReport(rows, hidden?: EndpointEntry[],
+                         hiddenSpecs?: string[]) {
     const { log } = this.deps;
     log.debug("Entering StsMetadata.protocolReport().");
     const countBy = {};
     rows.forEach(function (r) {
       countBy[r.group] = (countBy[r.group] || 0) + 1;
     });
+    // A GROUP WHOSE EVERY ROW IS A HIDDEN DEMONSTRATION (#585) — the
+    // VC-API's test endpoints in a product realm — is not on the page, so a
+    // card naming it drops it rather than linking to a table that is not
+    // there, and a specification only those rows cited leaves the card too.
+    const hiddenGroups = {};
+    (hidden || []).forEach(function (r) {
+      if (!Object.prototype.hasOwnProperty.call(countBy, r.group)) {
+        hiddenGroups[r.group] = true;
+      }
+    });
+    const dropSpecs = hiddenSpecs || [];
     const claimed = {};
     const missingGroups = [];
     const missingSpecs = [];
     const list = PROTOCOLS.map(function (p) {
       let endpoints = 0;
-      p.groups.forEach(function (group) {
+      const groups = p.groups.filter(function (group) {
+        return !hiddenGroups[group];
+      });
+      groups.forEach(function (group) {
         claimed[group] = true;
         if (!Object.prototype.hasOwnProperty.call(countBy, group)) {
           missingGroups.push(p.name + ' -> ' + group);
@@ -9635,8 +9718,14 @@ class StsMetadata {
           missingSpecs.push(p.name + ' -> ' + id);
         }
       });
-      return { name: p.name, what: p.what, sockets: p.sockets || '',
-               groups: p.groups.slice(0), specs: (p.specs || []).slice(0),
+      return { name: p.name,
+               what: (hidden || []).length && p.whatWithoutDemos
+                 ? p.whatWithoutDemos : p.what,
+               sockets: p.sockets || '',
+               groups: groups,
+               specs: (p.specs || []).filter(function (id) {
+                 return dropSpecs.indexOf(id) < 0;
+               }),
                // CARRIED INTO THE DOCUMENT rather than left on the table, so
                // the drift test can see it. A card that names no
                // specification has to say why, and the reason travels with
@@ -9680,11 +9769,23 @@ class StsMetadata {
     const router = shared._router || shared.router;
     const stack = (router && router.stack) || [];
     const byPath = new Map<string, Set<string>>();
+    // THE DEMONSTRATION MARK (#585), read off each route the way the router
+    // reads it: a path is a demonstration when a route on it carries the
+    // mark, and served when the mark passes the ambient realm on.
+    const demoOf = new Map<string, { served: boolean }>();
+    const markOf = typeof shared.demoMarkOf === 'function'
+      ? shared.demoMarkOf : function (): null {
+        return null;
+      };
     stack.forEach(function (layer) {
       if (!layer.route || !layer.route.path) {
         return;
       }
       const path = String(layer.route.path);
+      const mark = markOf(layer.route);
+      if (mark) {
+        demoOf.set(path, { served: !!mark.serves() });
+      }
       const methods = Object.keys(layer.route.methods || {})
         .filter(function (m) {
           return m !== '_all';
@@ -9701,7 +9802,9 @@ class StsMetadata {
     });
     const out: RegisteredRoute[] = [];
     byPath.forEach(function (methods, path) {
-      out.push({ path: path, methods: Array.from(methods).sort() });
+      const demo = demoOf.get(path);
+      out.push({ path: path, methods: Array.from(methods).sort(),
+                 demo: !!demo, served: demo ? demo.served : true });
     });
     log.debug("Leaving StsMetadata.registeredRoutes(). " + out.length +
               " path(s).");
@@ -9781,8 +9884,30 @@ class StsMetadata {
 
     const rows = [];
     const undocumented = [];
+    // ---------------------------------------------------------------------
+    // A DEMONSTRATION THE REALM IS NOT SERVED (#585) IS NOT ON THE PAGE AT
+    // ALL — neither its route nor its description, so the drift checks hold
+    // in both modes: in development both halves are here and join as any
+    // row does; in a product realm both are dropped together and neither is
+    // reported. What IS reported is the two halves disagreeing — a marked
+    // route whose row is not flagged `demo`, or a flagged row whose route
+    // carries no mark — because then one mode would list an endpoint the
+    // other does not serve, or serve one nobody lists.
+    // ---------------------------------------------------------------------
+    const hidden: EndpointEntry[] = [];
+    const demoMismatch: string[] = [];
     this.registeredRoutes().forEach(function (route) {
       const entry = described.get(route.path);
+      if (entry && !!entry.demo !== !!route.demo) {
+        demoMismatch.push(route.path);
+      }
+      if (route.demo && !route.served) {
+        if (entry) {
+          hidden.push(entry);
+          described.delete(route.path);
+        }
+        return;
+      }
       if (entry) {
         rows.push(Object.assign({}, entry,
                                 { methods: route.methods, documented: true }));
@@ -9798,6 +9923,24 @@ class StsMetadata {
     });
     // Whatever is left was described and is not registered.
     const stale = Array.from(described.keys());
+    // THE SPECIFICATIONS ONLY A HIDDEN DEMONSTRATION IMPLEMENTED (#585): in a
+    // product realm a specification cited by nothing but demonstration rows
+    // is not on the page either, or it would be an idle claim — the VC-API's
+    // test endpoints are the whole of this service's VC-API.
+    const live = new Set<string>();
+    rows.forEach(function (r) {
+      (r.specs || []).forEach(function (id) {
+        live.add(id);
+      });
+    });
+    const hiddenSpecs: string[] = [];
+    hidden.forEach(function (r) {
+      (r.specs || []).forEach(function (id) {
+        if (!live.has(id) && hiddenSpecs.indexOf(id) < 0) {
+          hiddenSpecs.push(id);
+        }
+      });
+    });
     // Any spec id that no entry references, and any reference to a spec that
     // does not exist. Both are drift in the same table.
     const referenced = new Set<string>();
@@ -9813,13 +9956,17 @@ class StsMetadata {
     // The hand-written half of the page, checked against the derived half.
     // See the header above PROTOCOLS for the three kinds of drift this reports
     // and why a list that cannot be derived still has to be checked.
-    const protocols = this.protocolReport(rows);
+    const protocols = this.protocolReport(rows, hidden, hiddenSpecs);
     log.debug("Leaving StsMetadata.describeEndpoints(). " + rows.length +
               " row(s), " + undocumented.length +
               " undocumented, " + stale.length + " stale, " +
               protocols.protocols.length + " protocol(s).");
     return { rows: rows, undocumented: undocumented, stale: stale,
              unknownSpecs: unknownSpecs,
+             // What a product realm is not shown (#585): the specifications
+             // only a demonstration cited, and where the two halves of the
+             // demonstration mark disagree (empty, or a drift to fix).
+             hiddenSpecs: hiddenSpecs, demoMismatch: demoMismatch,
              protocols: protocols.protocols,
              unknownProtocolGroups: protocols.missingGroups,
              unknownProtocolSpecs: protocols.missingSpecs,
@@ -9916,9 +10063,15 @@ class StsMetadata {
                  linkable: link.linkable,
                  notLinkableBecause: link.linkable ? undefined : link.reason,
                  url: link.linkable ? base + r.path : undefined,
-                 effect: r.effect };
+                 effect: r.effect,
+                 // A demonstration, served here because this realm is in
+                 // development (#585); a product realm lists none.
+                 demo: !!r.demo };
       }),
-      specifications: SPECS,
+      // Less, in a product realm, what only a demonstration cited (#585).
+      specifications: SPECS.filter(function (spec) {
+        return (report.hiddenSpecs || []).indexOf(spec.id) < 0;
+      }),
       // The protocol list, with the endpoint count each family actually has on
       // this page. It is in the document rather than only on the page for the
       // reason everything else here is: a test can then assert that this
@@ -9937,7 +10090,11 @@ class StsMetadata {
       // this service and not to the list at the top of the page.
       unknownProtocolGroups: report.unknownProtocolGroups,
       unknownProtocolSpecIds: report.unknownProtocolSpecs,
-      unclaimedGroups: report.unclaimedGroups
+      unclaimedGroups: report.unclaimedGroups,
+      // A route carrying the demonstration mark whose row is not flagged
+      // `demo`, or the reverse (#585): the two halves of one fact
+      // disagreeing, which a test asserts is empty.
+      demoMarkMismatches: report.demoMismatch || []
     };
   }
   // THE PAGE'S ANSWER (#446): `metadataJson()`, and what the page draws

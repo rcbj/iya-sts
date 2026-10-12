@@ -1521,10 +1521,12 @@ class GnapGrants {
       const keyDescriptor = keys.describe(grant.client.key,
                                           this.referenceResolver);
       const audience = rsIds.slice();
-      if (!audience.length &&
+      if (!audience.length && mode.servesDemoEndpoints() &&
           (config.value('gnap.demoResourceServer') !== false)) {
         // A token for nobody in particular is valid at the demonstration RS,
-        // which is how a client can present one somewhere at all.
+        // which is how a client can present one somewhere at all — where the
+        // demonstration RS is SERVED (#585): a product realm has none, so its
+        // default audience names nothing that does not exist.
         audience.push(helpers.rebaseTo(base, 'gnap') + '/gnap/rs/resource');
       }
       const model = {

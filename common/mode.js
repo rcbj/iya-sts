@@ -756,6 +756,37 @@ function opensTestControls() {
   return !isProduct();
 }
 
+// Are the DEMONSTRATION, MOCK AND TEST-CONTROL ENDPOINTS here at all (#585,
+// rcbj 2026-10-12)? The mock relying parties and service provider, the demo
+// issuer and verifier pages, the protected Kerberos service and SPNEGO page,
+// the embedded PEP's demonstration, the step-up stand-in, the GNAP
+// demonstration resource server, the VC-API test endpoints, the OpenID4VCI
+// readbacks, the TLS diagnostics and truststore door, the SSF receiver and
+// the rest of `demo-endpoints`' list below. Development serves and lists
+// them. Product neither serves nor lists one: each answers EXACTLY as an
+// unrouted path does — Express's own `Cannot GET …` 404, because the route
+// calls `next('route')` (`common/app.js`, `demoOnly`) — and no page,
+// document or log line names it.
+//
+// Not `opensTestControls()`, which asks whether a test control on a REAL
+// endpoint is open (`?username=` on /logout, open registration); this asks
+// whether an endpoint that exists only to be exercised exists. Asked per
+// realm, like every predicate here, so a development realm in a product
+// process keeps them — except where the thing is the PROCESS's (the
+// truststore, the protected service's socket), whose callers ask it in the
+// default realm.
+/**
+ * Tells whether the demonstration, mock and test-control endpoints are
+ * served and listed; in product each answers as an unrouted path does.
+ *
+ * @returns true in development mode
+ */
+function servesDemoEndpoints() {
+  log.debug("Entering servesDemoEndpoints().");
+  log.debug("Leaving servesDemoEndpoints().");
+  return !isProduct();
+}
+
 // Must a CELL hold a key-encryption key of its own (#98, 2026-09-28)? What a
 // cell stores of its own — the people homed there and what it mints — is
 // sealed under a key that lives only in the cell, so a copy of its rows
@@ -2126,11 +2157,11 @@ const REQUIREMENTS = [
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
                  'ssf.receiveRequireSignature is on. Nothing acts on it.',
-    product: 'Every receiver answers 400 invalid_key, whatever ' +
-             'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
-             'authenticates nobody, records nothing; the console\'s and ' +
-             'portal\'s receivers, behind their stream\'s own secret, keep ' +
-             'it on their inbox marked refused.' },
+    product: 'The console\'s and portal\'s receivers answer 400 ' +
+             'invalid_key, whatever ssf.receiveRequireSignature says ' +
+             '(#117), and keep it on their inbox marked refused. ' +
+             '/ssf/receive is a development endpoint and is not there ' +
+             '(#585).' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -2947,7 +2978,8 @@ const REQUIREMENTS = [
              'access right must name a registered target: one of this ' +
              'service\'s own resource servers (the default resource ' +
              'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; the GNAP demonstration resource server) ' +
+             'accept; /admin-api; the GNAP demonstration resource server ' +
+             'where it is served) ' +
              'or an application registered ahead of time (appRegisteredBy ' +
              'set — a sighting is not a registration), by its ' +
              'oauthAudience, permission base URI, client_id or identifier ' +
@@ -2982,13 +3014,38 @@ const REQUIREMENTS = [
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, ws-federation/wsfed.ts, ' +
            'oid4vc/vc_offers.ts, oid4vc/vc_verifier.ts, ' +
            'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
+  // #585 (2026-10-12): an ENDPOINT that exists only to be exercised is
+  // `demo-endpoints`' below; what is left here is a test control on a real
+  // endpoint.
+  { id: 'demo-endpoints',
+    what: 'The demonstration, mock and test-control endpoints exist',
+    development: 'Served and listed: the mock relying parties and service ' +
+                 'provider (/wsfed/rp, /saml2/sp, /saml11/rp, ' +
+                 '/oauth2/commands/mock-rp), the demonstration issuer and ' +
+                 'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
+                 '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +
+                 'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
+                 'endpoints, the protected Kerberos service (/krb5/service ' +
+                 'and its TCP socket), /krb5/principals, /spnego and ' +
+                 '/spnego/protected, /xacml/protected, the step-up ' +
+                 'stand-in resource, the GNAP demonstration resource server, ' +
+                 '/dpop/nonce-mode, /devices/test/compliance, /tls, ' +
+                 '/tls/forwarded, /tls/trust and /tls/trust/clear, and ' +
+                 '/ssf/receive and /ssf/received.',
+    product: 'None of them is served or listed. Each answers exactly as a ' +
+             'path nothing is registered on does — Express\'s own 404 ' +
+             '"Cannot GET" — and no metadata page, console page, document ' +
+             'or log line names one. A development realm in a product ' +
+             'process keeps them, except the truststore door and the ' +
+             'protected service\'s socket, which belong to the process. The ' +
+             'administrative doors stay: /admin-api starts a verification, ' +
+             'reads the principals and changes the truststore, and the ' +
+             'user portal makes a credential offer.',
+    where: 'common/app.js, sts_metadata.ts, ' +
+           'admin-core/protocol_endpoints.ts, server.js' },
   { id: 'test-controls',
     what: 'Test controls are open',
-    development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
-                 'device\'s compliance, without the device:compliance ' +
-                 'scope, #164), the passwords on ' +
-                 '/krb5/principals, signing another person out with ' +
+    development: 'Signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
                  'answer anybody, a refused SCIM Digest challenge prints ' +
@@ -3007,9 +3064,8 @@ const REQUIREMENTS = [
              'oauth2.softwareStatementOpensRegistration is on, which is the ' +
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
-    where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
-           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
+    where: 'oauth-oidc/oauth2.ts, logout/logout.ts, saml/saml11_sso.ts, ' +
+           'scim/scim_auth.ts, admin-core/admin_actions.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -3743,6 +3799,10 @@ const WRITE_REFUSALS = {
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
     'without the workload.spiffe.io header MUST be refused.',
+  // #585: the one row is xacml.pepBias, read only by /xacml/protected.
+  servesDemoEndpoints:
+    'it configures a demonstration endpoint, and product serves none of ' +
+    'them. Try it in a development realm.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
     'on the directory, so no password is read for it.',
@@ -3897,6 +3957,7 @@ module.exports = {
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
+  servesDemoEndpoints: servesDemoEndpoints,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
   authorizesDirectoryReads: authorizesDirectoryReads,

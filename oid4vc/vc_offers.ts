@@ -73,6 +73,10 @@ import qrcode = require('qrcode');
 // cycle and it registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -1074,7 +1078,7 @@ class VcOffers {
     const { log, baseUrlOf, xmlEscape, vciError, walletBaseUrl, mode,
             errorCodes, validation, credentialOffers } = this.deps;
     log.debug("Entering VcOffers.registerRoutes().");
-    app.get('/issuer', (req, res) => {
+    app.get('/issuer', demoOnly, (req, res) => {
       log.debug("Entering the issuer web page.");
       const base = baseUrlOf(req);
       const configId = VCI_CONFIG_ID;
@@ -1120,7 +1124,7 @@ class VcOffers {
 
     // The link on that page: build the offer and send the End-User to their
     // wallet.
-    app.get('/issuer/offer', (req, res) => {
+    app.get('/issuer/offer', demoOnly, (req, res) => {
       log.debug("Entering the credential offer endpoint.");
       const base = baseUrlOf(req);
       const configurationIds = req.query.credential_configuration_ids
@@ -1162,24 +1166,21 @@ class VcOffers {
       // to the user portal (`/portal/wallet`, over
       // `POST /account-api/credentials/offers`, `portal/portal_wallet.ts`),
       // which mints through `makeOffer()` below exactly as this page did,
-      // the session presented over CAEP included. So this page SENDS THE
-      // BROWSER THERE (303) rather than minting anything, and its old refusal
-      // of a session that continued without signing in (`STS-VC-0027`) is
-      // retired with it: the portal's sign-in is what decides now. The demo
-      // issuer pages become development-only in #585.
+      // the session presented over CAEP included, and this page's old
+      // refusal of a session that continued without signing in
+      // (`STS-VC-0027`) is retired with it: the portal's sign-in is what
+      // decides now.
       //
-      // A SAME-DEVICE offer is not gated. It carries an issuer_state and no
-      // authorization at all — the wallet still takes the End-User through
-      // /oauth2/authorize, which authenticates them there — so there is
-      // nothing to mint for anybody.
+      // **AND THIS PAGE IS A DEMONSTRATION (#585)**: `/issuer` and
+      // `/issuer/offer` carry `common/app.js`'s `demoOnly` mark, so a product
+      // realm answers as for a path nothing is registered on. From #589 until
+      // then a product realm's cross-device or deferred request was sent on
+      // to `/portal/wallet` (303); that was dropped, because the rule is that
+      // a demonstration in a product realm is NOT THERE, and no job or
+      // document depended on the redirect — the three jobs that made
+      // pre-authorized offers in product use `/account-api` (#589).
+      // Everything below runs in a development realm only.
       // -----------------------------------------------------------------------
-      const preAuthorized = offerMode === 'cross-device' ||
-                            offerMode === 'deferred';
-      if (preAuthorized && !mode.opensTestControls()) {
-        log.debug("Leaving the credential offer endpoint. A pre-authorized " +
-                  "offer is made on the user portal here.");
-        return res.redirect(303, realms.href('/portal/wallet'));
-      }
       const made = this.makeOffer(req, {
         configurationIds: configurationIds, mode: offerMode,
         byReference: String(req.query.by || '') === 'reference',

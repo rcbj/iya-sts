@@ -155,6 +155,10 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+// THE DEMONSTRATION MARK (#585), read off the shared app here because
+// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
+// a test passes carries no mark. `common/app.js` argues it.
+const demoOnly = app.demoOnly;
 // `allSigningKeys`, `STS`, node's `crypto` and `common/crypto` left this list
 // on 2026-09-10 with the three functions that read a received SET — they are
 // `ssf_events.js`'s now, where `buildSet()` and `signSet()` already were. See
@@ -2862,7 +2866,7 @@ class SharedSignals {
     // envelope — building a SET and reading one back are the two directions
     // of one format.
 
-    app.post('/ssf/receive', (req, res) => {
+    app.post('/ssf/receive', demoOnly, (req, res) => {
       log.debug('Entering POST /ssf/receive.');
       if (this.offCheck(res)) {
         log.debug('Leaving POST /ssf/receive. Off.');
@@ -3001,7 +3005,8 @@ class SharedSignals {
       log.debug('Leaving POST /ssf/receive. Accepted.');
     });
 
-    app.get('/ssf/received', ssfCluster.spendGnapProof, (req, res) => {
+    app.get('/ssf/received', demoOnly, ssfCluster.spendGnapProof,
+            (req, res) => {
       log.debug('Entering GET /ssf/received.');
       if (this.offCheck(res)) {
         log.debug('Leaving GET /ssf/received. Off.');

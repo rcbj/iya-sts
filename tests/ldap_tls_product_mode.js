@@ -377,13 +377,18 @@ function theTruststoreIsNotATestControlInProduct(t) {
   const pem = require('../tls/tls_server.js').serverCertificatePem();
   const refused = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust', pem);
   const rr = refused.report || {};
-  t.check(rr.status === 403 && /tls\.trustAnchorsFile/.test(rr.body),
-          'a product service REFUSES a trust anchor from whoever reaches the ' +
-          'port, and names the setting that is the door ' +
-          'instead', JSON.stringify(rr).slice(0, 400));
+  // NOT THERE AT ALL SINCE #585: a product process has no such route, and
+  // answers as for a path nothing is registered on — Express's own 404. The
+  // doors that remain are /admin-api/tls/trust and tls.trustAnchorsFile.
+  t.check(rr.status === 404 && /Cannot POST \/tls\/trust/.test(rr.body),
+          'a product service has no open door for a trust anchor: POST ' +
+          '/tls/trust answers as an unrouted path', JSON.stringify(rr)
+            .slice(0, 400));
   const cleared = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust/clear',
                             '');
-  t.equal((cleared.report || {}).status, 403, 'and refuses to EMPTY it too');
+  const cr = cleared.report || {};
+  t.check(cr.status === 404 && /Cannot POST/.test(cr.body),
+          'and none to EMPTY it either', JSON.stringify(cr).slice(0, 200));
   const accepted = httpProbe({}, 'POST', '/tls/trust', pem);
   t.equal((accepted.report || {}).status, 200,
           'while development mode still takes the anchor, which is what the ' +
