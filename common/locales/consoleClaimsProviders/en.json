@@ -45,5 +45,8 @@
   "colTheirSub": "Their sub there",
   "colLinked": "Linked",
   "colToken": "Token",
-  "providersHeading": "Claims Providers"
+  "providersHeading": "Claims Providers",
+  "noLinkMatch": "No link matches <code>{wanted}</code>.",
+  "linkSearchLabel": "Narrow the links",
+  "linkSearchPlaceholder": "a person, a provider or their subject there"
 }

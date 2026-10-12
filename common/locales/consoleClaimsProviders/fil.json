@@ -45,5 +45,8 @@
   "colTheirSub": "Ang sub nila roon",
   "colLinked": "Na-link",
   "colToken": "Token",
-  "providersHeading": "Mga Claims Provider"
+  "providersHeading": "Mga Claims Provider",
+  "noLinkMatch": "Walang link na tumutugma sa <code>{wanted}</code>.",
+  "linkSearchLabel": "Paliitin ang mga link",
+  "linkSearchPlaceholder": "isang tao, isang provider o ang kanilang subject doon"
 }

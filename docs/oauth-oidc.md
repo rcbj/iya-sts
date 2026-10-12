@@ -961,7 +961,11 @@ A relying party posts `_async` results, and asks for a fresh `metadata` or
 `audit_tenant`, at `POST /oauth2/commands/callback`, Bearer the
 `callback_token` its command carried. A command that cannot be delivered is
 a dead letter on Monitoring → Outbound deliveries (`/admin/deliveries`),
-beside undelivered Logout Tokens and CIBA notifications, with a Retry.
+beside undelivered Logout Tokens and CIBA notifications, with a Retry. Each
+kind's table there is paged on a parameter of its own (`providerCommandsPage`,
+`backchannelLogoutPage`, `cibaPage`, `cellOpsPage`), and so are the four lists
+on `/admin/commands` (`clientsPage`, `accountsPage`, `runsPage`,
+`deliveriesPage`); every row is reachable.
 
 Command Tokens name an `iss`. Set `global.publicBaseUrl` so an automatic
 command knows its issuer before any command has been sent from the console.
@@ -984,7 +988,8 @@ for (OpenID Connect Core section 5.6.2, and the Claims Aggregation draft).
 2. **A person links the provider** on `/portal/claim-sources`. They sign in
    and agree at the provider, and come back linked. Their tokens there are
    kept sealed on their own directory entry. An administrator sees every link
-   and can revoke one.
+   and can revoke one; the links are searched by `linkq` and paged by
+   `linksPage`, the providers by `providersPage`.
 3. **A relying party asks for one of those claims by name** with the `claims`
    request parameter. If the person's own entry does not answer it, the ID
    Token or UserInfo response carries `_claim_names` and `_claim_sources`:
@@ -1579,8 +1584,9 @@ draft 03). It is on in every mode.
 
 The console lists every grant on **Monitoring → Grants** (`/admin/grants`,
 `GET /admin-api/grants`), with a Revoke button each
-(`POST /admin-api/grants/revoke-grant`). What the person agreed to is
-**Consent**, beside it.
+(`POST /admin-api/grants/revoke-grant`). The list is paged by `grantsPage`
+and searched by `grantq` (a grant id, client or subject). What the person
+agreed to is **Consent**, beside it.
 
 ### Introspection and revocation
 

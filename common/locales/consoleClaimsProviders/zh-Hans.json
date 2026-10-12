@@ -45,5 +45,8 @@
   "colTheirSub": "其在那里的 sub",
   "colLinked": "关联时间",
   "colToken": "令牌",
-  "providersHeading": "声明提供方"
+  "providersHeading": "声明提供方",
+  "noLinkMatch": "没有与 <code>{wanted}</code> 匹配的关联。",
+  "linkSearchLabel": "筛选关联",
+  "linkSearchPlaceholder": "人员、提供方或其在该处的主体"
 }
