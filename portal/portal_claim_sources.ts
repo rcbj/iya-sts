@@ -262,7 +262,7 @@ class PortalClaimSources {
         String((signOn.user || {}).username || '').toLowerCase() !==
           String(flow.username).toLowerCase()) {
       errorCodes.mark(res, flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679');
-      audit.record({ category: 'portal',
+      audit.record({ category: 'authentication',
         action: 'oauth2.claim-source-link-refused',
         errorCode: flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679',
         actor: flow ? flow.username : '', outcome: 'failure',
