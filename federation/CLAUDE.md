@@ -1129,6 +1129,34 @@ because doing it silently would be this repository teaching the mistake.
 
 ---
 
+## THE ERROR AND OUTCOME PAGES OF THIS SERVICE'S OWN FLOWS (#580, 2026-10-12)
+
+#569 converts every page this service defines for itself into a static
+surface, and **never touches what a specification's endpoint answers**
+(rcbj, 2026-10-12). #580 is the error and outcome pages, and its first step
+was this inventory: every candidate page, which kind it is, and so whether
+it is converted.
+
+| Page | Where it is drawn | Kind | Converted |
+|---|---|---|---|
+| The federation landing page, `GET /federation` | `federation_sp.ts` `indexEndpoint()` | this service's own | **yes** |
+| `/federation/login/{id}`'s refusals — off (404), no such relationship (404), the other direction (400), signals only (400), disabled (403), not fully configured (409), the OpenID Federation OP not trusted (502), a failure while starting (500) | `loginEndpoint()`, through `refuse()` and `page()` | this service's own (the START of an outbound request is not a protocol endpoint: nothing a specification defines arrives there) | **yes** |
+| `/federation/link/{handle}`'s refusals — off (404), no link waiting (400), unusable relationship (403), another browser (403), the local sign-in ended (403), no fresh local sign-in (403), the subject now names somebody else (403), the subject decision refusing again, the session refused (provisioning, risk, the issuance policy, an attribute source) — and its OUTCOME, the signed-in page where nothing asked to be returned to | `linkEndpoint()`, and through it `refuseSubject()`, `finishSignIn()` and `startFederatedSession()` | this service's own (#109's linking step is this service's invention) | **yes** |
+| The outbound HTTP-POST binding page (`postBindingPage()`) on `/federation/login/{id}` | `federation_sp.ts` | a protocol document (SAML 2.0 HTTP-POST binding; #569's list of eight) | no |
+| The assertion consumer service `/federation/acs/{id}`: its refusals, `beginLinking()`'s, and the signed-in page with no `returnTo` | `consume()`, the same `refuse()` and `startFederatedSession()` | a specification's endpoint (SAML ACS, WS-Federation `wreply`, OAuth `redirect_uri`) | no — #580's body lists it |
+| `/federation/metadata/{id}` and `/federation/jwks/{id}`'s 404 pages | `metadataEndpoint()`, `jwksEndpoint()` | a metadata endpoint's answer; not a page a person is sent to | no (left server-drawn) |
+| `federation_slo.ts`: `refuse()` and every signed-out, confirm and front-channel page | `federation_slo.ts` | a specification's sign-out endpoints | no — #580's body lists `refuse()` |
+| The emailed factor's end pages (`endPage()` in #580's body) | `authn/email_factor.ts` | this service's own | **already**, by #573: `endAnswer()` answers `/authn-api`'s JSON and `authn/web_authn_email.ts` draws it |
+| The wallet sign-in's error and closed pages (`failed()`, `closedPage()` in #580's body) | `oid4vc/vc_signin.ts` | this service's own | **already**, by #574: `refuse()`/`closed()` answer `/authn-api/wallet`'s views and `oid4vc/web_vc_signin.ts` draws them |
+| The authorization endpoint's error interstitial (`sendRedirectInterstitial()`) | `oauth-oidc/oauth2.ts` | RFC 6749 §4.1.2.1 / RFC 9700 §4.11.2 | no — #580's body lists it |
+| `/oauth2/logout`'s pages (`logoutAnswer()`), the front-channel fan-out, `/oauth2/check_session` | `oauth-oidc/oauth2.ts` | specification endpoints (#577 narrowed) | no |
+| `samlError()` (SAML 2.0 and 1.1), `wsfedError()` | `saml/`, `ws-federation/` | a SAML Response or a WS-Federation fault | no — #580's body lists them |
+| Express's `Cannot GET /path` | Express | the 404 the root `CLAUDE.md` forbids replacing | no |
+| `/tls/*` and the SPNEGO diagnostics; the demonstration issuer and verifier; the mock relying parties; the endpoint description pages | `tls/`, `kerberos/`, `oid4vc/`, the RPs, every family | other tickets (#583, #582, #581, #584) | not here |
+
+So what #580 converts is all in this directory: three pages of
+`federation_sp.ts`'s own flows. The rest of the section says how.
+
 ## NO CSP RELAXATION, AND THE SCRIPTED PAGE THAT IS NOT
 
 `app.js` sets `script-src 'none'` for the whole service, and seven pages relax
