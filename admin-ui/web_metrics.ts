@@ -96,6 +96,10 @@ class MetricsPage {
     const inner = '<div class="tiles">' +
         kit.tile(snap.calls.total, t.text('consoleMetrics.tile.calls')) +
         kit.tile(snap.calls.paths, t.text('consoleMetrics.tile.routes')) +
+        // Apart from the calls (#312): a load balancer's probes would
+        // otherwise be most of the first tile. One that failed is a call.
+        kit.tile(snap.calls.healthProbes || 0,
+                 t.text('consoleMetrics.tile.healthProbes')) +
         kit.tile(snap.tokens.held,
                  t.text('consoleMetrics.tile.tokensIssued')) +
         kit.tile(snap.tokens.revoked,

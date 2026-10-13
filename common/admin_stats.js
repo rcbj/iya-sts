@@ -206,7 +206,11 @@ const nums = realms.obj(function () {
            // identifier anybody can quote, so without this there would be
            // nothing to address the row by, and /admin/tokens/set could not
            // open one.
-           artifactsRecorded: 0 };
+           artifactsRecorded: 0,
+           // Successful liveness probes (#312): counted here and NOWHERE
+           // else — not in `callTotal`, not in the call table. See
+           // recordCall().
+           healthProbes: 0 };
 }, { persist: 'admin_stats.nums', merge: 'own' });
 
 
@@ -242,6 +246,35 @@ function callRow(method, path) {
 function recordCall(call) {
   log.debug("Entering recordCall(). " + call.method + " " + call.path + " -> " +
             call.status);
+  // -------------------------------------------------------------------------
+  // A LIVENESS PROBE THAT SUCCEEDED IS NOT A CALL (#312, 2026-10-13).
+  //
+  // Behind a load balancer it is most of them. On testidp the NLB's two HTTP
+  // target groups (8081 and the revocation listener's 8082) asked each of
+  // three nodes every ten seconds from each of three zones — over a hundred a
+  // minute before the compose healthcheck and the launchers — and the metrics
+  // page reported 18,000 calls in a few hours, nearly all `/healthcheck`.
+  // Every number an operator opened the page for was a rounding error beside
+  // it.
+  //
+  // THE RULE IS THE AUDIT LOG'S, READ FROM THERE: `audit.quietWhenOk()` and
+  // its `QUIET_WHEN_OK`, so the two cannot drift into disagreeing about which
+  // paths are probes. A probe answered anything but 200 is still a call — it
+  // is a node saying it is unhealthy, which is exactly what should show —
+  // and so is a `POST`, which Express refuses.
+  //
+  // COUNTED, NOT DROPPED: `healthProbes` is one number of its own, summed
+  // across processes like `callTotal`, and the page shows it beside the
+  // totals rather than inside them. Every process and every listener comes
+  // through here — the front, both worker pools, and `pki_service.ts`'s
+  // plain-HTTP listener, which hands the path to the same app.
+  // -------------------------------------------------------------------------
+  if (audit.quietWhenOk(call.method, call.path, call.status)) {
+    nums.healthProbes++;
+    log.debug("Leaving recordCall(). A successful liveness probe; counted " +
+              "apart from the calls.");
+    return;
+  }
   let path = call.path;
   let matched = !!call.matched;
   if (!matched && calls.size >= MAX_CALL_PATHS) {
@@ -6510,6 +6543,9 @@ function snapshot() {
              byStatusClass: statusTotals,
              pathsCollapsed: nums.callPathsDropped +
                              alsoElsewhere('callPathsDropped'),
+             // NOT in `total` and NOT in `rows` (#312): see recordCall().
+             healthProbes: nums.healthProbes +
+                           alsoElsewhere('healthProbes'),
              rows: mergedRows },
     // TOKENS ARE `merge: 'replace'` AND ARE THEREFORE ALREADY MERGED — a token
     // is minted by one process and the register is keyed by jti, so the row IS

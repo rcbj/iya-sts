@@ -4,6 +4,7 @@
   "state.active": "active",
   "tile.calls": "appels de points de terminaison",
   "tile.routes": "routes appelées",
+  "tile.healthProbes": "sondes de santé réussies, non comptées comme appels",
   "tile.tokensIssued": "jetons émis",
   "tile.tokensRevoked": "jetons révoqués",
   "tile.artifacts": "assertions, tickets, justificatifs",

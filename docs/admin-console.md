@@ -764,6 +764,13 @@ when each was last called. Then every token by `typ`, with how many are valid,
 expired, revoked, not yet valid and DPoP-bound, and every assertion, ticket
 and credential the same way.
 
+**A `GET` or `HEAD` of `/healthcheck` answered 200 is not counted as a call** —
+not in the total, not in the table, on either listener that serves it. Behind a
+load balancer those probes would be nearly every call the page reported. They
+go up a tile of their own, *successful health probes*. A probe answering
+anything else is a call, and shows: that is a node reporting itself unhealthy.
+It is the same rule the audit log follows, read from the same list.
+
 All of it is computed **when the page is drawn**, not kept up to date as things
 happen. "Valid" and "expired" are functions of the clock, so a counter
 incremented at issuance would be wrong a second later.
