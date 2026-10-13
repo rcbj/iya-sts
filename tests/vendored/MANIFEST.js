@@ -1427,6 +1427,29 @@ const JOBS = [
   // (and on an application's override), ignored where they are read once a
   // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
   { file: 'sts_mode_weak_settings.js',   browser: false, local: true },
+  // #293 WP1 (2026-10-13): clients an administrator created through
+  // /admin-api, in a development and a product realm — the device grant
+  // for a client declaring it (and refused one that does not), PAR required
+  // on one client's entry, and `id_token token` / `code token` refused in
+  // product (STS-OAUTH-0126).
+  { file: 'sts_admin_client_policies.js', browser: false, local: true },
+  // #293 WP4 (2026-10-13): client_secret_jwt issued and (in product)
+  // refused, and RFC 8705's tls_client_auth and self_signed_tls_client_auth
+  // over a real handshake on the main port, for clients created through
+  // /admin-api, in a development and a product realm.
+  { file: 'sts_client_authentication.js', browser: false, local: true },
+  // #293 WP2 (2026-10-13): a JAR client created through /admin-api, its
+  // request objects and key set served by this job — registered request_uri
+  // and jwks_uri, the registered algorithm, signed objects required; product
+  // refusing a plain-http request_uri at registration, and the https flow
+  // where a directory is shared with the service.
+  { file: 'sts_jar_admin_client.js',     browser: false, local: true },
+  // #293 WP3 (2026-10-13): OpenID Connect Back-Channel Logout delivered to
+  // the test peer's `bcl` role (tests/peer/peer_bcl.js), which verifies each
+  // Logout Token as a relying party must; a product realm refusing the
+  // peer's private address (STS-OAUTH-0534). Needs the peer (`testPeer`).
+  { file: 'sts_backchannel_logout.js',   browser: false, local: true,
+    testPeer: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.

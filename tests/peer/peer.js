@@ -26,6 +26,7 @@
 //   GNAP resource server         /gnap/rs/resource, /spend      peer_gnap.js
 //   SSF receiver (push)          /ssf/receive                   peer_ssf.js
 //   OP Commands relying party    /oauth2/commands/mock-rp       peer_commands.js
+//   Back-Channel Logout RP       (none: in process only, #293)  peer_bcl.js
 //
 // ---------------------------------------------------------------------------
 // TENANTS. A job starts from a known state (#586): it creates a realm,
@@ -69,13 +70,14 @@ const stepUp = require("./peer_stepup.js");
 const gnap = require("./peer_gnap.js");
 const ssf = require("./peer_ssf.js");
 const commands = require("./peer_commands.js");
+const bcl = require("./peer_bcl.js");
 
 const log = util.logger("sts-test-peer");
 
 const MAX_TENANTS = 500;
 const MAX_EVENTS = 2000;
 const ROLES = ["saml2", "saml11", "wsfed", "step-up", "gnap", "ssf",
-               "commands"];
+               "commands", "bcl"];
 
 // ---------------------------------------------------------------------------
 // TENANTS.
@@ -136,6 +138,8 @@ function viewOf(state, tenant) {
     ssf: { pushUrl: secure + "/ssf/push",
            audience: tenant.ssf.audience || null },
     commands: { endpoint: secure + "/commands" },
+    bcl: { endpoint: secure + "/bcl",
+           clientId: tenant.bcl.clientId || null },
     caPem: state.ca.certPem,
     caFile: state.caFile
   };
@@ -189,6 +193,7 @@ function configureTenant(state, id, asked) {
     ssf.configure(tenant, body.ssf);
   }
   commands.configure(tenant);
+  bcl.configure(tenant, body.bcl);
   tenant.metadataCache = {};
   log.info("peer: tenant " + id + " configured for " + tenant.realmBase);
   log.debug("Leaving configureTenant().");
@@ -310,6 +315,10 @@ async function route(state, request) {
       log.debug("Leaving route(). OP command accounts.");
       return commands.accounts(tenant, request.query);
     }
+    if (rest === "bcl" && request.method === "POST") {
+      log.debug("Leaving route(). Back-channel logout.");
+      return bcl.logout(tenant, request);
+    }
   }
   log.debug("Leaving route(). Not found.");
   return { status: 404, body: { ok: false, error: "no route " +
@@ -319,7 +328,7 @@ async function route(state, request) {
 // Which role a path belongs to, for recording a failure that escaped it.
 function roleOf(p) {
   log.debug("Entering roleOf().");
-  const m = /^\/t\/[^/]+\/(saml2|saml11|wsfed|step-up|gnap|ssf|commands)\b/
+  const m = /^\/t\/[^/]+\/(saml2|saml11|wsfed|step-up|gnap|ssf|commands|bcl)\b/
     .exec(p);
   log.debug("Leaving roleOf().");
   return m ? m[1] : null;

@@ -1078,6 +1078,60 @@ async function main() {
                             : 'no assertion');
   }
 
+  // THE SHIBBOLETH 1.3 FORM WITH A POST BINDING CONSUMED FROM METADATA
+  // (#293, WP5, 2026-10-13). The artifact case above shows the profile chosen
+  // by a consumed binding; this is the other one, and the form as the
+  // Shibboleth SP 1.3 sends it — `providerId`, `shire`, lower-case `target`
+  // and `time` — with no `profile`. `time` is accepted and ignored
+  // (saml11_sso.ts), so a stale one is answered exactly as a current one.
+  heading('the Shibboleth 1.3 form, its profile from a consumed POST binding');
+  const postRp = RP + ':metadata-post';
+  const postAcs = 'https://rp-' + runStamp() +
+                  '.saml11.example.test/SAML/POST';
+  await registry.provision(registry.baseOf(BASE), {
+    identifier: postRp,
+    name: 'SAML 1.1 metadata-only relying party (POST)',
+    protocols: ['saml11'],
+    fields: { samlEntityId: [postRp] },
+    why: 'the relying party whose consumed binding is Browser/POST'
+  });
+  res = await api('/admin-api/saml2/upload-metadata', { sp: postRp,
+    document: metadataDocument.replace(metadataRp, postRp)
+      .replace('urn:oasis:names:tc:SAML:1.0:profiles:artifact-01',
+               'urn:oasis:names:tc:SAML:1.0:profiles:browser-post')
+      .replace(metadataAcs, postAcs) });
+  const postUpload = JSON.parse(res.body);
+  check('SAML 1.1 metadata naming a browser-post endpoint is consumed',
+        res.status === 200 && postUpload.ok &&
+        (postUpload.assertionConsumerServices || []).indexOf(postAcs) >= 0,
+        'status ' + res.status + ' ' + JSON.stringify(postUpload));
+  const postTarget = 'https://rp-' + runStamp() +
+                     '.saml11.example.test/landing?x=1&y=2';
+  for (const [when, time] of [
+    ['a current time', String(Math.floor(Date.now() / 1000))],
+    ['a stale time, which is ignored', '1']]) {
+    const postFlow = await signIn({ providerId: postRp, shire: postAcs,
+                                    target: postTarget, time: time },
+                                  USER_POST);
+    const posted = hiddenFieldsOf(postFlow.body);
+    check('the Shibboleth 1.3 form with ' + when + ' and no profile ends ' +
+          'on the Browser/POST page the consumed binding selects, posting ' +
+          'to the shire with the lower-case target as TARGET',
+          postFlow.status === 200 && formActionOf(postFlow.body) === postAcs &&
+          !!posted.SAMLResponse && posted.TARGET === postTarget,
+          'status ' + postFlow.status + ' ' + formActionOf(postFlow.body) +
+          ' ' + JSON.stringify(Object.keys(posted)));
+    const assertion = byLocal(parse(samlResponseIn(postFlow.body) ||
+                                    '<x/>'), 'Assertion');
+    check('and its assertion is a bearer one for that relying party (' +
+          when + ')',
+          !!assertion && textOf(assertion, 'ConfirmationMethod') ===
+            'urn:oasis:names:tc:SAML:1.0:cm:bearer' &&
+          textOf(assertion, 'Audience') === postRp,
+          assertion ? textOf(assertion, 'ConfirmationMethod') + ' ' +
+                      textOf(assertion, 'Audience') : 'no assertion');
+  }
+
   if (!scopedEntityId) {
     // Product (#112): the scoped document exists now that `RP` is registered.
     res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));

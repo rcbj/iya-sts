@@ -143,8 +143,13 @@ returned in the fragment, and an explicit `response_mode=query` is refused.
   `id_token` alone the scope's claims go into the ID Token.
 * **`id_token token`**, and any other type containing `token`, is refused in
   RFC 9700 mode and in product mode. In those modes it is also removed from
-  `response_types_supported`. To use it you need development mode with
-  `oauth2.rfc9700` off.
+  `response_types_supported`, so the request is refused as a type the
+  server does not advertise: `unsupported_response_type`, recorded as
+  `STS-OAUTH-0163`. With nobody signed in the error is shown on a page whose
+  link carries it to the client (RFC 9700 section 4.11.2: no redirect before
+  the user is authenticated); with somebody signed in it is redirected to the
+  client. The job `sts_admin_client_policies.js` checks both. To use it you
+  need development mode with `oauth2.rfc9700` off.
 
 A client that registers itself must list `implicit` in `grant_types`
 whenever one of its `response_types` contains `token`.
@@ -162,7 +167,8 @@ goes in the fragment. `code id_token` and `code id_token token` require a
   sets `oauthIdTokenSignedResponseAlg` on a client it creates through
   `/admin-api`.
 * **`code token`** and **`code id_token token`** are refused in RFC 9700 mode
-  and product mode.
+  and product mode, the same way as `id_token token` above
+  (`sts_admin_client_policies.js` checks `code token`).
 
 The OpenID conformance job (`sts_oidcc_conformance.js`) registers its hybrid
 client like this, after setting `oauth2.openRegistration` to `true` in the
@@ -242,6 +248,12 @@ api applications/set '{"application":"parmon-a",
   "attribute":"oauthRequirePushedAuthorizationRequests","value":"TRUE"}'
 ```
 
+With the attribute `TRUE`, a plain authorization request from that client is
+answered `400 invalid_request` on a page and is never redirected
+(`STS-OAUTH-0419`); written `FALSE` again, the plain request reaches the
+sign-in screen. The job `sts_admin_client_policies.js` checks this for a
+client created through `/admin-api`, in a development and a product realm.
+
 **Requests** (from `sts_oauth2_monitor.js`, with the `parmon-a` client above):
 ```
 POST /oauth2/par      (HTTP Basic)
@@ -276,9 +288,24 @@ The realm settings `oauth2.requireSignedRequestObject`,
 `oauth2.requireRequestObjectType` and
 `oauth2.requireRequestObjectIssuerAudience` (all `false` by default) apply the
 same checks to every client. Development mode accepts an `http` request URI
-and an `alg: none` object. Product mode refuses both. The job that covers this
-is `tests/rfc9101_request_objects.js`, which signs with `ES256` and
-`typ: oauth-authz-req+jwt`.
+and an `alg: none` object. Product mode refuses both, and refuses an `http`
+request URI when it is registered, before any request is made (RFC 9101
+section 5.2). The `https` host is verified under the federation outbound
+policy, so a private CA is named by `federation.outboundCaFile`.
+
+The job `sts_jar_admin_client.js` creates such a client through `/admin-api`
+and serves its request objects and key set itself. It checks that:
+* a registered `request_uri` is fetched, and its object is verified with the
+  key at the registered `jwks_uri`;
+* the flow ends at the client with the object's `state`, not the query's;
+* a `request_uri` that was not registered is refused and never fetched;
+* an object signed with another algorithm, or with a key that is not in the
+  set, is refused;
+* an unsigned object is refused while `oauthRequireSignedRequestObject` is
+  `TRUE`.
+
+`tests/rfc9101_request_objects.js` covers the rest in process, signing with
+`ES256` and `typ: oauth-authz-req+jwt`.
 
 ## CIBA
 
@@ -404,7 +431,9 @@ retried and, if it keeps failing, dead-lettered.
 `oauth2.backchannelLogoutOnExpiry` (default `true`). There are also tuning
 settings such as `…TokenTtlS` (120), `…Attempts` (3) and `…TimeoutMs` (5000).
 
-**Client** (from the in-process job `tests/backchannel_logout.js`):
+**Client** (from the in-process job `tests/backchannel_logout.js`; the job
+`sts_backchannel_logout.js` registers the same attributes through
+`/admin-api`):
 ```bash
 api applications/create '{"identifier":"bcl-ok","name":"bcl-ok","protocols":["oauth2","oidc"],
   "fields":{"oauthClientId":"bcl-ok","oauthClientSecret":"'"$SECRET"'",
@@ -416,7 +445,18 @@ api applications/create '{"identifier":"bcl-ok","name":"bcl-ok","protocols":["oa
 ```
 
 A public client cannot have an `http` back-channel URI, and product mode never
-sends to `http`. Failed deliveries are listed on **Sign-out**
+sends to `http`. **Product mode also never sends to an address on a private,
+loopback, link-local or reserved network**: the delivery is dead-lettered
+with `STS-OAUTH-0534` and nothing is dialled. A relying party on a private
+network is reached only from a development-mode realm.
+
+The job `sts_backchannel_logout.js` delivers to the test peer, which plays
+the relying party and verifies each Logout Token as section 2.6 asks (the
+signature, `typ: logout+jwt`, `iss`, `aud`, `iat`, `jti`, the event, `sub` or
+`sid`, no `nonce`, no replay). In a development realm, RP-initiated logout and
+the console's global logout each send one token, naming the ID Token's `sub`
+and `sid`. In a product realm the same sign-out sends nothing to the peer's
+private address and records `STS-OAUTH-0534`. Failed deliveries are listed on **Sign-out**
 (`/admin/logout`) → **Back-channel Logout Tokens**, which has a State filter
 and a **Retry** button on each dead row, and on **Outbound deliveries**
 (`/admin/deliveries`). The API equivalents are

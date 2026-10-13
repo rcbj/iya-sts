@@ -381,8 +381,12 @@ POST /oauth2/register
 A dynamically registered client whose `grant_types` does not include
 `device_code` is refused with `unauthorized_client`. For a client you register
 in the console or through `/admin-api`, add
-`urn:ietf:params:oauth:grant-type:device_code` to `oauthGrantType`. No test job
-covers that path yet.
+`urn:ietf:params:oauth:grant-type:device_code` to `oauthGrantType`. The job
+`sts_admin_client_policies.js` covers that path: a public client created
+through `/admin-api` with the grant is issued tokens once the person approves
+on `/portal/device`, and a client whose `oauthGrantType` leaves the grant out
+is refused at `/oauth2/device_authorization` with `unauthorized_client`
+(`STS-OAUTH-0692`).
 
 **Requests:**
 ```
@@ -667,12 +671,19 @@ more on the application:
 | `none` | nothing more (a public client) | `client_id` only; PKCE `S256` in product mode | `oauth_fixtures.js` |
 | `client_secret_basic` | `oauthClientSecret` | `Authorization: Basic` | `sts_token_revocation.js` |
 | `client_secret_post` | `oauthClientSecret` | `client_id` and `client_secret` in the body | `sts_scope_policy.js` |
-| `client_secret_jwt` | `oauthClientSecret`; optionally `oauthTokenEndpointAuthSigningAlg` (`HS256`/`HS384`/`HS512`) | a client assertion with an HMAC signature | `sts_oidc_core.js` |
+| `client_secret_jwt` | `oauthClientSecret`; optionally `oauthTokenEndpointAuthSigningAlg` (`HS256`/`HS384`/`HS512`) | a client assertion with an HMAC signature, addressed to the issuer or the token endpoint. An `HS512` key must be at least 512 bits (RFC 7518 section 3.2). | `sts_client_authentication.js` |
 | `private_key_jwt` | a key: `pki/issue` as in [JWT bearer](#jwt-bearer-rfc-7523), or `oauthJwks` or `oauthJwksUri` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, with `iss` = `sub` = the client_id and `aud` = the token endpoint | `sts_jwt_bearer_grant.js` |
 | `saml2_bearer` | `pki/issue` with `"purpose":"saml"` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer`, with `Issuer` = `Subject` = the client_id | `sts_saml2_bearer_grant.js` |
-| `tls_client_auth` | a certificate issued on its page (**Credentials → Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake | `tests/rfc8705_mtls.js` |
-| `self_signed_tls_client_auth` | `oauthJwks` with `x5c`, or `oauthTlsClientCertificateThumbprint` | the certificate in the TLS handshake | `tests/rfc8705_mtls.js` |
+| `tls_client_auth` | a certificate issued on its page (**Credentials → Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake; the token is bound to it (`cnf.x5t#S256`) | `sts_client_authentication.js` (a certificate from this realm's CA), `tests/rfc8705_mtls.js` (the subject parameters) |
+| `self_signed_tls_client_auth` | `oauthJwks` with `x5c`, or `oauthTlsClientCertificateThumbprint` | the certificate in the TLS handshake | `sts_client_authentication.js` (`x5c`), `tests/rfc8705_mtls.js` (thumbprint) |
 | `attest_jwt_client_auth` | the realm setting `oauth2.clientAttestationTrustAnchors` or `…TrustedKeys` | the `OAuth-Client-Attestation` and `…-PoP` headers | `sts_client_attestation.js` |
+
+**What development mode checks.** Outside RFC 9700 mode, development mode
+observes a `client_secret_jwt` assertion without verifying its HMAC or its
+`jti`, so a wrong secret or a replay is still issued a token there; product
+mode refuses both. A registered `oauthTokenEndpointAuthSigningAlg` and both
+RFC 8705 methods are checked in every mode. `sts_client_authentication.js`
+asserts each of these in a development and a product realm.
 
 Two more ways to manage secrets:
 * **Rotate the client secret** (API: `applications/rotate-secret`) keeps the
