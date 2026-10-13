@@ -79,6 +79,22 @@ handler that throws into a 500 (`0019`). **The schemas are the documentation**:
 `account_api_spec.ts` converts the very objects the wrapper checks with, so a
 parameter documented and a parameter refused are one declaration.
 
+**Since 2026-10-12, as `/authn-api`, `/gnap-api` and `/admin-api` do:**
+
+* **A body field the operation does not declare is REFUSED** (`0018`, naming
+  the field), not stripped — `AccountApi.unknownFields()` over the body
+  schema's object shape; a schema that is not an object, or a `passthrough`
+  one, is left to itself. The document says `additionalProperties: false` on
+  every such body. The portal's own forms send nothing else:
+  `tests/account_api.js` 2d checks every named control of every form a page
+  draws against its operation's documented body.
+* **The media type is exact** — `^application/json\s*(;|$)` — and asked of
+  every body-carrying request, whether or not the operation declares a body
+  (`0017`, 415). It matched `/json/i` anywhere, so a cross-site page could
+  reach an operation that takes no token (activation, reset, a forgotten
+  password) with a CORS-safelisted `text/plain; x=json` and no preflight.
+  `tests/account_api.js` section 6.
+
 ## WHAT AN ANSWER IS
 
 The portal's runtime (`portal/web_portal_runtime.ts`, `answered()`) draws a

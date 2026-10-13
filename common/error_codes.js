@@ -6153,6 +6153,12 @@ const CODES = [
       'has already ended: spent, expired or never minted. Nothing is put ' +
       'back.',
     spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0332',
+    summary: 'Too many usernameless passkey ceremonies were armed from this ' +
+      'address (POST /authn-api/pending/{id}/passkey/options): its own ' +
+      'per-address budget, security.rateLimitPerAddress in ' +
+      'security.rateLimitWindowS. No challenge was minted.',
+    spec: 'HTTP 429 with Retry-After, { ok: false, next: refused, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

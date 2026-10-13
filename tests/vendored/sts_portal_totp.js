@@ -800,10 +800,14 @@ async function oneUserCannotEnrolForAnother() {
                                { action: "start", user: OWNER,
                                  username: OWNER, subject: OWNER,
                                  uid: OWNER });
-  check("the POST is answered rather than erroring — the parameters are " +
-        "simply not read (the account is the token's, #568)", function () {
-    assert.ok(r.status === 200 || r.status === 400,
-      "it answered " + r.status);
+  // Since 2026-10-12 the account API refuses a field an operation does not
+  // take, so this is a 400 naming them; before, they were dropped unread.
+  // Either way nothing of the owner's is touched, which is what the store
+  // check below holds.
+  check("the POST is refused rather than erroring — the parameters naming " +
+        "somebody are not fields the operation takes (the account is the " +
+        "token's, #568)", function () {
+    assert.ok(r.status === 400, "it answered " + r.status);
   });
 
   page = await pageOf(b, "/portal/mfa");
