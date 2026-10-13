@@ -114,7 +114,38 @@ function clientProperties(): Json {
     reconcileMinutes: { type: 'string', pattern: '^[0-9]{1,6}$',
                         description: 'Minutes between scheduled ' +
                                      'reconciliations; 0 is on demand ' +
-                                     'only.' }
+                                     'only.' },
+    maxRequestsPerSecond: { type: 'string', pattern: '^[0-9]{0,6}$',
+                            description: 'The most requests a second the ' +
+                                         'service provider is sent; every ' +
+                                         'request waits for its turn ' +
+                                         'rather than failing. Empty or 0 ' +
+                                         'is no limit. In a service ' +
+                                         'deployed as cells each pushing ' +
+                                         'cell may send this divided by ' +
+                                         'the pushing cells, rounded up ' +
+                                         '(#553).' },
+    jurisdiction: { type: 'string', maxLength: 32,
+                    description: 'A service deployed as cells (#553): the ' +
+                                 'jurisdiction the service provider is in, ' +
+                                 'as the cell map spells one (us, eu, ca). ' +
+                                 'Each person\'s home cell asks the ' +
+                                 'issuance policy (release-attributes, ' +
+                                 'purpose scim-provision) before pushing ' +
+                                 'them there; a refusal leaves them out of ' +
+                                 'scope. Empty is unknown, which the strict ' +
+                                 'default never releases to. Ignored in a ' +
+                                 'service that is one cell.' },
+    cells: Object.assign({ description: 'A service deployed as cells ' +
+                           '(#553): the cells that push to the service ' +
+                           'provider, by id; empty is every cell. Ignored ' +
+                           'in a service that is one cell.' }, list),
+    cell: { type: 'string', maxLength: 64,
+            description: 'A service deployed as cells (#553): the cell the ' +
+                         'act is sent to. Without it the act goes to every ' +
+                         'cell that pushes to the client, and the answer ' +
+                         'lists each cell\'s result. Refused in a service ' +
+                         'that is one cell.' }
   };
 }
 
@@ -198,13 +229,23 @@ class ScimClientsApi {
                         'tlsSource', 'tlsCertificate', 'tlsPrivateKey',
                         'caCertificates', 'scopeMode', 'scopeGroups',
                         'scopeFilter', 'groupMode', 'groups', 'deprovision',
-                        'reconcileMinutes'];
+                        'reconcileMinutes', 'maxRequestsPerSecond',
+                        'jurisdiction', 'cells'];
     const pick = function (names: string[]): Json {
       const out: Json = {};
       names.forEach(function (name) {
         out[name] = P[name];
       });
       return out;
+    };
+    // The five acts on a cell's own queue take `cell` (#553).
+    const byIdInCell = function (): Json {
+      return { type: 'object',
+               properties: { id: P.id, cell: P.cell },
+               required: ['id'],
+               examples: [{ id: 'partner-idp' },
+                          { id: 'partner-idp', cell: 'euc1' }],
+               additionalProperties: false };
     };
     const byId = function (extra?: Json): Json {
       return { type: 'object',
@@ -223,7 +264,12 @@ class ScimClientsApi {
           'retrying, dead, sent) and its backoff pause. With `client`, that ' +
           'client\'s page too: its retry queue and dead letters, what its ' +
           'service provider\'s discovery said, and how many resources it ' +
-          'has linked. NEVER a credential.',
+          'has linked. In a service deployed as cells (#553) each client ' +
+          'and the page carry `byCell`: every cell\'s counts, pause and ' +
+          '— ' +
+          'on the page, where the issuance policy releases them — queues, ' +
+          'a cell that cannot be reached listed `reachable: false`. NEVER a ' +
+          'credential.',
         mirrors: 'GET /admin/scim',
         parameters: [
           { name: 'client', in: 'query', required: false,
@@ -238,8 +284,23 @@ class ScimClientsApi {
                                        '`missing`).' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API SCIM clients endpoint.");
-          self.sendJson(res, 200, loadClients().view(req.query || {}));
-          log.debug("Leaving the management API SCIM clients endpoint.");
+          // EVERY CELL'S QUEUES (#553): asked of the other cells, each
+          // bounded by the channel's timeout; one that does not answer is
+          // listed unreachable, and a service that is one cell asks nobody.
+          Promise.resolve().then(function (): Json {
+            return loadClients().viewAcrossCells(req.query || {});
+          }).then(function (view: Json): void {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API SCIM clients endpoint.");
+          }, function (e: any): void {
+            log.error(errorCodes.tag('STS-SCIMC-0018') + 'scim client: ' +
+                      'the clients view failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-SCIMC-0018');
+            self.sendJson(res, 500, { ok: false, errors:
+                                        ['The view could not be drawn.'] });
+            log.debug("Leaving the management API SCIM clients endpoint. " +
+                      "Threw.");
+          });
         } },
 
       { method: 'POST', route: BASE + '/scim/clients/:action',
@@ -355,28 +416,37 @@ class ScimClientsApi {
             description: 'Queues every person and group in the client\'s ' +
               'scope, and every resource its service provider holds under ' +
               'an externalId of this realm\'s that is no longer in scope; ' +
-              'then sends what is due. Audited.',
-            requestBodyRequired: true, requestBody: byId(),
+              'then sends what is due. Audited. In a service deployed as ' +
+              'cells each cell reconciles the people homed there: `cell` ' +
+              'sends it to that cell, and without it every cell ' +
+              'reconciles, each cell\'s result listed in `cells` (#553).',
+            requestBodyRequired: true, requestBody: byIdInCell(),
             responseDescription: 'How many users and groups were queued, ' +
                                  'and how many to deprovision.' },
           { action: 'deliver-now', operationId: 'deliverScimClientNow',
             summary: 'Lift the client\'s pause and send its queue',
             description: 'Ends the backoff pause and makes every queued ' +
               'and retrying delivery due now. Use it once the service ' +
-              'provider is answering again.',
-            requestBodyRequired: true, requestBody: byId(),
+              'provider is answering again. In a service deployed as cells ' +
+              'the pause is every cell\'s and is lifted for all; `cell` ' +
+              'sends the queue of that cell only (#553).',
+            requestBodyRequired: true, requestBody: byIdInCell(),
             responseDescription: '`ok`.' },
           { action: 'retry-delivery', operationId: 'retryScimDelivery',
             summary: 'Retry one dead letter',
             description: 'Queues one dead letter again, by its row id ' +
               '(`<client>|User|<uuid>` or `<client>|Group|<uuid>`); it ' +
-              'sends the resource as it is now. Audited.',
+              'sends the resource as it is now. Audited. In a service ' +
+              'deployed as cells the row is in the cell `cell` names; ' +
+              'without one every cell retries the row of that id it holds ' +
+              '(#553).',
             requestBodyRequired: true,
             requestBody: { type: 'object',
                            properties: { id: { type: 'string', minLength: 1,
                                                maxLength: 2048,
                                                description: 'The delivery ' +
-                                                 'row\'s id.' } },
+                                                 'row\'s id.' },
+                                         cell: P.cell },
                            required: ['id'],
                            examples: [{ id: 'partner-idp|User|' +
                              '9f0c3c1e-6a4e-4a8e-9d0b-3a5d2c4b7e10' }],
@@ -385,15 +455,17 @@ class ScimClientsApi {
           { action: 'retry-dead', operationId: 'retryScimDeadLetters',
             summary: 'Retry every dead letter of a client',
             description: 'Queues every dead letter of the client again. ' +
-              'Audited.',
-            requestBodyRequired: true, requestBody: byId(),
+              'Audited. In a service deployed as cells, in the cell ' +
+              '`cell` names, or in every cell (#553).',
+            requestBodyRequired: true, requestBody: byIdInCell(),
             responseDescription: 'How many were queued.' },
           { action: 'purge-dead', operationId: 'purgeScimDeadLetters',
             summary: 'Purge a client\'s dead letters',
             description: 'Deletes every dead letter of the client. The ' +
               'next change to each resource, or a reconciliation, queues ' +
-              'it afresh. Audited.',
-            requestBodyRequired: true, requestBody: byId(),
+              'it afresh. Audited. In a service deployed as cells, in the ' +
+              'cell `cell` names, or in every cell (#553).',
+            requestBodyRequired: true, requestBody: byIdInCell(),
             responseDescription: 'How many were purged.' }
         ] }
     ];

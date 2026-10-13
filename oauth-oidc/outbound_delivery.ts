@@ -162,6 +162,11 @@ interface DeliveryKind {
   // after `at` holds it. The outbound SCIM client holds a paused client's
   // rows (#552). An operator's retry is not held.
   holdUntil?(row: Json, at: number): number;
+  // A LANE a row is attempted in, with its own limit inside the kind's
+  // concurrency (#553): the outbound SCIM client's per-client budget in a
+  // service deployed as cells, `scimClient.concurrency` split across the
+  // cells pushing to that client. null, or no hook, is no lane.
+  laneOf?(row: Json): { key: string; limit: number } | null;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -282,6 +287,8 @@ class OutboundDelivery {
   private readonly lastSummaryAt = new Map<string, number>();
   // Attempts in flight in this process for this kind.
   private inFlightHere = 0;
+  // Attempts in flight in this process per lane (`laneOf`).
+  private readonly laneInFlight = new Map<string, number>();
 
   /**
    * Builds a queue for one kind of delivery.
@@ -884,6 +891,7 @@ class OutboundDelivery {
     const cap = Math.max(1, this.setting(kind.settings.maxRows));
     const store = kind.store.realmMap(realmId);
     const due: string[] = [];
+    const laneOfId = new Map<string, { key: string; limit: number }>();
     const finished: Json[] = [];
     const stale: Json[] = [];
     let dead = 0;
@@ -897,6 +905,10 @@ class OutboundDelivery {
         } else if (!(Number(row.nextAttemptAt) > at) &&
                    !(kind.holdUntil && kind.holdUntil(row, at) > at)) {
           due.push(id);
+          const lane = kind.laneOf ? kind.laneOf(row) : null;
+          if (lane) {
+            laneOfId.set(id, lane);
+          }
         }
         return;
       }
@@ -921,14 +933,33 @@ class OutboundDelivery {
     });
     const limit = Math.max(1, this.setting(kind.settings.concurrency));
     let attempted = 0;
+    // The next due row whose lane has room; a row whose lane is full waits
+    // for the next sweep.
+    const take = function (): string | undefined {
+      log.debug("Entering take().");
+      for (let i = 0; i < due.length; i++) {
+        const lane = laneOfId.get(due[i]);
+        if (!lane || (self.laneInFlight.get(lane.key) || 0) < lane.limit) {
+          log.debug("Leaving take().");
+          return due.splice(i, 1)[0];
+        }
+      }
+      log.debug("Leaving take(). Every lane is full.");
+      return undefined;
+    };
     const next = function (): Promise<void> {
       log.debug("Entering next().");
-      const id = due.shift();
-      if (id === undefined || self.inFlightHere >= limit) {
+      const id = self.inFlightHere >= limit ? undefined : take();
+      if (id === undefined) {
         log.debug("Leaving next(). Nothing more this sweep.");
         return Promise.resolve();
       }
+      const lane = laneOfId.get(id);
       self.inFlightHere++;
+      if (lane) {
+        self.laneInFlight.set(lane.key,
+                              (self.laneInFlight.get(lane.key) || 0) + 1);
+      }
       attempted++;
       log.debug("Leaving next().");
       return self.attempt(realmId, id).catch(function (e) {
@@ -936,6 +967,10 @@ class OutboundDelivery {
         return 'error';
       }).then(function () {
         self.inFlightHere--;
+        if (lane) {
+          self.laneInFlight.set(lane.key,
+                                (self.laneInFlight.get(lane.key) || 1) - 1);
+        }
         return next();
       });
     };

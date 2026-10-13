@@ -3544,6 +3544,37 @@ class AdminViews {
     return out;
   }
 
+  /**
+   * `scimJson()` with every cell's state of each outbound SCIM client laid
+   * over its Clients tab (#553 section 7) — what `GET /admin-api/scim`
+   * answers. Never rejects: a failure to ask the other cells leaves this
+   * cell's view as it is.
+   *
+   * @param req - the request
+   * @returns a promise of the JSON
+   */
+  scimJsonAcrossCells(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.scimJsonAcrossCells().");
+    const out = this.scimJson(req);
+    if (!out.scimClients) {
+      log.debug("Leaving AdminViews.scimJsonAcrossCells(). No clients.");
+      return Promise.resolve(out);
+    }
+    log.debug("Leaving AdminViews.scimJsonAcrossCells().");
+    return Promise.resolve().then(function () {
+      return require('../scim/scim_client').acrossCells(
+        out.scimClients, (req && req.query) || {});
+    }).then(function (view) {
+      out.scimClients = view;
+      return out;
+    }, function (e) {
+      log.debug("Caught in AdminViews.scimJsonAcrossCells(): " +
+                ((e && e.message) || e));
+      return out;
+    });
+  }
+
   scimJson(req) {
     const { log, stats, scimMap } = this.deps;
     log.debug("Entering AdminViews.scimJson().");
@@ -13829,6 +13860,7 @@ export = {
   samlAssertionSeconds: slot.forward('samlAssertionSeconds'),
   samlAssertionsJson: slot.forward('samlAssertionsJson'),
   scimJson: slot.forward('scimJson'),
+  scimJsonAcrossCells: slot.forward('scimJsonAcrossCells'),
   scimMappingRow: slot.forward('scimMappingRow'),
   scimMonitorJson: slot.forward('scimMonitorJson')
 };

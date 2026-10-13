@@ -625,6 +625,14 @@ group that leaves the scope is deleted there.
 
 ### Delivery, retries and dead letters
 
+**A client may be held to a request rate**: `maxRequestsPerSecond`
+(`scimClientMaxRequestsPerSecond` on the entry) is the most requests a
+second its service provider is sent. Every request waits for its turn — a
+delivery, an `externalId` lookup, discovery, a reconciliation's page — and
+none fails for it. Empty or `0` (the default) is no limit. The rate is kept by
+each process that sends; in a service deployed as cells each cell that pushes
+may send the rate divided by the number of such cells, rounded up.
+
 Every change the directory makes to a person — created, changed, disabled or
 deleted — and every change to who is in a group queues **one delivery per
 enabled client and per resource**: the person, and the groups they are in.
@@ -659,7 +667,8 @@ once. **`408` is not retried.**
 timeout, `429` or a `5xx` stops every delivery of that client until the pause
 ends. The pause doubles with each such failure in a row (the same backoff,
 capped). When it ends, **one** delivery goes first as a probe, and the rest
-follow only after a success. The pause is shared by every node.
+follow only after a success. The pause is shared by every node (and, in a
+service deployed as cells, by every cell: below).
 
 A dead letter **stays dead**. A later change to that resource marks it as
 waiting, and is sent when the dead letter is retried, because the retry sends
@@ -697,6 +706,133 @@ client is reconciled on a schedule. Its last result is on the client's page.
 links and pause. **Nothing at the service provider changes**: what was pushed
 stays there.
 
+### In a service deployed as cells
+
+In a service deployed as [cells](cells.md) (#553), a person's entry exists
+only in their home cell, and every cell has every client: a client is an
+application entry, which is in the global tier. The client behaves as below.
+**In a service that is one cell, none of this applies** and the two
+attributes are ignored.
+
+**A person is pushed only from their home cell.** Each cell pushes the people
+homed there, from its own deliveries, links and queues, and the connection to
+the service provider leaves from that cell. No person's data passes between
+cells to reach the provider. A person whose session another cell holds (a
+projection) is pushed by their home cell, never by the cell holding the
+session.
+
+**Each client says where its service provider is.** Two attributes of the
+client's application entry, both on its form and in `add-client` and
+`update-client`:
+
+| Member | Attribute | |
+|---|---|---|
+| `jurisdiction` | `scimClientJurisdiction` | The provider's jurisdiction, as the cell map spells one (`us`, `eu`, `ca`) |
+| `cells` | `scimClientCells` | The cells that push to it, by id. Empty (the default) is every cell. A cell not listed sends nothing for this client, so the people homed there are not pushed |
+
+**The issuance policy decides each push.** Before a cell pushes a person, it
+asks the issuance policy whether that person's data may go to the client's
+jurisdiction: the `release-attributes` question, with the purpose
+`scim-provision`, the person's home jurisdiction and the client's
+jurisdiction (see [Cells](cells.md) and [XACML](xacml.md)). The built-in rule
+is the strict default: the data goes only within one jurisdiction, or where
+the realm lists the transfer in `cells.permittedTransfers` (`ca>eu`, say). A
+realm's own policy may decide otherwise, even per person.
+
+**A refusal means the person is out of scope.** They are not pushed. Nothing is
+asked of the service provider about them, not even a lookup. If they were
+pushed before, they are deprovisioned as `deprovision` says. No delivery is
+created, so a refusal never appears as a dead letter (`STS-SCIMC-0031`, at
+debug level). A client with no jurisdiction is an unknown one, and the strict
+default lets nobody's data go there.
+
+**Moving a person to another cell is a handover, not a deprovision.** When a
+person leaves a cell's directory, that cell asks the routing index where they
+are before acting:
+
+* **homed in another cell now**: this cell drops its link, takes their
+  provider id out of its share of every group, and sends nothing. The new home
+  cell pushes them, finds the resource by `externalId` (the `entryUUID`, which
+  a move keeps) and replaces it. They are never deactivated in between;
+* **gone from every cell**: they are deprovisioned, as in one cell.
+
+**Groups are shared by every cell.** A group's definition is the same in every
+cell, but each cell holds only its own residents as members (its share). So:
+
+* **membership changes by `PATCH` only.** Each cell adds its own members and
+  removes only members it pushed itself. A cell never touches another cell's
+  members, and never sends a whole member list where `PATCH` is supported;
+* **any cell may create the group.** A second cell's `POST` is answered `409`,
+  and that cell adopts the group by `externalId` (the group's `entryUUID`, the
+  same in every cell) and patches its members in. It does not replace it;
+* **one owner cell renames and deletes it.** The owner is the realm's
+  `cells.homeCell` when that cell pushes to the client, else a cell chosen by a
+  hash of the group's `entryUUID`; every cell computes the same one. Before
+  deleting the group the owner asks every other cell whether it still has
+  members in it. It deletes only when every cell answers "none". If a cell
+  cannot be reached, the group is not deleted and the owner tries again later
+  (`STS-SCIMC-0032`). In `member-groups` mode, a group whose members are all
+  in other cells is kept;
+* **a service provider without `PATCH`** is written by the owner alone. It
+  gathers every cell's share (only the provider's own ids for the members),
+  merges them and replaces the group with a `PUT`. If any cell cannot be
+  reached, nothing is sent and the owner tries again, so a partial membership
+  is never written. The other cells tell the owner when their share changes.
+
+**The pause is shared by every cell.** A network failure, a timeout, `429` or a
+`5xx` seen by any cell pauses the client in **every** cell, so a struggling
+service provider is not sent several cells' worth of load. When the pause
+ends, **one** probe goes for the whole service, from the cell that saw the
+failure; the other cells wait for its result. A cell that does not send its
+probe within two minutes after the pause ends is assumed to be gone, and
+another cell's delivery becomes the probe. The pause is kept in the global
+tier; it holds no person's data and is written only on a failure and on the
+recovery. `deliver-now` lifts it for every cell.
+
+**The concurrency budget is shared too.** Each cell sends at most
+`scimClient.concurrency` divided by the number of cells that push to the
+client, rounded up and never less than one, at a time for that client. A
+client's `maxRequestsPerSecond` is split the same way.
+
+**Reconciliation is per cell.** Each cell reconciles the people homed there,
+on its own schedule. It deprovisions only what it linked or holds: a remote
+resource whose `externalId` is a projection, or a person of another cell, is
+left to that cell. Each cell reconciles its share of every group in scope,
+and only the owner cell considers deleting a group it did not push itself.
+
+**Every cell on one page.** The **Clients** tab and each client's page show
+every cell's queues, gathered from the other cells when the page is drawn:
+each cell's counts (queued, retrying, dead, sent) and the pause, and on the
+client's page each other cell's retry queue and dead letters. A cell that
+cannot be reached is shown as **unreachable**, never left off
+(`STS-SCIMC-0034`). Another cell's queued deliveries name the people homed
+there, so they are shown only where the issuance policy releases that cell's
+residents to the cell you are signed in through (`release-attributes`,
+purpose `directory-list`, as for another cell's people on Directory); the
+counts are always shown. `GET /admin-api/scim/clients` and
+`GET /admin-api/scim` carry the same, as `byCell` on each client and on the
+client's page.
+
+**An act may name a cell.** `retry-delivery`, `retry-dead`, `purge-dead`,
+`reconcile` and `deliver-now` take a `cell` member and are done in that cell
+only. Without one they are done in every cell, and the answer lists each
+cell's result in `cells`, a cell that cannot be reached as such:
+
+```
+POST /admin-api/scim/clients/purge-dead
+{ "id": "partner-idp", "cell": "euc1" }
+```
+
+A `cell` the service does not have, a `cell` on an act about the client
+itself (`add-client`, `update-client`, `remove-client`,
+`issue-certificate`, `test-connection`), or any `cell` in a service that is
+one cell, is refused (`STS-SCIMC-0033`). An act sent to a cell that cannot be
+reached is refused too (`STS-SCIMC-0034`).
+
+**No cell is ever named to a service provider or a person.** No URL, header,
+body or error the service provider sees, and nothing an end user sees, names a
+cell. Only the console and `/admin-api` do.
+
 ### What it does not do
 
 * **Bulk** (RFC 7644 section 3.7). Every change is its own request.
@@ -704,10 +840,12 @@ stays there.
   configured.
 * **Send a password**, or this service's own User extension.
 * **Push a group nested in a group** as a member.
-* **Run across cells.** In a service deployed as [cells](cells.md), a person
-  is pushed from their home cell, and groups, moves between cells and data
-  residency are not handled yet (#553).
 * **Delete what it pushed when a client is removed.**
+* **Sweep a service provider for users no cell knows**, in a service deployed
+  as cells. Each cell deprovisions only the people it pushed or holds. A
+  resource whose `externalId` no cell knows may belong to another system
+  that pushes to the same provider, so it is left alone. This was the
+  owner's decision (rcbj, 2026-10-13).
 
 ### Settings
 
@@ -742,6 +880,9 @@ a log line. The most common:
 | `STS-SCIMC-0028` | `tooMany`, even narrowed |
 | `STS-SCIMC-0029` | a required schema extension the client cannot send |
 | `STS-SCIMC-0030` | a required attribute missing |
+| `STS-SCIMC-0031` | in a service deployed as cells, the issuance policy kept a person's data out of the provider's jurisdiction; the person is out of scope |
+| `STS-SCIMC-0032` | in a service deployed as cells, another cell could not be asked for its share of a group; the group is not deleted or replaced, and the delivery is retried |
+| `STS-SCIMC-0033`, `0034` | an act named a cell it cannot go to; another cell did not answer the console's question or an act |
 
 [Error codes](error-codes.md) lists all of them.
 

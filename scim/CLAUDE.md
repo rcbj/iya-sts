@@ -870,10 +870,10 @@ this client's own timeout is a network failure, retried as one. Everything
 else is a dead letter at once, with its scimType.
 
 **THE STORES ARE CELL-TIER** (`persistence/tiers.js`): a person is pushed
-from their home cell, so what was sent for them, the provider's id for them
-and the backoff live in that cell's store. That is the single-cell half;
-groups across cells, moves, data residency and a shared pause are #553's
-design and are NOT built.
+from their home cell, so what was sent for them and the provider's id for
+them live in that cell's store. What a service deployed as cells adds —
+the transfer decision, moves, groups across cells, the shared pause, the
+per-cell console — is the next section (#553).
 
 **DISCOVERY BEFORE USE** (RFC 7644 section 4): nothing is written until
 `/ServiceProviderConfig` (patch, filter and `maxResults`, etag) and
@@ -951,12 +951,156 @@ cannot, and the job's failure says so.
 **What has NO test yet**: the over-HTTP job has never run (written
 2026-10-13; the integrator's run is its first); a real third-party service
 provider (Entra ID, Okta, a SaaS) — the in-process provider is written to
-RFC 7644, and interop beyond it is unproven; the two-cell behaviour (#553);
+RFC 7644, and interop beyond it is unproven; the two-cell behaviour over a
+real channel and routing index (`tests/scim_client_cells.js` stubs both;
+`tests/vendored/sts_cells_scim_client.js` is the `--modes=cells` job, not
+yet run when written);
 `web_scim_clients.ts`'s rendering (no in-process renderer test, unlike the
 console's older pages); the deliveries store across a restart and across two
 nodes (the generation and tombstone fixes above are asserted in one process
 only); `scimClient.skipTlsVerification` and `scimClient.caFile`; the 24-hour
 cap on a `Retry-After`; and the summary log line (`STS-SCIMC-0013`).
+
+## THE OUTBOUND SCIM CLIENT ACROSS CELLS (#553, 2026-10-13)
+
+rcbj's three decisions are on #553 (one jurisdiction attribute per client,
+providers without PATCH supported through the owner cell, a GLOBAL pause);
+the user's half is `docs/scim.md`, *In a service deployed as cells*. **In a
+service that is one cell every answer below is the single-cell one** —
+`multi()` is false, `pushingCells()` is `['']`, the transfer question is not
+asked, no operation is called — and `tests/scim_client.js` runs unchanged to
+hold it.
+
+**A PERSON IS PUSHED ONLY FROM THEIR HOME CELL** (section 1). The stores were
+already cell-tier; what was missing was the guard against a person who is in
+this cell's directory and NOT homed here — a PROJECTION (#98 D4, a session
+held away from home). `projectedHere()` asks `cell_sessions.isProjected()`,
+and the observer, `pushable()` and `nothingToSend()` treat a projection as
+nobody this cell pushes.
+
+**THE TRANSFER IS POLICY, AND A REFUSAL IS OUT OF SCOPE** (section 2).
+`transferRefusal()` asks `cell_transfer.ts`'s `releaseDecision()` with the
+purpose `scim-provision`, this cell as the home, the client's
+`scimClientJurisdiction` as `servingJurisdiction` (a service provider is in
+no cell) and the person as `subject`. A refusal is "out of scope": the
+observer makes NO delivery for a person never pushed (`wantsDelivery()`), a
+row that reaches the sweep anyway asks the provider NOTHING
+(`nothingToSend()`, before discovery — not even an externalId lookup, which
+would send the entryUUID), and a person pushed before is deprovisioned
+through their LINK only. A reconciliation that finds the remote resource of a
+refused resident it never linked links it first, so it is deprovisioned the
+same way. Never a dead letter; `STS-SCIMC-0031` is a debug line.
+`scimClientCells` limits the cells that push at all; a cell left out queues
+nothing and finishes any row it holds as done.
+
+**A MOVE IS A HANDOVER** (section 4). A person absent from this cell's
+directory is looked up in the ROUTING INDEX, never in the local directory,
+before anything is sent (`homedElsewhere()`): homed in another cell, this cell
+drops its link and takes their provider id out of its SHARE of every group
+(`handOver()`) — so it never PATCH-removes them from a group they are still
+in — and sends nothing; the new home's `syncUser()` finds the resource by
+externalId (the entryUUID a re-home keeps, `cell_rehome.ts` step 4) and
+PUTs, and treats that as an ARRIVAL that re-queues the person's groups, as a
+create does. Gone from every cell, they are deprovisioned as before. The
+re-home moves the index row before it deletes the entry (step 5 before 6),
+which is what makes the lookup answer the new cell.
+
+**A GROUP IS EVERY CELL'S, AND NO CELL SENDS ITS MEMBER LIST** (section 3).
+A group's definition is global and its person membership is split per cell
+(`persistence/tiers.js`), so until #553 each cell PUT — or PATCH-diffed
+against — the group with ITS members only, and the cells overwrote one
+another. `syncGroupCells()` now:
+* CHANGES MEMBERSHIP BY PATCH ONLY (`patchShare()`): adds this cell's
+  SHARE (`shareOf()`: the provider ids of its pushable, linked, active
+  members) and removes only ids THIS CELL linked (`linkedUserIds()` plus the
+  share it last wrote, kept on the group's link as `members`). Another
+  cell's member is never removed, because no cell holds another's links;
+* CREATES FROM ANY CELL: a POST answered 409 adopts by externalId alone
+  (`create(…, adoptOnly)`) and does NOT replace — a PUT of this cell's share
+  would be exactly the overwrite this fixes — then PATCHes the share in. Not
+  by displayName, unlike a single cell: adopting a group somebody else named
+  the same, without replacing its externalId, would add our people to it;
+* LEAVES THE LIFECYCLE TO ONE OWNER (`ownerCell()`: the realm's
+  `cells.homeCell` when it pushes to the client, else `sha256(uuid) mod` the
+  sorted pushing cells — the same answer in every cell). Only the owner
+  renames, and only the owner deletes: when it has nothing in the group it
+  asks every other pushing cell `scim-client-group-share`, KEEPS the group
+  if any answers a member (renaming it if need be), and DELETES only when
+  every cell answered none — a cell that cannot be reached is a retry
+  (`STS-SCIMC-0032`, `kind: 'cell'`, which `failure()` retries WITHOUT
+  pausing the provider), never a delete. A cell whose share empties takes
+  its members out and TELLS the owner (`recheck`), which queues the group;
+* WITHOUT PATCH (rcbj's decision 2) only the owner writes: it gathers every
+  share — provider ids, nothing else, so no attribute of a person crosses —
+  merges them and PUTs; any cell unreachable, nothing is PUT (a partial
+  membership is the one thing a merge must not write). The other cells only
+  tell the owner. A 409 there adopts AND replaces, since the owner holds
+  every share.
+
+**THE PAUSE IS GLOBAL, AND SO IS THE PROBE** (section 5, rcbj's decision
+3). In a service deployed as cells the pause lives in `scimClient.pause`, a
+GLOBAL-tier store keyed by client (`pauseOf()` / `writePause()`; one cell
+keeps it in the state row as before), so a 429 or 5xx any cell sees holds
+every cell's rows. A group's row has the same id in every cell, so the probe
+is named `<cell>#<row id>` (`probeName()`). A cell holding ANOTHER cell's
+probe cannot read that row, so it waits until `FOREIGN_PROBE_MS` (two
+minutes) past the later of the pause's end and the probe's election
+(`probeAt`) and then takes the probe over — a cell that went away must not
+pause the provider for ever, and two probes after two silent minutes is the
+price. The store is written only on a failure, a probe's election and the
+recovery, which is what makes a cross-region write per event acceptable.
+**The concurrency budget** is a LANE of the delivery queue
+(`outbound_delivery.ts`'s new `laneOf` hook, per process, inside the kind's
+own limit): `ceil(scimClient.concurrency / pushing cells)`, at least one,
+remembered five seconds per client. In one cell there is no lane, so the
+queue's own limit is the budget, exactly as before.
+
+**THE REQUEST RATE** (`scimClientMaxRequestsPerSecond`, rcbj 2026-10-13):
+off (empty or 0) by default; `rateOf()` is `ceil(rate / pushing cells)`, the
+whole rate in one cell. `throttle()`, at the top of each round of
+`request()`, is the one place it is kept, so every request to the service
+provider — a delivery, a lookup, discovery, a reconciliation page —
+reserves the next slot (1000 / rate ms apart, per client, per process) and
+WAITS for it: a wait inside the one operation sending (`sleep`, replaceable
+by a test), never a refusal and never a timer of the client's own. The
+token endpoint is the authorization server's, not the provider's, and is
+not counted. Per process rather than per cell: the deliveries of a cell are
+sent by the one node running `scim-client.deliver`, and an act sent on
+another node shares nothing with it — a second store written per request
+would cost a cross-node write per request to save a burst of a few.
+
+**EVERY CELL ON ONE PAGE, AND AN ACT NAMES ITS CELL** (section 7). The
+view stays synchronous and single-cell (`view()`, which `tests/scim_client.js`
+reads); `acrossCells()` lays every cell's state over it — `byCell`, NOT
+`cells`, which is already the client's `scimClientCells` list and would
+have drawn per-cell objects into the Edit form — from `scim-client-summary`,
+which `GET /admin-api/scim/clients` and `GET /admin-api/scim` (through
+`admin_views.scimJsonAcrossCells()`) await. A cell that does not answer is
+`reachable: false`, never dropped. Another cell's QUEUE ROWS carry its
+residents' names and UUIDs, so they cross only where the policy releases
+that cell's residents to the asking cell (purpose `directory-list`, the
+Directory page's question); the counts always cross. `act()` routes the five
+cell acts: `cell` to that cell over `scim-client-act`, none to every cell
+(`cells` in the answer, a refusal only when no cell did it); a `cell` on a
+client act, an unknown cell, or one cell's service, is `STS-SCIMC-0033`, an
+unreachable named cell `STS-SCIMC-0034`. The console's per-cell row carries
+`cell` on each act form, and a dead letter's Retry in another cell's list
+too — rule 7's parity, the API taking the same member. `deliver-now` in every
+cell lifts the one global pause, idempotently. Nothing the provider sees
+names a cell (`tests/scim_client_cells.js` Z1 reads every request).
+
+**RECONCILIATION IS PER CELL** (section 6). Each cell pushes its own
+pushable residents; of the remote resources, it deprovisions only what it
+linked or holds (`reconcilesUnlinked()`): a projection or another cell's
+person is that cell's; of GROUPS, a remote group it never linked is
+considered only by the group's OWNER, which alone deletes one. **The orphan
+sweep for USERS is not built beyond
+this**, deliberately: "an externalId that belongs to no cell" cannot be told
+from "an externalId of somebody else's system" without a record, and the only
+record — the links — is per cell, so deprovisioning on a routing-index miss
+would deactivate other systems' users at a shared provider. Each cell's own
+linked people already reach the provider through that cell. **It stays
+unbuilt by the owner's decision (rcbj, 2026-10-13).**
 
 ## CELLS: WHICH CELL ANSWERS A SCIM REQUEST (#98, 2026-09-28)
 

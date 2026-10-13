@@ -11050,6 +11050,16 @@ never a host, port or pid. The Cluster page's row has a `prepare` step
 every peer before the synchronous status block draws; a cell that does not
 answer is drawn unreachable (`STS-CELL-0194`), never dropped.
 
+**THE OUTBOUND SCIM CLIENT'S OPERATIONS (#553)**, registered by
+`scim/scim_client.ts`'s `registerCellOps()` (`scim/CLAUDE.md`, *The outbound
+SCIM client across cells*):
+
+| Operation | Asked by | Answers |
+|---|---|---|
+| `scim-client-group-share` | a group's OWNER cell before it deletes the group, or PUTs the merged membership to a provider without PATCH; and, with `recheck`, another cell telling the owner its share changed | this cell's share of the group at that client — the SERVICE PROVIDER'S opaque ids of its pushed, linked members, never an attribute; with `recheck` the owner queues the group |
+| `scim-client-summary` | the cell drawing Protocols → SCIM → Clients, `GET /admin-api/scim/clients` or `GET /admin-api/scim` (`acrossCells()`), each call bounded by the channel's timeout | every client's counts, pause and last reconciliation in this cell; for the one client named, its queued, retrying and dead deliveries ONLY where `releaseDecision()` (purpose `directory-list`) releases this cell's residents to the asking cell — they name residents. Unanswered: drawn unreachable (`STS-SCIMC-0034`) |
+| `scim-client-act` | `act()`, for `retry-delivery`, `retry-dead`, `purge-dead`, `reconcile` and `deliver-now` with a `cell` naming another cell, or without one (every cell) | the act done HERE (`local`, so it never fans out again), its error code spelt out as `code`, since a Symbol does not cross JSON |
+
 | Module | What it is |
 |---|---|
 | `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |
@@ -11094,7 +11104,7 @@ edge of every request a cell relays.
 |---|---|---|---|
 | `holdDecision()` | the handoff of #98 D9: may a session, and the credential-free projection of the entry it stands on, be HELD by the serving cell? | `hold-session` | not a refusal: the session stays at home and every request is relayed there (D4's "strict, with relay") |
 | `serveDecision()` | the edge: may a request about the person be served here at all, even by relaying? | `serve-request` | a REFUSAL, marked `STS-CELL-0183` on the answer for the caller's response — the realm's hard geofence |
-| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer |
+| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) — and, purpose `scim-provision` (#553), a person's home cell before it pushes them to an outbound SCIM client's service provider | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer; for `scim-provision` the person is OUT OF SCOPE (`STS-SCIMC-0031`) |
 
 **NOTHING HERE DECIDES.** rcbj's rule — every authorization decision is a
 rule of the issuance policy, and a subsystem sends facts — is followed the
@@ -11132,6 +11142,19 @@ does not have is refused whole — nothing held, served or released,
 resident where they are and there is no transfer. A home cell the service
 does NOT HAVE has jurisdiction `''`, and no rule reads `''` as anybody's home
 or as listed — `*>us` loosens the default for every KNOWN home only.
+
+**A SERVICE PROVIDER IS IN NO CELL (#553).** The outbound SCIM client
+(`scim/scim_client.ts`) sends a person's data to a third party, which is in a
+JURISDICTION its client declares (`scimClientJurisdiction` on the
+application entry) and in no cell. So `releaseDecision()` takes
+`servingJurisdiction` in place of `servingCell` — the serving side of the
+question outright — and a `subject`, the one person (`urn:uuid:<entryUUID>`),
+so a realm's own policy may decide per person; the purpose is
+`scim-provision`. Nothing else changed: the built-in rule reads the purpose
+as it reads any other (it releases on the same jurisdiction or a listed
+transfer), an empty jurisdiction is unknown and never listed, and the
+`cells.permittedTransfers` list a realm writes for its cells — `ca>eu` — is
+the list that lets a person go to an `eu` service provider.
 
 **Single-cell mode asks nothing**: with `cells.id` empty all three answer
 allowed (and nothing relayed) without reaching the gate, so the service is

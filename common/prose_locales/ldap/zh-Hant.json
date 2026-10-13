@@ -1427,6 +1427,18 @@
     "en": "a40bdc8ff019b288",
     "text": "叢集排程器調和整個範圍的頻率，以分鐘計：範圍內的每個人與群組都會被推送，而服務提供者以此領域之 externalId 保存、但已不在範圍內的內容會被取消佈建。0（預設）表示只在管理員要求時調和。"
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "服務提供者所在的位置，以單元對應表中的司法管轄區代碼表示（us、eu、ca……）。在以單元方式部署的服務中，每個人的歸屬單元在推送此人之前，都會詢問簽發原則此人的資料能否前往該處（release-attributes，用途 scim-provision）；若被拒絕，此人即不在範圍內——不會被推送，若先前已推送則會被取消佈建。留空表示司法管轄區未知，嚴格的預設規則從不向其釋出資料。服務只有一個單元時忽略此項。"
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "哪些單元向服務提供者推送，每項為一個單元 ID；留空（預設）表示所有單元。未列出的單元不會為此用戶端傳送任何內容，因此歸屬該單元的人員不會被推送。服務只有一個單元時忽略此項。"
+  },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "每秒最多向服務提供者傳送多少個請求：每次傳遞、查詢、探索讀取和對帳分頁都會等待輪到自己，而不是失敗。留空或 0（預設）表示不限制。在以單元方式部署的服務中，每個推送的單元可傳送的數量為此值除以這些單元的數量，無條件進位。"
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "Shared Signals 接收者的名稱——它在 /ssf/stream 建立串流時用以驗證的身分，也是該串流所攜帶之每個 Security Event Token 的 `aud`。與上方四個僅供宣告的識別碼不同，這一個「會」由協定寫入：建立串流會記錄一次觀察，因為接收者通過驗證並獲同意建立串流，正是此登錄存在所要保存的那類事件。它仍不授予任何東西——決定接收者取得什麼的是串流，而串流攜帶自己的對象。"

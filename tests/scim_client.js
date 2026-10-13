@@ -55,7 +55,11 @@
 //      interval has come round is reconciled, and not again before it has;
 //   Q. a DELETE answered 412 re-reads and deletes again with If-Match;
 //   R. an UPLOADED TLS client certificate is presented with Basic, and with
-//      an OAuth 2.0 token.
+//      an OAuth 2.0 token;
+//   S. scimClientMaxRequestsPerSecond (#553): every request waits for its
+//      slot — discovery, the listing, the deliveries — so none is closer to
+//      the last than 1000 / rate ms; a rate that is not a whole number is
+//      refused.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -229,7 +233,7 @@ function handleScim(req, res, raw) {
     .filter(Boolean);
   const body = raw ? JSON.parse(raw) : null;
   sp.requests.push({ method: req.method, path: url.pathname + url.search,
-                     body: body, headers: req.headers });
+                     body: body, headers: req.headers, at: Date.now() });
   // Authentication: a client certificate where asked, and then the scheme.
   if (sp.requireCert) {
     const peer = req.socket.getPeerCertificate();
@@ -1303,6 +1307,40 @@ async function uploaded(t, material, dir) {
   log.debug('Leaving uploaded().');
 }
 
+async function rateLimit(t, base, ca) {
+  log.debug('Entering rateLimit().');
+  sp = freshProvider();
+  const id = 'rate-' + RUN;
+  const bad = await act({ action: 'add-client', identifier: 'ratebad-' + RUN,
+                          baseUrl: base, authMethod: 'basic',
+                          username: 'pusher', password: BASIC_PASSWORD,
+                          maxRequestsPerSecond: 'fast' });
+  t.check(!bad.ok && codeOf(bad) === 'STS-SCIMC-0017',
+          'S1. a request rate that is not a whole number is refused',
+          JSON.stringify(bad));
+  await addBasic(id, base, ca, { scopeMode: 'filter',
+                                 scopeFilter: '(givenName=Alice)',
+                                 maxRequestsPerSecond: '4' });
+  t.check(scimClients.view({ client: id }).client.maxRequestsPerSecond ===
+          '4', 'S2. the rate is on the client\'s page');
+  await act({ action: 'test-connection', id: id });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  const times = sp.requests.map(function (r) {
+    return r.at;
+  });
+  const gaps = times.slice(1).map(function (at, i) {
+    return at - times[i];
+  });
+  t.check(times.length >= 5 && Math.min.apply(null, gaps) >= 200 &&
+          !!userNamed('alice' + RUN),
+          'S3. at 4 a second every request — discovery, the listing, the ' +
+          'deliveries — waits for its slot (250 ms apart), and is sent',
+          JSON.stringify(gaps));
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving rateLimit().');
+}
+
 async function run(t) {
   log.debug('Entering run().');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scimc-'));
@@ -1344,6 +1382,7 @@ async function run(t) {
       await scheduled(t, base, material.ca);
       await deleteStale(t, base, material.ca);
       await uploaded(t, material, dir);
+      await rateLimit(t, base, material.ca);
     });
   } finally {
     process.stdout.write = write;
