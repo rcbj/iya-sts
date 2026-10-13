@@ -2240,7 +2240,11 @@ the same day and read it at introspection instead.
    the REALM's base under a named server too, since the session is the
    realm's) is the one framable page: `app.framedContentSecurityPolicy()`
    and X-Frame-Options removed. Its script hashes the MESSAGE's origin, so
-   a page that is not the relying party computes a different value. Off, both
+   a page that is not the relying party computes a different value.
+   `/oauth2/check_session.js` answers a relying party's `postMessage`, which
+   no markup can; so it is the one scripted page with **NO submit button**,
+   and with script off a relying party's question simply goes unanswered
+   (moved from the root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, both
    paths answer a 404 naming the setting (`STS-OAUTH-0601`), never Express's
    `Cannot GET`, which `tests/vendored/sts_metadata.js` reads as unrouted.
 

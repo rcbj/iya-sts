@@ -755,9 +755,9 @@ end up half-written.
 own that will not take a URL from anywhere but a relationship entry. It is the
 STRONGEST of them and the others each argue their own case rather than citing
 it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`,
-and the embedded debugger's api, the RFC 9728 import and a registered RFC 9101
-`request_uri` are indexed in the root `CLAUDE.md`'s *Things this service
-deliberately does not do*.
+and the embedded debugger's api, the RFC 9728 import, a registered RFC 9101
+`request_uri` and the rest are listed under *The URLs this service dials that
+a caller's kind of URL could name*, below.
 
 ### `deliverForm()`: the second function, and a second kind of URL (2026-09-17, #36)
 
@@ -845,6 +845,35 @@ and its section 11.4 says is where the risk is: a list that has moved is a
 failure, and the credential is refused rather than the Location followed. It
 sends nothing but `Accept` and answers `{ ok, status, body, contentType, kind,
 why, url }`.
+
+### The URLs this service dials that a caller's kind of URL could name
+
+**Moved here verbatim from the root `CLAUDE.md`'s *Things this service
+deliberately does not do* on 2026-10-13**, where it was one row of an index
+that had grown eighteen exceptions; the row is one line now and points here.
+The rule is the row's: this service does not dial a URL a CALLER supplied to
+fetch something FROM (`wreqptr`, above) — the URLs it does dial are
+addresses somebody asked to be SENT something at. Each exception below is
+argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `gnap/CLAUDE.md`, `oidfed/CLAUDE.md`, `oid4vc/CLAUDE.md`, `federation/CLAUDE.md`, `ssf/CLAUDE.md`, `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `debugger/CLAUDE.md`, `admin-ui/CLAUDE.md`, `saml/CLAUDE.md`, `spiffe/CLAUDE.md`, `risk/CLAUDE.md`.
+
+* **The one exception is the embedded debugger's api (2026-09-13)**, a separate child process that dials what a console administrator names, allow-listed to this service's own addresses in product mode.
+* **The second is the RFC 9728 import on `/admin/applications/new` (2026-09-13)**, an Admin Write act under the federation outbound policy that refuses internal addresses in product mode.
+* **The third is an RFC 9101 `request_uri` (2026-09-13)** — fetched only when the client REGISTERED that exact address, so a request cannot choose it.
+* **The fourth is a STATUS LIST (2026-09-17)** — an address inside a credential, which is a caller's kind of URL; what makes it the administrator's is where it sits, under a signature that verified against a certificate in `oid4vp.trustedIssuerCertificates`, and it is never fetched for a credential this realm signed (whose list is in its own store).
+* **The fifth is a SAML MDQ lookup (2026-09-17)** — the operator's `saml2.mdqBaseUrl`, with only a request's entityID as its path, never awaited.
+* **The sixth is SPIFFE's `http_challenge` (2026-09-21, #40)** — a host name the attesting agent names, fetched only after it matched the realm's `spiffe.httpChallengeAllowedDnsPatterns` (empty refuses all), internal addresses refused in product mode, no redirect, 64 bytes.
+* **The seventh is an OpenID Connect `sector_identifier_uri` (2026-09-22, #118)** — fetched once, when a client REGISTERS it, through `federation_http.fetchPublished()`, never while issuing.
+* **The eighth is a client's registered `jwks_uri` (2026-09-22, #120)** — which the root `CLAUDE.md`'s index named as a refusal until then: fetched when a key is needed, through the same `fetchPublished()`, cached by `oauth-oidc/client_jwks.js`, and never beside an inline `jwks`.
+* **The ninth is the Pwned Passwords range API (2026-09-22, #62 P6)** — the operator's `risk.breachApiUrl` with a five-character SHA-1 prefix computed here as its path, product mode only, through `fetchPublished()`; off in every suite stack.
+* **The tenth is the FIDO MDS3 BLOB (2026-09-23, #105)** — the operator's `risk.mdsUrl`, which no request can name, downloaded by the `risk.mds-refresh` scheduler job through `fetchPublished()` with a cap of its own, and imported only after #62's full verification.
+* **The eleventh is a container image's REGISTRY (2026-09-23, #170)** — named by the image a workload runs, so the caller's kind; the docker attestor fetches the image's cosign signature from it only when `spiffe.dockerSigstoreAllowedRegistries` names it (and the token realm, and any blob redirect), https only, every blob checked against its digest.
+* **The twelfth is a SIOPv2 `did:web` subject (2026-09-23, #129)** — the presenter's kind of URL, fetched only after it is found ENROLLED on a person's entry (by them, proving the key, or by an administrator), through `fetchPublished()`; an unenrolled one is refused unfetched.
+* **The thirteenth is an OpenID Federation Trust Chain (2026-09-23, #132)** — an entity's configuration and each superior its `authority_hints` name, the caller's kind of URL, walked only TOWARDS a Trust Anchor the realm configured, bounded by `oidfed.maxAuthorityHints`, `maxChainDepth` and `maxFetchesPerResolution` with loops refused, through `fetchPublished()`; started by an administrator's act and never by the unauthenticated resolve endpoint.
+* **The fourteenth is the Entity Collection crawl (2026-09-24, #136)** — going DOWN the realm's own subtree: a list is fetched only from an entity whose chain to the realm already validated, at the endpoint its resolved metadata names, and each entity on it is only resolved towards the realm; bounded by `oidfed.collectionMaxEntities` and `collectionMaxFetches`, through `fetchPublished()`, started by the `oidfed.collection-crawl` job or an administrator's Crawl now and never by the anonymous collection endpoint.
+* **The fifteenth is a FEDERATION PARTNER'S SHARED SIGNALS (2026-09-26, #153; on the relationship since #373)** — the SSF issuer an administrator configured on a federation relationship (`fedSignalsIssuer`, else `fedPeer`); the configuration document is fetched from that issuer's well-known address and must name it, and every endpoint dialled after (stream management, status, subjects, verification, poll, the jwks_uri) is one that document named, through `fetchPublished()`; a request can name none of them.
+* **The sixteenth is a GNAP resource server's owner lookup (2026-10-03, #432)** — the administrator's `gnapOwnerLookupUri` template on the resource server's entry, the client choosing only the identifier percent-encoded into its one path segment, through `fetchPublished()`.
+* **The seventeenth is a SECRET PUSH DESTINATION (2026-10-06, #221 P3)** — a secrets manager a service account's rotated password is written to: the provider, region, vault URL and address are attributes of a destination's application entry an administrator writes (Admin Write), and no request names one; https only, verified (Vault's request through `outbound_tls.ts` with the destination's own CA), with the destination's own write credential, and never creating a secret.
+* **The eighteenth is GOOGLE'S ANDROID ATTESTATION STATUS LIST (2026-10-06, #256)** — the operator's `devices.androidStatusUrl` (Google's address by default, empty in the suite), which no request can name, downloaded by the `devices.android-status-refresh` scheduler job through `fetchPublished()` with a cap of its own, and believed only as a list of serials to distrust
 
 ---
 

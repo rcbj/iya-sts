@@ -504,6 +504,13 @@ checkout meets the refusal above, so re-running one job is now
 `./run-tests.sh --only=<job> --modes=memory` and costs an image build
 (`--no-build` when the service has not changed).
 
+**`./run-tests.sh` IS THE ONE LAUNCHER FOR THE WHOLE SUITE, WHEREVER THE SERVICE
+IS (2026-09-21).** It was `./docker-run-tests.sh`; `deploy/aws/run-suite.sh`
+and the apply-test-destroy of `aws-cluster.yml` were launchers of their own and
+are its AWS targets' machinery now. Its header argues the targets. Every local
+mode runs every job, both halves; an AWS target runs the protocol half only,
+because the in-process files cannot be pointed at a URL.
+
 `tests/tools/run-report.js` is what the launcher drives, inside the tests
 container. It writes `tests/report/<mode>/<timestamp>/` — `report.html`, JUnit
 `report.xml`, `summary.json` and one log per job — and points
