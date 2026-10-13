@@ -4010,11 +4010,13 @@ class ScimClients {
       });
     }));
     const rowFor = (identifier: string, rows: boolean): Json[] => {
+      log.debug("Entering rowFor(). " + identifier);
       const mine = this.get(identifier);
       const first: Json = mine
         ? Object.assign({ cell: here, here: true, reachable: true },
                         this.cellSummaryOf(mine, rows))
         : { cell: here, here: true, reachable: true };
+      log.debug("Leaving rowFor().");
       return [first].concat(others.map(function (cell: string) {
         const got = answers[cell];
         if (!got || !got.reachable) {

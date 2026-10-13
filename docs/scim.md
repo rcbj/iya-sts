@@ -832,6 +832,13 @@ cell. Only the console and `/admin-api` do.
 * **Send a password**, or this service's own User extension.
 * **Push a group nested in a group** as a member.
 * **Delete what it pushed when a client is removed.**
+* **Limit a client's request rate.** In a service deployed as cells the
+  concurrency is split across the cells; there is no per-second limit to
+  split.
+* **Sweep a service provider for users no cell knows**, in a service deployed
+  as cells. Each cell deprovisions only the people it pushed or holds. A
+  resource whose `externalId` no cell knows may belong to another system
+  that pushes to the same provider, so it is left alone.
 
 ### Settings
 
