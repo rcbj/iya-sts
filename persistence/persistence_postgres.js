@@ -1286,7 +1286,7 @@ const METRIC_PROBES = [
          'backend_start' },
 
   { id: 'locks', group: 'Activity', shape: 'rows',
-    what: 'Locks held and waited for, by mode. A waiting lock on a mock is ' +
+    what: 'Locks held and waited for, by mode. A waiting lock here is ' +
           'almost always this service contending with itself across the ' +
           'request-worker pool.',
     sql: 'SELECT mode, granted, count(*) AS count FROM pg_locks WHERE ' +

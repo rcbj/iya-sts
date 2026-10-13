@@ -4,7 +4,7 @@
   "tileRequirements": "requirements it changes",
   "tileDevOnly": "development-only settings",
   "tileIgnored": "stored and ignored here",
-  "about1": "<code>global.mode</code> says what this realm IS: <strong>development</strong>, a mock that exercises a client by saying yes, or <strong>product</strong>, the same protocol implementations with the permissiveness taken out.",
+  "about1": "<code>global.mode</code> says what this realm IS: <strong>development</strong>, which exercises a client by saying yes, or <strong>product</strong>, the same protocol implementations with the permissiveness taken out.",
   "about2": "It is set per trust realm on ",
   "aboutConfigLink": "Configuration",
   "about3": " (the Global group); this page changes nothing.",

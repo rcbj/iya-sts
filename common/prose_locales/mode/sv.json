@@ -720,8 +720,8 @@
     "text": "Endast en adress registrerad på applikationens egen post — och en observation lägger aldrig till någon. En adress som fortfarande är markerad som observerad är INTE registrerad: utvecklingsläget satte den där och den vägras tills en operatör bekräftar den på applikationens sida eller med POST /admin-api/applications/confirm-address (STS-REG-0049). Adresser som registrerades innan observationer markerades saknar markering och behöver ändå granskas innan en sfär växlas. Konsolens och portalens egna callbacks lärs inte från en begärans Host-huvud (sätt global.publicBaseUrl), och ett WebAuthn RP ID som inte passar värden vägrar ceremonin i stället för att falla tillbaka på den."
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "Demonstrations-, mock- och testkontrollslutpunkterna finns"
+    "en": "47d4efed79e39044",
+    "text": "Demonstrations- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
     "en": "3984f2e4ba94f429",

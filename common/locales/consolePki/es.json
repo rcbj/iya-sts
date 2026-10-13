@@ -37,7 +37,7 @@
   "ianTip": "Nombres alternativos del emisor. Misma sintaxis que subjectAltName.",
   "ianCriticalTip": "Normalmente no debería ser crítica.",
   "ianSyntax": "La misma sintaxis que subjectAltName de arriba.",
-  "cdpTip": "Dónde obtener la CRL que revocaría este certificado. TENGA EN CUENTA que este servicio no publica ninguna: la extensión es una URL que usted afirma, no una promesa que cumpla esta simulación.",
+  "cdpTip": "Dónde obtener la CRL que revocaría este certificado. TENGA EN CUENTA que este servicio no publica ninguna: la extensión es una URL que usted afirma, no una promesa que cumpla este servicio.",
   "rarelyCritical": "Rara vez crítica.",
   "urlsPerLine": "URL, una por línea",
   "cdpUrlsTip": "Dónde se publica la CRL que revocaría este certificado.",

@@ -720,8 +720,8 @@
     "text": "Uniquement une adresse enregistrée sur l’entrée propre de l’application — et une observation n’en ajoute jamais. Une adresse encore marquée comme observée N’EST PAS enregistrée : le mode développement l’y a placée, et elle est refusée tant qu’un opérateur ne l’a pas confirmée sur la page de l’application ou avec POST /admin-api/applications/confirm-address (STS-REG-0049). Les adresses consignées avant que les observations ne soient marquées ne portent aucune marque et doivent encore être examinées avant le basculement d’un domaine. Les rappels propres à la console et au portail ne sont pas appris de l’en-tête Host d’une requête (définissez global.publicBaseUrl), et un RP ID WebAuthn qui ne correspond pas à l’hôte fait échouer la cérémonie au lieu de se rabattre sur celui-ci."
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "Les points de terminaison de démonstration, simulés et de contrôle de test existent"
+    "en": "47d4efed79e39044",
+    "text": "Les points de terminaison de démonstration et de contrôle de test existent"
   },
   "mode.requirements.demo-endpoints.development": {
     "en": "3984f2e4ba94f429",

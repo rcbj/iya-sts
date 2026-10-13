@@ -4,7 +4,7 @@
   "tileRequirements": "其改变的要求",
   "tileDevOnly": "仅限开发的设置",
   "tileIgnored": "此处已存储但被忽略",
-  "about1": "<code>global.mode</code> 说明此领域的性质：<strong>development</strong>，即通过一律应允来测试客户端的模拟服务；或 <strong>product</strong>，即去掉宽松处理后的同一套协议实现。",
+  "about1": "<code>global.mode</code> 说明此领域的性质：<strong>development</strong>，即通过一律应允来测试客户端；或 <strong>product</strong>，即去掉宽松处理后的同一套协议实现。",
   "about2": "它按信任领域在",
   "aboutConfigLink": "配置",
   "about3": "（Global 组）中设置；此页面不做任何更改。",

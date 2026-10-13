@@ -345,7 +345,10 @@ class AuthnSurface extends WebSurface {
 
   /**
    * Follows a link in place, except on an embedded page, whose links are
-   * the browser's.
+   * the browser's — and except a link TO an embedded page, which is a
+   * navigation the server has to answer: the SPNEGO sign-in's state (and
+   * the RFC 4559 challenge itself) arrives only on that response, so a page
+   * routed in place had none and said it could not be drawn (2026-10-12).
    *
    * @param event - the click
    * @returns nothing
@@ -353,6 +356,20 @@ class AuthnSurface extends WebSurface {
   onClick(event: Json): void {
     if (this.embeddedHere()) {
       return;
+    }
+    let el = event && event.target;
+    while (el && el.tagName !== 'A') {
+      el = el.parentElement;
+    }
+    if (el && el.getAttribute) {
+      const url = new URL(el.getAttribute('href') || '',
+                          this.env.location.href);
+      const path = url.origin === this.env.location.origin
+        ? this.surfacePath(url.pathname) : null;
+      const page: Json = path ? this.find(path) : null;
+      if (page && page.embedded) {
+        return;
+      }
     }
     super.onClick(event);
   }

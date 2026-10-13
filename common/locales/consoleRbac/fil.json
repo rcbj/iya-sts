@@ -27,7 +27,7 @@
   "body.typedHeading": "Ibigay sa pangalang wala sa listahan",
   "body.name": "Pangalan",
   "body.typedPlaceholder": "ang pangalang gagamitin niya sa pag-sign in",
-  "body.typedNote": "NAKABITIN ang membership hanggang umiral ang taong iyon — tumutukoy ito sa DN na wala pa sa directory na ito — at may bisa ang role mula sa una niyang pag-sign in. Iyon ang kawili-wiling kaso para sa isang mock at kaya narito ang form na ito: walang hinihingi ang grant na nakita na ang tao. Tinatanggihan ang pangalang may character na nakareserba ng RFC 4514 sa isang DN, gaya ng pagtanggi kapag lumilikha ng tao.",
+  "body.typedNote": "NAKABITIN ang membership hanggang umiral ang taong iyon — tumutukoy ito sa DN na wala pa sa directory na ito — at may bisa ang role mula sa una niyang pag-sign in. Iyon ang kawili-wiling kaso para sa pagsubok at kaya narito ang form na ito: walang hinihingi ang grant na nakita na ang tao. Tinatanggihan ang pangalang may character na nakareserba ng RFC 4514 sa isang DN, gaya ng pagtanggi kapag lumilikha ng tao.",
   "body.readOnlyNote": "Kailangan ng <strong>Admin Write</strong> para magbigay at magbawi. Ang talahanayan sa itaas ang makikita mo gamit ang <strong>Admin Read</strong>.",
   "body.person": "Tao",
   "body.filterPlaceholder": "bahagi ng pangalan",

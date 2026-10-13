@@ -49,7 +49,7 @@
   "peerPlaceholder": "对方的 entityID、颁发者或领域",
   "buttonAdd": "添加",
   "idRules": "<strong>id</strong> 是键、RDN 和 URL 段，因此必须以字母或数字开头，且只能包含字母、数字、点、短横线和下划线。<strong>合作方</strong>是对方自己的标识符，无论其协议如何称呼；在服务提供方一侧的关系上，它会被检查：颁发者不是该字符串的断言会被拒绝，即使签名验证通过。",
-  "caveatRefusal": "<strong>这是此处唯一需要先配置才会起作用的功能，也是本控制台中唯一配置“拒绝”的页面。</strong>在其他地方，本服务接受给它的任何东西——任何用户名、任何 client_id、任何 entityID、任何 LDAP 绑定。但在断言使用者服务上它不能这样做：到达那里的是一个声称代表某人的未经认证的 HTTP 请求，而它将产生的会话正是 <code>/oauth2/authorize</code>、<code>/wsfed</code>、<code>/saml2</code> 和本控制台都会读取的那一个。宽松的版本不会是一个宽松的模拟，而是对本进程中每个协议的认证绕过。",
+  "caveatRefusal": "<strong>这是此处唯一需要先配置才会起作用的功能，也是本控制台中唯一配置“拒绝”的页面。</strong>在其他地方，本服务接受给它的任何东西——任何用户名、任何 client_id、任何 entityID、任何 LDAP 绑定。但在断言使用者服务上它不能这样做：到达那里的是一个声称代表某人的未经认证的 HTTP 请求，而它将产生的会话正是 <code>/oauth2/authorize</code>、<code>/wsfed</code>、<code>/saml2</code> 和本控制台都会读取的那一个。宽松的版本不会是测试上的便利，而是对本进程中每个协议的认证绕过。",
   "caveatSigner": "<strong>把关的是签名者，也包括主体 (#109)。</strong>经过验证的断言只会登录合作方主体所关联的那个人——即条目上的 <code>federationLink</code>。对于没有人关联过的主体如何处理，由关系的 <code>fedSubjectPolicy</code> 决定：其所指的人先在此登录然后被关联（<code>link-at-first-sign-in</code>，默认），被拒绝（<code>pre-linked</code>），获得一个自己的新条目（<code>jit-namespaced</code>），或者——仅在开发模式下——旧的按名称匹配（<code>any-existing</code>）。另有三条规则进一步收紧，并且除非开启 <code>fedMayAssertAdministrators</code>，否则控制台管理员会被拒绝。在以上全部通过之前，不会向任何条目写入内容。",
   "linkPicture": "关系图",
   "linkIndex": "联合索引",

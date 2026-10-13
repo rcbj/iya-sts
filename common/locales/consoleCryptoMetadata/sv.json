@@ -1,6 +1,6 @@
 {
   "doesNot": "gör inte",
-  "familiesHeading": "Identitetstjänsterna som den här attrappen annonserar",
+  "familiesHeading": "Identitetstjänsterna som den här tjänsten annonserar",
   "familiesLead": "En rad per protokollfamilj på",
   "serviceMetadata": "Tjänstmetadata",
   "familiesLeadAfter": ", med vad var och en gör med kryptografi. De fyra verben hålls isär med avsikt: att signera är att skapa något som en förlitande part kommer att tro på, att verifiera är ett beslut som kan bli fel, att kryptera använder någon annans nyckel, och att dekryptera innebär att hålla en privat nyckel som en anropare kan rikta chiffertext mot. Det är fyra olika exponeringar och tjänsten gör olika mycket av varje.",
@@ -20,7 +20,7 @@
   "envelopes": "Kuvert",
   "doesNotDo": "<strong>Vad den medvetet inte gör.</strong>",
   "keysHeading": "Nyckelmaterialet som processen har",
-  "keysLead": "Varje nyckel här genereras vid start och ingen sparas, i något lagringsläge. Det är avsiktligt och två saker beror på det: <code>kid</code> härleds från nyckelmaterialet, så två instanser av attrappen kan inte publicera ett namn för två olika nycklar, och varje dokument som bär eller beskriver en nyckel levereras med <code>Cache-Control: no-store</code>. <strong>Signeringsnycklarna är per förtroendesfär; TLS-certifikatet och SPIFFE-utfärdarna är det inte.</strong> Det här visar sfären <code>{realm}</code>.",
+  "keysLead": "Varje nyckel här genereras vid start och ingen sparas, i något lagringsläge. Det är avsiktligt och två saker beror på det: <code>kid</code> härleds från nyckelmaterialet, så två instanser av tjänsten kan inte publicera ett namn för två olika nycklar, och varje dokument som bär eller beskriver en nyckel levereras med <code>Cache-Control: no-store</code>. <strong>Signeringsnycklarna är per förtroendesfär; TLS-certifikatet och SPIFFE-utfärdarna är det inte.</strong> Det här visar sfären <code>{realm}</code>.",
   "scopeRealm": "den här sfären",
   "scopeProcess": "processen",
   "thKey": "Nyckel",
@@ -63,7 +63,7 @@
   "thDigest": "Hashsumma",
   "thWhat": "Vad",
   "weakOnes": "De svaga, och varför de finns här",
-  "weakNote": "<strong>Ingen av dem är ett förbiseende och ingen är en rekommendation.</strong> Tjänsten finns till för att pröva andras klienter, och en attrapp som bara erbjöd det säkra valet kunde inte användas för att visa vad det osäkra gör. Varje rad säger vilken installerad bas som efterfrågar den.",
+  "weakNote": "<strong>Ingen av dem är ett förbiseende och ingen är en rekommendation.</strong> Tjänsten finns till för att pröva andras klienter, och en tjänst som bara erbjöd det säkra valet kunde inte användas för att visa vad det osäkra gör. Varje rad säger vilken installerad bas som efterfrågar den.",
   "thWhy": "Varför",
   "yes": "ja",
   "no": "nej",
@@ -143,7 +143,7 @@
   "drafts": "Implementerade utkast",
   "whatRemains": "Det som återstår",
   "standardsHeading": "Standarderna på högre nivå",
-  "standardsLead": "Att veta att tjänsten signerar med RSA-SHA256 säger inte om signaturen är en JWS, en innesluten XMLDSIG, en frikopplad signatur över en frågesträng eller ett <code>&lt;wsse:Security&gt;</code>-huvud — fyra olika dokument med fyra olika sätt att fallera. Det här är det lagret. <strong>Varje täckningsanteckning börjar med <code>full</code>, <code>partial</code> eller <code>mock</code></strong> och säger vad som saknas, vilket är regeln som",
+  "standardsLead": "Att veta att tjänsten signerar med RSA-SHA256 säger inte om signaturen är en JWS, en innesluten XMLDSIG, en frikopplad signatur över en frågesträng eller ett <code>&lt;wsse:Security&gt;</code>-huvud — fyra olika dokument med fyra olika sätt att fallera. Det här är det lagret. <strong>Varje täckningsanteckning börjar med <code>full</code>, <code>partial</code> eller <code>minimal</code></strong> och säger vad som saknas, vilket är regeln som",
   "standardsLeadAfter": "följer och som är värd mer här: en sida om kryptografi som överdriver vad den implementerar är direkt farlig för den som använder den för att lära sig.",
   "specifications": "Specifikationer",
   "coverage": "Täckning",
@@ -243,5 +243,5 @@
   "passwordHint": "krävs för PKCS#12; krypterar den privata halvan för de övriga",
   "downloadKey": "Ladda ner",
   "publicOnly": "<strong>Bara den PUBLIKA halvan.</strong> RFC 9964 definierar de publika medlemmarna i en AKP-nyckel och hanteringen av det privata fröet ändras fortfarande, så det finns ingen interoperabel privat kodning att lämna ut. En fil som inget bibliotek läser vore värre än att säga det.",
-  "passwordNote": "<strong>Ett lösenord KRÄVS för PKCS#12 och är valfritt för de tre andra</strong>, där det krypterar den privata halvan (PKCS#8 för PEM och DER, PBES2 som .jwe för JWK). Lämna det tomt så kommer den privata nyckeln ut i klartext, vilket oftast är vad du vill ha från en attrapp och aldrig vad du vill ha någon annanstans."
+  "passwordNote": "<strong>Ett lösenord KRÄVS för PKCS#12 och är valfritt för de tre andra</strong>, där det krypterar den privata halvan (PKCS#8 för PEM och DER, PBES2 som .jwe för JWK). Lämna det tomt så kommer den privata nyckeln ut i klartext, vilket oftast är vad du vill ha under utveckling och aldrig vad du vill ha någon annanstans."
 }

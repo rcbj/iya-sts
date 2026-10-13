@@ -308,8 +308,8 @@
     "text": "partial: cuatro cifrados de bloque y dos transportes de claves, envolviendo un elemento a la vez. No es la implementación incorporada y es una excepción deliberada — la salida de ambas ya es compatible byte a byte, y lo que esta tiene y la otra no es el DIAGNÓSTICO."
   },
   "crypto.standards.xmlenc.what": {
-    "en": "22b505560ceb8641",
-    "text": "Cada mensaje que esto dice deliberadamente en voz alta: los dos cifrados CBC NO están autenticados y `rsa-1_5` está roto por Bleichenbacher. Ambos se ofrecen porque proveedores de servicio reales los exigen, y un simulador que ofreciera solo la opción segura no podría usarse para mostrar lo que hace la insegura."
+    "en": "88fff06d7d7b1664",
+    "text": "Cada mensaje que esto dice deliberadamente en voz alta: los dos cifrados CBC NO están autenticados y `rsa-1_5` está roto por Bleichenbacher. Ambos se ofrecen porque proveedores de servicio reales los exigen, y un servicio que ofreciera solo la opción segura no podría usarse para mostrar lo que hace la insegura."
   },
   "crypto.standards.c14n.coverage": {
     "en": "dcdbea06a9c35da8",
@@ -320,8 +320,8 @@
     "text": "LA EXCLUSIVA ES ESENCIAL Y ES LA PREDETERMINADA EN TODAS PARTES AQUÍ. Una aserción se firma de forma independiente y luego se incrusta dentro de un RSTR, una Response o un `wresult` que declara prefijos propios, así que la c14n INCLUSIVA arrastraría esas declaraciones de los ancestros al digest en el momento de la verificación — la firma falla entonces para cada parte que confía mientras verifica perfectamente aquí, que es la peor forma de error que perseguir."
   },
   "crypto.standards.wss.coverage": {
-    "en": "08017a57e61d5832",
-    "text": "mock, y esta es la fila que hay que leer antes de pedir \"WS-Integrity\" o \"WS-Encryption\" — ninguno de los dos es un documento que exista. WSS es una sola especificación cuya mitad de integridad es XML Signature sobre el Body y el Timestamp de SOAP dentro de una cabecera `<wsse:Security>` y cuya mitad de confidencialidad es XML Encryption aplicado de la misma manera. ESTE SERVICIO NO HACE NINGUNA DE LAS DOS. No firma ningún sobre SOAP, no cifra ningún cuerpo SOAP, no produce ningún Timestamp y no verifica ninguna firma a nivel de mensaje en una solicitud."
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal, y esta es la fila que hay que leer antes de pedir \"WS-Integrity\" o \"WS-Encryption\" — ninguno de los dos es un documento que exista. WSS es una sola especificación cuya mitad de integridad es XML Signature sobre el Body y el Timestamp de SOAP dentro de una cabecera `<wsse:Security>` y cuya mitad de confidencialidad es XML Encryption aplicado de la misma manera. ESTE SERVICIO NO HACE NINGUNA DE LAS DOS. No firma ningún sobre SOAP, no cifra ningún cuerpo SOAP, no produce ningún Timestamp y no verifica ninguna firma a nivel de mensaje en una solicitud."
   },
   "crypto.standards.wss.what": {
     "en": "d6dcd66e6476aa91",
@@ -352,8 +352,8 @@
     "text": "La clave de la CA es la de la jerarquía, elegida en /admin/pki (`pki.keyAlgorithm`, RSA 2048 de forma predeterminada; la CA emisora de SPIFFE prefiere EC P-256); la clave de firma es RSA 2048, y el certificado TLS es lo que pida `tls.certificateAlgorithms`. `spiffe.x509KeyType` decide la clave de cada SVID. EL SUBJECTALTNAME ES EL ÚNICO LUGAR DONDE ESTÁN LOS NOMBRES en el certificado TLS — RFC 6125 dice desde 2011 que el CN se ignora."
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock: los valores predeterminados de OpenSSL de node, salvo donde dos ajustes los restringen en LDAPS 636 y el puerto principal — `tls.minVersion` (TLS 1.2 de forma predeterminada) y `tls.ciphers` (la lista de node cuando está vacío). Este servicio no elige ninguna curva; lo que configura además es qué sockets son TLS y qué certificado sirven."
+    "en": "33822c9691deb784",
+    "text": "minimal: los valores predeterminados de OpenSSL de node, salvo donde dos ajustes los restringen en LDAPS 636 y el puerto principal — `tls.minVersion` (TLS 1.2 de forma predeterminada) y `tls.ciphers` (la lista de node cuando está vacío). Este servicio no elige ninguna curva; lo que configura además es qué sockets son TLS y qué certificado sirven."
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -1564,8 +1564,8 @@
     "text": "Identidad del SVID de SPIFFE"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "Un `kid` nombra una CLAVE y por eso se DERIVA del propio material público de la clave. Antes era una constante, de modo que dos instancias de este mock publicaban un mismo nombre para dos claves distintas — un verificador compara el kid exactamente, prueba esa clave e informa de una firma incorrecta."
+    "en": "c49939c25a7e8ccc",
+    "text": "Un `kid` nombra una CLAVE y por eso se DERIVA del propio material público de la clave. Antes era una constante, de modo que dos instancias de este servicio publicaban un mismo nombre para dos claves distintas — un verificador compara el kid exactamente, prueba esa clave e informa de una firma incorrecta."
   },
   "crypto.hashing.fixed.7.where": {
     "en": "5a3cb59275a8e560",

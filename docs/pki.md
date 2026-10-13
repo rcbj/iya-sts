@@ -5,7 +5,7 @@ nav_order: 7
 
 # A certificate authority, at `/admin/pki`
 
-> **Development mode only (#585):** `/krb5/principals` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/krb5/principals` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 Protocols → PKI builds a **Root CA, an Intermediate CA and an Issuing CA** for
 the trust realm it is reached in, and issues **signing key pairs** from the
@@ -1089,7 +1089,7 @@ rather than describing the mode they wish they were in.
 
 | Mode | What happens |
 |---|---|
-| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a mock is disposable and its credentials are meant to die with it. |
+| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a development service is disposable and its credentials are meant to die with it. |
 | **product** | Written to `sts_keys`, sealed AES-256-GCM under the same key-encryption key as the signing keys, in the same row family. |
 
 A store of the PKI module's own would have been a **second answer to "where does

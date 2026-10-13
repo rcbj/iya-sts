@@ -63,7 +63,7 @@
   "detail.anEntry": "一个条目",
   "detail.claimedHeading": "声明属于此组但未被此组列出的条目",
   "detail.thUsersPage": "用户页面上",
-  "detail.claimedNote": "这些条目各自带有指向此组的 <code>memberOf</code>，而此组自身的 <code>member</code> 并未反向列出它们。<strong>此处没有任何机制维护 <code>memberOf</code></strong> &mdash; 它根本不是标准属性（Microsoft 的目录和 OpenLDAP 的 <code>memberof</code> 覆盖层都会写入它，由服务器使其与 <code>member</code> 保持一致），而一个既不写入也不检查它的无模式模拟服务，允许客户端通过一次 <code>modify</code> 就造成这种不一致。它们与上方的成员分开列出而不是合并，因为一个名称来自不一致的哪一方，是它唯一值得关注的地方。",
+  "detail.claimedNote": "这些条目各自带有指向此组的 <code>memberOf</code>，而此组自身的 <code>member</code> 并未反向列出它们。<strong>此处没有任何机制维护 <code>memberOf</code></strong> &mdash; 它根本不是标准属性（Microsoft 的目录和 OpenLDAP 的 <code>memberof</code> 覆盖层都会写入它，由服务器使其与 <code>member</code> 保持一致），而一个既不写入也不检查它的无模式目录，允许客户端通过一次 <code>modify</code> 就造成这种不一致。它们与上方的成员分开列出而不是合并，因为一个名称来自不一致的哪一方，是它唯一值得关注的地方。",
   "detail.thRule": "被视为组的原因",
   "detail.thCreated": "创建时间",
   "detail.timestamps": "这两个时间戳是<em>通用时间</em>（<code>YYYYMMDDHHMMSSZ</code>）格式，这是目录显示的格式 &mdash; 而不是本控制台其他地方使用的 ISO 8601 字符串。绑定到 <code>ldap://&lt;host&gt;:{port}</code> 并读取 <code>{dn}</code> 的 LDAP 客户端看到的正是下面的对象，因为它<em>就是</em>那个对象，而不是副本。",

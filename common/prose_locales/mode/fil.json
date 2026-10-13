@@ -720,8 +720,8 @@
     "text": "Ang address lang na naka-register sa sariling entry ng application — at hindi kailanman nagdaragdag ng isa ang pagkakita. HINDI naka-register ang address na naka-marka pa ring observed: inilagay ito roon ng development at tinatanggihan ito hangga't hindi kinukumpirma ng operator sa pahina ng application o sa POST /admin-api/applications/confirm-address (STS-REG-0049). Ang mga address na naitala bago minarkahan ang mga pagkakita ay walang marka at kailangan pa ring suriin bago ilipat ang isang realm. Hindi natututunan mula sa Host header ng request ang sariling mga callback ng console at portal (itakda ang global.publicBaseUrl), at ang WebAuthn RP ID na hindi tugma sa host ay tumatanggi sa ceremony sa halip na bumalik dito."
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "Umiiral ang mga demonstration, mock at test-control endpoint"
+    "en": "47d4efed79e39044",
+    "text": "Umiiral ang mga demonstration at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
     "en": "3984f2e4ba94f429",

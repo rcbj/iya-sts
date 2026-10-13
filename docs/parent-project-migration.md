@@ -39,7 +39,7 @@ Dockerfile says at each one.
 **2. `tests/module_paths.js` — done DIFFERENTLY, and this is the paragraph that
 matters.** This document proposed that callers pass a path with its directory,
 `mockStsModule("kerberos/krb5_kdc.js")`. That is *not* what was built. The
-resolver SEARCHES instead: `mockStsSearchDirs()` walks the mock's top-level
+resolver SEARCHES instead: `mockStsSearchDirs()` walks this service's top-level
 directories plus `common/vendored/`, so `mockStsModule("krb5_kdc.js")` still
 takes a **bare filename** and finds `kerberos/krb5_kdc.js` on its own.
 
@@ -151,7 +151,7 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
 **The next bump of the `sts/` gitlink across this change turns that job red, and
 the fix is over there.**
 
-It starts two mocks against one database and asserts `coordinates: false`,
+It starts two instances of the service against one database and asserts `coordinates: false`,
 demonstrating that neither sees the other's writes. `persistence_replication.js`
 makes that false: every change is written to a monotonic log inside the
 transaction that made it, and each process applies what the others committed.

@@ -160,8 +160,8 @@
     "text": "OpenID4VP 验证方"
   },
   "applications.kinds.oid4vp-verifier.what": {
-    "en": "d233da27ee32a17e",
-    "text": "模拟验证方在授权请求中出示的 client_id。"
+    "en": "ecba6c8462d69614",
+    "text": "本服务的验证方在授权请求中出示的 client_id。"
   },
   "applications.kinds.federation-identity-provider.label": {
     "en": "3f6b9e4e19beb32d",
@@ -476,8 +476,8 @@
     "text": "client_id，也是三个协议族的标识符属性：OpenID Connect 依赖方就是 OAuth 客户端，在 OpenID4VCI 颁发方处领取凭据的钱包也以 OAuth 客户端身份进行身份验证，因此三者都在这里声明自己的名称，而不是用三个属性把同一事实写成三种形式。通常等于 appIdentifier，即协议出现记录所写入的值；第二个值是此应用也对应的 client_id——按环境区分的 id——这就是它累积记录而不是赋值的原因。在未声明任何 OAuth 协议族的条目上没有此项。"
   },
   "applications.schema.attributes.oauthAudience.what": {
-    "en": "b498dbc0da8ba7a9",
-    "text": "此应用所对应的受众——发给它的访问令牌所携带的 `aud`，也是客户端为访问此应用而交换令牌时在 RFC 8693 第 2.1 节的 `audience`（或 `resource`）中填写的值。它是这里另外三个协议族已经以各自名称记录的同一事实的 OAuth 写法：`wstrustAppliesTo` 是 RequestSecurityToken 中的同一事物，`samlEntityId` 是断言的 AudienceRestriction 中的同一事物，而用一个属性同时保存三者，就会得到一个必须表示最后发问的那个协议之含义的字符串。\n\n它是声明的——没有人会把受众作为自己的名称出示，因此这里没有任何东西写入它，它也无法被派生——它是 URI 而不是 client_id，因为受众本来就是这样：是资源，而不是调用资源的客户端。多个值是一般情况（按环境区分的主机名），这就是它累积记录的原因。\n\n**它会被读取，这使它成为**旁边那些声明属性中的例外。令牌交换会在这里查找 `audience`——forAudience()——这样，为 `https://esb1.example.com` 记录的委托在 /admin/delegation 及其图中会指明应用 `esb1`，而不是为一个登记册中其他地方都未提及的 URL 画一个方框。它是一次查找而不是权限：无人注册的受众仍会像以前一样被交换并原样记录，因为一个会拒绝的模拟服务只会少一个测试用例，而不是多一个。"
+    "en": "85845f64442f584e",
+    "text": "此应用所对应的受众——发给它的访问令牌所携带的 `aud`，也是客户端为访问此应用而交换令牌时在 RFC 8693 第 2.1 节的 `audience`（或 `resource`）中填写的值。它是这里另外三个协议族已经以各自名称记录的同一事实的 OAuth 写法：`wstrustAppliesTo` 是 RequestSecurityToken 中的同一事物，`samlEntityId` 是断言的 AudienceRestriction 中的同一事物，而用一个属性同时保存三者，就会得到一个必须表示最后发问的那个协议之含义的字符串。\n\n它是声明的——没有人会把受众作为自己的名称出示，因此这里没有任何东西写入它，它也无法被派生——它是 URI 而不是 client_id，因为受众本来就是这样：是资源，而不是调用资源的客户端。多个值是一般情况（按环境区分的主机名），这就是它累积记录的原因。\n\n**它会被读取，这使它成为**旁边那些声明属性中的例外。令牌交换会在这里查找 `audience`——forAudience()——这样，为 `https://esb1.example.com` 记录的委托在 /admin/delegation 及其图中会指明应用 `esb1`，而不是为一个登记册中其他地方都未提及的 URL 画一个方框。它是一次查找而不是权限：无人注册的受众仍会像以前一样被交换并原样记录，因为一个会拒绝的服务只会少一个测试用例，而不是多一个。"
   },
   "applications.schema.attributes.oauthClientSecret.what": {
     "en": "3acdc90938720b6b",
@@ -1144,8 +1144,8 @@
     "text": "来自 wsignin1.0 请求的 WTREALM（第 13.2.1 节）——WS-Federation 的标识符属性。会累积，理由与这里的每个标识符相同。"
   },
   "applications.schema.attributes.wsfedReplyUrl.what": {
-    "en": "b68a4bfe89fb7da0",
-    "text": "为此应用回发登录响应的地址：第 13.2.1 节的 `wreply`，即 WS-Federation 的重定向 URI。直到 2026-08-25，它都被写入 samlAssertionConsumerService，这把 wreply 放进了 SAML 页面读取断言使用者服务和单点注销后备地址的属性中——一个属性保存两种协议的回送地址，于是 WS-Federation 应用看起来拥有一个它从未指定过的 SAML ACS。两个事实，两个属性。与旁边的 SAML 属性一样，它仅在产品模式下检查：开发模式不拒绝任何 wreply，因为一个会拒绝的模拟服务只会减少而不是增加测试用例；产品模式只回发到此列表中的地址，观察到的地址绝不会被添加。开发模式记录的 wreply 会在 appReturnAddressObserved 上做标记，产品模式会拒绝它直到其被确认；在该标记出现之前记录的值不带标记，在领域切换到产品模式之前仍需审查。"
+    "en": "1d6376f1797ef43c",
+    "text": "为此应用回发登录响应的地址：第 13.2.1 节的 `wreply`，即 WS-Federation 的重定向 URI。直到 2026-08-25，它都被写入 samlAssertionConsumerService，这把 wreply 放进了 SAML 页面读取断言使用者服务和单点注销后备地址的属性中——一个属性保存两种协议的回送地址，于是 WS-Federation 应用看起来拥有一个它从未指定过的 SAML ACS。两个事实，两个属性。与旁边的 SAML 属性一样，它仅在产品模式下检查：开发模式不拒绝任何 wreply，因为一个会拒绝的服务只会减少而不是增加测试用例；产品模式只回发到此列表中的地址，观察到的地址绝不会被添加。开发模式记录的 wreply 会在 appReturnAddressObserved 上做标记，产品模式会拒绝它直到其被确认；在该标记出现之前记录的值不带标记，在领域切换到产品模式之前仍需审查。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",
@@ -1208,8 +1208,8 @@
     "text": "RFC 7592 注册访问令牌，它保护对此客户端的读取、更新和删除操作。只要进程持有持久的密钥加密密钥，它就像 oauthClientSecret 一样被密封（自 2026-10-01 起），并且绝不写入审计日志。"
   },
   "applications.schema.attributes.oid4vpClientId.what": {
-    "en": "d40d3c0b11b45687",
-    "text": "请求出示凭证的授权请求中验证方的 CLIENT_ID——OpenID4VP 的标识符属性。本服务自己的模拟验证方从配置（oid4vp.clientId）而不是从调用方获取它，因此该记录会在首次验证出示时出现；在此声明的值是某人正在配置的外部验证方。"
+    "en": "7254425d22df2918",
+    "text": "请求出示凭证的授权请求中验证方的 CLIENT_ID——OpenID4VP 的标识符属性。本服务自己的验证方从配置（oid4vp.clientId）而不是从调用方获取它，因此该记录会在首次验证出示时出现；在此声明的值是某人正在配置的外部验证方。"
   },
   "applications.schema.attributes.federationPartnerId.what": {
     "en": "6b7f63d65cdd8229",

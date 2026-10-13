@@ -1099,7 +1099,7 @@ class SsfHttp {
   // PUSH ONE SET, TRYING AGAIN WHERE `ssf.pushRetries` SAYS TO (2026-09-12).
   //
   // `ssf/CLAUDE.md` argues why this service does not retry, and **the default
-  // is still 0, which is exactly that**: a mock that retried would make a
+  // is still 0, which is exactly that**: a service that retried would make a
   // receiver's one-shot failure invisible. A deployment is the other case — a
   // receiver that restarts for thirty seconds should not lose every event sent
   // in them — so the count is a setting rather than a rewrite of the

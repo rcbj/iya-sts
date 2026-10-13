@@ -228,8 +228,8 @@
     "text": "伙伴的签名证书，base64 DER——与 ds:X509Certificate 所带的写法相同，也与应用条目上 samlSigningCertificate 使用的写法相同，因此一个证书在本服务中只有一种写法。每个 SAML 和 WS-Federation 断言都以它为准进行验证，它是本服务与一个任何人都能随意断言的端点之间唯一的屏障。"
   },
   "fed.schema.attributes.fedClientId.what": {
-    "en": "35f9f1eab89afb31",
-    "text": "本服务在伙伴处的 client_id。是我们的，由对方签发——不要与应用条目上的 oauthClientId 混淆，后者是这里的模拟客户端的 id。"
+    "en": "d1b0b114250b58b6",
+    "text": "本服务在伙伴处的 client_id。是我们的，由对方签发——不要与应用条目上的 oauthClientId 混淆，后者是这里的客户端的 id。"
   },
   "fed.schema.attributes.fedClientSecret.what": {
     "en": "627419de92206a62",

@@ -1538,7 +1538,7 @@ const SCHEMAS = {
                                'half — PKCS#8 for PEM and DER, PBES2 as a ' +
                                '.jwe for JWK. Empty means the private key ' +
                                'comes out in the clear, which is usually ' +
-                               'what is wanted from a mock and never ' +
+                               'what is wanted in development and never ' +
                                'anywhere else.' }
     }),
 
@@ -1645,7 +1645,7 @@ const SCHEMAS = {
         'again.', {}),
       standards: { type: 'array', items: openObject(
         'One higher-level envelope, with an honest coverage note. Every ' +
-        '`coverage` starts `full`, `partial` or `mock` and says what is ' +
+        '`coverage` starts `full`, `partial` or `minimal` and says what is ' +
         'missing.', {
           key: { type: 'string' },
           name: { type: 'string' },
@@ -3413,7 +3413,7 @@ const SCHEMAS = {
                      'and logged, not refused: the directory is a vocabulary ' +
                      'rather than a constraint here, and an identity ' +
                      'provider that stopped issuing because somebody typed ' +
-                     '"yes" would be a mock that stopped answering.',
+                     '"yes" would be a service that stopped answering.',
         items: openObject('One overridable setting.', {
           setting: { type: 'string',
                      description: 'The appconfig key, as in GET /config.' },
@@ -4837,7 +4837,7 @@ const SCHEMAS = {
             description: 'The access control policy RFC 7644 section 2 ' +
                          'requires a provider to be able to map an ' +
                          'authenticated client to. It is two lines, which is ' +
-                         'the honest length for a mock.'
+                         'the honest length for this service.'
           }
         }),
       store: openObject(
@@ -5287,7 +5287,7 @@ const SCHEMAS = {
         description: 'The NORMALISED local name, so a party here and a row ' +
                      'on /admin-api/users name the same person — `alice`, ' +
                      'her `urn:uuid:<entryUUID>` subject and ' +
-                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     '`alice@EXAMPLE.COM` are one identity. Empty where ' +
                      'this ' +
                      'layer is an application ' +
                      'rather than a person, or where nothing named it.'
@@ -5736,7 +5736,7 @@ const SCHEMAS = {
         description: 'The NORMALISED local name, so a row here and a row on ' +
                      '/admin-api/users name the same person — `alice`, her ' +
                      '`urn:uuid:<entryUUID>` subject and ' +
-                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     '`alice@EXAMPLE.COM` are one identity. Empty where ' +
                      'nothing named an actor, which an ' +
                      'unauthenticated protocol call and an anonymous LDAP ' +
                      'bind both are.'
@@ -6030,7 +6030,8 @@ const TAG_DESCRIPTIONS = {
   'Credential claims': 'What an issued Verifiable Credential carries.',
   'Credential status': 'The status lists every issued Verifiable ' +
     'Credential names, and suspending, reinstating or revoking one.',
-  'Verifier request': 'What the mock OID4VP Verifier asks a wallet for.',
+  'Verifier request': 'What the demonstration OID4VP Verifier asks a wallet ' +
+  'for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +
                      'token issued here last, and how far out a clock may be ' +
                      'before this service stops believing one of its own. ' +

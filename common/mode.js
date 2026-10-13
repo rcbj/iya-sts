@@ -3057,7 +3057,7 @@ const REQUIREMENTS = [
   // `demo-endpoints`' below; what is left here is a test control on a real
   // endpoint.
   { id: 'demo-endpoints',
-    what: 'The demonstration, mock and test-control endpoints exist',
+    what: 'The demonstration and test-control endpoints exist',
     development: 'Served and listed: the VC-API test endpoints, the ' +
                  'protected Kerberos service (/krb5/service ' +
                  'and its TCP socket), /krb5/principals, /spnego and ' +

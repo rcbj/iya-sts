@@ -179,7 +179,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `STS_MODE` | `product` | `development` gives the permissive mock: no password checks, keys regenerated per start |
+| `STS_MODE` | `product` | `development` gives the permissive test mode: no password checks, keys regenerated per start |
 | `STS_PERSISTENCE_MODE` | `postgres` | `ldif` writes one RFC 2849 file per realm to `sts-data` and needs no database; `memory` keeps nothing |
 | `STS_DATABASE_URL` | `postgres://sts_app@postgres:5432/sts?sslmode=verify-full` | Replaces the whole connection string, to use your own database. The password is read from OpenBao and added to it at start. |
 | `STS_DATABASE_TLS_CA_FILE` | `/run/secrets/database-ca/postgres.crt` | The CA certificate (or a directory of them) the service trusts for its database connection, and for nothing else. Point it at your database's CA when you replace `STS_DATABASE_URL`, or at a directory; a file that cannot be read stops the service (`STS-STORE-0079`). |

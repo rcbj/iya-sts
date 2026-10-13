@@ -228,8 +228,8 @@
     "text": "EL CERTIFICADO DE FIRMA DEL SOCIO, DER en base64 — la misma forma que lleva un ds:X509Certificate y la misma que usa samlSigningCertificate en una entrada de aplicación, así que un certificado tiene una sola forma en todo este servicio. Es contra lo que se verifica cada aserción SAML y WS-Federation, y es el único atributo que se interpone entre este servicio y un endpoint al que cualquiera podría afirmarle cualquier cosa."
   },
   "fed.schema.attributes.fedClientId.what": {
-    "en": "35f9f1eab89afb31",
-    "text": "EL client_id DE ESTE SERVICIO ANTE EL SOCIO. Nuestro, emitido por ellos — no confundir con un oauthClientId en una entrada de aplicación, que aquí es el id de un cliente simulado."
+    "en": "d1b0b114250b58b6",
+    "text": "EL client_id DE ESTE SERVICIO ANTE EL SOCIO. Nuestro, emitido por ellos — no confundir con un oauthClientId en una entrada de aplicación, que aquí es el id de un cliente."
   },
   "fed.schema.attributes.fedClientSecret.what": {
     "en": "627419de92206a62",

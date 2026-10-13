@@ -720,8 +720,8 @@
     "text": "只使用在应用自身条目上注册的地址——观察永远不会添加地址。仍标记为“已观察到”的地址不算已注册：它是开发模式放上去的，在运维人员于应用页面或通过 POST /admin-api/applications/confirm-address 确认之前会被拒绝（STS-REG-0049）。在开始标记观察之前记录的地址没有标记，在切换领域之前仍需审查。控制台和门户自己的回调不从请求的 Host 标头获知（请设置 global.publicBaseUrl），与主机不符的 WebAuthn RP ID 会拒绝该仪式，而不是回退到主机。"
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "演示、模拟和测试控制端点存在"
+    "en": "47d4efed79e39044",
+    "text": "演示和测试控制端点存在"
   },
   "mode.requirements.demo-endpoints.development": {
     "en": "3984f2e4ba94f429",

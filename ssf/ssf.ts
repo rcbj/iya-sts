@@ -2989,7 +2989,8 @@ class SharedSignals {
       ],
       doesNotDo: [
         'It does not retry a failed push unless ssf.pushRetries says to, ' +
-          'and that is 0 by default. RFC 8935 permits a retry; a mock that ' +
+          'and that is 0 by default. RFC 8935 permits a retry; a service ' +
+          'that ' +
           'retried would make a receiver\'s one-shot failure invisible.',
         'It generates no event on its own. Nothing watches a session — every ' +
           'SET was asked for. SSF defines no event about a session, so a ' +

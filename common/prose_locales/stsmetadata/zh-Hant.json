@@ -88,8 +88,8 @@
     "text": "full：單純的「WWW-Authenticate: Negotiate」挑戰、Authorization 中的權杖，以及在 200 回應的 WWW-Authenticate 中傳回的相互驗證權杖。與真實伺服器的一項差異是明說而非隱藏的：進行到一半的協商是依用戶端位址而不是「連線」保存，因為 Express 不提供穩定的連線識別——這也是真正的 SPNEGO 在連線集區代理後方會失效的原因。"
   },
   "stsmetadata.specs.ms-kkdcp.coverage": {
-    "en": "0817c7f0f6f620c3",
-    "text": "mock：POST /KdcProxy 接受 KDC-PROXY-MESSAGE 並將其轉送給此程序中的 KDC。之所以存在，是因為瀏覽器無法開啟通往連接埠 88 的原始 socket。"
+    "en": "13a7283742f4e9c5",
+    "text": "minimal：POST /KdcProxy 接受 KDC-PROXY-MESSAGE 並將其轉送給此程序中的 KDC。之所以存在，是因為瀏覽器無法開啟通往連接埠 88 的原始 socket。"
   },
   "stsmetadata.specs.xacml30.coverage": {
     "en": "6803d7137bac3178",
@@ -124,8 +124,8 @@
     "text": "full——就傳送端這一半而言：全部十四種事件類型——account credential change required、account purged、disabled 與 enabled、identifier changed 與 recycled、credential compromise、四種 opt-out 事件、recovery activated、recovery information changed，以及已棄用的 sessions-revoked——各自具備第 2 節賦予它的成員。「其中十一種完全沒有成員」，只有 credential-compromise 有一個必要成員，因此對這套詞彙的大部分而言，「主體就是整則訊息」，這也是 risc.subjectFormat 成為關鍵設定的原因。第 2.7 節賦予 credential-compromise 的三個宣告只出現在該事件上，「不會出現在其他任何事件上」——RISC 給三個，而 CAEP 給其全部八種事件各四個，而且沒有 initiating_entity——credential_type 是參照 CAEP 的 credential-change 定義的，因此這兩份清單在此處是同一份，而不是兩份相似的清單。兩個識別碼事件攜帶的 email 或 phone_number 主體存放的是「舊」值，這與三套詞彙中的其他每個事件都相反；其他格式的主體會附警告「送出」而不是被拒絕，因為它完全可以傳遞，只是錯了而已。「十四種全部會自動觸發」（#146、#164），risc.autoEmit 可將其關閉：來自「目錄」的有：某人被刪除、停用（附管理員提供的理由，未提供時則無）或啟用、識別碼變動，以及識別碼被「回收」——在另一個帳戶於 risc.recycleWindowDays 內釋出後被指派給某個帳戶；來自「管理員」的有：必要的認證資料變更、重設連結的 recovery-activated、標記為因遭入侵而重設時的 credential-compromise，以及 recovery information changed（例如某人確認新的復原碼時）；來自「裝置登錄」（#164）的有：某人的裝置被標記為遭入侵時，針對該裝置所持有之每項認證資料的 credential-compromise，以及裝置遭入侵或被移除時已棄用的 sessions-revoked（只在 risc.autoEmitTypes 指名它時，預設並未指名）——兩者都附帶指名帳戶「以及」裝置的複合主體，這正是讓「帳戶的每個工作階段」對已結束的內容而言成立的原因；以及來自 /portal/signals 上「帳戶持有人」的第 2.8 節 opt-out 變動，opt-out-effective 由排程器工作在 risc.optOutDelayHours 後接著發出。第 2.8 節的 opt-out 狀態機會被強制執行：處於最終狀態之帳戶的事件會被「抑制」（risc.honourOptOut），四種 opt-out 事件本身除外——若沒有這個例外，opt-out-effective 將永遠無法傳遞，opt-in 也永遠無法讓帳戶恢復。第 3.1 節的 Google 相容性說明可在 risc.googleSubjectType 重現，僅限開發模式（#181）。「未」涵蓋：沒有任何偵測器會自行發現遭入侵的認證資料（#62）；也不會依接收到的事件採取行動（#153、#117）。recovery-activated 在管理員簽發重設連結時，以及某人在 /portal/forgot-password 要求重設連結時（#63）都會送出。"
   },
   "stsmetadata.specs.rfc8936.coverage": {
-    "en": "4061de5a6411b93e",
-    "text": "partial：輪詢端點回應 {sets, moreAvailable}，依設定的上限遵循 maxEvents，並接受 ack（接收端已儲存的內容）與 setErrs（它「拒絕」的內容）——後者也會清除佇列，因為無法處理某事件的接收端下次也不會處理它，重新傳遞只會造成輪詢迴圈。「未」涵蓋：長輪詢。returnImmediately 一律視為「是」，這是規格所允許的，也讓模擬服務不必為了展示空無一物而保持 socket 開啟。"
+    "en": "f855e4a4ccfd630c",
+    "text": "partial：輪詢端點回應 {sets, moreAvailable}，依設定的上限遵循 maxEvents，並接受 ack（接收端已儲存的內容）與 setErrs（它「拒絕」的內容）——後者也會清除佇列，因為無法處理某事件的接收端下次也不會處理它，重新傳遞只會造成輪詢迴圈。「未」涵蓋：長輪詢。returnImmediately 一律視為「是」，這是規格所允許的，也讓本服務不必為了展示空無一物而保持 socket 開啟。"
   },
   "stsmetadata.specs.rfc9635.coverage": {
     "en": "bf3e5dd4be1ff6aa",
@@ -156,8 +156,8 @@
     "text": "partial：根能力與委派能力，附 Data Integrity 委派證明——預設為 eddsa-jcs-2022，或 mldsa44-jcs-2024、slhdsa128-jcs-2024（後量子），或為相容性使用 Ed25519Signature2020，依領域設定（gnap.zcapCryptosuite）——以本服務發布的控制者文件驗證，並使用離線文件載入器。透過 HTTP 的能力調用未實作；能力改以 GNAP 存取權杖的形式出示。"
   },
   "stsmetadata.specs.rfc7642.coverage": {
-    "en": "a22f2ff575b89981",
-    "text": "mock：這是需求與使用案例文件，未定義任何傳輸格式，因此其中沒有可實作的內容。之所以列出，是因為它說明了 SCIM 的「用途」，而本服務所服務的使用案例——身分識別提供者將帳戶推送到服務提供者的目錄中——正是其第 3.1 節。"
+    "en": "ce975843eb170311",
+    "text": "minimal：這是需求與使用案例文件，未定義任何傳輸格式，因此其中沒有可實作的內容。之所以列出，是因為它說明了 SCIM 的「用途」，而本服務所服務的使用案例——身分識別提供者將帳戶推送到服務提供者的目錄中——正是其第 3.1 節。"
   },
   "stsmetadata.specs.rfc7643.coverage": {
     "en": "068133806712eaad",
@@ -196,8 +196,8 @@
     "text": "partial：bind（simple）、unbind、add、delete、modify、modifyDN、compare 與 search，在「兩個」使用相同處理程式與相同存放區的接聽程式上提供——純 TCP 389 與 636 上的 LDAPS（從第一個位元組起即為 TLS）——兩者都能回應 root DSE 以及結果碼 0（success）、2（protocolError）、4（sizeLimitExceeded）、11（adminLimitExceeded）、16（noSuchAttribute）、32（noSuchObject）、49（invalidCredentials）、66（notAllowedOnNonLeaf）與 68（entryAlreadyExists）。沒有 SASL，沒有 StartTLS，沒有控制項（因此沒有分頁結果，也沒有排序），沒有延伸操作，也沒有轉介。StartTLS 在此刻意提了兩次：它「就是」一種延伸操作（第 4.14 節），因此「沒有延伸操作」與「沒有 StartTLS」是同一個事實而非兩個，而此處通往 TLS 的方式是另一個連接埠。「每次 bind 都會成功」——任何 DN、任何密碼，包括匿名——唯一的例外是字面密碼 \"invalid\"，它會以 LDAP_INVALID_CREDENTIALS 拒絕，讓負面測試有東西可以失敗。那是開發模式：在產品模式下，具名的 simple bind 會依項目的 userPassword 驗證，目錄中沒有預先植入的人員，且 ldap.plainListener 可讓 389 不繫結。第 4.5.1 與 4.10 節將存取控制交由伺服器處理，而在產品模式下讀取「會」依身分授權（#106）：管理員讀取其範圍，個人讀取自己的項目、他人的 ldap.directoryReadableAttributes（預設為無）、自己所屬的群組以及容器；不得查看的項目會如同不存在的項目一樣回應 noSuchObject，篩選條件無法比對到其不得讀取的內容，對其進行 compare 會得到 insufficientAccessRights（50），而且只有個人能夠 bind。它是 ldapjs 3.0.7 函式庫，以子模組釘選且未經修改使用；此處撰寫的是處理程式。"
   },
   "stsmetadata.specs.rfc4512.coverage": {
-    "en": "50bb76d0b286f82c",
-    "text": "mock：樹狀結構、root DSE 與 namingContexts 是真實的；「結構描述則完全不存在」。不強制任何 objectClass，不依語法或比對規則檢查任何屬性，也沒有 subschema 子項目——因此項目可以攜帶用戶端想送出的任何屬性，而真正的目錄會拒絕。仍會強制執行三條結構規則，因為缺少它們會讓用戶端學到錯誤的事：add 需要其父項目、delete 需要葉節點，而沒有值的屬性並不存在。"
+    "en": "f856c6b18542f41b",
+    "text": "minimal：樹狀結構、root DSE 與 namingContexts 是真實的；「結構描述則完全不存在」。不強制任何 objectClass，不依語法或比對規則檢查任何屬性，也沒有 subschema 子項目——因此項目可以攜帶用戶端想送出的任何屬性，而真正的目錄會拒絕。仍會強制執行三條結構規則，因為缺少它們會讓用戶端學到錯誤的事：add 需要其父項目、delete 需要葉節點，而沒有值的屬性並不存在。"
   },
   "stsmetadata.specs.rfc4513.coverage": {
     "en": "e45e6b179ab6ffec",
@@ -212,8 +212,8 @@
     "text": "full——就 @ldapjs/filter 所實作的部分而言：presence、equality、substrings、greater-or-equal、less-or-equal、approximate，以及 and/or/not 複合條件。屬性描述與值的比對都不區分大小寫，因為沒有結構描述可以從中選擇比對規則。可延伸比對不會被評估；這樣的嘗試會被記錄，而不是默默視為不符，因為從用戶端看來，不支援的篩選條件與空的目錄看起來一模一樣。"
   },
   "stsmetadata.specs.rfc4519.coverage": {
-    "en": "b77a3ea96cf19ef8",
-    "text": "mock：此目錄所使用的「名稱」來自這份文件——cn、sn、uid、mail、givenName、member、uniqueMember，以及用來建構預先植入之樹狀結構的 groupOfNames 與 organizationalUnit 類別。「其中沒有任何內容被強制執行」，這與 RFC 4512 所記錄的缺漏相同：在此處 member 是 groupOfNames 上的 MUST，但空群組會被接受，項目可以攜帶這些屬性中的任何一個而不需要定義它們的 objectClass，且不檢查任何語法或比對規則。memberOf「不是」出自這份文件或任何其他文件——它是 Microsoft 與 OpenLDAP 的，在具備它的目錄中由伺服器維護，在此處則沒有任何東西維護它，因此用戶端可以將它寫到項目上，並與群組不一致。/admin/groups 會回報這種不一致，而不是加以隱藏。其 applicationProcess 類別是 ou=applications 下的應用程式項目所攜帶的唯一「已註冊」類別：它帶來 cn 與 description，而任何地方都沒有用於 client_id、一組重新導向 URI 或服務主體名稱的標準，因此該結構描述的其餘部分是在此自行發明的，並公布於 /admin/ldap/applications，而不是隱而不宣。"
+    "en": "de15f5a667667bdb",
+    "text": "minimal：此目錄所使用的「名稱」來自這份文件——cn、sn、uid、mail、givenName、member、uniqueMember，以及用來建構預先植入之樹狀結構的 groupOfNames 與 organizationalUnit 類別。「其中沒有任何內容被強制執行」，這與 RFC 4512 所記錄的缺漏相同：在此處 member 是 groupOfNames 上的 MUST，但空群組會被接受，項目可以攜帶這些屬性中的任何一個而不需要定義它們的 objectClass，且不檢查任何語法或比對規則。memberOf「不是」出自這份文件或任何其他文件——它是 Microsoft 與 OpenLDAP 的，在具備它的目錄中由伺服器維護，在此處則沒有任何東西維護它，因此用戶端可以將它寫到項目上，並與群組不一致。/admin/groups 會回報這種不一致，而不是加以隱藏。其 applicationProcess 類別是 ou=applications 下的應用程式項目所攜帶的唯一「已註冊」類別：它帶來 cn 與 description，而任何地方都沒有用於 client_id、一組重新導向 URI 或服務主體名稱的標準，因此該結構描述的其餘部分是在此自行發明的，並公布於 /admin/ldap/applications，而不是隱而不宣。"
   },
   "stsmetadata.specs.rfc8446.coverage": {
     "en": "07ba142c1f4dccd1",
@@ -236,8 +236,8 @@
     "text": "partial：透過 SOAP 1.1 與 1.2 的 Issue、Renew、Validate 與 Cancel。請求簽章不會被驗證。OnBehalfOf 與 ActAs 由簽發原則決定（#186，權杖交換與 Kerberos S4U 共用的規則）——OnBehalfOf 要求的是模擬身分，ActAs 要求的是委派，項目的委派語意必須允許，AppliesTo 必須是委派關係所允許的已註冊應用程式，而個人請求者需要 delegation.actorRole——在產品模式下以 wst:RequestFailed 錯誤（第 11 節）拒絕；兩個元素同時出現為 wst:InvalidRequest；開發模式則記錄原本會被拒絕的內容。在「產品」模式下（2026-09-12），每項操作都需要認證資料——依目錄驗證的 UsernameToken，或由此 STS 簽署且在其 Conditions 範圍內的 SAML 斷言——而 OnBehalfOf/ActAs 需要請求者自己的認證資料，且其中要有這樣的斷言；開發模式則一如以往什麼都不要求。在兩種模式下，所要求的 wst:Lifetime 都會被限制（wstrust.maxTokenLifetimeMin），且所簽發斷言的 AuthnContext 會指名實際的認證資料，而不是密碼。"
   },
   "stsmetadata.specs.wss-username.coverage": {
-    "en": "c5aef113bcfa15ab",
-    "text": "mock（開發模式）：只要兩個成員都存在，UsernameToken 就會被接受，不檢查任何密碼，唯一例外是字面值 \"invalid\" 會被拒絕，讓負面測試可以強制失敗。在產品模式下會驗證密碼——人員的密碼對照其經雜湊的 userPassword，應用程式的密碼對照其用戶端密碼。"
+    "en": "397e6a07a7980365",
+    "text": "minimal（開發模式）：只要兩個成員都存在，UsernameToken 就會被接受，不檢查任何密碼，唯一例外是字面值 \"invalid\" 會被拒絕，讓負面測試可以強制失敗。在產品模式下會驗證密碼——人員的密碼對照其經雜湊的 userPassword，應用程式的密碼對照其用戶端密碼。"
   },
   "stsmetadata.specs.saml2.coverage": {
     "en": "4130e450d1b1bdcd",
@@ -344,8 +344,8 @@
     "text": "full：在每個授權伺服器上提供 POST /oauth2/par，完全以權杖端點的方式驗證用戶端（因此在 RFC 9700、OAuth 2.1 與產品模式下強制執行，在開發模式下僅觀察記錄），接受簽發者、權杖端點與 PAR 端點作為用戶端斷言的對象；推送中的 request_uri 會被拒絕；推送的請求以授權端點自己的檢查加以驗證；`request` 物件依 RFC 9101 的要求驗證，繫結至已驗證的用戶端，在要求已簽署物件時純推送會被拒絕；以 201 回應一個繫結至用戶端與授權伺服器的 256 位元 urn:ietf:params:oauth:request_uri: 參照，expires_in 取自 oauth2.parRequestUriLifetimeS；405、413 與 429；第 2.4 節針對「已驗證」用戶端的未註冊 redirect_uri，受一項設定控制（關閉）；request_uri 可在登入與同意的各個階段使用，並在簽發授權回應時用盡，過期與重放者以 invalid_request_uri 拒絕；要求原則可全域設定、依用戶端設定（註冊時、主控台上與 /admin-api 上的 require_pushed_authorization_requests）以及依授權伺服器設定；兩個中繼資料成員；使用 request_uri 時會再次詢問用戶端原則；推送時的 DPoP 證明會繫結授權碼（RFC 9449 第 10.1 節）。在 /admin/oauth2/monitor 上計數並列出。"
   },
   "stsmetadata.specs.rfc9470.coverage": {
-    "en": "56808a8c0f6588d3",
-    "text": "full：授權端點在每種模式下、無論有無 openid，都遵循 acr_values 與 max_age——不符合它們的工作階段會讓該人重新登入一次（要求兩個因素時會強制進入第二因素步驟），prompt=none 回應 login_required，而在該次登入後仍未滿足的要求會以 unmet_authentication_requirements 拒絕（第 5 節）；acr 值依 0 < 1 < mfa 排序，授權碼、ID Token 與存取權杖攜帶所滿足之「所請求」值中最優先者；兩份探索文件中都有 acr_values_supported；JWT 存取權杖（第 6.1 節）與內省（第 6.2 節）中有 acr 與 auth_time；以及第 3 節帶有 acr_values 與 max_age 的 401 insufficient_user_authentication 挑戰，由本服務自己的資源伺服器（UserInfo、OpenID4VCI 端點、SCIM、SSF）依 oauth2.stepUpAcrValues／oauth2.stepUpMaxAgeS 送出；資源應用程式的 oauthStepUpAcrValues／oauthStepUpMaxAge 會被記錄下來，由身為該應用程式的資源伺服器強制執行。模擬部分：本服務的登入會產生三種內容類別；任何其他 acr 值只能由回報恰好該 acr 的聯盟登入滿足。在 /admin/oauth2/monitor 上計數。"
+    "en": "77eec06ed075ef4d",
+    "text": "full：授權端點在每種模式下、無論有無 openid，都遵循 acr_values 與 max_age——不符合它們的工作階段會讓該人重新登入一次（要求兩個因素時會強制進入第二因素步驟），prompt=none 回應 login_required，而在該次登入後仍未滿足的要求會以 unmet_authentication_requirements 拒絕（第 5 節）；acr 值依 0 < 1 < mfa 排序，授權碼、ID Token 與存取權杖攜帶所滿足之「所請求」值中最優先者；兩份探索文件中都有 acr_values_supported；JWT 存取權杖（第 6.1 節）與內省（第 6.2 節）中有 acr 與 auth_time；以及第 3 節帶有 acr_values 與 max_age 的 401 insufficient_user_authentication 挑戰，由本服務自己的資源伺服器（UserInfo、OpenID4VCI 端點、SCIM、SSF）依 oauth2.stepUpAcrValues／oauth2.stepUpMaxAgeS 送出；資源應用程式的 oauthStepUpAcrValues／oauthStepUpMaxAge 會被記錄下來，由身為該應用程式的資源伺服器強制執行。限制：本服務的登入會產生三種內容類別；任何其他 acr 值只能由回報恰好該 acr 的聯盟登入滿足。在 /admin/oauth2/monitor 上計數。"
   },
   "stsmetadata.specs.rfc9101.coverage": {
     "en": "a6099e44ece03aa7",
@@ -356,8 +356,8 @@
     "text": "full——就其用途而言：cnf.jwk 將簽發的認證繫結至已證明持有的持有者金鑰。"
   },
   "stsmetadata.specs.rfc9449.coverage": {
-    "en": "6f8983e239a2958e",
-    "text": "full——以模擬服務而言：第 4.3 節全部十二項證明檢查、存取權杖「與」重新整理權杖上的 cnf.jkt、token_type DPoP、dpop_jkt 授權請求參數（第 10 節）、jti 重放偵測，以及兩種形式的伺服器提供 nonce 交握——權杖端點的 400 use_dpop_nonce、受保護端點附 WWW-Authenticate 的 401。nonce 預設關閉，直到 oauth2.dpopNonceRequired（依領域，透過 /admin-api/config/set 設定）將其開啟。未實作：mTLS 繫結權杖（RFC 8705），這是另一種發送者約束方式；送到 /oauth2/par 的證明會將授權碼繫結至其金鑰（第 10.1 節）。請注意，外部存取權杖的 cnf 在此處不可信，因為此簽發者不驗證由另一個授權伺服器簽署的權杖——這項檢查只對本服務簽發的權杖是真實的。"
+    "en": "f21c128a6ed927cb",
+    "text": "full：第 4.3 節全部十二項證明檢查、存取權杖「與」重新整理權杖上的 cnf.jkt、token_type DPoP、dpop_jkt 授權請求參數（第 10 節）、jti 重放偵測，以及兩種形式的伺服器提供 nonce 交握——權杖端點的 400 use_dpop_nonce、受保護端點附 WWW-Authenticate 的 401。nonce 預設關閉，直到 oauth2.dpopNonceRequired（依領域，透過 /admin-api/config/set 設定）將其開啟。未實作：mTLS 繫結權杖（RFC 8705），這是另一種發送者約束方式；送到 /oauth2/par 的證明會將授權碼繫結至其金鑰（第 10.1 節）。請注意，外部存取權杖的 cnf 在此處不可信，因為此簽發者不驗證由另一個授權伺服器簽署的權杖——這項檢查只對本服務簽發的權杖是真實的。"
   },
   "stsmetadata.specs.rfc7033.coverage": {
     "en": "87458015f3e55b0e",
@@ -428,8 +428,8 @@
     "text": "full——自 2026-09-11 起「兩節」皆涵蓋，而且它是與 RFC 7523「分開」的實作，而不是在那一個上加個格式旗標。兩者是同一框架的設定檔，不共用任何程式碼：JWT 是三個 base64url 部分加一組宣告，而這是一份帶有封裝 XML Signature、<Conditions> 元素以及在 JWT 中完全沒有對應物之 Recipient 屬性的 XML 文件。第 2.1 節是「SAML 2.0 授權」（grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer），第 2.2 節是以同一份文件進行的「用戶端驗證」（client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer），其在此處的 token_endpoint_auth_method 為 `saml2_bearer`——「本服務自己取的名稱」，因為該 RFC 沒有註冊任何名稱，IANA 登錄中也沒有對應的值；它發布於 token_endpoint_auth_methods_supported，讓用戶端去探索它而不是在這裡讀到它，且傳輸內容中沒有任何捏造。第 3 節全部「十一」項都會檢查：<Issuer> 以 Simple String Comparison 比對（第 1 項，不轉換大小寫，也不容忍結尾斜線）；<AudienceRestriction> 未指名此伺服器時會被「拒絕」，且沒有關閉開關（第 2 項）；<Subject> 在用戶端驗證時「必須」是 client_id（第 3 項）；到期時間取自任一 NotOnOrAfter，「任一」皆可滿足（第 4 項）；至少一個 bearer <SubjectConfirmation>，其 Recipient 依權杖端點檢查，其 Address「會讀取但不強制執行」（第 5 項）；兩個 NotOnOrAfter 時刻都採可設定的偏差，過期的 <SubjectConfirmation> 會被「捨棄」而不是視為致命錯誤，以及依 Issuer 與 ID 記錄的已使用斷言歷程，由兩節共用並持久保存（第 6 項）；<AuthnStatement> 會被攜帶並回報，但從不要求（第 7 項）；每個 <AttributeStatement> 屬性都會帶到所簽發的權杖上（第 8 項）；簽章為「必要」，未簽署的斷言會被指名拒絕（第 9 項）；<EncryptedAssertion> 與 <EncryptedID> 以此領域自己的金鑰解密（第 10 項）；以及完整的 <Conditions>，無法辨識的 <Condition> 類型會依 SAML core 第 2.5.1 節使斷言成為 Invalid，而不是被忽略（第 11 項）。「不寬鬆的部分」，而且有「兩」件而非一件：簽發者必須在應用程式項目上宣告（oauthSamlAssertionIssuer），理由與 RFC 7523 必須如此的理由相同——而且斷言「只」依在 RFC 7522 屬性下為該方註冊的憑證驗證。**<ds:KeyInfo> 中僅能鏈結至此領域 Root 的憑證「不」被接受**，這是本服務在此處比 RFC 7523 更嚴格的唯一一點：憑證鏈證明的是「領域」簽發了一把金鑰，卻沒說明是哪個應用程式持有它，因此接受它會讓應用程式自己的 RFC 7523 葉憑證能夠簽署 SAML 斷言。兩種設定檔為每個應用程式持有「各自獨立」的金鑰組，存放在任何驗證程式都不會交叉使用的兩組屬性中。"
   },
   "stsmetadata.specs.rfc9700.coverage": {
-    "en": "fd15ca6a56b1def0",
-    "text": "partial，「而且預設關閉」——它是一種「模式」（oauth2.rfc9700），而不是本服務的行為方式，因為用戶端需要以兩種答案來演練，而此模擬服務的每個既有呼叫端都使用未註冊的 redirect_uri、沒有 PKCE、implicit 授權類型或 password 授權類型。開啟後它涵蓋整個第 2 節。2.1：精確字串的重新導向 URI 比對，附 RFC 8252 的迴路連接埠例外，授權端點「以及」end_session_endpoint 都沒有開放式重新導向器，迴路以外不允許 http 重新導向 URI，且主連接埠以 HTTPS 繫結，讓授權回應不會透過未加密的連線傳送。2.1.1：每個未註冊為機密的用戶端都必須使用 PKCE，僅限 S256，第 4.8.2 節的降級拒絕，任何 id_token 都需 nonce，以及權杖端點上 RFC 6749 第 4.1.3 節的用戶端與 redirect_uri 檢查。2.1.2：授權端點不使用任何會簽發存取權杖的回應類型。2.2.2：重新整理權杖「輪替」、會撤銷整條鏈的重放偵測，以及此授權類型過去從未檢查的用戶端繫結。2.3：重新整理可以縮小範圍但絕不擴大；存取權杖原本就已限定對象為單一資源伺服器。2.4：拒絕 password 授權類型。2.5：在此註冊為機密的用戶端必須驗證，可使用六種權杖端點方法中的任一種——client_secret_basic 與 _post、client_secret_jwt、依已註冊 JWKS 驗證的 private_key_jwt，以及 RFC 8705 第 2 節的 tls_client_auth 與 self_signed_tls_client_auth——全部都會驗證，這是本服務在任何地方唯一會檢查的認證資料。2.6：授權端點不提供 CORS。兩份探索文件都會停止公告此模式會拒絕的任何內容。有三件事是「偵測」而非強制執行，因為它們是用戶端要負責的：跨交易重複使用 code_challenge 或 nonce（真正的伺服器通常看不到，而會記憶的模擬服務看得到）、未繫結的存取權杖（第 2.2 節是 SHOULD，因此沒有任何模式要求繫結的權杖；領域可以透過 oauth2.accessTokenRequireDpop 或 oauth2.accessTokenRequireMtls 來要求），以及在 2.5 建議非對稱的情況下使用對稱用戶端驗證——這項偏好會被偵測，但全部「六種」方法現在都會真正驗證，包括三種非對稱方法。第 2.2 與 2.3 節在授權伺服器所能涵蓋的範圍內都已涵蓋：「兩種」發送者約束機制都已實作（DPoP，以及在主連接埠為 TLS 時的 RFC 8705 憑證繫結），資源伺服器會驗證證明並防止其重放，RFC 8707 資源指標讓對象可以限定為單一資源伺服器或一小組資源伺服器，而為其他對象簽發的權杖會在受保護端點被拒絕。第 4.5 節也有涵蓋：授權碼僅能使用一次，且重放寬限已關閉，第二次出示會「撤銷」它所換得的存取權杖、重新整理權杖與 ID Token，授權碼也繫結至兌換它的用戶端。「有兩項要求被明列為無法強制執行」而非省略——用戶端必須驗證 ID Token 的 nonce，且在驗證成功前不得使用權杖，這兩者此伺服器都無法觀察；oauth2.breakIdTokenNonce 會刻意破壞 nonce，讓用戶端作者可以查明自己的程式碼是否有檢查它（僅限開發模式；產品模式的領域會忽略它）。Pushed Authorization Requests（RFC 9126）與 Resource Indicators（RFC 8707）是各自獨立的功能，在每種模式下皆可用，而不是此模式強制執行的限制。GET /oauth2/rfc9700 會列出每項要求以及它屬於上述哪一類。"
+    "en": "1a4ab26cf52a6140",
+    "text": "partial，「而且預設關閉」——它是一種「模式」（oauth2.rfc9700），而不是本服務的行為方式，因為用戶端需要以兩種答案來演練，而本服務的每個既有呼叫端都使用未註冊的 redirect_uri、沒有 PKCE、implicit 授權類型或 password 授權類型。開啟後它涵蓋整個第 2 節。2.1：精確字串的重新導向 URI 比對，附 RFC 8252 的迴路連接埠例外，授權端點「以及」end_session_endpoint 都沒有開放式重新導向器，迴路以外不允許 http 重新導向 URI，且主連接埠以 HTTPS 繫結，讓授權回應不會透過未加密的連線傳送。2.1.1：每個未註冊為機密的用戶端都必須使用 PKCE，僅限 S256，第 4.8.2 節的降級拒絕，任何 id_token 都需 nonce，以及權杖端點上 RFC 6749 第 4.1.3 節的用戶端與 redirect_uri 檢查。2.1.2：授權端點不使用任何會簽發存取權杖的回應類型。2.2.2：重新整理權杖「輪替」、會撤銷整條鏈的重放偵測，以及此授權類型過去從未檢查的用戶端繫結。2.3：重新整理可以縮小範圍但絕不擴大；存取權杖原本就已限定對象為單一資源伺服器。2.4：拒絕 password 授權類型。2.5：在此註冊為機密的用戶端必須驗證，可使用六種權杖端點方法中的任一種——client_secret_basic 與 _post、client_secret_jwt、依已註冊 JWKS 驗證的 private_key_jwt，以及 RFC 8705 第 2 節的 tls_client_auth 與 self_signed_tls_client_auth——全部都會驗證，這是本服務在任何地方唯一會檢查的認證資料。2.6：授權端點不提供 CORS。兩份探索文件都會停止公告此模式會拒絕的任何內容。有三件事是「偵測」而非強制執行，因為它們是用戶端要負責的：跨交易重複使用 code_challenge 或 nonce（真正的伺服器通常看不到，而會記憶的服務看得到）、未繫結的存取權杖（第 2.2 節是 SHOULD，因此沒有任何模式要求繫結的權杖；領域可以透過 oauth2.accessTokenRequireDpop 或 oauth2.accessTokenRequireMtls 來要求），以及在 2.5 建議非對稱的情況下使用對稱用戶端驗證——這項偏好會被偵測，但全部「六種」方法現在都會真正驗證，包括三種非對稱方法。第 2.2 與 2.3 節在授權伺服器所能涵蓋的範圍內都已涵蓋：「兩種」發送者約束機制都已實作（DPoP，以及在主連接埠為 TLS 時的 RFC 8705 憑證繫結），資源伺服器會驗證證明並防止其重放，RFC 8707 資源指標讓對象可以限定為單一資源伺服器或一小組資源伺服器，而為其他對象簽發的權杖會在受保護端點被拒絕。第 4.5 節也有涵蓋：授權碼僅能使用一次，且重放寬限已關閉，第二次出示會「撤銷」它所換得的存取權杖、重新整理權杖與 ID Token，授權碼也繫結至兌換它的用戶端。「有兩項要求被明列為無法強制執行」而非省略——用戶端必須驗證 ID Token 的 nonce，且在驗證成功前不得使用權杖，這兩者此伺服器都無法觀察；oauth2.breakIdTokenNonce 會刻意破壞 nonce，讓用戶端作者可以查明自己的程式碼是否有檢查它（僅限開發模式；產品模式的領域會忽略它）。Pushed Authorization Requests（RFC 9126）與 Resource Indicators（RFC 8707）是各自獨立的功能，在每種模式下皆可用，而不是此模式強制執行的限制。GET /oauth2/rfc9700 會列出每項要求以及它屬於上述哪一類。"
   },
   "stsmetadata.specs.oauth-attestation.coverage": {
     "en": "e7e2cb581eae4f3f",
@@ -472,8 +472,8 @@
     "text": "full（#147），在每種模式下，雙向。作為 OP：依領域的 Claims Provider 登錄（主控台與 /admin-api），個人在 /portal/claim-sources 上以附 PKCE 的授權碼流程連結其中一個，其權杖密封存放於本人的項目上，並由排程器工作重新整理；宣告請求所指名而項目無法提供的宣告，會依提供者以彙總宣告（提供者已簽署的 UserInfo JWT，先依其金鑰驗證並確認為所連結的主體）或分散式宣告（端點與存取權杖）送出；claim_types_supported 列出全部三種。作為聯盟 RP：上游 OP 的 _claim_sources 會被解析，且只在來自此領域已註冊、並依其金鑰驗證的提供者時才予承認。「尚缺」：彙總的 verified_claims（Identity Assurance 第 6 節），以及 Claims Provider 角色（本服務已簽署的 UserInfo 可供另一個彙總者使用，那是草案中的 CP 端）。"
   },
   "stsmetadata.specs.oidc-provider-commands.coverage": {
-    "en": "09c64395f4956173",
-    "text": "full（#151），作為 OpenID 提供者，在 oauth2.providerCommands 開啟時（預設關閉）：註冊 command_endpoint（DCR、主控台、API；https，不含片段）；類型為 command+jwt 的 Command Token，簽署方式與用戶端的 ID Token 相同，最長兩分鐘，依命令攜帶第 5 節的宣告（sub 只在帳戶命令中，metadata 只在 metadata 中，authentication_provider 只在 migrate 中，絕不含 nonce；tenant 為領域 id；aud_sub 會送出並學習）；全部十個帳戶命令及其 _async 變體，透過共用的持久對外佇列傳送，並讀取第 3 節的回應與錯誤；metadata 記錄每個依賴方所支援的內容；五個串流租用戶命令以 Server-Sent Events 讀取，並以 Last-Event-ID 繼續；用於非同步結果以及 metadata 與 audit_tenant 請求的回呼端點；每個依賴方的帳戶狀態登錄；在目錄變更與全域登出時自動執行 suspend、reactivate、delete、maintain 與 invalidate，僅限列出了該命令的依賴方。開發模式下由模擬依賴方回應每個命令。「尚缺」：為另一個 OP 擔任依賴方。"
+    "en": "32b1aab50678ec8c",
+    "text": "full（#151），作為 OpenID 提供者，在 oauth2.providerCommands 開啟時（預設關閉）：註冊 command_endpoint（DCR、主控台、API；https，不含片段）；類型為 command+jwt 的 Command Token，簽署方式與用戶端的 ID Token 相同，最長兩分鐘，依命令攜帶第 5 節的宣告（sub 只在帳戶命令中，metadata 只在 metadata 中，authentication_provider 只在 migrate 中，絕不含 nonce；tenant 為領域 id；aud_sub 會送出並學習）；全部十個帳戶命令及其 _async 變體，透過共用的持久對外佇列傳送，並讀取第 3 節的回應與錯誤；metadata 記錄每個依賴方所支援的內容；五個串流租用戶命令以 Server-Sent Events 讀取，並以 Last-Event-ID 繼續；用於非同步結果以及 metadata 與 audit_tenant 請求的回呼端點；每個依賴方的帳戶狀態登錄；在目錄變更與全域登出時自動執行 suspend、reactivate、delete、maintain 與 invalidate，僅限列出了該命令的依賴方。開發模式下由示範依賴方回應每個命令。「尚缺」：為另一個 OP 擔任依賴方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
     "en": "a9d422b9ede39dbe",
@@ -500,8 +500,8 @@
     "text": "partial：每個標籤都會由 Intl 正規化並檢查其格式是否正確（RFC 5646），讀者的清單則依 RFC 4647 第 3.4 節的 lookup 與各目錄比對，並明確補上文字（likely subtags），因此 zh-HK 絕不會落到簡體中文。「不」支援第 3.3.2 節的延伸篩選，也沒有任何延伸或私用子標籤可用來選擇目錄。拒絕與錯誤文字在每個語系中都是英文，這是刻意的設計。"
   },
   "stsmetadata.specs.rfc6238.coverage": {
-    "en": "fa7fc57aaa4c83cf",
-    "text": "full，驗證者端，「僅作為第二因素」：第 4 節基於 RFC 4226 的時間步長，全部三種摘要，可設定的步長與位數，對稱的偏差視窗（第 5.2 節建議最多一個步長，這也是預設值），以及第 5.2 節要求代碼只能接受「一次」——已接受的步長會儲存在註冊資料上，等於或低於它的任何代碼都會被指名拒絕。**兩種模式下代碼都會被真正檢查**，這是除了 SPNEGO 之外，此模擬服務唯一會驗證終端使用者認證資料的地方：一個接受任意六位數字的驗證者，不會是寬鬆的 RFC 6238，而是壞掉的 RFC 6238。註冊使用 Key Uri Format（otpauth://，這是 Google 的慣例而非任何 RFC），以 QR 碼以及可抄寫的 base32 秘密呈現。「未」涵蓋：它永遠不能是「主要」認證資料——本服務持有與應用程式相同的共用秘密，這足以證明持有該應用程式，但不足以作為帳戶的依靠；也沒有重新同步協定，因為對於漂移的時鐘，視窗就是它所能提供的全部。"
+    "en": "c1c0873ee396c9b0",
+    "text": "full，驗證者端，「僅作為第二因素」：第 4 節基於 RFC 4226 的時間步長，全部三種摘要，可設定的步長與位數，對稱的偏差視窗（第 5.2 節建議最多一個步長，這也是預設值），以及第 5.2 節要求代碼只能接受「一次」——已接受的步長會儲存在註冊資料上，等於或低於它的任何代碼都會被指名拒絕。**兩種模式下代碼都會被真正檢查**，這是除了 SPNEGO 之外，本服務唯一會驗證終端使用者認證資料的地方：一個接受任意六位數字的驗證者，不會是寬鬆的 RFC 6238，而是壞掉的 RFC 6238。註冊使用 Key Uri Format（otpauth://，這是 Google 的慣例而非任何 RFC），以 QR 碼以及可抄寫的 base32 秘密呈現。「未」涵蓋：它永遠不能是「主要」認證資料——本服務持有與應用程式相同的共用秘密，這足以證明持有該應用程式，但不足以作為帳戶的依靠；也沒有重新同步協定，因為對於漂移的時鐘，視窗就是它所能提供的全部。"
   },
   "stsmetadata.specs.oidc-ida-claims.coverage": {
     "en": "9addba4b4937a82f",
@@ -652,8 +652,8 @@
     "text": "full：目錄中的 meta.profiles（九個 /admin/pki 葉憑證設定檔中允許者，附說明）、newOrder 與訂單的 profile 成員，以及對本伺服器不簽發之設定檔回應 invalidProfile。"
   },
   "stsmetadata.specs.acme-device-attest.coverage": {
-    "en": "2b1f4bf4a6f2a1e0",
-    "text": "mock：僅 permanent-identifier 識別碼類型，在此指名帳戶自己的目錄項目，並成為其 urn:sts: subjectAltName。未實作 device-attest-01 挑戰與 WebAuthn 證明聲明。"
+    "en": "aed9de6fa5126292",
+    "text": "minimal：僅 permanent-identifier 識別碼類型，在此指名帳戶自己的目錄項目，並成為其 urn:sts: subjectAltName。未實作 device-attest-01 挑戰與 WebAuthn 證明聲明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
     "en": "727a26e021b5f20f",
@@ -2376,8 +2376,8 @@
     "text": "詢問要在應用程式的哪個聯盟身分識別提供者登入；需要 ?authn= id，因此直接開啟會回應 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "ee45f81a1c65f8ae",
-    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過 /spnego/protected 使用的同一個接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓模擬仍是模擬——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
+    "en": "827e8510ccf17768",
+    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過 /spnego/protected 使用的同一個接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -2704,8 +2704,8 @@
     "text": "工作階段在此程序中所有授權伺服器之間是「同一個」工作階段，因為它是同一個瀏覽器與同一個 Cookie。"
   },
   "stsmetadata.endpoints./:as/oauth2/jwks.what": {
-    "en": "2236048b324fccf1",
-    "text": "相同的簽署金鑰。此程序中每個授權伺服器都以它簽署，這是模擬服務的特性而非模型的特性——它們是共用一把金鑰的不同簽發者，真實部署不會這樣做。"
+    "en": "b216f148b0edadbc",
+    "text": "相同的簽署金鑰。此程序中每個授權伺服器都以它簽署，這是本實作的特性而非模型的特性——它們是共用一把金鑰的不同簽發者，真實部署不會這樣做。"
   },
   "stsmetadata.endpoints./oauth2/rfc9700.what": {
     "en": "a537cf9396222984",
@@ -2724,8 +2724,8 @@
     "text": "非規範，理由與旁邊的 RFC 9700 報告相同：OAuth 2.1 沒有定義說明伺服器遵循它的探索成員。該模式新增的每項要求，依章節引用 draft-ietf-oauth-v2-1-16，說明它是強制執行、在每種模式下都成立，還是繼承自 RFC 9700 模式（此模式會開啟它），以及它刻意豁免的授權類型。它會說明此草案仍是草案。唯讀：此模式即 oauth2.oauth21 設定。"
   },
   "stsmetadata.endpoints./oauth2/userinfo.what": {
-    "en": "412b23220d1f4af2",
-    "text": "「發送者限制與對象在這裡檢查」，在三個認證端點也是，透過四者共用的同一個函式：DPoP 繫結權杖的證明會經過驗證與重放檢查，憑證繫結權杖會對連線的憑證計算指紋並比較，而為「不同」對象（RFC 8707 `resource`）簽發的權杖會被拒絕。OIDC Core section 5.3，支援 GET 與 POST。關於存取權杖簽發對象的宣告，依其範圍篩選（section 5.4）——這是此模擬服務中範圍唯一會改變回答的地方。「此處唯一會拒絕非其簽發之權杖的受保護端點」：它會驗證簽章、typ（因此重新整理權杖或 id_token 會被拒絕）、撤銷狀態與 openid 範圍，各有其錯誤。Bearer 或 DPoP 繫結，透過與認證端點相同的檢查。對於註冊了 userinfo_signed_response_alg=RS256 的用戶端，傳回 application/jwt 而非 JSON。「自 2026-08-26 起有四層」，後者優先：在 /admin/userinfo-claims 設定的 userinfo「自訂宣告集」（每次呼叫時建構，因此會影響已持有權杖的用戶端）、section 5.4 由範圍驅動的宣告、用戶端在 OIDC Core section 5.5 的 claims 請求中指名的宣告——讀取自 ou=users 下該人的項目——以及 sub，沒有任何東西可以取代它。「此外的非規範部分」：它也接受請求本身上的 claims 請求（?claims={json} 或重複的 ?claim=），這是 section 5.3.1 沒有定義的，其作用是與存取權杖所承載的內容取「聯集」，絕不是從中移除宣告的方式；格式錯誤者會以 invalid_request 拒絕，而非忽略。"
+    "en": "73400edc8d0eed48",
+    "text": "「發送者限制與對象在這裡檢查」，在三個認證端點也是，透過四者共用的同一個函式：DPoP 繫結權杖的證明會經過驗證與重放檢查，憑證繫結權杖會對連線的憑證計算指紋並比較，而為「不同」對象（RFC 8707 `resource`）簽發的權杖會被拒絕。OIDC Core section 5.3，支援 GET 與 POST。關於存取權杖簽發對象的宣告，依其範圍篩選（section 5.4）——這是本服務中範圍唯一會改變回答的地方。「此處唯一會拒絕非其簽發之權杖的受保護端點」：它會驗證簽章、typ（因此重新整理權杖或 id_token 會被拒絕）、撤銷狀態與 openid 範圍，各有其錯誤。Bearer 或 DPoP 繫結，透過與認證端點相同的檢查。對於註冊了 userinfo_signed_response_alg=RS256 的用戶端，傳回 application/jwt 而非 JSON。「自 2026-08-26 起有四層」，後者優先：在 /admin/userinfo-claims 設定的 userinfo「自訂宣告集」（每次呼叫時建構，因此會影響已持有權杖的用戶端）、section 5.4 由範圍驅動的宣告、用戶端在 OIDC Core section 5.5 的 claims 請求中指名的宣告——讀取自 ou=users 下該人的項目——以及 sub，沒有任何東西可以取代它。「此外的非規範部分」：它也接受請求本身上的 claims 請求（?claims={json} 或重複的 ?claim=），這是 section 5.3.1 沒有定義的，其作用是與存取權杖所承載的內容取「聯集」，絕不是從中移除宣告的方式；格式錯誤者會以 invalid_request 拒絕，而非忽略。"
   },
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
@@ -3260,8 +3260,8 @@
     "text": "/admin/scep 上的控制項，作為一個動作資源：create-challenge（挑戰只在回覆中出現一次）、delete-challenge、reissue-ra、revoke-certificate、add-host-name 與 remove-host-name。"
   },
   "stsmetadata.protocols.OAuth2 / OIDC.what": {
-    "en": "7a8b3fb17948f1a3",
-    "text": "模擬的授權伺服器與 OpenID 提供者：全部五種授權類型、PKCE、DPoP、內省、撤銷、動態註冊、UserInfo 與 RP 發起的登出，並可依要求提供任意數量的已命名授權伺服器。RFC 9700 模式會開啟該 BCP 的拒絕規則，而 OAuth 2.1 模式（draft-ietf-oauth-v2-1-16）會開啟那些規則並加上它自己的規則。"
+    "en": "bc27f9ea821954f9",
+    "text": "授權伺服器與 OpenID 提供者：全部五種授權類型、PKCE、DPoP、內省、撤銷、動態註冊、UserInfo 與 RP 發起的登出，並可依要求提供任意數量的已命名授權伺服器。RFC 9700 模式會開啟該 BCP 的拒絕規則，而 OAuth 2.1 模式（draft-ietf-oauth-v2-1-16）會開啟那些規則並加上它自己的規則。"
   },
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
@@ -3280,8 +3280,8 @@
     "text": "一個 Policy Decision Point、一個「就是」內嵌目錄中 ou=policies 的原則存放庫、一個從主體自身項目讀取屬性的 Policy Information Point，以及一個內嵌的 Policy Enforcement Point。「此處唯一回答關於他人界限之問題的系列」：本服務上的其他每個協定都在驗證或佈建某人，而這一個則是接收一個已在別處通過驗證的主體，並被詢問其是否可以。以 OASIS 合規測試套件為準，而非以此處撰寫的測試為準。"
   },
   "stsmetadata.protocols.Federation.what": {
-    "en": "3e6764a842067c9c",
-    "text": "「聯盟關係的兩端」，涵蓋五種協定：SAML 2.0、SAML 1.1、WS-Federation 1.2、OpenID Connect 與 OAuth 2.0。作為「服務提供者」，它取用外部身分識別提供者所簽發的內容，依已設定的金鑰驗證，將屬性對應至目錄項目並啟動工作階段——與此處其他每個協定所讀取的是同一個工作階段，這讓聯盟身分能夠滿足 OAuth 2.0 授權請求或 SAML AuthnRequest，而兩者都不需要知道聯盟的存在。作為「身分識別提供者」，它將合作夥伴標記為聯盟合作夥伴而非測試用戶端，並決定向其釋出哪些屬性。\n\n**這是此處唯一預設拒絕、必須先設定才會做任何事的功能**，而這不是需要修正的疏漏：「接受任何判斷提示」不會是聯盟的寬鬆模擬，而會是此程序中每個協定的驗證繞過。關係在建立時為停用狀態，於 /admin/federation 或 POST /admin-api/federation/create 建立。\n\n**合作夥伴的登出會結束它所啟動的工作階段（#167）**：SAML 2.0 LogoutRequest、OpenID Connect Back-Channel 或 Front-Channel 登出，以及 WS-Federation 清除（經該人確認），都會如登入一樣經過驗證，且只結束其所指名的工作階段；此處的登出會向合作夥伴提供它自己的登出；而合作夥伴的 SessionNotOnOrAfter 會限制工作階段的期限。SAML 1.1 與 OAuth 2.0 沒有定義登出。\n\n**合作夥伴可以加密（#168）**：每個 SAML 2.0、WS-Federation 與 OpenID Connect 關係都在領域的 Intermediate 之下持有自己的加密金鑰，公布於其中繼資料或 /federation/jwks/{id}，並以寬限期輪替；產品模式要求合作夥伴使用它。"
+    "en": "2cbc9f735c713f9b",
+    "text": "「聯盟關係的兩端」，涵蓋五種協定：SAML 2.0、SAML 1.1、WS-Federation 1.2、OpenID Connect 與 OAuth 2.0。作為「服務提供者」，它取用外部身分識別提供者所簽發的內容，依已設定的金鑰驗證，將屬性對應至目錄項目並啟動工作階段——與此處其他每個協定所讀取的是同一個工作階段，這讓聯盟身分能夠滿足 OAuth 2.0 授權請求或 SAML AuthnRequest，而兩者都不需要知道聯盟的存在。作為「身分識別提供者」，它將合作夥伴標記為聯盟合作夥伴而非測試用戶端，並決定向其釋出哪些屬性。\n\n**這是此處唯一預設拒絕、必須先設定才會做任何事的功能**，而這不是需要修正的疏漏：「接受任何判斷提示」不會是一種寬鬆的聯盟，而會是此程序中每個協定的驗證繞過。關係在建立時為停用狀態，於 /admin/federation 或 POST /admin-api/federation/create 建立。\n\n**合作夥伴的登出會結束它所啟動的工作階段（#167）**：SAML 2.0 LogoutRequest、OpenID Connect Back-Channel 或 Front-Channel 登出，以及 WS-Federation 清除（經該人確認），都會如登入一樣經過驗證，且只結束其所指名的工作階段；此處的登出會向合作夥伴提供它自己的登出；而合作夥伴的 SessionNotOnOrAfter 會限制工作階段的期限。SAML 1.1 與 OAuth 2.0 沒有定義登出。\n\n**合作夥伴可以加密（#168）**：每個 SAML 2.0、WS-Federation 與 OpenID Connect 關係都在領域的 Intermediate 之下持有自己的加密金鑰，公布於其中繼資料或 /federation/jwks/{id}，並以寬限期輪替；產品模式要求合作夥伴使用它。"
   },
   "stsmetadata.protocols.OpenID Federation.what": {
     "en": "0de5051ba59ab384",
@@ -3320,8 +3320,8 @@
     "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言，判斷提示已簽署，並可選擇加密給請求者的憑證。"
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "0cdfedeffd978714",
-    "text": "模擬的 KDC：AS-REQ / TGS-REQ、預先驗證、四種加密類型、票證中的 Microsoft PAC、跨領域轉介與限制委派。此頁面上的列是其 HTTP 檢視與其 MS-KKDCP 代理，後者之所以存在，是因為瀏覽器無法開啟通訊端。"
+    "en": "73e20c397fc290ee",
+    "text": "KDC：AS-REQ / TGS-REQ、預先驗證、四種加密類型、票證中的 Microsoft PAC、跨領域轉介與限制委派。此頁面上的列是其 HTTP 檢視與其 MS-KKDCP 代理，後者之所以存在，是因為瀏覽器無法開啟通訊端。"
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
@@ -3392,8 +3392,8 @@
     "text": "此處每個協定都會將人送往的登入畫面上的第二要素：以真實安全金鑰進行的註冊與判斷提示儀式，證明與驗證器資料都會經過檢查，而不只是剖析。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "8194d201b7586702",
-    "text": "此處每個協定都會將人送往的登入畫面上的另一種第二要素，也是除 Kerberos 票證外，此模擬服務唯一真正「檢查」的認證：代碼由共用密鑰與時鐘計算並比較，在兩種模式下皆然，並強制執行 RFC 6238 section 5.2 的只接受一次規則。註冊是本伺服器繪製的 QR code，於 /portal/mfa 或使用啟用連結時進行；營運者在 /admin/users 上該人自己的列中清除註冊，而 /admin/totp 是設定此機制的地方。"
+    "en": "20b73dffc821e4a2",
+    "text": "此處每個協定都會將人送往的登入畫面上的另一種第二要素，也是除 Kerberos 票證外，本服務唯一真正「檢查」的認證：代碼由共用密鑰與時鐘計算並比較，在兩種模式下皆然，並強制執行 RFC 6238 section 5.2 的只接受一次規則。註冊是本伺服器繪製的 QR code，於 /portal/mfa 或使用啟用連結時進行；營運者在 /admin/users 上該人自己的列中清除註冊，而 /admin/totp 是設定此機制的地方。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

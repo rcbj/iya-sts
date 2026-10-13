@@ -1239,8 +1239,8 @@ const SECTIONS = [
         blurb: 'The embedded directory\'s two raw sockets and the store ' +
                'behind them: the ports, the base DN every realm\'s subtree ' +
                'hangs under, whether a name seen for the first time gets an ' +
-               'entry, and the two ceilings that keep a mock from being ' +
-               'filled up. What is IN the directory is on ' +
+               'entry, and the two ceilings that keep it from being filled ' +
+               'up. What is IN the directory is on ' +
                '<a href="/admin/users">Users</a> and ' +
                '<a href="/admin/groups">Groups</a>; this page is the ' +
                'directory itself.' },
@@ -1252,7 +1252,8 @@ const SECTIONS = [
                'by the same two functions the SAML profiles use.' },
       { path: '/admin/wsfed', label: 'WS-Federation',
         blurb: 'The passive requestor profile at <code>/wsfed</code>, its ' +
-               'entity ID, and the mock relying party that checks a sign-in ' +
+               'entity ID, and the demonstration relying party that checks a ' +
+               'sign-in ' +
                'response line by line. The assertion it carries is a SAML ' +
                '1.1 one, so its issuer and its attributes are configured on ' +
                'the SAML pages — this page says which setting is which and ' +
@@ -10284,7 +10285,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'is lost by the failure: the next change recomputes the same ' +
            'difference and writes it. A database outage taking down ' +
            'seventeen protocol families that do not need a database is the ' +
-           'one failure mode a mock must not have. <strong>The same is true ' +
+           'one failure mode this service must not have. <strong>The same is ' +
+           'true ' +
            'of coordination</strong>: a process that cannot read the change ' +
            'log keeps answering out of its own copy, says so, and catches up ' +
            'when the database comes back — it does not refuse anything in ' +

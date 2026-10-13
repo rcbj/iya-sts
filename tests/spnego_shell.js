@@ -346,6 +346,49 @@ function childMain() {
          'the browser\'s language, asking /authn-api for nothing',
          JSON.stringify(asked) + ' ' + drawn.slice(0, 600));
 
+    // 7b. A LINK TO /authn/spnego FROM ANOTHER PAGE OF THE SURFACE IS THE
+    // BROWSER'S (2026-10-12): the sign-in screen's "Sign in with Kerberos"
+    // was routed in place, so no request reached the server, the page had
+    // no state, and it said "This page could not be drawn". The control is
+    // a link to another (not embedded) page of the surface, which the
+    // runtime still follows in place.
+    const pushed = [];
+    const loginEnv = Object.assign({}, env, {
+      location: Object.assign({}, env.location, {
+        pathname: '/authn/login', search: '?authn=x',
+        href: 'https://sts.example/authn/login?authn=x' }),
+      history: { pushState: function (a, b, to) {
+        pushed.push(to);
+      }, replaceState: function () {
+        return undefined;
+      } }
+    });
+    const onLogin = new AuthnSurface(loginEnv);
+    onLogin.route = function () {
+      return Promise.resolve();
+    };
+    const click = function (href) {
+      const ev = { defaultPrevented: false, button: 0,
+        preventDefault: function () {
+          ev.defaultPrevented = true;
+        },
+        target: { tagName: 'A', target: '', hasAttribute: function () {
+          return false;
+        }, getAttribute: function () {
+          return href;
+        }, parentElement: null } };
+      onLogin.onClick(ev);
+      return ev.defaultPrevented;
+    };
+    const toSpnego = click('/authn/spnego?authn=x');
+    const toSelect = click('/authn/select-idp?authn=x');
+    note(!toSpnego && pushed.indexOf('/authn/spnego?authn=x') < 0 &&
+         toSelect,
+         '7b. a link to /authn/spnego is followed by the browser, not routed ' +
+         'in place; a link to another surface page still is',
+         JSON.stringify({ toSpnego: toSpnego, toSelect: toSelect,
+                          pushed: pushed }));
+
     note(true, '8. the snapshot of statuses and headers',
          JSON.stringify(snaps));
     config.clearOverride('krb5.spnegoAuthentication');

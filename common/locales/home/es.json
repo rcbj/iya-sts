@@ -1,6 +1,6 @@
 {
   "logoAlt": "IYA STS — Servicio de tokens de seguridad",
-  "sub": "Un servicio de identidad simulado y permisivo que habla dieciséis familias de protocolos. Existe para poner a prueba a los CLIENTES.",
+  "sub": "Un servicio de identidad que habla dieciséis familias de protocolos. Existe para poner a prueba a los CLIENTES.",
   "version": "versión {version}",
   "warn": "No comprueba ninguna contraseña, no valida ningún token de acceso y no atestigua ninguna carga de trabajo. No exponga este puerto en una dirección pública.",
   "repoLabel": "El proyecto en GitHub",

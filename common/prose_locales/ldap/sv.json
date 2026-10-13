@@ -160,8 +160,8 @@
     "text": "OpenID4VP-verifierare"
   },
   "applications.kinds.oid4vp-verifier.what": {
-    "en": "d233da27ee32a17e",
-    "text": "Det client_id som mockverifieraren presenterar i en Authorization Request."
+    "en": "ecba6c8462d69614",
+    "text": "Det client_id som den här tjänstens Verifier presenterar i en Authorization Request."
   },
   "applications.kinds.federation-identity-provider.label": {
     "en": "3f6b9e4e19beb32d",
@@ -476,8 +476,8 @@
     "text": "CLIENT_ID, och identifierarattributet för tre familjer: en förlitande part i OpenID Connect ÄR en OAuth-klient, och en plånbok som hämtar ett intyg hos OpenID4VCI-utfärdaren autentiserar sig som en, så alla tre deklarerar sitt namn här snarare än i tre attribut som skulle vara tre stavningar av ett faktum. Vanligtvis lika med appIdentifier, vilket är vad en protokollobservation skriver; ett ANDRA värde är ett client_id som den här applikationen också svarar på — ett id per miljö — och är varför detta ackumuleras snarare än tilldelas. Saknas på en post för vilken ingen OAuth-familj har deklarerats."
   },
   "applications.schema.attributes.oauthAudience.what": {
-    "en": "b498dbc0da8ba7a9",
-    "text": "DEN MÅLGRUPP SOM DEN HÄR APPLIKATIONEN SVARAR PÅ — den `aud` som en åtkomsttoken adresserad till den bär, och det som en klient lägger i RFC 8693 avsnitt 2.1:s `audience` (eller `resource`) när den byter en token för att nå den här applikationen. Det är OAuth-stavningen av ett faktum som tre andra familjer här redan registrerar under sina egna namn: `wstrustAppliesTo` är samma sak i en RequestSecurityToken och `samlEntityId` är samma sak i ett intygandes AudienceRestriction, och ett attribut som höll alla tre skulle vara en sträng som måste betyda det som det protokoll som frågade senast avsåg.\n\nDet är DEKLARERAT — ingen presenterar en målgrupp som sitt eget namn, så ingenting här skriver det och det kan inte härledas — och det är en URI snarare än ett client_id eftersom det är vad en målgrupp är: resursen, inte klienten som anropar den. Flera värden är det vanliga fallet (ett värdnamn per miljö), vilket är varför det ackumuleras.\n\n**DET LÄSES, VILKET GÖR DET TILL UNDANTAGET** bland deklarationsattributen bredvid det. Tokenutbytet slår UPP en `audience` här — forAudience() — så att en delegering som registrerats för `https://esb1.example.com` namnger applikationen `esb1` på /admin/delegation och i dess bild, i stället för att rita en ruta för en URL som inget annat i registret nämner. Det är en UPPSLAGNING och inte en behörighet: en målgrupp som ingen registrerat byts precis som förut och registreras ordagrant, eftersom en mock som avvisade skulle ta bort ett testfall snarare än lägga till ett."
+    "en": "85845f64442f584e",
+    "text": "DEN MÅLGRUPP SOM DEN HÄR APPLIKATIONEN SVARAR PÅ — den `aud` som en åtkomsttoken adresserad till den bär, och det som en klient lägger i RFC 8693 avsnitt 2.1:s `audience` (eller `resource`) när den byter en token för att nå den här applikationen. Det är OAuth-stavningen av ett faktum som tre andra familjer här redan registrerar under sina egna namn: `wstrustAppliesTo` är samma sak i en RequestSecurityToken och `samlEntityId` är samma sak i ett intygandes AudienceRestriction, och ett attribut som höll alla tre skulle vara en sträng som måste betyda det som det protokoll som frågade senast avsåg.\n\nDet är DEKLARERAT — ingen presenterar en målgrupp som sitt eget namn, så ingenting här skriver det och det kan inte härledas — och det är en URI snarare än ett client_id eftersom det är vad en målgrupp är: resursen, inte klienten som anropar den. Flera värden är det vanliga fallet (ett värdnamn per miljö), vilket är varför det ackumuleras.\n\n**DET LÄSES, VILKET GÖR DET TILL UNDANTAGET** bland deklarationsattributen bredvid det. Tokenutbytet slår UPP en `audience` här — forAudience() — så att en delegering som registrerats för `https://esb1.example.com` namnger applikationen `esb1` på /admin/delegation och i dess bild, i stället för att rita en ruta för en URL som inget annat i registret nämner. Det är en UPPSLAGNING och inte en behörighet: en målgrupp som ingen registrerat byts precis som förut och registreras ordagrant, eftersom en tjänst som avvisade skulle ta bort ett testfall snarare än lägga till ett."
   },
   "applications.schema.attributes.oauthClientSecret.what": {
     "en": "3acdc90938720b6b",
@@ -1144,8 +1144,8 @@
     "text": "WTREALM från en wsignin1.0-begäran (avsnitt 13.2.1) — WS-Federations identifierarattribut. Ackumuleras, av samma skäl som varje identifierare här."
   },
   "applications.schema.attributes.wsfedReplyUrl.what": {
-    "en": "b68a4bfe89fb7da0",
-    "text": "DIT ETT INLOGGNINGSSVAR POSTAS TILLBAKA för den här applikationen: `wreply` enligt avsnitt 13.2.1, WS-Federations omdirigerings-URI. Det skrevs i samlAssertionConsumerService fram till 2026-08-25, vilket lade en wreply i det attribut som SAML-sidorna läser för en assertion consumer service och för reservvägen för Single Logout — ett attribut som höll två protokolls returadresser, så att en WS-Federation-applikation verkade ha en SAML-ACS som den aldrig hade angett. Två fakta, två attribut. Precis som SAML-attributet bredvid KONTROLLERAS detta ENDAST I PRODUKTLÄGE: utvecklingsläget avvisar ingen wreply, eftersom en mock som avvisade skulle ta bort ett testfall snarare än lägga till ett; produktläget postar bara till en adress på den här listan och en observation lägger aldrig till någon. En wreply som utvecklingsläget registrerat markeras i appReturnAddressObserved och produktläget avvisar den tills den bekräftas; värden som registrerades innan den markeringen fanns har ingen och behöver fortfarande granskas innan en sfär byts till produktläge."
+    "en": "1d6376f1797ef43c",
+    "text": "DIT ETT INLOGGNINGSSVAR POSTAS TILLBAKA för den här applikationen: `wreply` enligt avsnitt 13.2.1, WS-Federations omdirigerings-URI. Det skrevs i samlAssertionConsumerService fram till 2026-08-25, vilket lade en wreply i det attribut som SAML-sidorna läser för en assertion consumer service och för reservvägen för Single Logout — ett attribut som höll två protokolls returadresser, så att en WS-Federation-applikation verkade ha en SAML-ACS som den aldrig hade angett. Två fakta, två attribut. Precis som SAML-attributet bredvid KONTROLLERAS detta ENDAST I PRODUKTLÄGE: utvecklingsläget avvisar ingen wreply, eftersom en tjänst som avvisade skulle ta bort ett testfall snarare än lägga till ett; produktläget postar bara till en adress på den här listan och en observation lägger aldrig till någon. En wreply som utvecklingsläget registrerat markeras i appReturnAddressObserved och produktläget avvisar den tills den bekräftas; värden som registrerades innan den markeringen fanns har ingen och behöver fortfarande granskas innan en sfär byts till produktläge."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "493ac4121c2076ca",
@@ -1208,8 +1208,8 @@
     "text": "RFC 7592-registreringens åtkomsttoken, som är det som skyddar läs-, uppdaterings- och borttagningsoperationerna på den här klienten. Förseglad som oauthClientSecret överallt där processen har en beständig nyckelkrypteringsnyckel (sedan 2026-10-01), och skrivs aldrig till granskningsloggen."
   },
   "applications.schema.attributes.oid4vpClientId.what": {
-    "en": "d40d3c0b11b45687",
-    "text": "VERIFIERARENS CLIENT_ID i en Authorization Request som ber om en presentation — OpenID4VP:s identifierarattribut. Den här tjänstens egen mock-verifierare tar sitt från konfigurationen (oid4vp.clientId) snarare än från en anropare, så den posten dyker upp första gången en presentation verifieras; ett värde som deklareras här är en FRÄMMANDE verifierare som någon konfigurerar."
+    "en": "7254425d22df2918",
+    "text": "VERIFIERARENS CLIENT_ID i en Authorization Request som ber om en presentation — OpenID4VP:s identifierarattribut. Den här tjänstens egen verifierare tar sitt från konfigurationen (oid4vp.clientId) snarare än från en anropare, så den posten dyker upp första gången en presentation verifieras; ett värde som deklareras här är en FRÄMMANDE verifierare som någon konfigurerar."
   },
   "applications.schema.attributes.federationPartnerId.what": {
     "en": "6b7f63d65cdd8229",

@@ -27,7 +27,7 @@
   "body.typedHeading": "授予给未列出的名称",
   "body.name": "名称",
   "body.typedPlaceholder": "对方登录时将使用的名称",
-  "body.typedNote": "在该人员存在之前，此成员关系将处于悬空状态——它指向此目录尚未包含的 DN——角色从其首次登录时起生效。这正是模拟服务值得关注的情形，也是此表单存在的原因：授予并不要求该人员已被见过。包含 RFC 4514 在 DN 中保留的字符的名称会被拒绝，与创建人员时的拒绝相同。",
+  "body.typedNote": "在该人员存在之前，此成员关系将处于悬空状态——它指向此目录尚未包含的 DN——角色从其首次登录时起生效。这正是测试中值得关注的情形，也是此表单存在的原因：授予并不要求该人员已被见过。包含 RFC 4514 在 DN 中保留的字符的名称会被拒绝，与创建人员时的拒绝相同。",
   "body.readOnlyNote": "授予和撤销需要 <strong>Admin Write</strong>。上表是您凭 <strong>Admin Read</strong> 可以看到的内容。",
   "body.person": "人员",
   "body.filterPlaceholder": "名称的一部分",

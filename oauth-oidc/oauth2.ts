@@ -6926,7 +6926,7 @@ class OAuth2Server {
                ' ' +
                'and this service holds ' +
                'others: ' + out.mismatched.join('; ') + '. The values held ' +
-               'are what is returned — a mock that echoed back whatever a ' +
+               'are what is returned — a service that echoed back whatever a ' +
                'client asked it to assert could not be used to test ' +
                'anything.');
     }
@@ -20814,7 +20814,7 @@ class OAuth2Server {
     app.get('/docs', function (req, res) {
       log.debug("Entering the service documentation endpoint.");
       res.type('text/plain').send(
-        'Mock authorization server (service_documentation).\n\n' +
+        'Authorization server (service_documentation).\n\n' +
         'Every endpoint in ' + baseUrlOf(req) +
         '/.well-known/oauth-authorization-server ' +
         'answers.\nTokens are RS256 JWTs signed with the key ' +
@@ -20826,14 +20826,14 @@ class OAuth2Server {
 
     app.get('/policy', function (req, res) {
       log.debug("Entering the policy document endpoint.");
-      res.type('text/plain').send('Mock authorization server policy ' +
+      res.type('text/plain').send('Authorization server policy ' +
                                   '(op_policy_uri). Test data only.\n');
       log.debug("Leaving the policy document endpoint.");
     });
 
     app.get('/tos', function (req, res) {
       log.debug("Entering the terms of service endpoint.");
-      res.type('text/plain').send('Mock authorization server terms of ' +
+      res.type('text/plain').send('Authorization server terms of ' +
                                   'service (op_tos_uri). Test data only.\n');
       log.debug("Leaving the terms of service endpoint.");
     });

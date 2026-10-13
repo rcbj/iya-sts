@@ -2867,7 +2867,8 @@ class Saml2Sso {
     // `samlAssertionConsumerService` values on this service provider's entry, a
     // request naming another is REFUSED on a page — not delivered a failure
     // Response, because the address that Response would go to is the one in
-    // question — and there is no mock fallback. `saml/return_address.ts` is the
+    // question — and there is no demonstration fallback.
+    // `saml/return_address.ts` is the
     // rule, shared with the other two profiles.
     //
     // Either way it must be an absolute http(s) URL, because a form action that
@@ -5444,7 +5445,8 @@ class Saml2Sso {
          : 'Where the response goes. This realm is in PRODUCT mode, so it ' +
            'must be one of the samlAssertionConsumerService values ' +
            'registered on the service provider\'s entry, compared exactly; ' +
-           'with none, the registered one is used; and there is no mock ' +
+           'with none, the registered one is used; and there is no ' +
+           'demonstration ' +
            'fallback.'],
        ['NameIDPolicy/@Format', 'Answered with the format it asks for, ' +
                                 'whatever it is — unless the service ' +

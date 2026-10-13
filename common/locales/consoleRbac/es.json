@@ -27,7 +27,7 @@
   "body.typedHeading": "Otorgar a un nombre que no está en la lista",
   "body.name": "Nombre",
   "body.typedPlaceholder": "el nombre con el que iniciará sesión",
-  "body.typedNote": "La pertenencia quedará COLGANDO hasta que esa persona exista —nombra un DN que este directorio aún no tiene— y el rol cuenta desde su primer inicio de sesión. Es el caso interesante para un simulador y por eso existe este formulario: nada en una concesión exige que la persona haya sido vista. Se rechaza un nombre con un carácter que la RFC 4514 reserva en un DN, el mismo rechazo que recibe la creación de una persona.",
+  "body.typedNote": "La pertenencia quedará COLGANDO hasta que esa persona exista —nombra un DN que este directorio aún no tiene— y el rol cuenta desde su primer inicio de sesión. Es el caso interesante para las pruebas y por eso existe este formulario: nada en una concesión exige que la persona haya sido vista. Se rechaza un nombre con un carácter que la RFC 4514 reserva en un DN, el mismo rechazo que recibe la creación de una persona.",
   "body.readOnlyNote": "Otorgar y revocar requieren <strong>Admin Write</strong>. La tabla de arriba es lo que puede ver con <strong>Admin Read</strong>.",
   "body.person": "Persona",
   "body.filterPlaceholder": "parte de un nombre",

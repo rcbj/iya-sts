@@ -213,6 +213,37 @@ function checkShaping(t) {
       additionalProperties: false });
   t.check(JSON.stringify(one.attributes) === '["givenName"]',
           'E3. and one ticked box is a list of one');
+  // E4. AN UNTICKED BOX IS `false` WHERE THE OPERATION TAKES A BOOLEAN
+  // (2026-10-12): Directory → Policies' passkey profile is saved whole, and
+  // unticking "Allow a passkey sign-in with no username" sent nothing and
+  // was refused. A box ticked under the same name, a member the schema
+  // does not name, and a member that is not only a boolean are left alone.
+  const form = { querySelectorAll: function () {
+    return [{ name: 'allowUsernameless', checked: false },
+            { name: 'enforcePinLength', checked: true },
+            { name: 'pair', checked: false }, { name: 'pair', checked: true },
+            { name: 'unknown', checked: false },
+            { name: 'loose', checked: false },
+            { name: 'off', checked: false, disabled: true }];
+  } };
+  const unticked = ConsoleRuntime.uncheckedBoxes(form);
+  const policy = runtime.shapeFields(
+    { enforcePinLength: 'true', pair: 'on' },
+    { type: 'object',
+      properties: { allowUsernameless: { type: 'boolean' },
+                    enforcePinLength: { type: 'boolean' },
+                    pair: { type: 'boolean' },
+                    loose: { type: ['boolean', 'string'] },
+                    off: { type: 'boolean' } },
+      additionalProperties: false }, unticked);
+  t.check(JSON.stringify(unticked) === '["allowUsernameless","unknown",' +
+          '"loose"]' && policy.allowUsernameless === false &&
+          policy.enforcePinLength === true && policy.pair === true &&
+          !('unknown' in policy) && !('loose' in policy) &&
+          !('off' in policy),
+          'E4. an unticked box is sent as false where the operation takes ' +
+          'a boolean, and nothing else is', JSON.stringify({ unticked: unticked,
+                                                            policy: policy }));
   log.debug("Leaving checkShaping().");
 }
 

@@ -3060,7 +3060,7 @@ things are checked and each answers a different way of the page going wrong:
   advertises with no crypto profile, a profile naming a family that is not
   advertised, and a family citing an envelope with no row in the standards
   table. The page reports all three on itself; this is what makes them FAIL.
-* **Every coverage note starts `full`, `partial` or `mock`**, the rule
+* **Every coverage note starts `full`, `partial` or `minimal`**, the rule
   `sts_metadata.ts`'s specification list already follows.
 * **Five algorithm lists are compared against the SERVICE'S OWN DISCOVERY
   DOCUMENTS** — the ID Token and UserInfo signing lists, the two JWE lists and

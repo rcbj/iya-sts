@@ -5574,7 +5574,7 @@ const FORWARDING_HEADERS = [
       'empty, and otherwise only from a peer in those ranges, taking the ' +
       'right-most hop that is not one of them (common/client_address.js). ' +
       'The audit log deliberately records the CHANNEL rather than an ' +
-      'address: on a mock reached over a compose bridge an address is a ' +
+      'address: on a service reached over a compose bridge an address is a ' +
       'fact about docker.' },
   { name: 'forwarded', what: 'RFC 7239\'s single-header form. NOT PARSED — ' +
       'this service reads the X- forms only, which is what every proxy in ' +

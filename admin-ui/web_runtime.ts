@@ -1542,14 +1542,54 @@ class ConsoleRuntime extends SpaClient {
     return one || null;
   }
 
+  // AN UNTICKED CHECKBOX POSTS NOTHING, which the server-drawn console's
+  // handlers read as "no" (a policy save was told `via: 'console'`). An
+  // operation that takes the whole of a thing — Directory → Policies'
+  // profiles, where a save REPLACES the profile and every field is
+  // required — refused a save with any box unticked (rcbj, 2026-10-12:
+  // unticking "Allow a passkey sign-in with no username"). So the names
+  // of the form's unticked boxes are handed to `shapeFields()`, which
+  // sends `false` for each one the operation takes as a boolean.
+  /**
+   * The names of a form's checkboxes that are not ticked, where no box of
+   * that name is.
+   *
+   * @param form - the form element
+   * @returns the names
+   */
+  static uncheckedBoxes(form: Json): string[] {
+    if (!form || typeof form.querySelectorAll !== 'function') {
+      return [];
+    }
+    const boxes = form.querySelectorAll('input[type="checkbox"][name]');
+    const ticked: Json = {};
+    const names: string[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      const box = boxes[i];
+      if (box.disabled) {
+        continue;
+      }
+      if (box.checked) {
+        ticked[box.name] = true;
+      } else if (names.indexOf(box.name) < 0) {
+        names.push(box.name);
+      }
+    }
+    return names.filter(function (name: string) {
+      return !ticked[name];
+    });
+  }
+
   /**
    * Shapes a form's fields to an operation's request schema.
    *
    * @param fields - the form's fields
    * @param schema - the operation's request schema, or null for none
+   * @param unchecked - optional; the form's unticked checkboxes' names, sent
+   *   as `false` where the schema takes that member as a boolean
    * @returns the body to send
    */
-  shapeFields(fields: Json, schema: Json): Json {
+  shapeFields(fields: Json, schema: Json, unchecked?: string[]): Json {
     const self = this;
     if (!schema || !schema.properties) {
       return fields;
@@ -1644,6 +1684,16 @@ class ConsoleRuntime extends SpaClient {
         }
       }
       out[name] = value;
+    });
+    (unchecked || []).forEach(function (name: string) {
+      if (name in out || !has(name)) {
+        return;
+      }
+      const prop = self.deref(schema.properties[name]) || {};
+      const types = [].concat(prop.type || []);
+      if (types.length === 1 && types[0] === 'boolean') {
+        out[name] = false;
+      }
     });
     return out;
   }
@@ -1758,7 +1808,8 @@ class ConsoleRuntime extends SpaClient {
     const sent = multipart
       ? await this.multipartBody(operation, data)
       : { operation: operation,
-          body: this.shapeFields(fields, await this.requestSchema(operation)) };
+          body: this.shapeFields(fields, await this.requestSchema(operation),
+                                 ConsoleRuntime.uncheckedBoxes(form)) };
     const res = await this.api('POST', sent.operation, sent.body);
     if (!res) {
       return;

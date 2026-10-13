@@ -413,7 +413,8 @@ app.get('/spnego', app.demoOnly, function (req, res) {
     'other name is refused with <code>KRB_AP_ERR_NOT_US</code>.</p>' +
     '<h2>Deliberate misconfigurations</h2>' +
     '<p>Add these to <code>/spnego/protected</code> to make the negotiation ' +
-    'go wrong in one specific way &mdash; which is what this mock is for:</p>' +
+    'go wrong in one specific way &mdash; which is what this demonstration ' +
+    'is for:</p>' +
     '<ul>' +
     '<li><code>?mic=require</code> &mdash; answer with ' +
       '<code>request-mic</code>, so the mechListMIC exchange becomes ' +

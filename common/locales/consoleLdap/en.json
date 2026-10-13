@@ -59,7 +59,7 @@
   "fed.counts": "{signIns} sign-in(s)<br>{people} person/people",
   "fed.intro": "{count} of a maximum {max} under <code>{container}</code>: the foreign identity providers this service consumes assertions from, and the foreign service providers it asserts to. One relationship is one DIRECTION, so a partner in both is two entries.",
   "fed.tileRelationships": "Relationships",
-  "fed.warn": "<strong>An ldapmodify here is a security change, which is not true of any other container in this directory.</strong> <code>fedSigningCertificate</code> decides whose assertions this service will believe; <code>fedEnabled</code> turns a partner on. Everywhere else here an edit changes what this service hands out, and every bind to this directory succeeds &mdash; so this container is exactly as protected as the rest of it, which is to say not at all. That is the honest state of a mock, and it is why federation is the one feature here that refuses by default.",
+  "fed.warn": "<strong>An ldapmodify here is a security change, which is not true of any other container in this directory.</strong> <code>fedSigningCertificate</code> decides whose assertions this service will believe; <code>fedEnabled</code> turns a partner on. Everywhere else here an edit changes what this service hands out, and every bind to this directory succeeds &mdash; so this container is exactly as protected as the rest of it, which is to say not at all. That is the honest state of development mode, and it is why federation is the one feature here that refuses by default.",
   "fed.thRelationship": "Relationship",
   "fed.placeholder": "an id, a DN, a protocol or a direction",
   "fed.thDirection": "Direction",

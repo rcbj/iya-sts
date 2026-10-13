@@ -37,7 +37,7 @@
   "ianTip": "Mga alternatibong pangalan para sa issuer. Parehong syntax ng subjectAltName.",
   "ianCriticalTip": "Hindi dapat karaniwang critical.",
   "ianSyntax": "Parehong syntax ng subjectAltName sa itaas.",
-  "cdpTip": "Kung saan kukunin ang CRL na magbabawi sa certificate na ito. TANDAAN na walang inilalathala ang serbisyong ito: ang extension ay URL na iyong iginigiit, hindi pangakong tinutupad ng mock na ito.",
+  "cdpTip": "Kung saan kukunin ang CRL na magbabawi sa certificate na ito. TANDAAN na walang inilalathala ang serbisyong ito: ang extension ay URL na iyong iginigiit, hindi pangakong tinutupad ng serbisyong ito.",
   "rarelyCritical": "Bihirang critical.",
   "urlsPerLine": "Mga URL, isa kada linya",
   "cdpUrlsTip": "Kung saan inilalathala ang CRL na magbabawi sa certificate na ito.",

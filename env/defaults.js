@@ -660,13 +660,13 @@ var config = {
 
   // --- SAML ------------------------------------------------------------
   saml: {
-    clockSkewS: 0,                                          // Assertion clock skew (s)
-    signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
-    canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
-    allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
-    organizationName: "sts",                                // Metadata OrganizationName
-    organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
-    organizationUrl: ""                                     // Metadata OrganizationURL
+    clockSkewS: 0,                                     // Assertion clock skew (s)
+    signatureAlgorithm: "rsa-sha256",                  // XML signature algorithm
+    canonicalizationAlgorithm: "exclusive",            // XML canonicalization
+    allowSha1Signatures: false,                        // Accept SHA-1 XML signatures
+    organizationName: "sts",                           // Metadata OrganizationName
+    organizationDisplayName: "Security token service", // Metadata OrganizationDisplayName
+    organizationUrl: ""                                // Metadata OrganizationURL
   },
 
   // --- SAML 2.0 assertions ---------------------------------------------
@@ -769,36 +769,36 @@ var config = {
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",                    // Wallet URL
-    authorizationServer: "",                               // Authorization server
-    batchSize: 4,                                          // Batch size
-    deferredReadyMs: 4000,                                 // Deferred: ready after (ms)
-    deferredIntervalS: 2,                                  // Deferred: poll interval (s)
-    offerUsername: "diploma.student",                      // Offer username
-    requestEncryptionRequired: false,                      // Require encrypted credential requests
-    txCodeLength: 5,                                       // Transaction Code length (digits)
-    txCodeMaxAttempts: 5,                                  // Wrong Transaction Codes before the code is spent (product)
-    offerTtlS: 600,                                        // Credential Offer lifetime (s)
-    walletIssuancePath: "/vc-issuance-1.html",             // Wallet issuance page
-    requestEncryptionKeyBits: 2048,                        // Request encryption key size (bits)
-    requestEncryptionEncValues: "A128GCM,A256GCM",         // Request encryption: enc values
-    responseEncryptionEncValues: "A128GCM,A256GCM",        // Response encryption: enc values
-    responseEncryptionRequired: false,                     // Require encrypted credential responses
-    credentialLifetimeS: 2592000,                          // Issued credential lifetime (s)
-    credentialSigningAlgorithm: "RS256",                   // Algorithm credentials are signed with
-    credentialCertificateHeader: "x5u",                    // Credential certificate header
-    signedMetadataCertificateHeader: "x5u",                // Issuer signed_metadata certificate header
-    proofIatWindowS: 600,                                  // Proof of possession iat window (s)
-    cNonceTtlS: 300,                                       // c_nonce lifetime (s)
-    cNonceCacheSize: 10000,                                // c_nonce values held (per realm)
-    issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
-    domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
-    sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false,                                 // Name the ldp_vc issuer by DID; restart to apply
-    statusListTtlS: 300,                                   // Status list time to live (s)
-    statusListLifetimeS: 86400,                            // Status list lifetime (s)
-    keyAttestationRequired: false,                         // Require a key attestation
-    keyAttestationTrustedCertificates: ""                  // Trusted key attesters (PEM)
+    walletUrl: "http://localhost:3000",               // Wallet URL
+    authorizationServer: "",                          // Authorization server
+    batchSize: 4,                                     // Batch size
+    deferredReadyMs: 4000,                            // Deferred: ready after (ms)
+    deferredIntervalS: 2,                             // Deferred: poll interval (s)
+    offerUsername: "diploma.student",                 // Offer username
+    requestEncryptionRequired: false,                 // Require encrypted credential requests
+    txCodeLength: 5,                                  // Transaction Code length (digits)
+    txCodeMaxAttempts: 5,                             // Wrong Transaction Codes before the code is spent (product)
+    offerTtlS: 600,                                   // Credential Offer lifetime (s)
+    walletIssuancePath: "/vc-issuance-1.html",        // Wallet issuance page
+    requestEncryptionKeyBits: 2048,                   // Request encryption key size (bits)
+    requestEncryptionEncValues: "A128GCM,A256GCM",    // Request encryption: enc values
+    responseEncryptionEncValues: "A128GCM,A256GCM",   // Response encryption: enc values
+    responseEncryptionRequired: false,                // Require encrypted credential responses
+    credentialLifetimeS: 2592000,                     // Issued credential lifetime (s)
+    credentialSigningAlgorithm: "RS256",              // Algorithm credentials are signed with
+    credentialCertificateHeader: "x5u",               // Credential certificate header
+    signedMetadataCertificateHeader: "x5u",           // Issuer signed_metadata certificate header
+    proofIatWindowS: 600,                             // Proof of possession iat window (s)
+    cNonceTtlS: 300,                                  // c_nonce lifetime (s)
+    cNonceCacheSize: 10000,                           // c_nonce values held (per realm)
+    issuerDisplayName: "IdP Tools Credential Issuer", // Issuer display name
+    domainLinkageLifetimeS: 31536000,                 // Domain Linkage Credential lifetime (s)
+    sdJwtIssuerDid: false,                            // Name the SD-JWT VC issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                            // Name the ldp_vc issuer by DID; restart to apply
+    statusListTtlS: 300,                              // Status list time to live (s)
+    statusListLifetimeS: 86400,                       // Status list lifetime (s)
+    keyAttestationRequired: false,                    // Require a key attestation
+    keyAttestationTrustedCertificates: ""             // Trusted key attesters (PEM)
   },
 
   // --- OID4VP ----------------------------------------------------------

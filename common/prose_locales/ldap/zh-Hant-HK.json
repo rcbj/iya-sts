@@ -140,8 +140,8 @@
     "text": "「CLIENT_ID」，也是三個家族的識別碼屬性：OpenID Connect 依賴方「就是」OAuth 客戶端，而在 OpenID4VCI 簽發者處領取憑證的錢包也以 OAuth 客戶端身分驗證，因此三者都在此宣告其名稱，而不是使用三個屬性，那會是同一事實的三種拼寫。通常等於 appIdentifier，也就是協定出現記錄所寫入的值；「第二個」值是此應用程式也會回應的 client_id——依環境區分的 ID——這就是它採累積而非指派的原因。在未宣告任何 OAuth 家族的項目上不存在。"
   },
   "applications.schema.attributes.oauthAudience.what": {
-    "en": "b498dbc0da8ba7a9",
-    "text": "「此應用程式所回應的對象」——指向它的存取權杖所攜帶的 `aud`，也是客戶端交換權杖以到達此應用程式時，放在 RFC 8693 section 2.1 之 `audience`（或 `resource`）中的值。它是 OAuth 對一項事實的拼寫，而此處其他三個家族已以各自的名稱記錄同一事實：`wstrustAppliesTo` 是 RequestSecurityToken 中的同一件事，`samlEntityId` 是斷言之 AudienceRestriction 中的同一件事，若由一個屬性保存三者，就會是一個必須代表最後詢問之協定的字串。\n\n它由「宣告」而來——沒有人會把對象當作自己的名稱出示，因此這裡沒有任何東西會寫入它，也無法衍生它——而且它是 URI 而不是 client_id，因為對象本來就是如此：是資源，而不是呼叫它的客戶端。多個值是一般情況（依環境區分的主機名稱），這就是它採累積的原因。\n\n**它會被讀取，這使它成為例外**，有別於旁邊的其他宣告屬性。權杖交換會在此「查詢」`audience`——forAudience()——因此為 `https://esb1.example.com` 記錄的委派，在 /admin/delegation 及其圖中會指名應用程式 `esb1`，而不是為登錄中其他地方都未提及的 URL 畫一個方框。它是「查詢」而不是權限：沒有人註冊的對象仍會照舊被交換，並原樣記錄，因為會拒絕的模擬環境只會減少測試案例，而不是增加。"
+    "en": "85845f64442f584e",
+    "text": "「此應用程式所回應的對象」——指向它的存取權杖所攜帶的 `aud`，也是客戶端交換權杖以到達此應用程式時，放在 RFC 8693 section 2.1 之 `audience`（或 `resource`）中的值。它是 OAuth 對一項事實的拼寫，而此處其他三個家族已以各自的名稱記錄同一事實：`wstrustAppliesTo` 是 RequestSecurityToken 中的同一件事，`samlEntityId` 是斷言之 AudienceRestriction 中的同一件事，若由一個屬性保存三者，就會是一個必須代表最後詢問之協定的字串。\n\n它由「宣告」而來——沒有人會把對象當作自己的名稱出示，因此這裡沒有任何東西會寫入它，也無法衍生它——而且它是 URI 而不是 client_id，因為對象本來就是如此：是資源，而不是呼叫它的客戶端。多個值是一般情況（依環境區分的主機名稱），這就是它採累積的原因。\n\n**它會被讀取，這使它成為例外**，有別於旁邊的其他宣告屬性。權杖交換會在此「查詢」`audience`——forAudience()——因此為 `https://esb1.example.com` 記錄的委派，在 /admin/delegation 及其圖中會指名應用程式 `esb1`，而不是為登錄中其他地方都未提及的 URL 畫一個方框。它是「查詢」而不是權限：沒有人註冊的對象仍會照舊被交換，並原樣記錄，因為會拒絕的服務只會減少測試案例，而不是增加。"
   },
   "applications.schema.attributes.oauthClientSecret.what": {
     "en": "3acdc90938720b6b",
@@ -556,8 +556,8 @@
     "text": "此客戶端自己「選取」的、可驗證憑證所攜帶的目錄屬性，為目錄屬性名稱的 JSON 陣列。存在時，對以此客戶端之存取權杖簽發的憑證，會「取代」領域的「憑證宣告」選取；簽發者元數據仍公告領域的選取。"
   },
   "applications.schema.attributes.wsfedReplyUrl.what": {
-    "en": "b68a4bfe89fb7da0",
-    "text": "此應用程式之登入回應回傳的位置：第 13.2.1 節的 `wreply`，即 WS-Federation 的重新導向 URI。在 2026-08-25 之前它被寫入 samlAssertionConsumerService，使 wreply 出現在 SAML 頁面為斷言取用者服務與 Single Logout 後備所讀取的屬性中——一個屬性保存兩種協定的回傳地址，導致 WS-Federation 應用程式看起來擁有一個從未指名的 SAML ACS。兩項事實，兩個屬性。與旁邊的 SAML 屬性一樣，它「僅在產品模式下檢查」：開發模式不拒絕任何 wreply，因為會拒絕的模擬服務只會移除測試案例而不是增加；產品模式只回傳至此清單上的地址，且看到的地址絕不會被加入。開發模式記錄的 wreply 會標記於 appReturnAddressObserved，產品模式在確認前會拒絕它；在該標記出現之前記錄的值沒有標記，在領域切換為產品模式前仍需審查。"
+    "en": "1d6376f1797ef43c",
+    "text": "此應用程式之登入回應回傳的位置：第 13.2.1 節的 `wreply`，即 WS-Federation 的重新導向 URI。在 2026-08-25 之前它被寫入 samlAssertionConsumerService，使 wreply 出現在 SAML 頁面為斷言取用者服務與 Single Logout 後備所讀取的屬性中——一個屬性保存兩種協定的回傳地址，導致 WS-Federation 應用程式看起來擁有一個從未指名的 SAML ACS。兩項事實，兩個屬性。與旁邊的 SAML 屬性一樣，它「僅在產品模式下檢查」：開發模式不拒絕任何 wreply，因為會拒絕的服務只會移除測試案例而不是增加；產品模式只回傳至此清單上的地址，且看到的地址絕不會被加入。開發模式記錄的 wreply 會標記於 appReturnAddressObserved，產品模式在確認前會拒絕它；在該標記出現之前記錄的值沒有標記，在領域切換為產品模式前仍需審查。"
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",

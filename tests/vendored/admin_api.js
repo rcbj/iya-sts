@@ -1487,8 +1487,8 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
 
   // --- the coverage notes -----------------------------------------------
   report.standards.forEach(function (row) {
-    assert.ok(/^(full|partial|mock)\b/.test(row.coverage),
-      "every coverage note must start `full`, `partial` or `mock` and say " +
+    assert.ok(/^(full|partial|minimal)\b/.test(row.coverage),
+      "every coverage note must start `full`, `partial` or `minimal` and say " +
       "what is missing — the rule /admin/sts-metadata's specification list " +
       "follows, and worth more on a page about cryptography, which somebody " +
       "may be using to learn these specifications. `" + row.key +

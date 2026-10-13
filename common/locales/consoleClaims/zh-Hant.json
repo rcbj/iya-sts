@@ -177,7 +177,7 @@
   "essentialA": "<strong>標記為必要但仍缺失：</strong>",
   "essentialB": "。這仍然不是錯誤——<code>essential</code> 是關於用戶端在缺少該聲明時將如何行事的陳述，而不是對本伺服器的指令。它以 warn 等級記錄，以便查找。",
   "mismatchA": "<strong>請求了某個值，但持有的是另一個值：</strong>",
-  "mismatchB": "。傳回的是所持有的值。本服務本可以照單回顯請求要求它斷言的任何內容，但刻意不這樣做：它關於一個人所說的一切都來自目錄或虛構的人設，而一個附和請求的模擬服務無法用來測試任何東西。",
+  "mismatchB": "。傳回的是所持有的值。本服務本可以照單回顯請求要求它斷言的任何內容，但刻意不這樣做：它關於一個人所說的一切都來自目錄或虛構的人設，而一個附和請求的服務無法用來測試任何東西。",
   "requestEntryFound": "{user} 在 <code>ou=users</code> 下有項目，因此標記為 <em>directory</em> 的值就是 <code>ldapsearch</code> 讀取到的內容。",
   "requestNoEntry": "{user} 在目錄中沒有項目，因此上面的每個值都是依使用者名稱虛構的——每次（包括重新啟動後）都是同一個虛構的人。",
   "colClaimId": "聲明 ID",

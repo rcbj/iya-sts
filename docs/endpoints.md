@@ -5,7 +5,7 @@ nav_order: 4
 
 # Endpoints
 
-> **Development mode only (#585):** `/krb5/service`, `/krb5/principals` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/krb5/service`, `/krb5/principals` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is no list of endpoints in this documentation, and that is deliberate.**
 There are 264 of them, they change, and a list written here would be wrong within
@@ -41,7 +41,7 @@ request, so it cannot go stale by omission; the table in `sts_metadata.ts`
 supplies only the *name* and *description* for a path the router reports. Each
 row carries the method, the path, a sentence about what the endpoint is for, and
 a link to the specification it implements. Every **coverage note starts
-`full`, `partial` or `mock`** and says what is missing — a list of fifty
+`full`, `partial` or `minimal`** and says what is missing — a list of fifty
 specifications that did not mention that development mode checks no passwords
 and validates no access tokens would be the most misleading thing in the
 service.
@@ -137,7 +137,7 @@ the Kerberos encryption types from the codec, the SPIFFE authority key types,
 the COSE algorithms from the WebAuthn verifier, and so on across eleven modules
 — because a hand-kept list of algorithms disagrees with the code silently. Only
 the per-family prose and the standards list are hand-written, and every coverage
-note there starts `full`, `partial` or `mock`. **It checks its family list
+note there starts `full`, `partial` or `minimal`. **It checks its family list
 against the endpoint page's in both directions**, so a protocol family added
 without a crypto profile is reported, and so is a profile naming a family that
 no longer exists.

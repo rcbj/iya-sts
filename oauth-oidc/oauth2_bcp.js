@@ -302,7 +302,8 @@ const REQUIREMENTS = [
           'anything else is refused before there is an error to report ' +
           '(redirect-exact-match). What the BCP suggests beyond that — URI ' +
           'analytics, reputation of the content behind the URI — is not ' +
-          'something a mock can do or should pretend to: a service that ' +
+          'something this service can do or should pretend to: a service ' +
+          'that ' +
           'claimed to have judged the credibility of a destination would be ' +
           'teaching a client author that somebody had.' },
 
@@ -387,7 +388,7 @@ const REQUIREMENTS = [
       log.debug("Leaving tls-everywhere.note().");
       return 'NOT ENFORCED: global.https is off, so this service answers ' +
              'OAuth over plain HTTP. That is the default because it is a ' +
-             'mock reached from a browser on a laptop and a self-signed ' +
+             'service reached from a browser on a laptop and a self-signed ' +
              'certificate regenerated every start is a real cost to pay ' +
              'before anything works. Turn global.https on — which RFC 9700 ' +
              'mode does by default — and every endpoint moves to TLS ' +
@@ -456,7 +457,8 @@ const REQUIREMENTS = [
           'redirectUriProblem()): it is not named for a domain, and it is ' +
           'what localhost:3000/cb typed without http:// parses as. Until ' +
           'that date this note said a private-use scheme was refused whether ' +
-          'the mode was on or off, which was a limitation of the mock rather ' +
+          'the mode was on or off, which was a limitation of this service ' +
+          'rather ' +
           'than a position on the specification.' },
 
   // --- section 2.1.1 — the authorization code grant -----------------------
@@ -476,7 +478,8 @@ const REQUIREMENTS = [
     note: 'A SHOULD is not refused: a registered confidential client that ' +
           'omits code_challenge is answered, and the omission is logged and ' +
           'counted. Refusing it would make this server stricter than the ' +
-          'specification, which is its own kind of wrong for a mock a client ' +
+          'specification, which is its own kind of wrong for a service a ' +
+          'client ' +
           'is calibrated against.' },
 
   { id: 'pkce-s256', section: '2.1.1', level: 'SHOULD',
@@ -531,8 +534,8 @@ const REQUIREMENTS = [
     appliesTo: 'client (detected by this server)', enforced: 'detected',
     title: 'code_challenge and nonce must be transaction-specific',
     note: 'A real authorization server cannot generally tell a reused ' +
-          'challenge from a fresh one. This one can, because it is a mock ' +
-          'and remembers: a code_challenge or nonce presented again AFTER ' +
+          'challenge from a fresh one. This one can, because it remembers: a ' +
+          'code_challenge or nonce presented again AFTER ' +
           'the code issued for its earlier presentation was redeemed is a ' +
           'second transaction reusing a first transaction\'s value, and is ' +
           'refused. Presenting it again BEFORE that — a reloaded browser ' +
@@ -1050,7 +1053,8 @@ const REQUIREMENTS = [
           'ignores the metadata is caught. So every surface computes the ' +
           'DRIFT: which overridden members disagree with the document this ' +
           'service would build, and which removals hide something real. A ' +
-          'mock that let somebody publish a misleading document is useful; ' +
+          'service that let somebody publish a misleading document is ' +
+          'useful; ' +
           'one that did it quietly is a trap.' },
 
   { id: 'no-client-id-confusion', section: '2.6, 4.13', level: 'SHOULD NOT',
@@ -4262,7 +4266,8 @@ function state() {
         (mainPortIsTls() ? 'https.' : 'http, because global.https has been ' +
                                       'turned off.')
       : 'Nothing below is being enforced. This service behaves as the ' +
-        'permissive mock it is, which is the default. Set oauth2.rfc9700 to ' +
+        'permissive service it is, which is the default. Set oauth2.rfc9700 ' +
+        'to ' +
         'turn the mode on.',
     // WHICH FLAG turned it on. `oauth2.oauth21` implies this mode, and without
     // this member a realm carrying only that one would read here as enforcing

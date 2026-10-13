@@ -37,7 +37,7 @@
   "ianTip": "簽發者的替代名稱。語法與 subjectAltName 相同。",
   "ianCriticalTip": "通常不應為關鍵擴充。",
   "ianSyntax": "與上方的 subjectAltName 語法相同。",
-  "cdpTip": "取得可撤銷此憑證的 CRL 的位置。請注意，本服務不發布任何 CRL：此擴充是您宣告的一個 URL，而不是此模擬服務會兌現的承諾。",
+  "cdpTip": "取得可撤銷此憑證的 CRL 的位置。請注意，本服務不發布任何 CRL：此擴充是您宣告的一個 URL，而不是本服務會兌現的承諾。",
   "rarelyCritical": "很少設為關鍵擴充。",
   "urlsPerLine": "URL，每列一個",
   "cdpUrlsTip": "可撤銷此憑證的 CRL 的發布位置。",

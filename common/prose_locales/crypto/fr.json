@@ -308,8 +308,8 @@
     "text": "partial : quatre chiffrements par blocs et deux transports de clé, enveloppant un élément à la fois. Ce n’est pas l’implémentation vendorisée, et il s’agit d’une exception délibérée — la sortie des deux est déjà compatible octet pour octet, et ce que celle-ci possède et que l’autre n’a pas, c’est le DIAGNOSTIC."
   },
   "crypto.standards.xmlenc.what": {
-    "en": "22b505560ceb8641",
-    "text": "Chaque message que celle-ci énonce délibérément à voix haute : les deux chiffrements CBC ne sont PAS authentifiés et `rsa-1_5` est cassé par Bleichenbacher. Les deux sont proposés parce que de vrais fournisseurs de services les exigent, et qu’un simulateur qui ne proposerait que le choix sûr ne permettrait pas de montrer ce que fait le choix dangereux."
+    "en": "88fff06d7d7b1664",
+    "text": "Chaque message que celle-ci énonce délibérément à voix haute : les deux chiffrements CBC ne sont PAS authentifiés et `rsa-1_5` est cassé par Bleichenbacher. Les deux sont proposés parce que de vrais fournisseurs de services les exigent, et qu’un service qui ne proposerait que le choix sûr ne permettrait pas de montrer ce que fait le choix dangereux."
   },
   "crypto.standards.c14n.coverage": {
     "en": "dcdbea06a9c35da8",
@@ -320,8 +320,8 @@
     "text": "LA FORME EXCLUSIVE EST PORTEUSE ET C’EST LA VALEUR PAR DÉFAUT PARTOUT ICI. Une assertion est signée isolément puis incorporée dans un RSTR, une Response ou un `wresult` qui déclare ses propres préfixes ; une c14n INCLUSIVE ferait donc entrer ces déclarations d’ancêtres dans le condensé au moment de la vérification — la signature échoue alors pour chaque partie de confiance tout en se vérifiant parfaitement ici, ce qui est la pire forme de bogue à traquer."
   },
   "crypto.standards.wss.coverage": {
-    "en": "08017a57e61d5832",
-    "text": "mock, et c’est cette ligne qu’il faut lire avant de demander « WS-Integrity » ou « WS-Encryption » — aucun de ces deux documents n’existe. WSS est une spécification unique dont la moitié intégrité est XML Signature sur le Body et le Timestamp SOAP à l’intérieur d’un en-tête `<wsse:Security>`, et dont la moitié confidentialité est XML Encryption appliqué de la même manière. CE SERVICE NE FAIT NI L’UN NI L’AUTRE. Il ne signe aucune enveloppe SOAP, ne chiffre aucun corps SOAP, ne produit aucun Timestamp et ne vérifie aucune signature au niveau du message sur une requête."
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal, et c’est cette ligne qu’il faut lire avant de demander « WS-Integrity » ou « WS-Encryption » — aucun de ces deux documents n’existe. WSS est une spécification unique dont la moitié intégrité est XML Signature sur le Body et le Timestamp SOAP à l’intérieur d’un en-tête `<wsse:Security>`, et dont la moitié confidentialité est XML Encryption appliqué de la même manière. CE SERVICE NE FAIT NI L’UN NI L’AUTRE. Il ne signe aucune enveloppe SOAP, ne chiffre aucun corps SOAP, ne produit aucun Timestamp et ne vérifie aucune signature au niveau du message sur une requête."
   },
   "crypto.standards.wss.what": {
     "en": "d6dcd66e6476aa91",
@@ -352,8 +352,8 @@
     "text": "La clé de CA est celle de la hiérarchie, choisie sur /admin/pki (`pki.keyAlgorithm`, RSA 2048 par défaut ; l’Issuing CA SPIFFE préfère EC P-256) ; la clé de signature est RSA 2048, et le certificat TLS est ce que demande `tls.certificateAlgorithms`. `spiffe.x509KeyType` détermine la clé de chaque SVID. LE SUBJECTALTNAME EST LE SEUL ENDROIT OÙ FIGURENT LES NOMS sur le certificat TLS — la RFC 6125 indique depuis 2011 que le CN est ignoré."
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock : les valeurs par défaut d’OpenSSL dans node, sauf là où deux paramètres les restreignent sur LDAPS 636 et le port principal — `tls.minVersion` (TLS 1.2 par défaut) et `tls.ciphers` (la liste de node lorsqu’il est vide). Ce service ne choisit aucune courbe ; ce qu’il configure par ailleurs, c’est quels sockets sont en TLS et quel certificat ils présentent."
+    "en": "33822c9691deb784",
+    "text": "minimal : les valeurs par défaut d’OpenSSL dans node, sauf là où deux paramètres les restreignent sur LDAPS 636 et le port principal — `tls.minVersion` (TLS 1.2 par défaut) et `tls.ciphers` (la liste de node lorsqu’il est vide). Ce service ne choisit aucune courbe ; ce qu’il configure par ailleurs, c’est quels sockets sont en TLS et quel certificat ils présentent."
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -1564,8 +1564,8 @@
     "text": "Identité de SVID SPIFFE"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "Un `kid` nomme une CLÉ et est donc DÉRIVÉ du matériel public de la clé elle-même. Il fut autrefois une constante, si bien que deux instances de ce mock publiaient un même nom pour deux clés différentes — un vérificateur fait correspondre le kid exactement, essaie cette clé et signale une signature invalide."
+    "en": "c49939c25a7e8ccc",
+    "text": "Un `kid` nomme une CLÉ et est donc DÉRIVÉ du matériel public de la clé elle-même. Il fut autrefois une constante, si bien que deux instances de ce service publiaient un même nom pour deux clés différentes — un vérificateur fait correspondre le kid exactement, essaie cette clé et signale une signature invalide."
   },
   "crypto.hashing.fixed.7.where": {
     "en": "5a3cb59275a8e560",

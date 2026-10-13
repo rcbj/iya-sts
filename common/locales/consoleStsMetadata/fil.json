@@ -38,7 +38,7 @@
   "specs.heading": "Mga ipinatupad na specification",
   "specs.thSpec": "Specification",
   "specs.thWhere": "Inilathala ng",
-  "specs.thCoverage": "Coverage sa mock na ito",
+  "specs.thCoverage": "Coverage sa serbisyong ito",
   "machineReadable": "Nababasa ng makina: <code>{base}/admin/sts-metadata?format=json</code>, na siyang ibinibigay sa iyo ng button sa itaas bilang file. Nasa likod ito ng gate ng console tulad ng page, kaya ang program na kumukuha nito ay nagsa-sign in muna sa <code>/authn/login</code>, o binabasa ang parehong serbisyo sa pamamagitan ng <code>/admin-api</code>, na walang gate. Hindi ito discovery document na itinakda ng isang specification &mdash; para sa mga iyon, tingnan ang <code>/.well-known/openid-configuration</code>, <code>/.well-known/oauth-authorization-server</code>, <code>/.well-known/openid-credential-issuer</code>, <code>/.well-known/jwt-vc-issuer</code>, <code>/.well-known/did.json</code> at <code>/.well-known/did-configuration.json</code>.",
   "reason.only": "{method} lang",
   "reason.noGet": "walang GET ({methods})",

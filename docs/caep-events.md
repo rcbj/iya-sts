@@ -455,7 +455,7 @@ rather than a language map.
 
 Two things are **carried with a warning** rather than refused, and both are
 deliberate: an **open** enum's unlisted value, because refusing would make this
-service unable to carry a vendor's own type — precisely what a mock is for — and
+service unable to carry a vendor's own type — precisely what a test service is for — and
 a member the event does not define, because an event vocabulary extends and a
 receiver is expected to ignore what it does not know.
 

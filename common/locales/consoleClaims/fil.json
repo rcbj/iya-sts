@@ -177,7 +177,7 @@
   "essentialA": "<strong>Minarkahang essential pero wala pa rin:</strong> ",
   "essentialB": ". Hindi pa rin ito error — ang <code>essential</code> ay pahayag tungkol sa gagawin ng CLIENT kapag wala ang claim, hindi utos sa server na ito. Itinatala ito sa warn level para mahanap.",
   "mismatchA": "<strong>May hiningi na value at iba ang hawak:</strong> ",
-  "mismatchB": ". Ang HAWAK na value ang ibinabalik. Kayang i-echo ng serbisyong ito ang anumang ipagpahayag ng request pero sadyang hindi ginagawa: lahat ng sinasabi nito tungkol sa isang tao ay galing sa directory o sa imbentong persona, at ang mock na sumasang-ayon sa request ay hindi magagamit sa pagsubok ng kahit ano.",
+  "mismatchB": ". Ang HAWAK na value ang ibinabalik. Kayang i-echo ng serbisyong ito ang anumang ipagpahayag ng request pero sadyang hindi ginagawa: lahat ng sinasabi nito tungkol sa isang tao ay galing sa directory o sa imbentong persona, at ang serbisyong sumasang-ayon sa request ay hindi magagamit sa pagsubok ng kahit ano.",
   "requestEntryFound": "May entry si {user} sa ilalim ng <code>ou=users</code>, kaya ang value na may markang <em>directory</em> ang binabasa ng <code>ldapsearch</code>.",
   "requestNoEntry": "Walang entry si {user} sa directory, kaya bawat value sa itaas ay inimbento mula sa username — ang parehong imbentong tao bawat pagkakataon, kahit mag-restart.",
   "colClaimId": "Claim id",
