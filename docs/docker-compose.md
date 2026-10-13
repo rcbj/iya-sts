@@ -100,6 +100,7 @@ so the service starts without the pinned management API secret.
 |---|---|---|---|
 | 8081 | 8081 | The main port: every HTTP protocol, the console, the portal | `STS_HOST_PORT` |
 | 8082 | 8082 | Plain-HTTP revocation listener: the CRL, OCSP and issuer certificate every issued certificate points at | `STS_PKI_HOST_PORT` |
+| 88, TCP and UDP | 88 | The Kerberos KDC, so `kinit` and a browser's SPNEGO sign-in work from the host ([Kerberos](#kerberos)) | `STS_KDC_HOST_PORT` |
 | 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
 | 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
 | 8888 | 8888 | The companion's Kerberos-protected TCP service (`companion` profile only) | `COMPANION_KRB5_HOST_PORT` |
@@ -116,13 +117,34 @@ mapping under `sts` → `ports` (or `postgres` → `ports`) to reach one:
 | Add | For |
 |---|---|
 | `"389:389"`, `"636:636"` (or `"1389:389"`, `"1636:636"`) | LDAP and LDAPS. LDAPS serves the same certificate as the main port. |
-| `"88:88"`, `"88:88/udp"` | The Kerberos KDC |
 | `"8444:8444"` | The [embedded debugger](admin-console.md). Both sides must be the same number, because the debugger's sign-in sends the browser back to the service by the host name it used. It runs only when the image was built with `DEBUGGER_IMAGE`. |
 | `"5432:5432"` under `postgres` | To look at the database with `psql` |
 
 A realm's SPIFFE listeners are not published either. A published port maps to
 one container address, so it would answer for only one realm. Reach them from
 another container on the stack's network.
+
+## Kerberos
+
+The stack is ready for a Kerberos sign-in from the host with nothing set on
+the server. Three things in the file make it so:
+
+* **The KDC is published on 88**, TCP and UDP. A host that already runs a KDC
+  on 88 moves it with `STS_KDC_HOST_PORT` (and names that port in its
+  `krb5.conf`).
+* **`KRB5_SERVICE_PRINCIPAL` defaults to `HTTP/localhost`**, the SPN a browser
+  asks for when it opens `https://localhost:8081`. A browser always asks for
+  `HTTP/<the host in the URL>`, and product mode creates no SPN on demand, so a
+  stack reached by another name sets `KRB5_SERVICE_PRINCIPAL=HTTP/<that name>`.
+* **No `KRB5_SERVICE_PASSWORD`**: product mode refuses the published one and
+  keys the SPN at random instead, sealed in the store under the same
+  key-encryption key as everything else. Set a password of your own only to
+  accept tickets another KDC issues for that SPN; it wins over the random key.
+
+The client side — a `krb5.conf`, `kinit`, and the Chrome and Firefox settings —
+is in [Kerberos: signing in from a browser](kerberos.md#signing-in-from-a-browser-on-the-base-installation).
+The test stacks (`docker-compose-run-tests*.yml`) publish nothing, 88
+included.
 
 ## Volumes
 
@@ -185,6 +207,8 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_DATABASE_URL` | `postgres://sts_app@postgres:5432/sts?sslmode=verify-full` | Replaces the whole connection string, to use your own database. The password is read from OpenBao and added to it at start. |
 | `STS_DATABASE_TLS_CA_FILE` | `/run/secrets/database-ca/postgres.crt` | The CA certificate (or a directory of them) the service trusts for its database connection, and for nothing else. Point it at your database's CA when you replace `STS_DATABASE_URL`, or at a directory; a file that cannot be read stops the service (`STS-STORE-0079`). |
 | `STS_HTTPS` | `true` | `false` serves the main port as plain HTTP, for a client that cannot be made to trust the certificate |
+| `KRB5_SERVICE_PRINCIPAL` | `HTTP/localhost` | The SPN the Kerberos acceptor holds: `HTTP/<the host a browser opens>` ([Kerberos](#kerberos)) |
+| `STS_KDC_HOST_PORT` | `88` | The host port the KDC is published on, TCP and UDP |
 | `STS_LOG_LEVEL` | unset (the appconfig's `info`) | `debug` logs every request, every artifact before and after signing, and every function's entry and exit |
 | `CONFIG_FILE` | `./env/local.js` | The appconfig file |
 | `STS_WORKERS_REQUEST_COUNT` | `2` | Request workers |

@@ -935,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "ALEATORIA — random-to-key de RFC 3961 para cada enctype de krb5.enctypes — creada una vez por dominio, sellada en la entrada de directorio krbtgt/<REALM>@<REALM> y nunca mostrada; krb5.krbtgtPassword se ignora. El trabajo krb5.krbtgt-rotate la reemplaza cada krb5.krbtgtRotationIntervalDays, conservando la versión reemplazada durante el máximo que puede vivir un TGT emitido bajo ella (renovaciones incluidas), y nunca rota mientras esa ventana siga abierta. \"Rotar e invalidar\" es el doble restablecimiento de Active Directory en un solo acto: no se conserva nada y todo TGT del dominio se rechaza con KRB_AP_ERR_BADKEYVER."
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "La clave con la que el aceptador de Kerberos descifra los tickets cuando krb5.servicePassword está vacío o es el valor predeterminado publicado"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "DERIVADA del krb5.servicePassword publicado, así que un lector puede derivarla; una contraseña vacía no crea ninguna cuenta y el aceptador no acepta ningún ticket."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "ALEATORIA — una clave por cada enctype de krb5.enctypes para el SPN que nombra krb5.servicePrincipal, creada una vez por realm al arrancar (o cuando el aceptador la pide por primera vez), sellada en la entrada de aplicación <spn>@<REALM> y nunca mostrada. Rótela en /admin/kerberos/principals para obtener un keytab. Un krb5.servicePassword propio del operador tiene prioridad sobre ella."
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "Se rechaza una clave de dispositivo presentada sin una atestación verificable"

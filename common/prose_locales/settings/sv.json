@@ -5552,8 +5552,8 @@
     "text": "Lösenord för tjänsteprincipalen"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "Lösenordet för det konto som krb5.servicePrincipal anger — motsvarigheten till en keytab. I PRODUKTLÄGE vägras det levererade standardvärdet: det värdet står tryckt i det här repositoryt, så en tjänstenyckel som härleds från det är en nyckel som vem som helst kan förfalska en biljett till. När det inte är inställt skapas inget tjänstekonto, /authn/spnego tar inte emot någon biljett, och GET /admin-api/kerberos/principals säger varför. Ställ in det till lösenordet för SPN:ens konto i den KDC som utfärdar dess biljetter."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "Lösenordet för kontot som krb5.servicePrincipal namnger — motsvarigheten till en keytab. I PRODUKTLÄGE vägras det medföljande standardvärdet: det värdet står tryckt i det här repositoryt, så en tjänstenyckel härledd från det är en nyckel som vem som helst kan förfalska en biljett till. Produktläget ger då SPN:et en slumpmässig nyckel i stället, en gång, förseglad på dess applikationspost (Rotate på /admin/kerberos/principals lämnar ut en keytab), och gör detsamma för ett tomt lösenord. Sätt det till lösenordet för SPN:ets konto i den KDC som utfärdar dess biljetter så har det företräde framför den nyckeln. I utvecklingsläge skapar ett tomt lösenord inget konto, och acceptorn accepterar ingen biljett."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",

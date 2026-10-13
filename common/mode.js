@@ -683,6 +683,27 @@ function derivesKrbtgtFromPassword() {
   return !isProduct();
 }
 
+// Does the KDC key its own ACCEPTOR'S SPN at random when krb5.servicePassword
+// is empty or the published default? (2026-10-12.) Product refuses both
+// passwords (STS-KRB-0060, STS-KRB-0061), and until this a base installation's
+// acceptor therefore accepted no ticket until an operator invented a password
+// for an SPN no other KDC issues. Product now makes a random key for the SPN,
+// sealed on its application entry as an operator's create-service would, once
+// for the cluster — and a password an operator sets wins over it. Development
+// keeps building the account from the published password, so a reader can
+// derive the key; its empty password still means no account.
+/**
+ * Tells whether the acceptor's SPN is keyed at random when its configured
+ * password is empty or the published default.
+ *
+ * @returns true in product mode
+ */
+function generatesAcceptorKey() {
+  log.debug("Entering generatesAcceptorKey().");
+  log.debug("Leaving generatesAcceptorKey().");
+  return isProduct();
+}
+
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
@@ -3344,6 +3365,20 @@ const REQUIREMENTS = [
              'realm is refused KRB_AP_ERR_BADKEYVER.',
     where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
            'kerberos/krb5_principals.js' },
+  // 2026-10-12: a base installation's acceptor keyed without a password.
+  { id: 'kerberos-acceptor-key',
+    what: 'The key the Kerberos acceptor decrypts tickets with when ' +
+          'krb5.servicePassword is empty or the published default',
+    development: 'DERIVED from the published krb5.servicePassword, so a ' +
+                 'reader can derive it; an empty password creates no ' +
+                 'account and the acceptor accepts no ticket.',
+    product: 'RANDOM — a key per enctype in krb5.enctypes for the SPN ' +
+             'krb5.servicePrincipal names, made once per realm at the start ' +
+             '(or when the acceptor first asks), sealed on the application ' +
+             'entry <spn>@<REALM> and never shown. Rotate it at ' +
+             '/admin/kerberos/principals for a keytab. A ' +
+             'krb5.servicePassword of the operator\'s own wins over it.',
+    where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_principals.js' },
   // 2026-09-26 (#164 decision 9, phase 2).
   { id: 'unattested-device-keys',
     what: 'A device key presented without a verifiable attestation is ' +
@@ -3931,6 +3966,7 @@ module.exports = {
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
+  generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,

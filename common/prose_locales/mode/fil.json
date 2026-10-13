@@ -935,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "RANDOM — RFC 3961 random-to-key para sa bawat enctype sa krb5.enctypes — ginagawa nang isang beses bawat realm, naka-seal sa directory entry na krbtgt/<REALM>@<REALM> at hindi kailanman ipinapakita; binabalewala ang krb5.krbtgtPassword. Pinapalitan ito ng krb5.krbtgt-rotate job bawat krb5.krbtgtRotationIntervalDays, at itinatago ang version na pinalitan nito hangga't puwedeng mabuhay ang TGT sa ilalim nito (kasama ang mga renewal), at hindi kailanman nagro-rotate habang bukas pa ang window na iyon. Ang \"Rotate and invalidate\" ay ang double reset ng Active Directory sa iisang kilos: walang itinatago at tinatanggihan ng KRB_AP_ERR_BADKEYVER ang bawat TGT sa realm."
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "Ang key na ginagamit ng Kerberos acceptor para i-decrypt ang mga ticket kapag walang laman ang krb5.servicePassword o ito ang nakalathalang default"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "HINANGO mula sa nakalathalang krb5.servicePassword, kaya kayang hangoin ito ng sinumang nagbabasa; walang account na nalilikha sa walang-lamang password at walang ticket na tinatanggap ang acceptor."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "RANDOM — isang key sa bawat enctype sa krb5.enctypes para sa SPN na pinangangalanan ng krb5.servicePrincipal, ginagawa nang minsan bawat realm sa pagsisimula (o kapag unang humingi ang acceptor), naka-seal sa application entry na <spn>@<REALM> at hindi kailanman ipinapakita. I-rotate ito sa /admin/kerberos/principals para makakuha ng keytab. Nananaig dito ang sariling krb5.servicePassword ng operator."
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "Tinatanggihan ang device key na ipinakita nang walang nave-verify na attestation"

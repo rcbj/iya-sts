@@ -5552,8 +5552,8 @@
     "text": "Contraseña del principal de servicio"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "La contraseña de la cuenta que nombra krb5.servicePrincipal — el equivalente de un keytab. En MODO PRODUCTO se rechaza el valor predeterminado distribuido: ese valor está impreso en este repositorio, así que una clave de servicio derivada de él es una clave para la que cualquiera puede falsificar un ticket. Sin definirla no se crea la cuenta de servicio, /authn/spnego no acepta ningún ticket, y GET /admin-api/kerberos/principals indica por qué. Defínala con la contraseña de la cuenta del SPN en el KDC que emite sus tickets."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "La contraseña de la cuenta que nombra krb5.servicePrincipal — el equivalente de un keytab. En MODO PRODUCTO se rechaza el valor predeterminado incluido: ese valor está impreso en este repositorio, así que una clave de servicio derivada de él es una clave con la que cualquiera puede falsificar un ticket. Entonces el modo producto asigna al SPN una clave aleatoria, una sola vez, sellada en su entrada de aplicación (Rotate en /admin/kerberos/principals entrega un keytab), y hace lo mismo con una contraseña vacía. Establézcala a la contraseña de la cuenta del SPN en el KDC que emite sus tickets y tendrá prioridad sobre esa clave. En desarrollo una contraseña vacía no crea ninguna cuenta y el aceptador no acepta ningún ticket."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",

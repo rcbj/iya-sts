@@ -5552,8 +5552,8 @@
     "text": "服務主體密碼"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "krb5.servicePrincipal 所指名之帳戶的密碼——相當於 keytab。在「產品模式」下，隨附的預設值會被拒絕：該值印在此存放庫中，因此由它衍生的服務金鑰是任何人都能為其偽造票證的金鑰。未設定時不會建立服務帳戶，/authn/spnego 不接受任何票證，GET /admin-api/kerberos/principals 會說明原因。請將它設為簽發其票證之 KDC 中該 SPN 帳戶的密碼。"
+    "en": "203b6ef1fa4a5cfa",
+    "text": "krb5.servicePrincipal 所命名帳戶的密碼 —— 相當於一個 keytab。在產品模式下，隨附的預設值會被拒絕：該值印在本儲存庫中，因此由它推導的服務金鑰是任何人都能用來偽造票證的金鑰。此時產品模式改為給該 SPN 一把隨機金鑰，只產生一次，密封在其應用程式項目上（在 /admin/kerberos/principals 上執行 Rotate 會交出 keytab），空密碼也同樣處理。將它設為簽發其票證的 KDC 中該 SPN 帳戶的密碼，它就會優先於那把金鑰。在開發模式下，空密碼不會建立帳戶，接受端也不接受任何票證。"
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
