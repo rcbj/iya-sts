@@ -111,7 +111,26 @@
 // knows the workers and can ask them.
 //
 // **A SERVICE PAGE** (`admin_scope.ts`): the container is the process's, so a
-// realm's own administrator is refused it. No control and no POST.
+// realm's own administrator is refused it.
+//
+// **ITS ONE CONTROL IS A FULL GARBAGE COLLECTION, ON DEMAND (#611,
+// 2026-10-13).** rcbj's decisions: THIS NODE, every process — the front
+// process's main thread and every request and hosted-surface worker thread
+// of the node serving the console, never the cluster; a Collect all button
+// and a Collect button on each of those rows; service administrators only,
+// because it is about the process (a realm's own administrator is refused
+// the page and the operation alike, `admin_scope.ts`); both modes; audited.
+// `collectGarbage()` answers `POST /admin-api/node-health/collect-garbage`,
+// the operation the page's buttons are sent to. Each worker thread is an
+// isolate of its own, so the front process asks each over the pool's channel
+// (`request_pool.collectWorkerGarbage()`, answered by `request_worker.ts`)
+// and collects its own main thread with `common/heap_collector.ts` while
+// they work — the workers are asked FIRST, so they collect in parallel with
+// the front rather than after it. Each isolate reports its heap before and
+// after and the pause. A full collection stops the thread it runs in; in the
+// front process that is every listener of the node, which the page says
+// beside the buttons. It is a diagnostic: V8 collects on its own schedule,
+// and a heap that a forced collection does not shrink is held, not garbage.
 //
 // **THE ECS ENDPOINT IS DIALLED DIRECTLY, not through
 // `common/outbound_tls.ts`.** That module decides the transport of requests
@@ -140,6 +159,9 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import nodeSnapshots = require('../cluster/node_snapshots');
+// A leaf requiring only node's `v8` and `vm` (#611): the front process's own
+// garbage collection.
+import HeapCollector = require('../common/heap_collector');
 // At the top rather than lazily (#543 phase 2c): `server_prose.ts` requires
 // only what config.js's neighbours already loaded, and this module is built
 // at 18s, long after them — `encryption_admin.ts`'s arrangement.
@@ -161,6 +183,12 @@ const PAGE = '/admin/node-health';
 const ASK_WORKERS_MS = 1000;
 // How long the debugger's api child is waited for.
 const ASK_CHILDREN_MS = 500;
+// How long a garbage collection in the worker threads is waited for (#611):
+// a full collection of a large heap takes longer than a status answer, and
+// a thread still collecting at the bound is listed as not having answered.
+const ASK_GC_MS = 10000;
+// The one action of `POST /admin-api/node-health/{action}` (#611).
+const COLLECT_ACTION = 'collect-garbage';
 const ECS_TIMEOUT_MS = 1000;
 // The interval between two CPU samples taken for one page, and the ages
 // between which a kept sample is used instead.
@@ -368,6 +396,11 @@ interface NodeHealthAdminDeps {
   availableParallelism: () => number;
   machine: () => Json;
   sampleMs: number;
+  // A full garbage collection of this thread's isolate (#611):
+  // `HeapCollector.collect()`, a dependency so a test can hand it a result.
+  collectHere: () => Json;
+  // LAZY, `requestPool`'s way: the audit log the collection is recorded in.
+  audit: () => any;
 }
 
 /**
@@ -521,7 +554,17 @@ class NodeHealthAdmin {
         return { loadavg: os.loadavg(), totalmemBytes: os.totalmem(),
                  freememBytes: os.freemem(), cpus: os.cpus().length };
       },
-      sampleMs: SAMPLE_MS
+      sampleMs: SAMPLE_MS,
+      collectHere: function collectHere(): Json {
+        log.debug("Entering collectHere().");
+        log.debug("Leaving collectHere().");
+        return HeapCollector.collect(log);
+      },
+      audit: function audit(): any {
+        log.debug("Entering audit().");
+        log.debug("Leaving audit().");
+        return require('../common/audit');
+      }
     };
     helpers.log.debug("Leaving NodeHealthAdmin.defaultDeps().");
     return deps;
@@ -1635,6 +1678,183 @@ class NodeHealthAdmin {
     return snapshots().scrub(answer);
   }
 
+  // -------------------------------------------------------------------------
+  // A FULL GARBAGE COLLECTION, ON DEMAND (#611). The module header has rcbj's
+  // decisions; this is the one function the operation calls (rule 7: the
+  // page's buttons are sent to that operation and nothing else).
+  //
+  // `target` is `all` (the default), `front` (the front process's main
+  // thread) or the threadId of a ready worker thread of THIS node — the
+  // pool's `pid` for it, and the `threadId` of its row on the page. A worker
+  // is named only by an id this node's pool has: anything else is refused
+  // before anything is collected (`STS-CORE-0160`).
+  //
+  // ONE AUDIT ROW PER PRESS, with every isolate's figures summed in it and
+  // the count of those that failed or did not answer, rather than a row per
+  // isolate: a Collect all on a node of eight workers is one act. Its code is
+  // `STS-CORE-0158` when an isolate could not collect, `STS-CORE-0159` when
+  // a worker did not answer, and none otherwise; the other condition, when
+  // both happened, is logged under its own code.
+  // -------------------------------------------------------------------------
+  /**
+   * Runs a full garbage collection in the front process's main thread, in
+   * one worker thread, or in all of them, and reports each isolate's heap
+   * before and after: `POST /admin-api/node-health/collect-garbage`.
+   *
+   * @param body - `{ action, target }`; `target` is `all`, `front` or a
+   *   worker thread's threadId, and `all` when absent
+   * @param actor - who asked, for the audit row
+   * @returns `{ ok, status, ... }`: the per-isolate `rows`, `unanswered`,
+   *   `totals` and `message`, or a refusal with `errors` and `errorCode`
+   */
+  async collectGarbage(body: Json, actor?: string): Promise<Json> {
+    const { log, requestPool, collectHere, audit, pid, nodeName, now,
+            errorCodes } = this.deps;
+    log.debug("Entering NodeHealthAdmin.collectGarbage().");
+    const action = String((body && body.action) || '');
+    if (action !== COLLECT_ACTION) {
+      log.debug("Leaving NodeHealthAdmin.collectGarbage(). Unknown action.");
+      return { ok: false, status: 400, errorCode: 'STS-CORE-0160',
+               errors: ['Unknown action "' + action + '". There is one: ' +
+                        COLLECT_ACTION + '.'] };
+    }
+    const given = body && body.target !== undefined && body.target !== null
+      ? String(body.target).trim() : '';
+    const target = given || 'all';
+    if (target !== 'all' && target !== 'front' && !/^\d+$/.test(target)) {
+      log.debug("Leaving NodeHealthAdmin.collectGarbage(). Bad target.");
+      return { ok: false, status: 400, errorCode: 'STS-CORE-0160',
+               errors: ['The target "' + target + '" is none of all, ' +
+                        'front or a worker thread\'s threadId.'] };
+    }
+    const pool = requestPool();
+    const ready = (pool.stats().workers || []).filter(function (one: Json):
+      boolean {
+      return one.ready;
+    });
+    const threadIds = ready.map(function (one: Json): string {
+      return String(one.pid);
+    });
+    const roleOf = function (threadId: string): string {
+      log.debug("Entering roleOf(). " + threadId);
+      const one = ready.filter(function (w: Json): boolean {
+        return String(w.pid) === threadId;
+      })[0];
+      log.debug("Leaving roleOf().");
+      return say((one && one.pool) === 'surfaces' ? 'roleSurface'
+                                                  : 'roleProtocol',
+                 { thread: threadId });
+    };
+    if (/^\d+$/.test(target) && threadIds.indexOf(target) < 0) {
+      log.debug("Leaving NodeHealthAdmin.collectGarbage(). No such thread.");
+      return { ok: false, status: 404, errorCode: 'STS-CORE-0160',
+               errors: ['This node has no ready worker thread ' + target +
+                        '; it has ' + (threadIds.length
+                          ? threadIds.join(', ') : 'none') + '.'],
+               threadIds: threadIds };
+    }
+    const ask = target === 'all' ? threadIds
+      : target === 'front' ? [] : [target];
+    // THE WORKERS ARE ASKED FIRST, so each collects on its own thread while
+    // this one collects its own; asked after, they would wait for the front
+    // process's pause before they started.
+    const asking: Promise<Json> = ask.length
+      ? pool.collectWorkerGarbage(ask, ASK_GC_MS)
+      : Promise.resolve({ asked: [], answers: {} });
+    const rows: Json[] = [];
+    if (target === 'all' || target === 'front') {
+      rows.push(Object.assign({ kind: 'process', pid: pid, threadId: 0,
+                                role: say('roleFront') }, collectHere()));
+    }
+    const got = await asking;
+    const unanswered: Json[] = [];
+    (got.asked || []).forEach(function (one: unknown): void {
+      const threadId = String(one);
+      const role = roleOf(threadId);
+      const answer = (got.answers || {})[threadId];
+      if (!answer) {
+        unanswered.push({ pid: pid, threadId: Number(threadId), role: role,
+                          why: say('threadSilent', { ms: ASK_GC_MS }) });
+        return;
+      }
+      rows.push(Object.assign({ kind: 'thread', pid: pid,
+                                threadId: Number(threadId), role: role },
+                              answer));
+    });
+    const collected = rows.filter(function (r: Json): boolean {
+      return r.ok;
+    });
+    const failed = rows.filter(function (r: Json): boolean {
+      return !r.ok;
+    });
+    const freed = collected.reduce(function (n: number, r: Json): number {
+      return n + (Number(r.freedBytes) || 0);
+    }, 0);
+    const longest = collected.reduce(function (n: number, r: Json): number {
+      return Math.max(n, Number(r.durationMs) || 0);
+    }, 0);
+    const node = nodeName();
+    const code = failed.length ? 'STS-CORE-0158'
+      : (unanswered.length ? 'STS-CORE-0159' : '');
+    if (failed.length && unanswered.length) {
+      log.warn(errorCodes.tag('STS-CORE-0159') + 'node_health_admin: ' +
+               unanswered.length + ' worker thread(s) did not answer a ' +
+               'garbage collection within ' + ASK_GC_MS + 'ms: ' +
+               unanswered.map(function (u: Json): string {
+                 return String(u.threadId);
+               }).join(', ') + '.');
+    }
+    const summary = 'A full garbage collection ran in ' + collected.length +
+      ' isolate(s) of node ' + node + ' (target ' + target + '), freeing ' +
+      NodeHealthAdmin.round1(freed / MIB) + ' MiB; the longest pause was ' +
+      NodeHealthAdmin.round1(longest) + ' ms' +
+      (failed.length ? '; ' + failed.length + ' could not collect (' +
+        failed.map(function (r: Json): string {
+          return r.role + ': ' + r.error;
+        }).join('; ') + ')' : '') +
+      (unanswered.length ? '; ' + unanswered.length + ' did not answer' : '') +
+      '.';
+    try {
+      audit().record({
+        action: 'node-health.collect-garbage', protocol: 'admin',
+        channel: 'http', actor: String(actor || ''),
+        target: node + ' ' + target,
+        outcome: code ? 'error' : 'success',
+        errorCode: code || undefined,
+        summary: summary,
+        detail: { node: node, target: target, isolates: rows.length,
+                  collected: collected.length, failed: failed.length,
+                  unanswered: unanswered.length, freedBytes: freed,
+                  longestPauseMs: longest }
+      });
+    } catch (e) {
+      log.debug("Caught in NodeHealthAdmin.collectGarbage(): " +
+                ((e && e.message) || e));
+      // Recording never fails an operation (`audit.js`): the collection has
+      // run, and its answer still goes back.
+    }
+    const frontFailedAlone = rows.length === 1 && failed.length === 1 &&
+                             !ask.length;
+    log.debug("Leaving NodeHealthAdmin.collectGarbage(). " +
+              collected.length + " collected.");
+    return {
+      ok: !frontFailedAlone,
+      status: frontFailedAlone ? 500 : 200,
+      errorCode: code || undefined,
+      errors: frontFailedAlone ? [String(failed[0].error)] : undefined,
+      generatedAt: new Date(now()).toISOString(),
+      node: node,
+      pid: pid,
+      target: target,
+      rows: rows,
+      unanswered: unanswered,
+      totals: { isolates: rows.length, collected: collected.length,
+                failed: failed.length, unanswered: unanswered.length,
+                freedBytes: freed, longestPauseMs: longest },
+      message: summary
+    };
+  }
+
   // DRAWN BY `web_node_health.ts` (#446): this page is converted for the
   // static console, and its renderer is a module a browser can load. Until the
   // cutover this process still draws it, handing the renderer the view passed
@@ -1686,8 +1906,8 @@ slot.buildNowUnlessDeferred();
 
 /**
  * Monitoring → Node Health, `/admin/node-health`: the container's CPU and
- * memory, and the memory of every Node.js process of this node. A service
- * page with no control and no POST.
+ * memory, and the memory of every Node.js process of this node, and a full
+ * garbage collection of any of them on demand (#611). A service page.
  * @namespace
  */
 export = {
@@ -1709,5 +1929,8 @@ export = {
   PROSE_ROUTES: NodeHealthAdmin.PROSE_ROUTES,
   prose: NodeHealthAdmin.prose,
   // For `mgmt-api/admin_api.ts` (rule 7).
-  nodeHealthView: slot.forward('nodeHealthView')
+  nodeHealthView: slot.forward('nodeHealthView'),
+  // `POST /admin-api/node-health/collect-garbage` (#611).
+  collectGarbage: slot.forward('collectGarbage'),
+  COLLECT_ACTION: COLLECT_ACTION
 };
