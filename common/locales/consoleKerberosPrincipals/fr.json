@@ -63,7 +63,7 @@
   "tileServices": "principaux de service",
   "tileEnctypes": "enctypes (krb5.enctypes)",
   "tileKvno": "kvno de départ",
-  "acceptor": "L’accepteur sur <code>krb5.servicePort</code> et <code>/authn/spnego</code> répond en tant que ",
+  "acceptor": "L’accepteur sur <code>/authn/spnego</code> répond en tant que ",
   "noSpn": "(aucun SPN)",
   "acceptorStored": ", avec la clé d’un principal de service stocké ici.",
   "acceptorPassword": ", avec une clé issue de krb5.servicePassword. Créer ce SPN ici lui donne plutôt une clé aléatoire et un keytab.",

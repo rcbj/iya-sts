@@ -94,7 +94,7 @@
   "body.overrideBefore": "它是 <code>ou=policies</code> 下的一般項目，因此",
   "body.editor": "編輯器",
   "body.overrideAfter": "、ALFA、<code>/admin-api/xacml</code> 和 <code>ldapmodify</code> 都能存取它。刪除它會還原內建原則 &mdash; 它是一個覆寫，而不是唯一的副本。",
-  "body.notRoot": "<strong>它不是存放庫根，也不會傳送給遠端 PEP。</strong>兩個問題，兩份文件：根回答呼叫者在 <code>/xacml/pdp</code> 詢問的內容以及每個遠端 PEP 拉取的內容，而這一份回答誰可以在這裡獲得簽發。把它們合成一份文件意味著編輯示範原則會改變誰能登入。",
+  "body.notRoot": "<strong>它不是存放庫根，也不會傳送給遠端 PEP。</strong>兩個問題，兩份文件：根回答呼叫者在 <code>/xacml/pdp</code> 詢問的內容以及每個遠端 PEP 拉取的內容，而這一份回答誰可以在這裡獲得簽發。把它們合成一份文件意味著編輯根原則會改變誰能登入。",
   "body.notEvaluated": "<strong>簽發原則未被評估。</strong>{why}",
   "body.notEvaluatedRest": "只要求 <code>{defaultRequired}</code> 的應用程式不受影響 &mdash; 所有人都持有它，所以從來沒有需要決定的事。<strong>項目中指明了角色的應用程式會被拒絕</strong>，這種不對稱是刻意的：有人特意要求了限制，而因為實作它的文件缺失就予以允許，將意味著已設定的拒絕悄然失效。",
   "body.claimHeading": "宣告",
