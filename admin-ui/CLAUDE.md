@@ -7075,8 +7075,8 @@ Five decisions:
   with a cgroup namespace of its own, where the root is the container).
 * **THE FRONT PROCESS DRAWS IT, ALWAYS** — `NEVER_DISPATCHED`, 18r's reason:
   only it knows every worker thread.
-* **THIS NODE'S, AND A SERVICE PAGE** — it names the host and pid, it is in
-  `SERVICE_PAGES`, and it has no control.
+* **THIS NODE'S, AND A SERVICE PAGE** — it names the host and pid, and it is
+  in `SERVICE_PAGES`. Its one control is the garbage collection below.
 
 The locations (`cgroupRoot`, `procRoot`), the clock, `sleep`, the pools and
 `fetchJson` are constructor dependencies, which is how
@@ -7086,6 +7086,60 @@ section F holds the preload.
 `GET /admin-api/node-health` answers the same `nodeHealthView()` (rule 7); a
 view that could not be built is `STS-CORE-0124`.
 `tests/vendored/sts_node_health.js` is the HTTP half.
+
+### A FULL GARBAGE COLLECTION, ON DEMAND (#611, 2026-10-13)
+
+rcbj asked for an on-demand V8 garbage collection on this page, and decided
+four things:
+
+* **THIS NODE, EVERY PROCESS** — the front process's main thread and every
+  request and hosted-surface worker THREAD of the node serving the console.
+  Never cluster-wide, and never the debugger's api child (a separate
+  process with a channel of its own; its row draws no button and says so).
+* **ONE COLLECT ALL, AND A COLLECT ON EACH ROW** — above the processes table,
+  and on the front process's row and each worker thread's. The buttons are
+  forms posting `action=collect-garbage` and a `target` to the page, which the
+  static runtime sends to `POST /admin-api/node-health/collect-garbage` (its
+  `mirrors`); they are drawn for a reader who may write (`ctx.write`) and only
+  in THIS node's section — another node's is its snapshot.
+* **SERVICE ADMINISTRATORS ONLY.** Nothing new is needed for it: the page is
+  in `SERVICE_PAGES`, so a realm administrator is refused the page, and the
+  operation's `mirrors` is the page, so a realm's own token is refused the
+  operation (`STS-API-0112`, `mgmt-api/admin_api.ts`'s `realmTokenRefusal()`).
+  A POST, so the gate asks `admin:write` of it.
+* **BOTH MODES, AUDITED.** One row per press, `node-health.collect-garbage`,
+  every isolate's figures summed in its detail.
+
+How it works. `NodeHealthAdmin.collectGarbage(body, actor)` validates the
+target — `all` (the default), `front`, or the threadId of a READY worker
+thread of this node's pool, anything else refused before anything is
+collected (`STS-CORE-0160`: 400 for an unknown action or a malformed target,
+404 for a thread the node does not have) — then asks the named worker threads
+FIRST (`request_pool.collectWorkerGarbage()`, `common/CLAUDE.md`), so they
+collect on their own threads while the front collects its own with
+`common/heap_collector.ts`, and waits up to ten seconds for them. Each isolate
+is a row — its heap before and after (`v8.getHeapStatistics()`), what it
+freed, and the pause; a worker that did not answer in time is `unanswered`
+(`STS-CORE-0159`); an isolate that could not collect has `ok: false` and the
+reason (`STS-CORE-0158`), and only when the front alone was asked is that a
+500. `gc` is obtained without `--expose-gc`: the flag is set for one
+`vm.runInNewContext('gc')` and cleared again (`common/CLAUDE.md`,
+`heap_collector.ts`).
+
+**THE ANSWER IS DRAWN IN PLACE.** `WebAnswers.redraw()` puts it in the view's
+`state.collected` and the renderer draws a row per isolate above the
+processes table, over the figures read before the collection, which the
+sentence says; a refusal is the strip's, in the server's words.
+
+**THE PAGE SAYS WHAT A COLLECTION COSTS BEFORE IT IS PRESSED**: a full
+collection stops the thread it runs in, and in the front process that is
+every listener of the node. It is a diagnostic — V8 collects on its own
+schedule, and memory a forced collection does not free is held, not garbage.
+
+`tests/heap_collector.js` holds the collector; `tests/node_health_page.js`
+section 10 the targets, refusals, the silent thread, the audit row, the
+buttons and the drawn answer, and its section 7 the real channel;
+`tests/vendored/sts_node_health.js` section 6 the operation over HTTP.
 
 ---
 
