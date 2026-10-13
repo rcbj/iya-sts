@@ -883,7 +883,9 @@ survived the over-HTTP job, which is the third time this repository has recorded
 WebAuthn ceremony needs script and every portal page was `script-src 'none'`.
 **`/portal/keys` became the seventh scripted page later the same day** (reusing
 `/authn/webauthn.js`), so a person can now enrol keys there, up to
-`webauthn.maxKeysPerPerson`. What is still open on the activation flow's *a
+`webauthn.maxKeysPerPerson`. (Since #568, 2026-10-12, the whole portal is a
+static application under `script-src 'self'`, and its runtime runs the
+ceremony on `/portal/keys`, `/portal/activate` and `/portal/devices`.) What is still open on the activation flow's *a
 security key instead of a password* is recorded in `portal/CLAUDE.md`.
 
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers

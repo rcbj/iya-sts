@@ -487,15 +487,21 @@ walk could not drive. Every operation this API documents now answers JSON and
 every one of them is driven; the table is kept, empty, because the next
 operation that cannot be driven needs somewhere to say why.
 
-The section below is the argument for the script itself, which is unchanged by
-the move and is why the page is still the only scripted one in either surface.
+The section below is the argument for the script itself, which was unchanged by
+the move and made the page the only scripted one in either surface — until #446
+(2026-10-05) made the whole console a static application under `script-src
+'self'`, and #568 (2026-10-12) the portal; the console's runtime now loads the
+explorer's script when that page is drawn (the root `CLAUDE.md`, *Pages with a
+script*).
 
 ## The explorer's script relaxes `script-src 'none'`, as each scripted page does
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. The API explorer needs a script, so it is one of the seven
-pages the root `CLAUDE.md` lists that relax that header — on two routes, in
+than merely unlikely. The API explorer needs a script, so it was one of the seven
+pages the root `CLAUDE.md` then listed that relax that header (since #446 it is
+a page of the static console, whose shell carries the relaxation) — on two
+routes, in
 exactly two clauses (`script-src 'self'`
 and an added `connect-src 'self'`), with `default-src 'none'` and everything else
 untouched.
@@ -544,6 +550,8 @@ the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
+### Who may be issued those scopes (#302 and #303, 2026-09-27) — rule 3bq
+
 **WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE AND ON EVERY CALL,
 SINCE 2026-09-27 (#302 and #303, parts A and B of #88).** Until then the only
 question was the CLIENT's — does it declare them (#110) — so a client
@@ -572,6 +580,8 @@ holds NOW in the realm that issued the token, less any whose permission the
 token does not carry. A role revoked after a token was minted stops working at
 once (403, `STS-API-0125`), and an `admin:read` token is not Admin Write
 because its subject also holds that. The XACML document is unchanged.
+
+### The audience, and why the credential is not the console's
 
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
 ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
@@ -2215,7 +2225,7 @@ override's value in force and its source. That is the same view model the
 console's Shared Signals section draws. Pausing and enabling a stream is
 `POST /admin-api/ssf/status`, as it always was.
 
-## THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
+## 3cc. THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
 
 **Since #446 the console is a static application whose one data source is
 this API, and to draw itself it added operations that exist only for it** —
@@ -2242,7 +2252,7 @@ from that field** (`withConsoleRoutes()`):
 * **The scope is `admin:console`.** It is the permission of the native role
   ADMIN_CONSOLE, which nobody holds as a member: it is CONFERRED by the
   console's client on everybody who signs in through it
-  (`roleConferredBy`, `common/CLAUDE.md` 3bq). A console operation asks
+  (`roleConferredBy`, `common/CLAUDE.md` 3cc). A console operation asks
   `requiredRoles: [ADMIN_CONSOLE]` and, unless it is the frame or the
   operation list, `requiredAllRoles: [ADMIN_READ]` (a form helper
   ADMIN_WRITE) — the access-control document's every-one-of conjunct

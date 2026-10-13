@@ -1,6 +1,6 @@
 # CLAUDE.md — `portal/`
 
-## A STATIC APPLICATION SINCE #568 (2026-10-12) — READ THIS FIRST
+## A STATIC APPLICATION SINCE #568 (2026-10-12) — READ THIS FIRST — rule 3ck
 
 **The portal is drawn in the browser now**, on the admin console's pattern
 (#446). `/portal` and every path under it answer one document
@@ -30,6 +30,7 @@ a page DOES, which did not change:
 | `requireSignIn()`, the portal's relying-party session, `sts_portal`, `oidcRp.renewal('portal')` | gone: the token is the session, and `/account-api`'s gate asks what `requireSignIn()` asked — the access policy included |
 | a CSRF token on every form (A07) | gone with the cookie it guarded: a request is a DPoP-bound token and a proof by a key no other page holds |
 | a write answers 303 with `?done=` | it answers `{ ok, message }` in the person's language; a secret shown once is a `view` drawn in place |
+| every page here but a few is `script-src 'none'`, and a page that "has no script" or "runs no script" | every `/portal/*` path is the one shell under `script-src 'self'` and `connect-src 'self'`, and every page runs `/portal/portal.js`; what "no script" still means is that the page needs nothing in the browser beyond drawing its answer and sending its forms |
 | `/authn/webauthn.js` on `/portal/keys`, `/portal/activate`, `/portal/devices`; `/portal/copy.js` on `/portal/mfa` | the runtime runs the ceremonies and reveals the Copy buttons (`web_portal_webauthn.ts`); the four scripted-page rows are one in the root `CLAUDE.md` |
 | the `Location`-header bug and `oidc_rp.js`'s choke point | the runtime builds its own authorization request under the realm's prefix |
 | `NAV` in `portal.ts` | `NAV` in `web_portal_kit.ts`, read by the frame and by `paths()` |
@@ -276,9 +277,10 @@ own account with a form they abandoned. It is the same shape of lockout
 
 ### The QR code is an image this server drew, and the typed secret is not a fallback nobody sees
 
-`script-src 'none'` covers every page here except `/portal/keys` (see below,
-2026-09-10) and a few states of others the root `CLAUDE.md`'s table lists, so a QR library running in the browser was never available on this
-one — `common/totp.ts` renders an SVG and it arrives as
+Until #568 (2026-10-12) `script-src 'none'` covered every page here except
+`/portal/keys` (see below, 2026-09-10) and a few states of others the root
+`CLAUDE.md`'s table listed, so a QR library running in the browser was never
+available on this one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
 
@@ -412,10 +414,13 @@ codes (`admin-ui/web_users.ts`, the recovery codes block).
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
 It arrived 2026-09-10, in a directory whose own file said every page of it was
-`script-src 'none'`.
+`script-src 'none'`. (History since #568, 2026-10-12: every portal page now
+runs `/portal/portal.js` under `script-src 'self'`, and the ceremony is
+`web_portal_webauthn.ts`'s; the argument below is why the page needed a
+script at all.)
 
-`app.js` sets `script-src 'none'` everywhere and the rule is that a page gets an
-exception only when it CANNOT work without one — several candidates have been
+`app.js` sets `script-src 'none'` as the service-wide default and the rule is
+that a page gets an exception only when it CANNOT work without one — several candidates have been
 refused on it (the root `CLAUDE.md` lists them), `/authn/totp` among them, which sits next door to a scripted page
 and still had to argue its own case.
 
@@ -912,9 +917,10 @@ person it is about could clear it, so there is no Clear here — the console has
 one, for its own inbox. The page says that in as many words rather than simply
 lacking the button, because a missing control reads as an oversight.
 
-**IT NEEDS NO SCRIPT AND HAS NONE, SO THE CLAIM THIS FILE MAKES ABOUT
-`script-src 'none'` IS UNCHANGED BY IT.** `/portal/keys` is still the only
-exception in this directory. A list of events with a `<details>` per payload is
+**IT NEEDED NO SCRIPT AND HAD NONE, SO THE CLAIM THIS FILE THEN MADE ABOUT
+`script-src 'none'` WAS UNCHANGED BY IT.** `/portal/keys` was still the only
+exception in this directory (until #568, 2026-10-12, made every portal page
+the static shell under `script-src 'self'`). A list of events with a `<details>` per payload is
 markup; the argument that page was granted its exception on — a WebAuthn
 ceremony is a browser API call and there is no server-side substitute — does
 not apply here and was not reached for.
@@ -1027,8 +1033,8 @@ be explored is the more useful half. So the set ones are drawn plainly and the
 rest are one fold per class.
 
 **`<details>` is MARKUP and not script**, which is why it is available at all:
-every page of this portal but `/portal/keys` is `script-src 'none'`, and the
-console made exactly this argument for its own collapsible prose. There is no collapse-all and there
+every page of this portal but `/portal/keys` was `script-src 'none'` until #568
+(2026-10-12), and the console made exactly this argument for its own collapsible prose. There is no collapse-all and there
 will not be one.
 
 ### Nothing here can be edited
@@ -1165,7 +1171,8 @@ What is this page's:
 * **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
   one-time card with three `data:` links carrying `download` — the `.p12`, an
   encrypted `-key.pem`, the `-chain.pem` — which is the console keytab page's
-  arrangement and the only way a file leaves a page with `script-src 'none'`.
+  arrangement and was the only way a file left a page with `script-src 'none'`;
+  the static portal (#568) kept it, the links drawn by the renderer.
   Nothing keeps the private key; the page says so, and the install steps
   (Windows, macOS, Firefox, Linux Chrome, curl) are folds on the same card.
 * **THE FILE PASSWORD IS TYPED TWICE, CHECKED, USED ONCE AND NOT KEPT** — not

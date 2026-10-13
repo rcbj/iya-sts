@@ -1257,8 +1257,9 @@ pages from the state.
 
 ## NO CSP RELAXATION, AND THE SCRIPTED PAGE THAT IS NOT
 
-`app.js` sets `script-src 'none'` for the whole service, and seven pages relax
-it by naming one resource (the root `CLAUDE.md` lists them). **This feature
+`app.js` sets `script-src 'none'` for the whole service, and a few server-drawn
+pages relax it by naming one resource (the root `CLAUDE.md`'s *Pages with a
+script* lists them, beside the static surfaces). **This feature
 adds no such page.** Since #580 three of its pages are a STATIC SURFACE
 instead — the landing page and what the login and linking endpoints say —
 which run `/federation/pages.js` under `script-src 'self'` by the

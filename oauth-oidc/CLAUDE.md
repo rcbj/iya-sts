@@ -1847,6 +1847,8 @@ so must `admin-ui/admin.ts`.
    declared type's details. `tests/rfc9396_authorization_details.js` holds the
    rest.
 
+   #### The access-type catalogue (#432 phases 3 and 4) — rule 3bz
+
    **THE DECLARATION IS THE ACCESS-TYPE CATALOGUE SINCE #432 (phase 4,
    2026-10-03)**, shared with GNAP, which reads it for access rights
    (`gnap/CLAUDE.md`, *Each right a policy question*). A definition may now
@@ -3331,7 +3333,7 @@ safe to turn on while something is running. **3au below does the opposite, on
 purpose**: a permission is a relationship the client was granted, a protected
 scope is a key to this service's own API.
 
-### 3au. `scopeRefusal()` — the scopes a client may be issued (#110, 2026-09-22)
+### 3au. `scopeRefusal()` — the scopes a client may be issued (#110, 2026-09-22) — and rule 3bt
 
 **Since #305 the decisions below are rules of the issuance policy**, and the
 functions here gather facts: `scopeRefusal()` through `scope_policy.judge()`,

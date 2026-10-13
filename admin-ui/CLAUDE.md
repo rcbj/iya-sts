@@ -39,8 +39,10 @@ configuration → Listeners (#423) have. The rules:
 * **One mechanism: `admin.tabbedPanels(cls, panels)`.** Panels are
   `{ id, label, html }`, and a panel with nothing in it gets no tab. The tabs
   are links to fragments, and the stylesheet shows the `:target` panel
-  (`:has(:target)`), or the first panel when none is targeted. There is no
-  script: the console stays `script-src 'none'`. Every panel is in the page,
+  (`:has(:target)`), or the first panel when none is targeted. The tabs need
+  no script. (The console was `script-src 'none'` until #446, 2026-10-05; its
+  shell is now served `script-src 'self'` and `connect-src 'self'` through
+  `app.contentSecurityPolicy()`, for `/admin/console.js`.) Every panel is in the page,
   so in-page search, printing, and a browser without `:has()` still see
   everything.
 * **A settings group is a tab of its own.** Draw it with
@@ -719,7 +721,7 @@ came for. So a field is drawn only when the family it belongs to is ticked.
 **THE OBVIOUS IMPLEMENTATION IS A CHANGE LISTENER AND THIS IS NOT ONE.** It is
 `:has()`: the checkboxes are already in the same `<form>` as the fields and
 already carry `id="proto-<family>"`, so one selector per family does the whole
-thing and `script-src 'none'` is untouched. The rules live in `page()`'s
+thing and `script-src 'none'` (until #446, 2026-10-05) is untouched. The rules live in `page()`'s
 stylesheet — the console's ONLY `<style>`, for the reason the service metadata
 page's classes live there — and are GENERATED from `applications.PROTOCOLS`, so
 a family added to that table gets its rule for nothing and cannot get a checkbox
@@ -960,7 +962,8 @@ fiction and an empty form. A generator of its own here would have produced a
 plausible person matching nothing, and the difference would have shown up in an
 `ldapsearch` weeks later.
 
-It is a round trip because this console is `script-src 'none'`, and the
+It is a round trip because this console was `script-src 'none'` until #446
+(2026-10-05), and the
 refusals recorded under the root file's *Seven pages here have a script on
 them* are what settle
 that: "a field could be filled in without a reload" is not the argument that
@@ -1322,8 +1325,8 @@ Under `.card` the first thing is `.pagehead`: the page's `<h1>`, and a
 **Refresh** link pushed to the far end of it. Three things about it are
 deliberate.
 
-**It is a LINK and it has to be.** `script-src 'none'` means there is no
-`location.reload()` available anywhere in this console, and a
+**It is a LINK and it has to be.** `script-src 'none'` (until #446, 2026-10-05) meant there was
+no `location.reload()` available anywhere in this console, and a
 `<form method="get">` back to the same path would drop the query string it was
 submitted with unless every parameter were re-emitted as a hidden field. An
 `<a>` to the current URL is a real fetch either way, because `respond()` sends
@@ -1370,8 +1373,8 @@ which is the property to keep if any of this is reworked.
 
 Six things about it are decisions rather than mechanics.
 
-* **IT IS NATIVE `<details>` AND NOTHING ELSE COULD BE.** This console is
-  served under `script-src 'none'`, so the debugger's collapse-all switch — a
+* **IT IS NATIVE `<details>` AND NOTHING ELSE COULD BE.** This console was
+  served under `script-src 'none'` until #446 (2026-10-05), so the debugger's collapse-all switch — a
   checkbox and a listener — has no equivalent here, and the whole change adds
   no new exception to the rule in `../CLAUDE.md`. What that costs is the
   *expand everything* control, which is why every summary is a full sentence:
@@ -1561,8 +1564,8 @@ in the BINDING, not in the signature, and the page says which.
   only once something has brought them into being, and reports honestly which
   of the two states the realm is in.
 * **NO SCRIPT, and it did not need the argument made again.** Everything on it
-  is a table and prose through `note()`/`warn()`, so `script-src 'none'` is
-  untouched and this is not a candidate for the exception at all — unlike the
+  is a table and prose through `note()`/`warn()`, so `script-src 'none'`
+  (until #446, 2026-10-05) is untouched and this is not a candidate for the exception at all — unlike the
   two drawings, which had to argue it twice.
 * **The prose carries `backticks` and the RENDERER turns them into `<code>`.**
   The same strings are served as JSON at `?format=json` and on
@@ -2221,7 +2224,7 @@ person may not, so leaving the declaration would leave somebody declared as an
 issuer with no key to issue with. Both say, in as many words, that this is NOT
 revocation.
 
-#### It is `script-src 'none'`, and the argument is made from scratch
+#### It was `script-src 'none'` until #446 (2026-10-05), and the argument is made from scratch
 
 The rule in this file is that the argument has to be made each time and that
 "the page next door does it" is not one. The test is whether the page CANNOT
@@ -2240,7 +2243,7 @@ algorithm menu that is narrowed by a round trip.
 
 This console has ONE stylesheet. A page with a `<style>` of its own would be the
 second place a reader has to look for why something is laid out as it is, and
-`script-src 'none'` is already the reason there is no third.
+`script-src 'none'` (until #446, 2026-10-05) is already the reason there is no third.
 
 Two of the ten are decisions rather than appearance. **`.pki-cols` is a grid
 with an `auto-fit` 22rem floor**, so the three blocks drop to two columns and
@@ -2687,7 +2690,7 @@ Eight things about it are decisions rather than defaults.
   THAN BEING WAIVED.** A client-side graph library — mermaid, cytoscape, d3 —
   would have made this the fifth scripted page in the service and the first in
   the console, to draw a picture that does not move. The SVG is generated on the
-  server and arrives inline as markup, so `script-src 'none'` is untouched and
+  server and arrives inline as markup, so `script-src 'none'` (until #446, 2026-10-05) is untouched and
   `img-src` is not even reached. What it costs is pan and zoom; the filter and
   `?format=svg` are the answers to that, and both are said on the page.
 
@@ -2928,7 +2931,7 @@ server is seeing tokens it did not expect.
   actually does with a long list — type the first few letters, or read the
   handful that match — are the two a native select does worst. Four decisions,
   and the first is the one that decides the rest:
-  * **There is no script and there must not be one.** `script-src 'none'` holds
+  * **There is no script and there must not be one** (until #446, 2026-10-05). `script-src 'none'` holds
     over the whole service (`../common/app.js`) and the parent suite asserts it
     against this console's live headers (`tests/vendored/admin_api.js`), so there is no
     keystroke handler, no fetch and no debounce to build a type-ahead out of —
@@ -3355,7 +3358,7 @@ other two is what `federation_diagram.ts` shares: the palette and the text
 metric, so the three pictures look like one console. And the CSP argument
 is the same:
 
-* The SVG is made on the server and inlined, so `script-src 'none'` holds.
+* The SVG is made on the server and inlined, so `script-src 'none'` (until #446, 2026-10-05) holds.
 * **Zoom is a link**: every country is an `<a>`, and the next level is a
   server round trip.
 
@@ -3665,8 +3668,8 @@ menu exists because the link needed somewhere to live: these two are the only
 controls on this console that are about the READER, and everything else on every
 page here changes what some protocol endpoint does for somebody else.
 
-**IT IS A `<details>`, WHICH IS TO SAY IT IS NOT A SCRIPT.** This console is
-`script-src 'none'` on every page but `/admin/api-explorer`, and the test for an
+**IT IS A `<details>`, WHICH IS TO SAY IT IS NOT A SCRIPT.** This console was
+`script-src 'none'` on every page but `/admin/api-explorer` until #446 (2026-10-05), and the test for an
 exception is that the page CANNOT work without one — which a menu plainly can.
 It is the same answer the collapsible prose got, and the root `CLAUDE.md` lists
 it beside the other refusals: **"it is a menu and menus have scripts" is not an
@@ -4027,7 +4030,8 @@ would cost an afternoon:
   `<select>` and nothing else — the prose that used to sit under it said what
   `/admin/realms` says at length.
 * **It is a FORM, and it must stay one, because the page it is on runs no
-  script.** `script-src 'none'` (common/app.js) is what makes the whole
+  script** (until #446, 2026-10-05; the static console's runtime moves the
+  realm switcher in place). `script-src 'none'` (common/app.js) is what makes the whole
   js/reflected-xss family moot here rather than merely unlikely. (That sentence
   said "this console runs no script" until 2026-09-09, when the API explorer
   moved in and became the ONE page here with one — see *The API explorer is a
@@ -4272,7 +4276,7 @@ and `grantq`, through `sectionSearchForm()`. It is deliberately NOT
 away from the page, and this one narrows a table the reader is going to stay and
 read — one function with a mode flag deciding which it was would be two controls
 wearing one name. The fragment trick is the same and for the same reason
-(`script-src 'none'`, so nothing can restore a scroll offset after a GET form's
+(`script-src 'none'` (until #446, 2026-10-05), so nothing can restore a scroll offset after a GET form's
 reload).
 
 **The two boxes answer differently and that is the interesting half.** A
@@ -4415,7 +4419,7 @@ cited. It is made in that route's header from scratch and lands where the
 delegation and federation pictures landed: the test for a script is that the page
 CANNOT work without one, and a diagram that does not move can. `@dagrejs/dagre`
 lays it out on the server, the SVG arrives inline as ordinary markup,
-`script-src 'none'` is untouched, and `?format=svg` is what answers the pan and
+`script-src 'none'` (until #446, 2026-10-05) is untouched, and `?format=svg` is what answers the pan and
 zoom it does not have.
 
 ## `/admin/delegation/cluster` — THE GROUPINGS, AND WHY THE WHOLE-REGISTER PICTURE NEEDED A SECOND ONE
@@ -4556,7 +4560,7 @@ So the full value is a real element — `.trunc > .full`, shown on `:hover` and
 pointer can travel into. The `title` is set as well and is not redundant: it is
 what a keyboard user and most screen readers get, which keeps the rule that
 **nothing is ever said only in a tooltip**. There is no script in any of it;
-`script-src 'none'` is untouched, and a hover popup was available where a
+`script-src 'none'` (until #446, 2026-10-05) is untouched, and a hover popup was available where a
 collapse-all switch was not.
 
 **THE SHELL IS 104rem WIDE RATHER THAN 92rem** since the same day, and the
@@ -4723,7 +4727,7 @@ disclosure. Eight cards of member tables sat between the settings above them and
 the links below, so the controls somebody came for were off the bottom of the
 page on every visit. `details.fold.section` styles the summary as the `<h2>` it
 replaces, so the heading is still in its place; native `<details>`, so
-`script-src 'none'` is untouched — the same answer `note()` gives one level up.
+`script-src 'none'` (until #446, 2026-10-05) is untouched — the same answer `note()` gives one level up.
 
 ## `/admin/caep-sessions` HAS A THIRD TABLE, AND IT IS A THIRD QUESTION (2026-09-04)
 
@@ -5659,8 +5663,10 @@ So the one page in this service whose entire purpose is to be opened in a
 browser became the one page a browser could not open — this console linked to
 it, and the link answered 401.
 
-**So "this console is `script-src 'none'`" is now "every page of this console
-except one"** — the claim is qualified wherever it is made, and the XACML
+**So "this console is `script-src 'none'`" became "every page of this console
+except one"** — and since #446 (2026-10-05) it is no page of it: the static
+console's shell is served `script-src 'self'` and `connect-src 'self'` through
+`app.contentSecurityPolicy()`. The claim is qualified wherever it is made, and the XACML
 editor's version of it is unaffected because that page genuinely has no script
 and would still not have one if this page had never moved.
 
@@ -6289,7 +6295,7 @@ behind, and this one needs none: the link adds `?certificate=<SHA-256>&from=<sec
 to the page it is on, the route resolves that certificate and draws the page
 with the dialog over it, and the X and the Close button both go back to the page
 without the parameter, at the section the link was pressed in. So both pages are
-still `script-src 'none'`, the URL is the open dialog (bookmarkable, reloadable,
+still `script-src 'none'` (until #446, 2026-10-05), the URL is the open dialog (bookmarkable, reloadable,
 closed by Back), and only the certificate asked for is parsed. **The CSS
 `:target` alternative was refused** because it pre-renders every dialog on every
 render, and `/admin/pki` holds dozens of certificates.
@@ -6347,7 +6353,7 @@ Four decisions, each argued in the file:
   certificate is asked first where there is one: only the certificate can show
   an alternative key.
 * **NO SCRIPT, NO STYLESHEET, NO IMAGE REQUEST.** An inline SVG with its style
-  on the element, so both pages stay `script-src 'none'` and a page that forgot
+  on the element, so both pages stay `script-src 'none'` (until #446, 2026-10-05) and a page that forgot
   a `<style>` block could not render the badge unstyled. `title` for a pointer,
   `aria-label` with `role="img"` for a screen reader.
 
@@ -6843,7 +6849,7 @@ not be mailed is shown as before, with the reason.
 
 The page's first import form is *Upload a file*: `enctype="multipart/form-data"`,
 a `<input type="file">` and a real submit button, and **no script** — the
-page stays under `script-src 'none'`; there is no progress bar, because the
+page stays under `script-src 'none'` (until #446, 2026-10-05); there is no progress bar, because the
 answer comes when the file is stored and the version then shows `loading`
 until a reload shows it `active` or `refused`. The paste form stays below it,
 renamed *Paste a list*. A realm administrator's copy pins the realm and drops

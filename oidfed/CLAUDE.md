@@ -1,5 +1,7 @@
 # oidfed/ — OpenID Federation 1.1
 
+## 3bd. Every trust realm is an OpenID Federation entity (#132, #133)
+
 **Every trust realm is an OpenID Federation entity** (#132 and #133, built
 2026-09-23 against the 1.1 texts). A realm publishes an Entity Configuration, a
 Federation Entity Key of its own, the subordinates it vouches for, the Trust

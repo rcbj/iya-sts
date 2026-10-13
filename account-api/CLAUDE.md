@@ -1,6 +1,6 @@
 # CLAUDE.md — `account-api/`
 
-## THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
+## 3ck. THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
 
 `/account-api` is what the user portal draws every page from and sends every
 form to, since the portal became a static application on the admin console's

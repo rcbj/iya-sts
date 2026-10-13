@@ -1763,7 +1763,7 @@ arrived (`tls.resumedChainWaitMs`, `STS-TLS-0038` when it runs out).
 **HTTP/2 is not offered** — express cannot run on node's own `http2` server,
 and rcbj wants that out of the box rather than written here: #407.
 
-## Custom listeners (#472, 2026-10-07; a realm's own, #99, among them)
+## Custom listeners (#472, 2026-10-07; a realm's own, #99, among them) — rule 3cg
 
 `tls/listeners.js` binds an HTTPS listener for every definition
 `common/listener_map.js` reads — the service's `listeners.custom` and each

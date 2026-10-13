@@ -280,9 +280,11 @@ The `session-<id>Page` parameter is described in the operation's prose rather
 than listed, because OpenAPI has no way to spell a query parameter whose name
 is built at runtime.
 
-**Nothing in the console runs a script** (`script-src 'none'`). Paging is
-links and query parameters; the diagrams are drawn on the server. The one
-exception is the [API explorer](management-api.md#the-explorer).
+**The console needs JavaScript**: it is one page whose script
+(`/admin/console.js`, under `script-src 'self'`) draws every page from
+`/admin-api`. Paging is still links and query parameters, and the diagrams are
+still laid out on the server. The [API explorer](management-api.md#the-explorer)
+loads a script of its own as well.
 
 ## Directory
 
@@ -991,9 +993,9 @@ and this one is the relationships. Every delegation page is drawn from an
 operation under `/admin-api/delegation`, saves its drawing as an SVG file, and
 links back to the table carrying whatever filter you left it with.
 
-**None of them runs a script.** The layout is computed on the server with
+**No picture has a script of its own.** The layout is computed on the server with
 [`@dagrejs/dagre`](https://github.com/dagrejs/dagre) and every shape is this
-service's own, so the console stays `script-src 'none'`. The cost is that a
+service's own, arriving as an SVG the page shows as it is. The cost is that a
 picture does not pan, zoom or drag: the filter is how a busy one is made
 readable, and `?format=svg` is how it is opened in something that zooms.
 
@@ -1372,8 +1374,8 @@ attribute becomes a claim whose value is read from the person's own entry under
 `ou=users`, so an `ldapmodify` of `uid=alice,ou=users` changes the next access
 token and the next assertion, and an LDAP client, an OIDC client and a SAML
 relying party see the same person. **Update** installs exactly the ticked
-boxes, and **Select all** and **Delete all** are the extremes — all form posts,
-with no script.
+boxes, and **Select all** and **Delete all** are the extremes — all forms, each
+sent as one request.
 
 The catalogue is the same list of attribute types the Credential claims and
 Verifier request tabs at `/admin/vc` choose from, so there is one spelling of each. The

@@ -286,7 +286,7 @@ Rotation and modification keep the chain (`grant.actorChain`, and the rotated
 model copies `act`), introspection returns it, and `gnap.maxDerivationDepth`
 (default 2: a three-tier call path) caps it in every mode (0782).
 
-## Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
+## 3bz. Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
 
 Until #432 the engine decided who may be granted what in code
 (`protectedAccessProblem()`, `accessProblem()` and an inline bearer check in
