@@ -30,7 +30,8 @@
 //      key marked as the acceptor's, planted for the SPN, is not read — the
 //      password builds the account — while an unmarked one still is.
 //   C. development: nothing is made and the account is built from the
-//      published password, as it always was.
+//      published password, as it always was; with an empty password there is
+//      still no account, because the random key is product's.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -395,6 +396,18 @@ function developmentIsUnchanged(t) {
           r.record.directoryKeys === false && r.record.password === 'set',
           'the account is built from the published password, as before',
           JSON.stringify({ account: r.account, record: r.record }));
+  // AN EMPTY PASSWORD IS WHERE THE MODE DECIDES: the account is refused for
+  // its password in both modes, and only product keys the SPN instead.
+  const e = inAChild(t, 'development', { KRB5_SERVICE_PASSWORD: '' });
+  const emptyMade = (e.made || [])[0] || {};
+  t.check(e.before && e.before.passwordRefused === true &&
+          emptyMade.made === false && e.entry === null &&
+          e.account && e.account.available === false &&
+          e.account.storedKey === false,
+          'WITH AN EMPTY PASSWORD development still makes no key, and the ' +
+          'acceptor has no account', JSON.stringify({ before: e.before,
+                                                      made: e.made,
+                                                      account: e.account }));
   log.debug("Leaving developmentIsUnchanged().");
 }
 
