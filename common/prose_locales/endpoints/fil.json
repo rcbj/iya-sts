@@ -731,6 +731,14 @@
     "en": "330b2e1630d653b8",
     "text": "Mga service account at ang rotation nila"
   },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Kung sino ang may-ari ng isang object, at kung maaari itong pangasiwaan ng mga may-ari nito"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Isara ang isang object sa mga may-ari nito, o buksan itong muli"
+  },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",
     "text": "Ang device register, binilang"

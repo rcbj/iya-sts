@@ -5510,6 +5510,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'with its push destination, when its password last rotated and ' +
           'is next due, and how many rotations in a row failed; the ' +
           'realm\'s rotation settings and the totals. No secret value.' },
+  { path: '/admin-api/ownership', group: 'Management API',
+    name: 'Who owns an object, and whether its owners may administer it',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#607). One role, group, service account or ' +
+          'application: its owners, whether it is closed to them — so they ' +
+          'may not read or change it with owner:read and owner:write — and ' +
+          'why, the administrator\'s mark among the reasons. The facts the ' +
+          'access-control policy\'s owner rule decides on.' },
+  { path: '/admin-api/ownership/:action', group: 'Management API',
+    name: 'Close an object to its owners, or open it again',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#607). set-protected: the administrator\'s mark, ' +
+          'stsOwnerProtected on the object\'s own entry — the Closed to its ' +
+          'owners checkbox on each Owners tab of the console.' },
   { path: '/admin-api/devices/monitor', group: 'Management API',
     name: 'The device register, counted', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/devices/monitor over JSON: the ' +

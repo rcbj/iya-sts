@@ -21956,10 +21956,11 @@ class AdminApi {
       // the administrator's mark that closes an object to its owners (rcbj's
       // decision 4). The facts are `common/ownership.ts`'s — the same ones
       // the access-control policy's owner rule reads through the PIP — so
-      // this answer and that decision cannot disagree. NO CONSOLE FORM: the
-      // mark is an attribute on the object's own entry
-      // (`stsOwnerProtected`), and this is its machine door beside an
-      // `ldapmodify` by a holder of Admin Write.
+      // this answer and that decision cannot disagree. The mark is an
+      // attribute on the object's own entry (`stsOwnerProtected`); its
+      // CONSOLE CONTROL is a checkbox on each object's Owners tab (rcbj,
+      // 2026-10-13), posting `set-protected` to that tab's route, and an
+      // `ldapmodify` by a holder of Admin Write reaches it too.
       // -----------------------------------------------------------------------
       { method: 'GET', path: BASE + '/ownership', tag: 'Ownership',
         operationId: 'getOwnership',
@@ -22003,8 +22004,11 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/ownership/:action', tag: 'Ownership',
-        mirrors: 'no console form — the mark is stsOwnerProtected on the ' +
-                 'entry',
+        // THE OWNERS TABS' CHECKBOX: each posts `set-protected` to its own
+        // tab's route, which is what resolves the form to this operation.
+        mirrors: 'POST /admin/roles/owners, POST /admin/groups/owners, ' +
+                 'POST /admin/applications/owners, POST ' +
+                 '/admin/users/service-account',
         handler: function (req, res) {
           log.debug("Entering the management API ownership action endpoint.");
           const body = parseBody(req);

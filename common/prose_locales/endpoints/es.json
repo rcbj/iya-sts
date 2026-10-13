@@ -731,6 +731,14 @@
     "en": "330b2e1630d653b8",
     "text": "Cuentas de servicio y su rotación"
   },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Quién es propietario de un objeto y si sus propietarios pueden administrarlo"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Cerrar un objeto a sus propietarios, o volver a abrirlo"
+  },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",
     "text": "El registro de dispositivos, contado"

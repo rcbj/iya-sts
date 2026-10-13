@@ -1559,6 +1559,14 @@
     "en": "764048d53b74b4a3",
     "text": "非规范（#221）。以 JSON 形式提供的 GET /admin/service-accounts：每个服务账户（携带 stsServiceAccount 的人员条目）及其推送目标、其密码上次轮换的时间和下次到期时间，以及连续失败的轮换次数；本领域的轮换设置和总数。不包含任何秘密值。"
   },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "非规范（#607）。一个角色、组、服务账号或应用：其所有者、是否对他们关闭——即他们不能使用 owner:read 和 owner:write 读取或更改它——以及原因，管理员的标记也在其中。access-control 策略的所有者规则据以决定的事实。"
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "非规范（#607）。set-protected：管理员的标记，即对象自身条目上的 stsOwnerProtected——控制台每个“所有者”选项卡上的“对所有者关闭”复选框。"
+  },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",
     "text": "非规范（#218）。以 JSON 形式提供的 GET /admin/devices/monitor：注册、删除和逐出的计数以及逐日时间线（?days=）。"

@@ -337,7 +337,9 @@ they are:
   of this service's protected scopes;
 * any service account that holds a protected role.
 
-An administrator can also close any object:
+An administrator can also close any object: the **Closed to its owners**
+checkbox on its Owners tab in the console (roles, groups, applications, and a
+service account's section of the person page),
 `POST /admin-api/ownership/set-protected` with `kind`, `name` and `protected`,
 or `stsOwnerProtected: TRUE` on the entry. `GET /admin-api/ownership?kind=&name=`
 says whether an object is closed and why.

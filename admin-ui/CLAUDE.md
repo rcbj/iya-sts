@@ -7852,3 +7852,35 @@ search asked with holder `page`. The acts are `add-owner` and `remove-owner` on
 `applicationsAction()`, over `applications.addOwner()` and `removeOwner()`.
 `tests/role_owners.js` section F holds them.
 
+
+## EACH OWNERS TAB HAS A "CLOSED TO ITS OWNERS" CHECKBOX (#607; rcbj, 2026-10-13)
+
+Since #607 an owner may administer what they own through the user portal and
+`/admin-api`, within the access-control policy's owner rule
+(`common/CLAUDE.md` 3cn), and an administrator may close any one object to
+its owners: `stsOwnerProtected` on its entry. rcbj: "expose the closed to
+owners checkbox on the Directory pages". So under the owners on each of the
+four places owners are kept — a role's, a group's and an application's Owners
+tab, and a service account's section of the person page —
+`GroupsPage.ownerProtectionSection()` draws the mark as a checkbox and a Save.
+
+* **IT POSTS `set-protected` TO THE TAB'S OWN ROUTE** (`/admin/roles/owners`,
+  `/admin/groups/owners`, `/admin/applications/owners`,
+  `/admin/users/service-account`), and `POST /admin-api/ownership/{action}`
+  `mirrors` all four, so `WebForms.resolve()` finds it by the page and the
+  action as it finds `add-owner`. An unticked box is sent as `false`
+  (`uncheckedBoxes()`).
+* **THE PAGE IS DRAWN AGAIN IN PLACE** (`web_answers.ts`), as an Add or a
+  Remove on those tabs is: the facts where each page keeps them (`ownership`
+  on the group's answer, `role.ownership`, `page.ownership`,
+  `serviceAccount.ownership` — `admin_views.ts`'s `ownershipOf()`), the mark
+  as the answer holds it, the sentence beside the box
+  (`state.ownerProtection`).
+* **THE BOX IS ONLY THE MARK.** Every other reason the object is closed — a
+  native role, a roster group, this service's own application, a protected
+  scope — is listed under it in the server's words (English, #539), because
+  the owner rule closes those whatever the box says and a box that looked
+  like it opened them would be a lie. The redraw tells the mark from them by
+  `common/ownership.ts`'s MARKED sentence, to the letter.
+* Without Admin Write the section says whether the mark is set and draws no
+  form.

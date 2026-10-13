@@ -731,6 +731,14 @@
     "en": "330b2e1630d653b8",
     "text": "服务账户及其轮换"
   },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "谁拥有某个对象，以及其所有者能否管理它"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "将对象对其所有者关闭，或重新开放"
+  },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",
     "text": "设备登记册（统计）"

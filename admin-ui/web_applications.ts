@@ -1384,7 +1384,14 @@ class ApplicationsPage {
               field: 'application', value: row.identifier,
               stateKey: 'applicationOwners', self: '',
               lead: t.html('consoleApplications.owners.lead'),
-              leadRead: t.html('consoleApplications.owners.leadRead') }) },
+              leadRead: t.html('consoleApplications.owners.leadRead') }) +
+            // Closed to its owners (#607).
+            GroupsPage.ownerProtectionSection(t, json.page.ownership, {
+              route: '/admin/applications/owners', id: 'application-owners',
+              kind: 'application', name: row.identifier,
+              back: kit.queryWith(kit.listViewOf('/admin/applications',
+                                                 ctx.query), {}),
+              write: !!ctx.write, state: json.state }) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.

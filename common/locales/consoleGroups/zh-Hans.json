@@ -120,5 +120,13 @@
   "owners.isOwnerTip": "已在上方表格中。",
   "owners.itself": "此组",
   "owners.itselfTip": "组不能成为自己的所有者。",
-  "owners.addTip": "立即将 {value} 设为所有者。会立即保存。"
+  "owners.addTip": "立即将 {value} 设为所有者。会立即保存。",
+  "ownerProtection.heading": "对所有者关闭",
+  "ownerProtection.lead": "其所有者可以通过用户门户和管理 API 读取和更改它，范围以 access-control 策略的所有者规则所允许的为限。关闭后他们不能这样做，由管理员更改。",
+  "ownerProtection.checkbox": "对所有者关闭",
+  "ownerProtection.checkboxTip": "勾选后，其所有者不能通过门户或管理 API 读取或更改它。他们仍是其所有者。",
+  "ownerProtection.save": "保存",
+  "ownerProtection.closedAnyway": "无论复选框如何，它都对所有者关闭：",
+  "ownerProtection.isMarked": "管理员已将其对所有者关闭。",
+  "ownerProtection.notMarked": "没有管理员将其对所有者关闭。"
 }

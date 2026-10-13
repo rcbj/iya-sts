@@ -731,6 +731,14 @@
     "en": "330b2e1630d653b8",
     "text": "Comptes de service et leur renouvellement"
   },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Qui est propriétaire d’un objet, et si ses propriétaires peuvent l’administrer"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Fermer un objet à ses propriétaires, ou le rouvrir"
+  },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",
     "text": "Le registre des appareils, en chiffres"

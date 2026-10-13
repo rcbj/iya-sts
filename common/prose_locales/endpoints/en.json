@@ -182,6 +182,8 @@
   "endpoints.route./admin-api/device-compliance.name": "The device compliance feed (MDM / posture)",
   "endpoints.route./admin-api/device-registration.name": "Device registration",
   "endpoints.route./admin-api/service-accounts.name": "Service accounts and their rotation",
+  "endpoints.route./admin-api/ownership.name": "Who owns an object, and whether its owners may administer it",
+  "endpoints.route./admin-api/ownership/:action.name": "Close an object to its owners, or open it again",
   "endpoints.route./admin-api/devices/monitor.name": "The device register, counted",
   "endpoints.route./admin-api/users/self-issued-subjects.name": "One person's self-issued (SIOPv2) subjects",
   "endpoints.route./admin-api/users/verifications.name": "One person's identity verifications",

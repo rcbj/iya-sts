@@ -1559,6 +1559,14 @@
     "en": "764048d53b74b4a3",
     "text": "NO ESTÁNDAR (#221). GET /admin/service-accounts sobre JSON: cada cuenta de servicio (una entrada de persona que lleva stsServiceAccount) con su destino de envío, cuándo rotó su contraseña por última vez y cuándo vence la siguiente, y cuántas rotaciones seguidas fallaron; los ajustes de rotación del dominio y los totales. Ningún valor secreto."
   },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "NO ESTÁNDAR (#607). Un rol, grupo, cuenta de servicio o aplicación: sus propietarios, si está cerrado a ellos —de modo que no pueden leerlo ni modificarlo con owner:read y owner:write— y por qué, con la marca del administrador entre las razones. Los hechos sobre los que decide la regla de propietarios de la política access-control."
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "NO ESTÁNDAR (#607). set-protected: la marca del administrador, stsOwnerProtected en la propia entrada del objeto — la casilla Cerrado a sus propietarios de cada pestaña Propietarios de la consola."
+  },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",
     "text": "NO ESTÁNDAR (#218). GET /admin/devices/monitor sobre JSON: los recuentos y la cronología día a día de registros, eliminaciones y expulsiones (?days=)."

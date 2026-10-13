@@ -36,6 +36,11 @@ const log = require('bunyan').createLogger({ name: 'owner_administration',
 //      holding a protected role, and the administrator's mark — each a
 //      reason; an ordinary object none. A register that cannot be read
 //      leaves the object closed.
+//   E. THE CONSOLE'S CHECKBOX (rcbj, 2026-10-13). Each Owners tab draws the
+//      administrator's mark as a checkbox posting `set-protected`, which
+//      resolves on all four tabs to POST /admin-api/ownership/set-protected;
+//      the reasons no box opens are listed under it; a read-only reader gets
+//      no form; and the page is drawn again in place with the new mark.
 //   D. THE OWNER ROLES. OWNER_READ and OWNER_WRITE are built in, authorize
 //      their permissions, are gated, and are held — computed — by a person
 //      who owns something and by nobody else; held ∩ carried keeps only
@@ -425,6 +430,67 @@ function theOwnerRoles(t) {
   log.debug("Leaving theOwnerRoles().");
 }
 
+function theConsoleCheckbox(t) {
+  log.debug("Entering theConsoleCheckbox().");
+  t.log.info('=== E. the console\'s checkbox ===');
+  const GroupsPage = require('../admin-ui/web_groups');
+  const WebForms = require('../admin-ui/web_forms');
+  const WebAnswers = require('../admin-ui/web_answers');
+  const kit = require('../admin-ui/web_kit');
+  const adminApi = require('../mgmt-api/admin_api');
+  const tr = kit.context().t;
+  const MARK = 'an administrator closed it to its owners';
+  const draw = function (ownership, write) {
+    return GroupsPage.ownerProtectionSection(tr, ownership, {
+      route: '/admin/roles/owners', id: 'role-owners', kind: 'role',
+      name: 'staff', back: '/admin/roles', write: write, state: {} });
+  };
+  const open = draw({ marked: false, protected: false, reasons: [] }, true);
+  t.check(open.indexOf('name="action" value="set-protected"') >= 0 &&
+          open.indexOf('name="kind" value="role"') >= 0 &&
+          open.indexOf('name="protected" value="true">') >= 0,
+          'E1. an open role draws the checkbox unticked, posting ' +
+          'set-protected', open);
+  const marked = draw({ marked: true, protected: true, reasons: [MARK] },
+                      true);
+  t.check(marked.indexOf('value="true" checked') >= 0 &&
+          marked.indexOf(MARK) < 0,
+          'E2. a marked one draws it ticked, and the mark is not listed as ' +
+          'a reason', marked);
+  const native = draw({ marked: false, protected: true,
+                        reasons: ['it is a native role of this service'] },
+                      true);
+  t.check(native.indexOf('it is a native role of this service') >= 0,
+          'E3. a reason no box opens is listed under it', native);
+  t.check(draw({ marked: true, protected: true, reasons: [MARK] }, false)
+            .indexOf('<form') < 0,
+          'E4. a reader without Admin Write gets no form');
+  const row = adminApi.ROUTES.filter(function (one) {
+    return one.route === '/admin-api/ownership/:action';
+  })[0];
+  const table = WebForms.table([{ method: 'POST',
+    path: '/admin-api/ownership/set-protected', mirrors: row.mirrors }]);
+  t.check(['/admin/roles/owners', '/admin/groups/owners',
+           '/admin/applications/owners', '/admin/users/service-account']
+    .every(function (page) {
+      return WebForms.resolve(table, page + '#x-protection',
+                              'set-protected') ===
+        '/admin-api/ownership/set-protected';
+    }), 'E5. on all four tabs the form resolves to ' +
+        'POST /admin-api/ownership/set-protected', row.mirrors);
+  const before = { role: { name: 'staff', ownership: { marked: false,
+    protected: true, reasons: ['it is a native role of this service'] } } };
+  const after = WebAnswers.redraw('/admin/roles/owners', 'set-protected',
+    {}, { ok: true, ownerProtected: true, message: 'closed' }, before, tr);
+  const now = after.json.role.ownership;
+  t.check(now.marked === true && now.reasons.indexOf(MARK) >= 0 &&
+          now.reasons.length === 2 &&
+          after.json.state.ownerProtection.notice === 'closed',
+          'E6. the page is drawn again in place with the mark the answer ' +
+          'holds', JSON.stringify(after.json));
+  log.debug("Leaving theConsoleCheckbox().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
@@ -434,6 +500,7 @@ function run(t) {
     theParameters(t);
     protectedObjects(t);
     theOwnerRoles(t);
+    theConsoleCheckbox(t);
   } finally {
     // CLEARED RATHER THAN WRITTEN BACK: tests/access_policy.js's reason.
     config.clearOverride('xacml.enforceAccess');

@@ -731,6 +731,14 @@
     "en": "330b2e1630d653b8",
     "text": "服務帳戶及其輪替"
   },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "誰擁有某個物件，以及其擁有者能否管理它"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "將物件對其擁有者關閉，或重新開放"
+  },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",
     "text": "裝置登錄，計數統計"

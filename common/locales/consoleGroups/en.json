@@ -120,5 +120,13 @@
   "owners.isOwnerTip": "Already in the table above.",
   "owners.itself": "this group",
   "owners.itselfTip": "A group cannot own itself.",
-  "owners.addTip": "Make {value} an owner now. This is saved at once."
+  "owners.addTip": "Make {value} an owner now. This is saved at once.",
+  "ownerProtection.heading": "Closed to its owners",
+  "ownerProtection.lead": "Its owners may read and change it through the user portal and the management API, within what the access-control policy's owner rule allows. Closed, they may not, and an administrator changes it.",
+  "ownerProtection.checkbox": "Closed to its owners",
+  "ownerProtection.checkboxTip": "Ticked, its owners may not read or change it through the portal or the management API. They stay its owners.",
+  "ownerProtection.save": "Save",
+  "ownerProtection.closedAnyway": "It is closed to its owners whatever the box says:",
+  "ownerProtection.isMarked": "An administrator has closed it to its owners.",
+  "ownerProtection.notMarked": "No administrator has closed it to its owners."
 }
