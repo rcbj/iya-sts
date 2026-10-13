@@ -4259,7 +4259,35 @@ function currentDriver() {
   return enabled() ? driver : null;
 }
 
+// WHETHER THIS SERVICE'S DIRECTORY IS A WINDOW ONTO THE STORE (#349, #320):
+// `ldap.workerDirectory` read once, with `auto` decided — the window where it
+// can work (a postgres store, one cell) and the whole directory elsewhere. An
+// explicit `postgres-lru` answers yes wherever it is set, so `start()` can
+// refuse it where it cannot work (STS-LDAP-0133); `auto` is never refused.
+/**
+ * Answers whether the directory is held as a window onto the store
+ * (`ldap.workerDirectory`, with `auto` decided).
+ *
+ * @returns true for a window
+ */
+function directoryWindowWanted() {
+  log.debug("Entering directoryWindowWanted().");
+  const chosen = String(config.value('ldap.workerDirectory'));
+  let wanted;
+  if (chosen === 'postgres-lru') {
+    wanted = true;
+  } else if (chosen === 'auto') {
+    wanted = String(config.value('persistence.mode')) === 'postgres' &&
+      !cells.isMulti();
+  } else {
+    wanted = false;
+  }
+  log.debug("Leaving directoryWindowWanted(). " + wanted);
+  return wanted;
+}
+
 module.exports = {
+  directoryWindowWanted: directoryWindowWanted,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   originId: originId,

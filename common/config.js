@@ -11323,27 +11323,39 @@ const SETTINGS = [
 
   // THE DIRECTORY AS A WINDOW IN A REQUEST OR SURFACE WORKER (#349, rcbj's
   // decisions of 2026-09-29): `memory` holds the whole directory in every
-  // process, as always; `postgres-lru` has each worker hold the people and
+  // process, as always; `postgres-lru` has each process hold the people and
   // devices as a bounded window and ask the store for the rest, through a
-  // synchronous bridge. The front process holds the whole directory either
-  // way. Restart-only: the store's shape is chosen when `ldap_server.js`
+  // synchronous bridge — the front process too since #320. Restart-only: the store's shape is chosen when `ldap_server.js`
   // loads. `persistence.start()` refuses postgres-lru without a postgres
   // store or in a multi-cell deployment (STS-LDAP-0133).
+  //
+  // `auto` IS THE DEFAULT SINCE #320 (rcbj, 2026-10-13): a whole copy of the
+  // directory in every worker isolate was the largest memory cost on a node,
+  // and `memory` was the default only because #349 left the decision open.
+  // `auto` is the window wherever the window can work and the whole directory
+  // everywhere else, so a memory, ldif or multi-cell service starts as it did
+  // and only an explicit postgres-lru is refused. The one reading is
+  // `persistence.directoryWindowWanted()`.
   { key: 'ldap.workerDirectory', group: 'LDAP',
-    label: 'Directory in request workers',
+    label: 'Directory held in memory, or as a window',
     env: 'LDAP_WORKER_DIRECTORY', type: 'enum',
-    enumValues: ['memory', 'postgres-lru'], dflt: 'memory', runtime: false,
+    enumValues: ['auto', 'memory', 'postgres-lru'], dflt: 'auto',
+    runtime: false,
     restartReason: 'the directory\'s store is chosen when the process loads ' +
                    'it',
-    description: 'How a request or surface worker holds the directory. ' +
-                 'memory (the default): every entry, in every process. ' +
+    description: 'How every process — the front process and each request ' +
+                 'or surface worker — holds the directory. ' +
+                 'auto (the default, #320): postgres-lru wherever it can ' +
+                 'work — persistence.mode=postgres and a single cell — and ' +
+                 'memory everywhere else. ' +
+                 'memory: every entry, in every process. ' +
                  'postgres-lru: the people and devices as a window of at ' +
-                 'most ldap.workerCacheEntries entries, the rest read from ' +
-                 'PostgreSQL when asked for — a worker\'s memory no longer ' +
-                 'grows with the directory, and a miss costs one database ' +
-                 'round trip. Requires persistence.mode=postgres and a ' +
-                 'single cell; the front process always holds the whole ' +
-                 'directory.' },
+                 'most ldap.workerCacheEntries entries per process, the ' +
+                 'rest read from PostgreSQL when asked for — memory no ' +
+                 'longer grows with the number of people, and a miss costs ' +
+                 'one database round trip during which that process does ' +
+                 'nothing else. Requires persistence.mode=postgres and a ' +
+                 'single cell.' },
 
   // THE WINDOW'S BOUND (#349): entries, about 2.5 KB each with the JSON it
   // keeps for the merge. Read at every insert, so a change applies at once.

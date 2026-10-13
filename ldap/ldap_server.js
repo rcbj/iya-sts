@@ -1168,21 +1168,32 @@ let boundTlsPort = LDAPS_PORT;
 // bug in the debugger.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// OR A WINDOW ONTO THE STORE, IN A REQUEST OR SURFACE WORKER (#349).
+// OR A WINDOW ONTO THE STORE, IN EVERY PROCESS (#349, #320).
 //
-// With `ldap.workerDirectory=postgres-lru` a worker holds the people and the
-// devices — everything strictly under `ou=users` and `ou=devices` of each
-// realm — as a bounded window, and asks the store for the rest; every other
-// entry is held whole, as here. `ldap/directory_window.ts` is the whole of it,
-// and it has this Map's shape, so nothing below reads it differently. The
-// FRONT process always holds the whole directory: it owns the listeners and
-// its own writes (#349's design; moving it too is a later decision). Memory
-// and ldif stores cannot have a window — `persistence.start()` refuses the
-// setting with them (STS-LDAP-0133).
+// With the window (`ldap.workerDirectory` `auto` on a postgres store and one
+// cell, or `postgres-lru`) a process holds the people and the devices —
+// everything strictly under `ou=users` and `ou=devices` of each realm — as a
+// bounded window, and asks the store for the rest; every other entry is held
+// whole, as here. `ldap/directory_window.ts` is the whole of it, and it has
+// this Map's shape, so nothing below reads it differently. Memory and ldif
+// stores cannot have a window — `persistence.start()` refuses an explicit
+// postgres-lru with them (STS-LDAP-0133), and `auto` does not ask for one.
+//
+// **THE FRONT PROCESS TOO, SINCE #320 (rcbj, 2026-10-13).** #349 kept the
+// front whole because it owns the listeners and writes of its own, and left
+// moving it "a later decision". Nothing in the window is a worker's: the
+// front loads this file before `persistence.start()` exactly as a worker
+// does, so the bridge is attached before anything is restored, and its
+// writes are pinned until flushed like a worker's. What it costs the front is
+// what it costs a worker — a miss stops this process's event loop for one
+// round trip, and a whole walk pages through the store synchronously — paid
+// here on the thread that also holds every socket. What it buys is the
+// largest single thing a node held: the whole directory, plus the write
+// shadow's JSON copy of it, in the one process every deployment has (testidp
+// runs no worker at all).
 // ---------------------------------------------------------------------------
 const directoryWindow = (function () {
-  if (!process.env.STS_REQUEST_WORKER ||
-      String(config.value('ldap.workerDirectory')) !== 'postgres-lru' ||
+  if (!persistence.directoryWindowWanted() ||
       String(config.value('persistence.mode')) !== 'postgres') {
     return null;
   }
@@ -1204,8 +1215,10 @@ const directoryWindow = (function () {
     },
     registry: cacheRegistry
   });
-  log.info('ldap: this worker holds the people and devices as a window ' +
-           'onto the store (ldap.workerDirectory=postgres-lru), at most ' +
+  log.info('ldap: this ' + (process.env.STS_REQUEST_WORKER ? 'worker'
+             : 'front process') + ' holds the people and devices as a ' +
+           'window onto the store (ldap.workerDirectory=' +
+           config.value('ldap.workerDirectory') + '), at most ' +
            config.value('ldap.workerCacheEntries') + ' of them at once.');
   return made;
 })();
