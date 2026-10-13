@@ -12923,6 +12923,9 @@ const CODES = [
   { code: 'STS-SCIMC-0030',
     summary: 'A resource this client would send lacks an attribute RFC 7643 requires — a User\'s userName or a Group\'s displayName — so no create or replace is sent (RFC 7644 section 3.5.1); dead-lettered.',
     spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0031',
+    summary: 'In a service deployed as cells, the issuance policy refused to release a person\'s data to an outbound SCIM client\'s service provider (release-attributes, purpose scim-provision, the client\'s scimClientJurisdiction as the serving side; #553). The person is out of scope: nothing is sent for one never pushed, and one pushed before is deprovisioned. Recorded at debug level; never a delivery or a dead letter.',
+    spec: 'none — nothing is sent' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',

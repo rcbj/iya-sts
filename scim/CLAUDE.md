@@ -870,10 +870,10 @@ this client's own timeout is a network failure, retried as one. Everything
 else is a dead letter at once, with its scimType.
 
 **THE STORES ARE CELL-TIER** (`persistence/tiers.js`): a person is pushed
-from their home cell, so what was sent for them, the provider's id for them
-and the backoff live in that cell's store. That is the single-cell half;
-groups across cells, moves, data residency and a shared pause are #553's
-design and are NOT built.
+from their home cell, so what was sent for them and the provider's id for
+them live in that cell's store. What a service deployed as cells adds —
+the transfer decision, moves, groups across cells, the shared pause, the
+per-cell console — is the next section (#553).
 
 **DISCOVERY BEFORE USE** (RFC 7644 section 4): nothing is written until
 `/ServiceProviderConfig` (patch, filter and `maxResults`, etag) and
@@ -957,6 +957,60 @@ console's older pages); the deliveries store across a restart and across two
 nodes (the generation and tombstone fixes above are asserted in one process
 only); `scimClient.skipTlsVerification` and `scimClient.caFile`; the 24-hour
 cap on a `Retry-After`; and the summary log line (`STS-SCIMC-0013`).
+
+## THE OUTBOUND SCIM CLIENT ACROSS CELLS (#553, 2026-10-13)
+
+rcbj's three decisions are on #553 (one jurisdiction attribute per client,
+providers without PATCH supported through the owner cell, a GLOBAL pause);
+the user's half is `docs/scim.md`, *In a service deployed as cells*. **In a
+service that is one cell every answer below is the single-cell one** —
+`multi()` is false, `pushingCells()` is `['']`, the transfer question is not
+asked, no operation is called — and `tests/scim_client.js` runs unchanged to
+hold it.
+
+**A PERSON IS PUSHED ONLY FROM THEIR HOME CELL** (section 1). The stores were
+already cell-tier; what was missing was the guard against a person who is in
+this cell's directory and NOT homed here — a PROJECTION (#98 D4, a session
+held away from home). `projectedHere()` asks `cell_sessions.isProjected()`,
+and the observer, `pushable()` and `nothingToSend()` treat a projection as
+nobody this cell pushes.
+
+**THE TRANSFER IS POLICY, AND A REFUSAL IS OUT OF SCOPE** (section 2).
+`transferRefusal()` asks `cell_transfer.ts`'s `releaseDecision()` with the
+purpose `scim-provision`, this cell as the home, the client's
+`scimClientJurisdiction` as `servingJurisdiction` (a service provider is in
+no cell) and the person as `subject`. A refusal is "out of scope": the
+observer makes NO delivery for a person never pushed (`wantsDelivery()`), a
+row that reaches the sweep anyway asks the provider NOTHING
+(`nothingToSend()`, before discovery — not even an externalId lookup, which
+would send the entryUUID), and a person pushed before is deprovisioned
+through their LINK only. A reconciliation that finds the remote resource of a
+refused resident it never linked links it first, so it is deprovisioned the
+same way. Never a dead letter; `STS-SCIMC-0031` is a debug line.
+`scimClientCells` limits the cells that push at all; a cell left out queues
+nothing and finishes any row it holds as done.
+
+**A MOVE IS A HANDOVER** (section 4). A person absent from this cell's
+directory is looked up in the ROUTING INDEX, never in the local directory,
+before anything is sent (`homedElsewhere()`): homed in another cell, this cell
+drops its link and takes their provider id out of its SHARE of every group
+(`handOver()`) — so it never PATCH-removes them from a group they are still
+in — and sends nothing; the new home's `syncUser()` finds the resource by
+externalId (the entryUUID a re-home keeps, `cell_rehome.ts` step 4) and
+PUTs, and treats that as an ARRIVAL that re-queues the person's groups, as a
+create does. Gone from every cell, they are deprovisioned as before. The
+re-home moves the index row before it deletes the entry (step 5 before 6),
+which is what makes the lookup answer the new cell.
+
+**RECONCILIATION IS PER CELL** (section 6). Each cell pushes its own
+pushable residents; of the remote resources, it deprovisions only what it
+linked or holds (`reconcilesUnlinked()`): a projection or another cell's
+person is that cell's. **The orphan sweep for USERS is not built beyond
+this**, deliberately: "an externalId that belongs to no cell" cannot be told
+from "an externalId of somebody else's system" without a record, and the only
+record — the links — is per cell, so deprovisioning on a routing-index miss
+would deactivate other systems' users at a shared provider. Each cell's own
+linked people already reach the provider through that cell.
 
 ## CELLS: WHICH CELL ANSWERS A SCIM REQUEST (#98, 2026-09-28)
 

@@ -3829,6 +3829,28 @@ const SCHEMA = {
             'and what the service provider holds under an externalId of ' +
             'this realm\'s and no longer in scope is deprovisioned. 0 (the ' +
             'default) reconciles only when an administrator asks.' },
+    // A SERVICE DEPLOYED AS CELLS (#553): where the service provider is,
+    // which the home cell puts to the issuance policy before it pushes a
+    // person (`cell_transfer.ts`, purpose `scim-provision`), and which cells
+    // push to it at all. Read only when the service is deployed as cells.
+    { name: 'scimClientJurisdiction', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHERE THE SERVICE PROVIDER IS, as a jurisdiction code of the ' +
+            'cell map (us, eu, ca, …). In a service deployed as cells, each ' +
+            'person\'s home cell asks the issuance policy whether that ' +
+            'person\'s data may go there (release-attributes, purpose ' +
+            'scim-provision) before it pushes them; a refusal leaves them ' +
+            'out of scope — not pushed, and deprovisioned if they were. ' +
+            'Empty is an unknown jurisdiction, which the strict default ' +
+            'never releases to. Ignored when the service is one cell.' },
+    { name: 'scimClientCells', kind: 'multi',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHICH CELLS PUSH TO THE SERVICE PROVIDER, each a cell id; none ' +
+            '(the default) means every cell. A cell not listed sends ' +
+            'nothing for this client, so the people homed there are not ' +
+            'pushed. Ignored when the service is one cell.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -4723,6 +4745,8 @@ const EDITABLE = {
   scimClientGroups: 'multi',
   scimClientDeprovision: 'set',
   scimClientReconcileMinutes: 'set',
+  scimClientJurisdiction: 'set',
+  scimClientCells: 'multi',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -6168,6 +6192,8 @@ const FIELD_EXAMPLES = {
   scimClientScopeFilter: '(department=Sales)',
   scimClientGroups: 'staff',
   scimClientReconcileMinutes: '0',
+  scimClientJurisdiction: 'eu',
+  scimClientCells: 'euc1',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',

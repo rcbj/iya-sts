@@ -1427,6 +1427,14 @@
     "en": "a40bdc8ff019b288",
     "text": "CADA CUÁNTO SE RECONCILIA TODO EL ÁMBITO, en minutos, mediante el planificador del clúster: se envían todas las personas y grupos dentro del ámbito, y lo que el proveedor de servicios tiene bajo un externalId de este dominio y ya no está dentro del ámbito se desaprovisiona. 0 (el valor predeterminado) solo reconcilia cuando lo pide un administrador."
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "DÓNDE ESTÁ EL PROVEEDOR DE SERVICIOS, como código de jurisdicción del mapa de celdas (us, eu, ca, …). En un servicio desplegado en celdas, la celda de origen de cada persona pregunta a la política de emisión si los datos de esa persona pueden ir allí (release-attributes, propósito scim-provision) antes de enviarla; una negativa la deja fuera del ámbito: no se envía y se desaprovisiona si ya se había enviado. Vacío es una jurisdicción desconocida, a la que el valor predeterminado estricto nunca libera nada. Se ignora cuando el servicio es una sola celda."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "QUÉ CELDAS ENVÍAN AL PROVEEDOR DE SERVICIOS, cada una por su id de celda; ninguna (el valor predeterminado) significa todas las celdas. Una celda que no figura no envía nada para este cliente, así que las personas con origen en ella no se envían. Se ignora cuando el servicio es una sola celda."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "CÓMO SE LLAMA UN RECEPTOR DE SHARED SIGNALS — aquello como lo que se autenticó cuando creó un flujo en /ssf/stream, que es también el `aud` de cada Security Event Token que lleva ese flujo. A diferencia de los cuatro identificadores solo declarativos de encima, este SÍ lo escribe el protocolo: crear un flujo registra un avistamiento, porque un receptor que se autentica y obtiene un flujo es exactamente el tipo de evento que este registro existe para guardar. Aun así no concede nada — un flujo es lo que decide qué recibe un receptor, y lleva su propia audiencia."

@@ -1393,7 +1393,11 @@ deployed as cells, three questions go to the same policy from
 `hold-session` (may a traveller's session be HELD by the serving cell),
 `serve-request` (may a request about them be served there at all, even by
 relaying) and `release-attributes` (may a cell's residents be released to a
-reader at another). The facts are the attributes above; the answer carries
+reader at another — or, purpose `scim-provision` since #553, may one person
+be pushed by their home cell to an outbound SCIM client's service provider,
+the client's declared jurisdiction as the serving side; the same six rules
+decide it, and a realm's own policy may write one against the purpose). The
+facts are the attributes above; the answer carries
 `urn:sts:xacml:obligation:transfer` with `urn:sts:xacml:transfer-verdict` —
 `hold`/`relay`, `serve`/`refuse`, `release`/`withhold` — on a Permit as well
 as a Deny. The built-in `role-issuance` has six rules for them, targeted at

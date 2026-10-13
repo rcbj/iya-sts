@@ -697,6 +697,61 @@ client is reconciled on a schedule. Its last result is on the client's page.
 links and pause. **Nothing at the service provider changes**: what was pushed
 stays there.
 
+### In a service deployed as cells
+
+In a service deployed as [cells](cells.md) (#553), a person's entry exists
+only in their home cell, and every cell has every client: a client is an
+application entry, which is in the global tier. The client behaves as below.
+**In a service that is one cell, none of this applies** and the two
+attributes are ignored.
+
+**A person is pushed only from their home cell.** Each cell pushes the people
+homed there, from its own deliveries, links and queues, and the connection to
+the service provider leaves from that cell. No person's data passes between
+cells to reach the provider. A person whose session another cell holds (a
+projection) is pushed by their home cell, never by the cell holding the
+session.
+
+**Each client says where its service provider is.** Two attributes of the
+client's application entry, both on its form and in `add-client` and
+`update-client`:
+
+| Member | Attribute | |
+|---|---|---|
+| `jurisdiction` | `scimClientJurisdiction` | The provider's jurisdiction, as the cell map spells one (`us`, `eu`, `ca`) |
+| `cells` | `scimClientCells` | The cells that push to it, by id. Empty (the default) is every cell. A cell not listed sends nothing for this client, so the people homed there are not pushed |
+
+**The issuance policy decides each push.** Before a cell pushes a person, it
+asks the issuance policy whether that person's data may go to the client's
+jurisdiction: the `release-attributes` question, with the purpose
+`scim-provision`, the person's home jurisdiction and the client's
+jurisdiction (see [Cells](cells.md) and [XACML](xacml.md)). The built-in rule
+is the strict default: the data goes only within one jurisdiction, or where
+the realm lists the transfer in `cells.permittedTransfers` (`ca>eu`, say). A
+realm's own policy may decide otherwise, even per person.
+
+**A refusal means the person is out of scope.** They are not pushed. Nothing is
+asked of the service provider about them, not even a lookup. If they were
+pushed before, they are deprovisioned as `deprovision` says. No delivery is
+created, so a refusal never appears as a dead letter (`STS-SCIMC-0031`, at
+debug level). A client with no jurisdiction is an unknown one, and the strict
+default lets nobody's data go there.
+
+**Moving a person to another cell is a handover, not a deprovision.** When a
+person leaves a cell's directory, that cell asks the routing index where they
+are before acting:
+
+* **homed in another cell now**: this cell drops its link, takes their
+  provider id out of its share of every group, and sends nothing. The new home
+  cell pushes them, finds the resource by `externalId` (the `entryUUID`, which
+  a move keeps) and replaces it. They are never deactivated in between;
+* **gone from every cell**: they are deprovisioned, as in one cell.
+
+**Reconciliation is per cell.** Each cell reconciles the people homed there,
+on its own schedule. It deprovisions only what it linked or holds: a remote
+resource whose `externalId` is a projection, or a person of another cell, is
+left to that cell.
+
 ### What it does not do
 
 * **Bulk** (RFC 7644 section 3.7). Every change is its own request.
@@ -704,9 +759,6 @@ stays there.
   configured.
 * **Send a password**, or this service's own User extension.
 * **Push a group nested in a group** as a member.
-* **Run across cells.** In a service deployed as [cells](cells.md), a person
-  is pushed from their home cell, and groups, moves between cells and data
-  residency are not handled yet (#553).
 * **Delete what it pushed when a client is removed.**
 
 ### Settings
@@ -742,6 +794,7 @@ a log line. The most common:
 | `STS-SCIMC-0028` | `tooMany`, even narrowed |
 | `STS-SCIMC-0029` | a required schema extension the client cannot send |
 | `STS-SCIMC-0030` | a required attribute missing |
+| `STS-SCIMC-0031` | in a service deployed as cells, the issuance policy kept a person's data out of the provider's jurisdiction; the person is out of scope |
 
 [Error codes](error-codes.md) lists all of them.
 

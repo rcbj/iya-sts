@@ -100,6 +100,17 @@
 //     carries no `totalResults` the paging goes on until a page is empty or
 //     brings nothing new, rather than stopping after the first;
 //   * no credential, token or filter value is ever logged (section 7.5.2).
+//
+// IN A SERVICE DEPLOYED AS CELLS (#553; scim/CLAUDE.md argues each part):
+//   * a person is pushed only from their HOME cell — a projection is not
+//     this cell's — and only when the issuance policy releases them to the
+//     client's declared jurisdiction (`release-attributes`, purpose
+//     `scim-provision`); a refusal is out of scope, never a dead letter;
+//   * a person who left this cell is looked up in the routing index first:
+//     homed elsewhere is a HANDOVER (nothing sent), gone everywhere a
+//     deprovision;
+//   * `scimClientCells` limits which cells push at all.
+// In a service that is one cell none of it is asked.
 // ===========================================================================
 
 import http = require('http');
@@ -154,8 +165,16 @@ const deliveries = realms.map({ persist: 'scimClient.deliveries',
 // `<client>|<type>|<uuid>` -> { remoteId, etag, dn, name, inactive, at }.
 const links = realms.map({ persist: 'scimClient.links' });
 // Per client: the pause (`pausedUntil`, `failures`, `probe`) and the last
-// reconciliation.
+// reconciliation. In a service deployed as cells the PAUSE is kept in
+// `pauses` instead, and this holds the last reconciliation alone.
 const states = realms.map({ persist: 'scimClient.state' });
+// THE PAUSE SHARED BY EVERY CELL (#553 section 5), per client: `failures`,
+// `pausedUntil`, `probe` and `probeAt`. GLOBAL-tier (`persistence/
+// tiers.js`): a 429 or a 5xx seen in any cell pauses every cell, and one
+// probe goes cluster-wide. Written only on a failure and a recovery, and it
+// holds no person's data — a client id, two times, a count and the probe's
+// row id. Unused, and empty, in a service that is one cell.
+const pauses = realms.map({ persist: 'scimClient.pause' });
 
 // The members of a client's definition, as the act takes them, against the
 // attribute each is written to. The three credentials are not here: they are
@@ -176,11 +195,14 @@ const MEMBERS: Array<[string, string]> = [
   ['scopeFilter', 'scimClientScopeFilter'],
   ['groupMode', 'scimClientGroupMode'],
   ['deprovision', 'scimClientDeprovision'],
-  ['reconcileMinutes', 'scimClientReconcileMinutes']
+  ['reconcileMinutes', 'scimClientReconcileMinutes'],
+  // A service deployed as cells (#553).
+  ['jurisdiction', 'scimClientJurisdiction']
 ];
 const LIST_MEMBERS: Array<[string, string]> = [
   ['scopeGroups', 'scimClientScopeGroups'],
-  ['groups', 'scimClientGroups']
+  ['groups', 'scimClientGroups'],
+  ['cells', 'scimClientCells']
 ];
 const CREDENTIALS: Array<[string, string]> = [
   ['password', 'scimClientPassword'],
@@ -190,6 +212,24 @@ const CREDENTIALS: Array<[string, string]> = [
 const ACTIONS = ['add-client', 'update-client', 'remove-client',
                  'issue-certificate', 'test-connection', 'reconcile',
                  'retry-delivery', 'retry-dead', 'purge-dead', 'deliver-now'];
+// The acts that are a CELL'S (#553 section 7): its own queue, its own
+// residents. With a `cell` member they go to that cell; without one, to
+// every cell that pushes.
+const CELL_ACTIONS = ['retry-delivery', 'retry-dead', 'purge-dead',
+                      'reconcile', 'deliver-now'];
+// The inter-cell operations this module registers (#553).
+const OP_GROUP_SHARE = 'scim-client-group-share';
+const OP_SUMMARY = 'scim-client-summary';
+const OP_ACT = 'scim-client-act';
+// The purpose a person's push is asked of the issuance policy under.
+const PURPOSE = 'scim-provision';
+// A jurisdiction code, as the cell map spells one.
+const JURISDICTION_SHAPED = /^[a-z0-9][a-z0-9-]{0,31}$/;
+// A cell id, as `cells.peers` spells one.
+const CELL_SHAPED = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+// How long a probe elected in another cell is waited for before a cell
+// takes the probe over (#553 section 5): that cell may have gone.
+const FOREIGN_PROBE_MS = 120000;
 
 interface ScimClientsDeps {
   log: typeof helpers.log;
@@ -210,6 +250,21 @@ interface ScimClientsDeps {
   ldapjs(): Json;
   // The HTTP request, replaceable by a test.
   transport?: (options: Json, body: string | null) => Promise<Json>;
+  // A SERVICE DEPLOYED AS CELLS (#553), each lazily and each replaceable by
+  // a test: the cell map, the channel between cells, the routing index, the
+  // transfer question, and whether a person is a PROJECTION here (homed
+  // elsewhere, their session held here).
+  cells(): Json;
+  channel(): Json;
+  routing(): Json;
+  transfer(): Json;
+  projected(realmId: string, uuid: string): boolean;
+  // The four stores, for a test that runs two cells in one process; the
+  // module's own otherwise.
+  stores?: { deliveries: Json; links: Json; states: Json; pauses: Json };
+  // Members laid over the delivery queue's own dependencies (a test's
+  // claims).
+  deliveryDeps?: Json;
 }
 
 /**
@@ -233,6 +288,13 @@ class ScimClients {
   private readonly tokens = new Map<string, Json>();
   // Settings whose ignored value has been logged in this process.
   private readonly announced = new Set<string>();
+  // The stores this instance reads and writes.
+  private readonly deliveries: Json;
+  private readonly links: Json;
+  private readonly states: Json;
+  private readonly pauses: Json;
+  // The concurrency budget per client, briefly remembered (#553 section 5).
+  private readonly budgets = new Map<string, Json>();
 
   /**
    * Builds the client from its dependencies, and its delivery queue.
@@ -244,16 +306,22 @@ class ScimClients {
   constructor(private readonly deps: ScimClientsDeps) {
     deps.log.debug("Entering ScimClients.constructor().");
     const self = this;
+    const stores = deps.stores || { deliveries: deliveries, links: links,
+                                    states: states, pauses: pauses };
+    this.deliveries = stores.deliveries;
+    this.links = stores.links;
+    this.states = stores.states;
+    this.pauses = stores.pauses;
     const deliveryDeps = Object.assign(outbound.OutboundDelivery.defaultDeps(),
       { now: deps.now,
         // NO TIMER OF THE QUEUE'S OWN: a retry is sent by the
         // scim-client.deliver sweep, a cluster scheduler job (#552).
         later: function (): void {
           return undefined;
-        } });
+        } }, deps.deliveryDeps || {});
     this.delivery = new outbound.OutboundDelivery({
       label: 'SCIM client delivery',
-      store: deliveries,
+      store: this.deliveries,
       attemptScope: 'scimClient.delivery',
       attribute: 'scimClientBaseUrl',
       body: 'json',
@@ -353,6 +421,22 @@ class ScimClients {
       },
       ldapjs: function (): Json {
         return require('ldapjs');
+      },
+      cells: function (): Json {
+        return require('../common/cells');
+      },
+      channel: function (): Json {
+        return require('../common/cell_channel');
+      },
+      routing: function (): Json {
+        return require('../common/cell_routing');
+      },
+      transfer: function (): Json {
+        return require('../common/cell_transfer');
+      },
+      projected: function (realmId: string, uuid: string): boolean {
+        return require('../common/cell_sessions')
+          .isProjected(realmId, 'uuid', uuid);
       }
     };
   }
@@ -523,6 +607,9 @@ class ScimClients {
       out.push('The reconciliation interval is a whole number of minutes, ' +
                '0 to 525600.');
     }
+    this.cellProblems(c).forEach(function (one) {
+      out.push(one);
+    });
     log.debug("Leaving ScimClients.problemsOf(). " + out.length);
     return out;
   }
@@ -570,6 +657,7 @@ class ScimClients {
     row.groupMode = row.groupMode || 'none';
     row.deprovision = row.deprovision || 'deactivate';
     row.reconcileMinutes = row.reconcileMinutes || '0';
+    row.jurisdiction = String(row.jurisdiction || '').toLowerCase();
     row.passwordSet = !!this.one(fields, 'scimClientPassword');
     row.oauthClientSecretSet = !!this.one(fields,
                                           'scimClientOAuthClientSecret');
@@ -655,6 +743,234 @@ class ScimClients {
     })[0] || null : null;
     log.debug("Leaving ScimClients.get(). " + (found ? 'found' : 'none'));
     return found;
+  }
+
+  // =========================================================================
+  // A SERVICE DEPLOYED AS CELLS (#553). Every answer here is the single-cell
+  // one when the service is one cell, so nothing below changes there.
+  // =========================================================================
+
+  /**
+   * Whether the service is deployed as cells.
+   *
+   * @returns true when `cells.id` is set
+   */
+  multi(): boolean {
+    const { log, cells } = this.deps;
+    log.debug("Entering ScimClients.multi().");
+    let answer = false;
+    try {
+      answer = !!cells().isMulti();
+    } catch (e) {
+      log.debug("Caught in ScimClients.multi(): " + ((e && e.message) || e));
+      answer = false;
+    }
+    log.debug("Leaving ScimClients.multi(). " + answer);
+    return answer;
+  }
+
+  // This cell's id, '' in a service that is one cell.
+  private here(): string {
+    const { log, cells } = this.deps;
+    log.debug("Entering ScimClients.here().");
+    const id = this.multi() ? String(cells().id() || '') : '';
+    log.debug("Leaving ScimClients.here(). " + id);
+    return id;
+  }
+
+  // What is wrong with a client's two cell members, as sentences. Their
+  // shapes are checked always; that a listed cell EXISTS only where the
+  // service is deployed as cells, since one cell has no map to look in.
+  private cellProblems(c: Json): string[] {
+    const { log, cells } = this.deps;
+    log.debug("Entering ScimClients.cellProblems().");
+    const out: string[] = [];
+    if (c.jurisdiction && !JURISDICTION_SHAPED.test(c.jurisdiction)) {
+      out.push('"' + c.jurisdiction + '" is not a jurisdiction code (lower ' +
+               'case letters, digits and hyphens, as the cell map spells ' +
+               'one).');
+    }
+    const multi = this.multi();
+    (c.cells || []).forEach(function (one: string) {
+      if (!CELL_SHAPED.test(one)) {
+        out.push('"' + one + '" is not a cell id.');
+      } else if (multi && !cells().get(one)) {
+        out.push('This service has no cell "' + one + '".');
+      }
+    });
+    log.debug("Leaving ScimClients.cellProblems(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The cells that push to a client (#553 section 2): those its
+   * `scimClientCells` lists that the service has, or every cell. Sorted, so
+   * every cell computes the same list.
+   *
+   * @param c - the client row
+   * @returns the cell ids; `['']` in a service that is one cell
+   */
+  pushingCells(c: Json): string[] {
+    const { log, cells } = this.deps;
+    log.debug("Entering ScimClients.pushingCells().");
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.pushingCells(). One cell.");
+      return [''];
+    }
+    const all = (cells().all() || []).map(function (one: Json) {
+      return String(one.id);
+    });
+    const listed = (c.cells || []).filter(function (one: string) {
+      return all.indexOf(one) >= 0;
+    });
+    const out = (listed.length || (c.cells || []).length ? listed : all)
+      .slice().sort();
+    log.debug("Leaving ScimClients.pushingCells(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Whether this cell pushes to a client at all. Always, in a service that
+   * is one cell.
+   *
+   * @param c - the client row
+   * @returns true when this cell sends for it
+   */
+  pushesHere(c: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.pushesHere().");
+    const answer = !this.multi() ||
+                   this.pushingCells(c).indexOf(this.here()) >= 0;
+    log.debug("Leaving ScimClients.pushesHere(). " + answer);
+    return answer;
+  }
+
+  /**
+   * The cell that owns a group's LIFECYCLE at a client (#553 section 3) —
+   * its rename and its deletion, and the merged replace for a service
+   * provider without PATCH: the realm's `cells.homeCell` when it pushes to
+   * the client, else one chosen by a hash of the group's UUID, the same in
+   * every cell.
+   *
+   * @param c - the client row
+   * @param uuid - the group's entryUUID
+   * @returns the cell id; '' in a service that is one cell
+   */
+  ownerCell(c: Json, uuid: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering ScimClients.ownerCell().");
+    const pushing = this.pushingCells(c);
+    if (!this.multi() || !pushing.length) {
+      log.debug("Leaving ScimClients.ownerCell(). One cell.");
+      return pushing[0] || '';
+    }
+    const home = String(config.value('cells.homeCell') || '').trim();
+    if (home && pushing.indexOf(home) >= 0) {
+      log.debug("Leaving ScimClients.ownerCell(). The realm's home cell.");
+      return home;
+    }
+    const digest = stsCrypto.sha256Hex(String(uuid || '').toLowerCase());
+    const at = parseInt(digest.slice(0, 8), 16) % pushing.length;
+    log.debug("Leaving ScimClients.ownerCell(). " + pushing[at]);
+    return pushing[at];
+  }
+
+  /**
+   * Why the issuance policy refuses to let a person's data go to a client's
+   * service provider (#553 section 2), or '' when it lets it — the
+   * `release-attributes` question, purpose `scim-provision`, asked by the
+   * person's home cell with the client's declared jurisdiction as the
+   * serving side. Never asked in a service that is one cell.
+   *
+   * @param c - the client row
+   * @param uuid - the person's entryUUID
+   * @returns the refusal's sentence, or ''
+   */
+  transferRefusal(c: Json, uuid: string): string {
+    const { log, realms, transfer } = this.deps;
+    log.debug("Entering ScimClients.transferRefusal().");
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.transferRefusal(). One cell.");
+      return '';
+    }
+    let answer: Json;
+    try {
+      answer = transfer().releaseDecision({
+        realm: realms.currentId(), homeCell: this.here(), servingCell: '',
+        servingJurisdiction: c.jurisdiction || '', purpose: PURPOSE,
+        subject: 'urn:uuid:' + uuid });
+    } catch (e) {
+      // A decision that cannot be made is not a permission: the person is
+      // left out, as the strict default would leave them.
+      log.debug("Caught in ScimClients.transferRefusal(): " +
+                ((e && e.message) || e));
+      answer = { allowed: false, why: 'the transfer could not be decided: ' +
+                                      ((e && e.message) || e) };
+    }
+    const why = answer && answer.allowed ? '' : String((answer && answer.why) ||
+                                                        'refused');
+    log.debug("Leaving ScimClients.transferRefusal(). " +
+              (why ? 'refused' : 'allowed'));
+    return why;
+  }
+
+  // Whether a person in this cell's directory is a PROJECTION — homed in
+  // another cell, their session held here (#98 D4) — and so not this
+  // cell's to push.
+  private projectedHere(uuid: string): boolean {
+    const { log, realms, projected } = this.deps;
+    log.debug("Entering ScimClients.projectedHere().");
+    let answer = false;
+    if (this.multi()) {
+      try {
+        answer = !!projected(realms.currentId(), uuid);
+      } catch (e) {
+        log.debug("Caught in ScimClients.projectedHere(): " +
+                  ((e && e.message) || e));
+        answer = false;
+      }
+    }
+    log.debug("Leaving ScimClients.projectedHere(). " + answer);
+    return answer;
+  }
+
+  // The cell a person this cell does not hold is homed in, when that is
+  // ANOTHER cell — asked of the routing index, never of the local directory
+  // (#553 section 4). '' when nobody holds them, or they are homed here.
+  private async homedElsewhere(uuid: string): Promise<string> {
+    const { log, realms, routing } = this.deps;
+    log.debug("Entering ScimClients.homedElsewhere().");
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.homedElsewhere(). One cell.");
+      return '';
+    }
+    const home = String(await routing().homeOf(realms.currentId(), 'uuid',
+                                               uuid) || '');
+    const answer = home && home !== this.here() ? home : '';
+    log.debug("Leaving ScimClients.homedElsewhere(). " + (answer || 'no'));
+    return answer;
+  }
+
+  /**
+   * Whether a person is PUSHED by a client from this cell: in its scope, and
+   * — in a service deployed as cells — homed here and released to its
+   * service provider's jurisdiction by the issuance policy.
+   *
+   * @param c - the client row
+   * @param entry - the person's entry object
+   * @returns true when the person is pushed
+   */
+  pushable(c: Json, entry: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.pushable().");
+    const uuid = this.uuidOf(entry);
+    let answer = this.inScope(c, entry);
+    if (answer && this.multi()) {
+      answer = !!uuid && !this.projectedHere(uuid) &&
+               !this.transferRefusal(c, uuid);
+    }
+    log.debug("Leaving ScimClients.pushable(). " + answer);
+    return answer;
   }
 
   // =========================================================================
@@ -754,7 +1070,7 @@ class ScimClients {
       }
       seen[dn] = true;
       const person = dir.readPerson(member.dn);
-      if (person && self.inScope(c, person)) {
+      if (person && self.pushable(c, person)) {
         out.push(person);
       }
     });
@@ -824,7 +1140,7 @@ class ScimClients {
   private stateOf(realmId: string, clientId: string): Json {
     const { log } = this.deps;
     log.debug("Entering ScimClients.stateOf(). " + clientId);
-    const held = states.realmMap(realmId).get(clientId);
+    const held = this.states.realmMap(realmId).get(clientId);
     log.debug("Leaving ScimClients.stateOf().");
     return Object.assign({ failures: 0, pausedUntil: 0, probe: '',
                            lastReconcileAt: 0, lastReconcile: null },
@@ -835,7 +1151,7 @@ class ScimClients {
     const { log } = this.deps;
     log.debug("Entering ScimClients.writeState(). " + clientId);
     const next = Object.assign(this.stateOf(realmId, clientId), patch);
-    states.realmMap(realmId).set(clientId, next);
+    this.states.realmMap(realmId).set(clientId, next);
     log.debug("Leaving ScimClients.writeState().");
     return next;
   }
@@ -1051,8 +1367,10 @@ class ScimClients {
   private observeInRealm(event: Json): void {
     const { log, directory } = this.deps;
     log.debug("Entering ScimClients.observeInRealm().");
-    const clients = this.list().filter(function (c: Json) {
-      return c.enabled;
+    // A CELL THAT DOES NOT PUSH TO A CLIENT QUEUES NOTHING FOR IT (#553
+    // section 2): `scimClientCells` lists the cells that do.
+    const clients = this.list().filter((c: Json) => {
+      return c.enabled && this.pushesHere(c);
     });
     if (!clients.length) {
       log.debug("Leaving ScimClients.observeInRealm(). No client.");
@@ -1070,8 +1388,12 @@ class ScimClients {
       uuid = String(dir.resourceIdOfDn(event.dn) || '').toLowerCase();
     }
     const name = String(event.username || '');
+    // A PROJECTION IS NOT A RESIDENT (#553 section 1): a person whose
+    // session this cell holds is pushed by their home cell, never here.
+    const projection = UUID_SHAPED.test(uuid) && this.projectedHere(uuid);
     clients.forEach((c: Json) => {
-      if (UUID_SHAPED.test(uuid)) {
+      if (UUID_SHAPED.test(uuid) && !projection &&
+          this.wantsDelivery(c, uuid)) {
         this.enqueue(c, 'User', uuid, name);
       }
       if (c.groupMode === 'none') {
@@ -1091,6 +1413,35 @@ class ScimClients {
               " client(s).");
   }
 
+  // Whether a change to a person is a delivery for a client (#553 section
+  // 2): always in a service that is one cell; in one deployed as cells, NOT
+  // when the issuance policy refuses the person's transfer to the client's
+  // jurisdiction and this cell never pushed them — so a refusal is no
+  // delivery, and never a dead letter. Pushed before, it is a delivery: the
+  // one that deprovisions them.
+  private wantsDelivery(c: Json, uuid: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.wantsDelivery().");
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.wantsDelivery(). One cell.");
+      return true;
+    }
+    const link = this.linkOf(c, 'User', uuid);
+    if (link && link.remoteId) {
+      log.debug("Leaving ScimClients.wantsDelivery(). Linked.");
+      return true;
+    }
+    const refused = this.transferRefusal(c, uuid);
+    if (refused) {
+      log.debug(errorCodes.tag('STS-SCIMC-0031') + 'scim client "' +
+                c.identifier + '": a person is not pushed; the issuance ' +
+                'policy keeps their data out of "' + (c.jurisdiction || '?') +
+                '".');
+    }
+    log.debug("Leaving ScimClients.wantsDelivery(). " + !refused);
+    return !refused;
+  }
+
   // A group by its DN: its UUID if it is there, or the link that remembers
   // it if it is gone.
   private enqueueGroupByDn(c: Json, dn: string): void {
@@ -1103,7 +1454,7 @@ class ScimClients {
     if (!uuid) {
       const wanted = dir.normalizeDn(dn);
       const prefix = c.identifier + '|Group|';
-      links.realmMap(realms.currentId()).forEach(function (link: Json,
+      this.links.realmMap(realms.currentId()).forEach(function (link: Json,
                                                            key: string) {
         if (!uuid && key.indexOf(prefix) === 0 && link &&
             dir.normalizeDn(String(link.dn || '')) === wanted) {
@@ -1553,7 +1904,7 @@ class ScimClients {
     if (enterprise.manager && enterprise.manager.value) {
       const managerUuid = String(dir.resourceIdOfDn(enterprise.manager.value)
                                  || '').toLowerCase();
-      const link = links.realmMap(realms.currentId()).get(
+      const link = this.links.realmMap(realms.currentId()).get(
         this.rowId(c.identifier, 'User', managerUuid));
       if (link && link.remoteId) {
         enterprise.manager = { value: link.remoteId };
@@ -1803,6 +2154,15 @@ class ScimClients {
                judgement: { ok: false, retry: false,
                             code: 'STS-SCIMC-0002', why: c.problems[0] } };
     }
+    // NOTHING TO SEND, decided before the service provider is asked anything
+    // (#553): a cell that no longer pushes to the client, a person handed
+    // over to another cell, a person the issuance policy keeps out who was
+    // never pushed. Each is done, not failed.
+    const idle = await this.nothingToSend(c, row);
+    if (idle) {
+      log.debug("Leaving ScimClients.sendInRealm(). Nothing to send.");
+      return { ok: true, status: 200, kind: '', judgement: { ok: true } };
+    }
     const disc = await this.discovery(c);
     if (!disc.ok && disc.answer &&
         (['timeout', 'network'].indexOf(disc.answer.kind) >= 0 ||
@@ -1835,7 +2195,7 @@ class ScimClients {
   private linkOf(c: Json, type: string, uuid: string): Json {
     const { log, realms } = this.deps;
     log.debug("Entering ScimClients.linkOf().");
-    const held = links.realmMap(realms.currentId())
+    const held = this.links.realmMap(realms.currentId())
       .get(this.rowId(c.identifier, type, uuid));
     log.debug("Leaving ScimClients.linkOf().");
     return held ? Object.assign({}, held) : null;
@@ -1845,7 +2205,7 @@ class ScimClients {
       void {
     const { log, realms, now } = this.deps;
     log.debug("Entering ScimClients.writeLink().");
-    const store = links.realmMap(realms.currentId());
+    const store = this.links.realmMap(realms.currentId());
     const key = this.rowId(c.identifier, type, uuid);
     if (link) {
       store.set(key, Object.assign({}, link, { at: now() }));
@@ -2090,16 +2450,107 @@ class ScimClients {
              adopted: true };
   }
 
+  // Whether a row needs nothing sent, in a service deployed as cells
+  // (#553): the sentence saying why, or ''. Never in one cell.
+  private async nothingToSend(c: Json, row: Json): Promise<string> {
+    const { log, directory } = this.deps;
+    log.debug("Entering ScimClients.nothingToSend().");
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.nothingToSend(). One cell.");
+      return '';
+    }
+    if (!this.pushesHere(c)) {
+      log.debug("Leaving ScimClients.nothingToSend(). Not pushed from here.");
+      return 'this cell does not push to the client';
+    }
+    if (row.type !== 'User') {
+      log.debug("Leaving ScimClients.nothingToSend(). A group.");
+      return '';
+    }
+    const dir = directory();
+    const stored = dir.entryByUuid(row.uuid);
+    const projection = this.projectedHere(row.uuid);
+    const resident = !!stored && dir.isPersonEntry(stored) && !projection;
+    if (!resident) {
+      // A MOVE IS A HANDOVER, NOT A DEPROVISION (#553 section 4): the routing
+      // index says where they are now, and that cell pushes them — adopting
+      // the resource by its externalId, the entryUUID a move keeps.
+      const elsewhere = projection ? 'a projection here'
+                                   : await this.homedElsewhere(row.uuid);
+      if (elsewhere) {
+        this.handOver(c, row.uuid);
+        log.debug("Leaving ScimClients.nothingToSend(). Handed over.");
+        return 'homed in another cell';
+      }
+      log.debug("Leaving ScimClients.nothingToSend(). Gone everywhere.");
+      return '';
+    }
+    const link = this.linkOf(c, 'User', row.uuid);
+    if ((!link || !link.remoteId) && this.transferRefusal(c, row.uuid)) {
+      log.debug(errorCodes.tag('STS-SCIMC-0031') + 'scim client "' +
+                c.identifier + '": a person is not pushed; the issuance ' +
+                'policy keeps their data out of "' + (c.jurisdiction || '?') +
+                '".');
+      log.debug("Leaving ScimClients.nothingToSend(). Kept out.");
+      return 'kept out by the issuance policy';
+    }
+    log.debug("Leaving ScimClients.nothingToSend(). Something to send.");
+    return '';
+  }
+
+  // A person this cell held is homed in another cell now (#553 section 4):
+  // this cell's link to them goes, and so does their id from this cell's
+  // share of every group — so this cell never REMOVES them from a group
+  // they are still in, which their new home cell keeps them in.
+  private handOver(c: Json, uuid: string): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.handOver().");
+    const link = this.linkOf(c, 'User', uuid);
+    const remoteId = link && link.remoteId ? String(link.remoteId) : '';
+    this.writeLink(c, 'User', uuid, null);
+    if (remoteId) {
+      const prefix = c.identifier + '|Group|';
+      const store = this.links.realmMap(realms.currentId());
+      const changed: Array<[string, Json]> = [];
+      store.forEach(function (one: Json, key: string) {
+        if (key.indexOf(prefix) === 0 && one && Array.isArray(one.members) &&
+            one.members.indexOf(remoteId) >= 0) {
+          changed.push([key, Object.assign({}, one, {
+            members: one.members.filter(function (id: string) {
+              return id !== remoteId;
+            }) })]);
+        }
+      });
+      changed.forEach(function (pair) {
+        store.set(pair[0], pair[1]);
+      });
+    }
+    log.debug("Leaving ScimClients.handOver().");
+  }
+
   // One person.
   private async syncUser(c: Json, disc: Json, row: Json): Promise<Json> {
     const { log, directory } = this.deps;
     log.debug("Entering ScimClients.syncUser(). " + row.uuid);
     const dir = directory();
     const stored = dir.entryByUuid(row.uuid);
-    const entry = stored && dir.isPersonEntry(stored)
+    // A PROJECTION IS NOT A RESIDENT (#553 section 1); nothingToSend() has
+    // already handed one over, so here it reads as gone.
+    const entry = stored && dir.isPersonEntry(stored) &&
+                  !this.projectedHere(row.uuid)
       ? dir.readPerson(stored.dn) : null;
-    const wanted = !!entry && this.inScope(c, entry);
+    // THE TRANSFER DECISION (#553 section 2): a refusal is OUT OF SCOPE —
+    // not pushed, and deprovisioned through its link if it was.
+    const keptOut = entry ? this.transferRefusal(c, row.uuid) : '';
+    const wanted = !!entry && !keptOut && this.inScope(c, entry);
     if (!wanted) {
+      if (keptOut) {
+        const held = this.linkOf(c, 'User', row.uuid);
+        if (!held || !held.remoteId) {
+          log.debug("Leaving ScimClients.syncUser(). Kept out; never sent.");
+          return { ok: true };
+        }
+      }
       const remote = await this.remoteOf(c, disc, 'User', row.uuid);
       if (!remote.ok) {
         log.debug("Leaving ScimClients.syncUser(). The lookup failed.");
@@ -2177,7 +2628,13 @@ class ScimClients {
     // leaves out a member whose link says inactive (syncGroup()).
     const reactivated = !!(remote.link && remote.link.inactive) &&
                         body.active !== false;
-    if ((result.created || reactivated) && c.groupMode !== 'none') {
+    // ADOPTED, IN A SERVICE DEPLOYED AS CELLS, IS A PERSON WHO MOVED HERE
+    // (#553 section 4): their groups are this cell's to keep them in now.
+    // Found by its externalId rather than linked here is the same arrival.
+    const arrived = this.multi() &&
+                    (!!result.adopted || (!!remote.id && !remote.link));
+    if ((result.created || reactivated || arrived) &&
+        c.groupMode !== 'none') {
       // NOW A MEMBER CAN BE NAMED (RFC 7643 section 4.2: a member's value
       // is the service provider's id): the person's groups go again.
       (dir.groupsOfUser(entry.dn).groups || []).forEach((group: Json) => {
@@ -2419,11 +2876,20 @@ class ScimClients {
     const dir = directory();
     const result: Json = { ok: true, users: 0, groups: 0, deprovisioned: 0,
                            why: '' };
+    if (!this.pushesHere(c)) {
+      // A cell `scimClientCells` leaves out has nothing of this client's to
+      // reconcile (#553 section 2).
+      log.debug("Leaving ScimClients.reconcile(). Not pushed from here.");
+      return Object.assign(result, { notPushedHere: true });
+    }
+    const multi = this.multi();
     try {
       const desired: Record<string, boolean> = {};
+      // EACH CELL RECONCILES ITS OWN RESIDENTS (#553 section 6): pushable()
+      // leaves out a projection and a person the policy keeps out.
       dir.allPersons().forEach((person: Json) => {
         const uuid = this.uuidOf(person);
-        if (uuid && this.inScope(c, person)) {
+        if (uuid && this.pushable(c, person)) {
           desired['User|' + uuid] = true;
           this.enqueue(c, 'User', uuid, dir.usernameOfEntry(person));
           result.users++;
@@ -2467,6 +2933,10 @@ class ScimClients {
           if (!link && !dir.entryByUuid(uuid)) {
             return;
           }
+          if (multi && !link && !this.reconcilesUnlinked(c, type, uuid,
+                                                         one)) {
+            return;
+          }
           // Already deactivated there is done — unless deprovisioning now
           // means delete, when it is queued and deleted.
           if (link && link.inactive && c.deprovision !== 'delete') {
@@ -2505,13 +2975,42 @@ class ScimClients {
     return result;
   }
 
+  // In a service deployed as cells, whether a remote resource this cell
+  // never linked is this cell's to deprovision (#553 section 6). A person:
+  // only a RESIDENT here — a projection is another cell's — and a resident
+  // the policy keeps out is linked to the resource found, so it is
+  // deprovisioned through that link and never searched for again. A group:
+  // only in its OWNER cell, which alone deletes one.
+  private reconcilesUnlinked(c: Json, type: string, uuid: string,
+                             remote: Json): boolean {
+    const { log, directory } = this.deps;
+    log.debug("Entering ScimClients.reconcilesUnlinked(). " + type);
+    if (type === 'Group') {
+      const owner = this.ownerCell(c, uuid) === this.here();
+      log.debug("Leaving ScimClients.reconcilesUnlinked(). Owner: " + owner);
+      return owner;
+    }
+    const dir = directory();
+    const stored = dir.entryByUuid(uuid);
+    if (!stored || !dir.isPersonEntry(stored) || this.projectedHere(uuid)) {
+      log.debug("Leaving ScimClients.reconcilesUnlinked(). Not resident.");
+      return false;
+    }
+    if (remote && remote.id && this.transferRefusal(c, uuid)) {
+      this.writeLink(c, 'User', uuid, { remoteId: String(remote.id),
+                                        etag: '', dn: stored.dn, name: '' });
+    }
+    log.debug("Leaving ScimClients.reconcilesUnlinked(). Resident.");
+    return true;
+  }
+
   // Whether a client has linked any resource of a type.
   private hasLinks(c: Json, type: string): boolean {
     const { log, realms } = this.deps;
     log.debug("Entering ScimClients.hasLinks().");
     const prefix = c.identifier + '|' + type + '|';
     let found = false;
-    links.realmMap(realms.currentId()).forEach(function (link: Json,
+    this.links.realmMap(realms.currentId()).forEach(function (link: Json,
                                                          key: string) {
       if (!found && key.indexOf(prefix) === 0) {
         found = true;
@@ -2536,7 +3035,7 @@ class ScimClients {
         for (const c of this.list()) {
           const minutes = Number(c.reconcileMinutes) || 0;
           const state = this.stateOf(realm.id, c.identifier);
-          if (c.enabled && c.usable && minutes > 0 &&
+          if (c.enabled && c.usable && minutes > 0 && this.pushesHere(c) &&
               now() - Number(state.lastReconcileAt || 0) >= minutes * 60000) {
             await this.reconcile(c, 'scheduler');
             reconciled++;
@@ -2570,7 +3069,7 @@ class ScimClients {
     log.debug("Entering ScimClients.queuesOf(). " + clientId);
     const out: Json = { queued: [], retrying: [], dead: [],
                         counts: { queued: 0, retrying: 0, dead: 0, sent: 0 } };
-    deliveries.realmMap(realms.currentId()).forEach(function (row: Json) {
+    this.deliveries.realmMap(realms.currentId()).forEach(function (row: Json) {
       if (!row || row.clientId !== clientId) {
         return;
       }
@@ -2634,7 +3133,8 @@ class ScimClients {
       })[0] || null;
       if (c) {
         let linked = 0;
-        links.realmMap(realmId).forEach(function (link: Json, key: string) {
+        this.links.realmMap(realmId).forEach(function (link: Json,
+                                                       key: string) {
           if (key.indexOf(c.identifier + '|') === 0) {
             linked++;
           }
@@ -2700,6 +3200,7 @@ class ScimClients {
     out.groupMode = out.groupMode || 'none';
     out.deprovision = out.deprovision || 'deactivate';
     out.reconcileMinutes = out.reconcileMinutes || '0';
+    out.jurisdiction = String(out.jurisdiction || '').toLowerCase();
     out.passwordSet = !!given.password || !!(before && before.passwordSet);
     out.oauthClientSecretSet = !!given.oauthClientSecret ||
       !!(before && before.oauthClientSecretSet);
@@ -3024,7 +3525,7 @@ class ScimClients {
         (result.ok ? '.' : '; ' + result.why) }, result);
     }
     if (action === 'retry-dead' || action === 'purge-dead') {
-      const store = deliveries.realmMap(realms.currentId());
+      const store = this.deliveries.realmMap(realms.currentId());
       const dead: Json[] = [];
       store.forEach(function (row: Json) {
         if (row && row.clientId === before.identifier && row.state === 'dead') {
@@ -3073,7 +3574,7 @@ class ScimClients {
     const { log, now } = this.deps;
     log.debug("Entering ScimClients.dueNow(). " + clientId);
     const at = now();
-    deliveries.realmMap(realmId).forEach((row: Json) => {
+    this.deliveries.realmMap(realmId).forEach((row: Json) => {
       if (row && row.clientId === clientId && row.state === 'pending' &&
           Number(row.nextAttemptAt) > at) {
         this.delivery.writeRow(Object.assign({}, row, { nextAttemptAt: at,
@@ -3089,7 +3590,7 @@ class ScimClients {
     log.debug("Entering ScimClients.purgeClient(). " + clientId);
     const realmId = realms.currentId();
     const prefix = clientId + '|';
-    [deliveries, links].forEach(function (store: Json) {
+    [this.deliveries, this.links].forEach(function (store: Json) {
       const map = store.realmMap(realmId);
       const keys: string[] = [];
       map.forEach(function (value: Json, key: string) {
@@ -3101,7 +3602,7 @@ class ScimClients {
         map.delete(key);
       });
     });
-    states.realmMap(realmId).delete(clientId);
+    this.states.realmMap(realmId).delete(clientId);
     log.debug("Leaving ScimClients.purgeClient().");
   }
 

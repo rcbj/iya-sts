@@ -329,7 +329,14 @@ const GLOBAL_MINTED = {
   // any cell: held in one cell, a set registered there would be unknown at
   // every other. Written when an RS registers a set it has not registered
   // before, which is rare and administrative (#98 section 3).
-  'gnap.resources': 'the resource sets GNAP resource servers registered'
+  'gnap.resources': 'the resource sets GNAP resource servers registered',
+  // THE OUTBOUND SCIM CLIENT'S PAUSE (#553 section 5): a 429 or a 5xx seen by
+  // any cell pauses the client in every cell, and one probe goes for the
+  // whole service, so a struggling service provider is not sent N cells'
+  // worth of load. A row is a client id, a failure count, two times and the
+  // probe's row id — nobody's data — and it is written only on a failure and
+  // on the recovery.
+  'scimClient.pause': 'the outbound SCIM clients\' shared backoff pause'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
@@ -372,9 +379,10 @@ const CELL_MINTED = [
   'saml2_sso.artifacts', 'saml2_sso.pendingRequests',
   'scep.transactions', 'scheduler.runs', 'scim.digestCounts',
   'scim.digestNonces', 'scim.hobaChallenges', 'scim.hobaSeen',
-  // The outbound SCIM client's (#552) deliveries, links and backoff state:
-  // a person is pushed from their home cell, so what was sent for them, and
-  // the service provider's id for them, stay in that cell (#553).
+  // The outbound SCIM client's (#552) deliveries, links and last
+  // reconciliation: a person is pushed from their home cell, so what was
+  // sent for them, and the service provider's id for them, stay in that cell
+  // (#553 section 1). The PAUSE is `scimClient.pause`, global, above.
   'scimClient.deliveries', 'scimClient.links', 'scimClient.state',
   'security.rateLimitBuckets', 'spiffe.joinTokens',
   'spiffe.recordedConnections', 'spnego.pending',

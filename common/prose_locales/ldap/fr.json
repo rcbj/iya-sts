@@ -1427,6 +1427,14 @@
     "en": "a40bdc8ff019b288",
     "text": "LA FRÉQUENCE DE RÉCONCILIATION DE L’ENSEMBLE DU PÉRIMÈTRE, en minutes, par le planificateur du cluster : chaque personne et chaque groupe du périmètre sont poussés, et ce que le fournisseur de services détient sous un externalId de ce domaine et qui ne fait plus partie du périmètre est déprovisionné. 0 (par défaut) ne réconcilie que lorsqu’un administrateur le demande."
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "L’ENDROIT OÙ SE TROUVE LE FOURNISSEUR DE SERVICES, sous la forme d’un code de juridiction de la carte des cellules (us, eu, ca, …). Dans un service déployé en cellules, la cellule de rattachement de chaque personne demande à la politique d’émission si les données de cette personne peuvent y aller (release-attributes, finalité scim-provision) avant de la pousser ; un refus la laisse hors du périmètre — elle n’est pas poussée, et elle est déprovisionnée si elle l’avait été. Vide signifie une juridiction inconnue, vers laquelle la valeur par défaut stricte ne libère jamais rien. Ignoré lorsque le service est une seule cellule."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "LES CELLULES QUI POUSSENT VERS LE FOURNISSEUR DE SERVICES, chacune par son identifiant de cellule ; aucune (la valeur par défaut) signifie toutes les cellules. Une cellule non listée n’envoie rien pour ce client, de sorte que les personnes qui y sont rattachées ne sont pas poussées. Ignoré lorsque le service est une seule cellule."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "LE NOM D’UN RÉCEPTEUR SHARED SIGNALS — ce sous quoi il s’est authentifié lorsqu’il a créé un flux sur /ssf/stream, qui est aussi le `aud` de chaque Security Event Token que porte ce flux. Contrairement aux quatre identifiants purement déclaratifs au-dessus, celui-ci EST écrit par le protocole : créer un flux enregistre une observation, car un récepteur qui s’authentifie et obtient un flux est exactement le genre d’événement que ce registre existe pour conserver. Il n’accorde toujours rien — c’est un flux qui décide de ce que reçoit un récepteur, et il porte sa propre audience."

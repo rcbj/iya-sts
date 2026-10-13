@@ -1427,6 +1427,14 @@
     "en": "a40bdc8ff019b288",
     "text": "HUR OFTA HELA OMFÅNGET STÄMS AV, i minuter, av klusterschemaläggaren: varje person och grupp inom omfånget skickas, och det som tjänsteleverantören har under ett externalId från den här sfären och som inte längre är inom omfånget avprovisioneras. 0 (standard) stämmer bara av när en administratör ber om det."
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "VAR TJÄNSTELEVERANTÖREN FINNS, som en jurisdiktionskod i cellkartan (us, eu, ca, …). I en tjänst som driftsätts som celler frågar varje persons hemcell utfärdandepolicyn om personens data får gå dit (release-attributes, syfte scim-provision) innan den skickar personen; ett avslag lämnar personen utanför omfånget — inte skickad, och avprovisionerad om den hade skickats. Tomt är en okänd jurisdiktion, som det strikta standardvärdet aldrig lämnar ut något till. Ignoreras när tjänsten är en enda cell."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "VILKA CELLER SOM SKICKAR TILL TJÄNSTELEVERANTÖREN, var och en med sitt cell-id; inga (standardvärdet) betyder alla celler. En cell som inte står med skickar ingenting för den här klienten, så de personer som har sin hemcell där skickas inte. Ignoreras när tjänsten är en enda cell."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "VAD EN SHARED SIGNALS-MOTTAGARE HETER — det den autentiserade sig som när den skapade en ström vid /ssf/stream, vilket också är `aud` för varje Security Event Token som den strömmen bär. Till skillnad från de fyra deklarationsidentifierarna ovanför SKRIVS den här av protokollet: att skapa en ström registrerar en observation, eftersom att en mottagare autentiserar sig och beviljas en ström är exakt den sortens händelse som det här registret finns till för. Den beviljar ändå ingenting — en ström är det som avgör vad en mottagare får, och den bär sin egen målgrupp."

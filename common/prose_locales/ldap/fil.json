@@ -1427,6 +1427,14 @@
     "en": "a40bdc8ff019b288",
     "text": "GAANO KADALAS NIRE-RECONCILE ANG BUONG SCOPE, sa minuto, ng cluster scheduler: pinu-push ang bawat tao at grupong nasa scope, at dine-deprovision ang hawak ng service provider sa ilalim ng externalId ng realm na ito na wala na sa scope. Ang 0 (ang default) ay nagre-reconcile lang kapag humiling ang administrator."
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "KUNG NASAAN ANG SERVICE PROVIDER, bilang jurisdiction code ng cell map (us, eu, ca, …). Sa isang serbisyong naka-deploy bilang mga cell, tinatanong ng home cell ng bawat tao ang issuance policy kung maaaring pumunta roon ang data ng taong iyon (release-attributes, layuning scim-provision) bago ito i-push; ang pagtanggi ay nag-iiwan sa kanya sa labas ng scope — hindi pinu-push, at dine-deprovision kung na-push na dati. Ang walang laman ay isang hindi kilalang jurisdiction, na hindi kailanman pinaglalabasan ng mahigpit na default. Hindi pinapansin kapag iisang cell lang ang serbisyo."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "ALING MGA CELL ANG NAGPU-PUSH SA SERVICE PROVIDER, bawat isa ay isang cell id; kapag wala (ang default) ay lahat ng cell. Ang cell na hindi nakalista ay walang ipinapadala para sa client na ito, kaya hindi pinu-push ang mga taong may home cell doon. Hindi pinapansin kapag iisang cell lang ang serbisyo."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "ANG PANGALAN NG ISANG SHARED SIGNALS RECEIVER — kung ano man ang ginamit nito sa pag-authenticate nang gumawa ito ng stream sa /ssf/stream, na siya ring `aud` ng bawat Security Event Token na dala ng stream na iyon. Hindi tulad ng apat na declaration-only na identifier sa itaas nito, ISINUSULAT ito ng protocol: ang paggawa ng stream ay nagtatala ng pagkakita, dahil ang receiver na nag-a-authenticate at pinagkakasunduan ng stream ay eksaktong uri ng pangyayaring umiiral ang registry na ito para hawakan. Wala pa rin itong ipinagkakaloob — ang stream ang nagpapasya kung ano ang nakukuha ng receiver, at may dala itong sariling audience."

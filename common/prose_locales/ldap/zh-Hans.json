@@ -1427,6 +1427,14 @@
     "en": "a40bdc8ff019b288",
     "text": "由集群调度器对整个范围进行对账的频率，以分钟计：范围内的每个人和每个组都会被推送，服务提供方以本领域的 externalId 持有、但已不在范围内的内容会被取消配置。0（默认）表示仅在管理员要求时对账。"
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "服务提供方所在的位置，以单元映射中的司法辖区代码表示（us、eu、ca……）。在以单元方式部署的服务中，每个人的归属单元在推送此人之前，都会询问签发策略此人的数据能否去往该处（release-attributes，用途 scim-provision）；若被拒绝，此人即不在范围内——不会被推送，若之前已推送则会被取消预配。留空表示司法辖区未知，严格默认规则从不向其释放数据。服务只有一个单元时忽略此项。"
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "哪些单元向服务提供方推送，每项为一个单元 ID；为空（默认）表示所有单元。未列出的单元不会为此客户端发送任何内容，因此归属该单元的人员不会被推送。服务只有一个单元时忽略此项。"
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "Shared Signals 接收方的名称——即它在 /ssf/stream 创建流时进行身份验证所用的身份，也是该流所携带的每个 Security Event Token 的 `aud`。与它上面四个仅用于声明的标识符不同，这个标识符确实由协议写入：创建流会记录一次观察，因为接收方完成身份验证并获准建立流，正是此注册表存在所要保存的那类事件。它仍然不授予任何东西——决定接收方获得什么的是流，而流携带它自己的受众。"

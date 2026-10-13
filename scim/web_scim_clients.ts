@@ -160,7 +160,16 @@ class ScimClientsPage {
                 t.text('consoleScimClients.fields.reconcileMinutes'),
                 r.reconcileMinutes || '0', '1440') + '</div>' +
       this.area('groups', t.text('consoleScimClients.fields.groups'),
-                list(r.groups), 2, 'engineering');
+                list(r.groups), 2, 'engineering') +
+      // A SERVICE DEPLOYED AS CELLS (#553): where the service provider is,
+      // and which cells push to it. Read only there.
+      '<h4>' + t.html('consoleScimClients.fields.cellsHeading') + '</h4>' +
+      '<div class="formrow">' +
+      this.text('jurisdiction',
+                t.text('consoleScimClients.fields.jurisdiction'),
+                r.jurisdiction, 'eu') + '</div>' +
+      this.area('cells', t.text('consoleScimClients.fields.cells'),
+                list(r.cells), 2, 'euc1');
   }
 
   // A form carrying one act and the client's id.

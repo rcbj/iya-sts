@@ -114,7 +114,28 @@ function clientProperties(): Json {
     reconcileMinutes: { type: 'string', pattern: '^[0-9]{1,6}$',
                         description: 'Minutes between scheduled ' +
                                      'reconciliations; 0 is on demand ' +
-                                     'only.' }
+                                     'only.' },
+    jurisdiction: { type: 'string', maxLength: 32,
+                    description: 'A service deployed as cells (#553): the ' +
+                                 'jurisdiction the service provider is in, ' +
+                                 'as the cell map spells one (us, eu, ca). ' +
+                                 'Each person\'s home cell asks the ' +
+                                 'issuance policy (release-attributes, ' +
+                                 'purpose scim-provision) before pushing ' +
+                                 'them there; a refusal leaves them out of ' +
+                                 'scope. Empty is unknown, which the strict ' +
+                                 'default never releases to. Ignored in a ' +
+                                 'service that is one cell.' },
+    cells: Object.assign({ description: 'A service deployed as cells ' +
+                           '(#553): the cells that push to the service ' +
+                           'provider, by id; empty is every cell. Ignored ' +
+                           'in a service that is one cell.' }, list),
+    cell: { type: 'string', maxLength: 64,
+            description: 'A service deployed as cells (#553): the cell the ' +
+                         'act is sent to. Without it the act goes to every ' +
+                         'cell that pushes to the client, and the answer ' +
+                         'lists each cell\'s result. Refused in a service ' +
+                         'that is one cell.' }
   };
 }
 
@@ -198,7 +219,7 @@ class ScimClientsApi {
                         'tlsSource', 'tlsCertificate', 'tlsPrivateKey',
                         'caCertificates', 'scopeMode', 'scopeGroups',
                         'scopeFilter', 'groupMode', 'groups', 'deprovision',
-                        'reconcileMinutes'];
+                        'reconcileMinutes', 'jurisdiction', 'cells'];
     const pick = function (names: string[]): Json {
       const out: Json = {};
       names.forEach(function (name) {
