@@ -3875,8 +3875,16 @@ class UsersPage {
         '</td></tr></table>'
       : kit.note(t.html('consoleUsers.serviceAccountSection.ordinary',
                         { key: key }));
+    // CLOSED TO ITS OWNERS (#607): a service account's, under its owners —
+    // `GroupsPage.ownerProtectionSection()`, the three other Owners tabs'.
+    const protection = function (write) {
+      return account ? GroupsPage.ownerProtectionSection(t, account.ownership, {
+        route: '/admin/users/service-account', id: 'service-account-owners',
+        kind: 'service-account', name: key, back: back, write: write,
+        state: pageState }) : '';
+    };
     if (!gate.write) {
-      return heading + lead + state +
+      return heading + lead + state + protection(false) +
         kit.note(t.html('consoleUsers.serviceAccountSection.needsWrite'));
     }
     // THE TAB AS DRAWN LAST, after a press — or what the account holds, on a
@@ -4306,7 +4314,8 @@ class UsersPage {
              t.text('consoleUsers.serviceAccountSection.ordinaryTitle'),
              '<input type="hidden" name="serviceAccount" value="false">', true)
       : '';
-    return heading + lead + state + set + rotate + clear;
+    return heading + lead + state + set + protection(true) + rotate +
+      clear;
   }
 
   // Not a 404: this service has simply never seen the name, or has forgotten

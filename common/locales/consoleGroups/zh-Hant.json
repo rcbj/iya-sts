@@ -120,5 +120,13 @@
   "owners.isOwnerTip": "已在上方表格中。",
   "owners.itself": "此群組",
   "owners.itselfTip": "群組不能成為自己的擁有者。",
-  "owners.addTip": "立即將 {value} 設為擁有者。會立即儲存。"
+  "owners.addTip": "立即將 {value} 設為擁有者。會立即儲存。",
+  "ownerProtection.heading": "對擁有者關閉",
+  "ownerProtection.lead": "其擁有者可以透過使用者入口網站與管理 API 讀取和變更它，範圍以 access-control 原則的擁有者規則所允許者為限。關閉後他們不能這麼做，由管理員變更。",
+  "ownerProtection.checkbox": "對擁有者關閉",
+  "ownerProtection.checkboxTip": "勾選後，其擁有者不能透過入口網站或管理 API 讀取或變更它。他們仍是其擁有者。",
+  "ownerProtection.save": "儲存",
+  "ownerProtection.closedAnyway": "無論核取方塊如何，它都對擁有者關閉：",
+  "ownerProtection.isMarked": "管理員已將其對擁有者關閉。",
+  "ownerProtection.notMarked": "沒有管理員將其對擁有者關閉。"
 }

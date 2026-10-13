@@ -90,6 +90,10 @@ const KINDS = Object.freeze(['role', 'group', 'service-account',
 
 // The reason an administrator's mark gives (rcbj's decision 4), named once so
 // `objectOf()` can say whether the mark is set as well as why it is closed.
+// THE CONSOLE MATCHES IT TO THE LETTER — `admin-ui/web_answers.ts`'s
+// OWNER_MARK_REASON and `web_groups.ts`'s `ownerProtectionSection()` tell the
+// mark from the reasons no checkbox opens by it — so a change here is a
+// change there too.
 const MARKED = 'an administrator closed it to its owners';
 
 /**

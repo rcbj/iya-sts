@@ -12156,8 +12156,9 @@ owning to holding this service's permissions are closed as a FACT:
   register's own write so every other rule of the object stays its own —
   `roles.setOwnerProtected()`, `ldap_server.setGroupOwnerProtected()`,
   `service_accounts.setOwnerProtected()`, `applications.setOwnerProtected()`
-  — at `POST /admin-api/ownership/set-protected`, or an `ldapmodify` by a
-  holder of Admin Write.
+  — at `POST /admin-api/ownership/set-protected` (the *Closed to its
+  owners* checkbox on each object's Owners tab in the console), or an
+  `ldapmodify` by a holder of Admin Write.
 
 **A REGISTER THAT CANNOT BE READ LEAVES THE OBJECT CLOSED**, and owns nobody
 anything: not knowing is not permission, in both directions.

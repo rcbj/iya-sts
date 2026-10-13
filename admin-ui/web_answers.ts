@@ -76,6 +76,10 @@ const ROLE_OWNERS_PAGE = '/admin/roles/owners';
 
 // AN APPLICATION'S OWNERS TAB (#604), the same arrangement.
 const APPLICATION_OWNERS_PAGE = '/admin/applications/owners';
+// The reason `common/ownership.ts` gives for an administrator's mark (#607),
+// to the letter: the in-place redraw after the Owners tab's checkbox adds or
+// takes it off the reasons the page holds.
+const OWNER_MARK_REASON = 'an administrator closed it to its owners';
 
 /**
  * Draws the answers a notice cannot carry.
@@ -730,6 +734,31 @@ class WebAnswers {
       }
       out.state = Object.assign({}, before, { applicationOwners: {
         find: kept.find || null,
+        notice: ok ? String(answer.message || '') : '',
+        error: ok ? [] : (errors.length ? errors : ['Refused.']) } });
+      return { json: out, banner: '' };
+    }
+    // CLOSED TO ITS OWNERS, SET OR CLEARED (#607): the Owners tab's checkbox
+    // on any of the four pages, drawn again in place — the ownership facts
+    // where that page keeps them, the mark as the answer holds it, and the
+    // answer's sentence beside the checkbox (`state.ownerProtection`).
+    if (action === 'set-protected' &&
+        (page === GROUP_OWNERS_PAGE || page === ROLE_OWNERS_PAGE ||
+         page === APPLICATION_OWNERS_PAGE || page === SERVICE_ACCOUNT_PAGE)) {
+      const out = WebAnswers.copy(json);
+      const holder = page === ROLE_OWNERS_PAGE ? out.role
+        : (page === APPLICATION_OWNERS_PAGE ? out.page
+          : (page === SERVICE_ACCOUNT_PAGE ? out.serviceAccount : out));
+      if (ok && holder && holder.ownership) {
+        const marked = answer.ownerProtected === true;
+        const reasons = (holder.ownership.reasons || [])
+          .filter(function (one: string) {
+            return one !== OWNER_MARK_REASON;
+          }).concat(marked ? [OWNER_MARK_REASON] : []);
+        holder.ownership = Object.assign({}, holder.ownership, {
+          marked: marked, reasons: reasons, protected: reasons.length > 0 });
+      }
+      out.state = Object.assign({}, out.state || {}, { ownerProtection: {
         notice: ok ? String(answer.message || '') : '',
         error: ok ? [] : (errors.length ? errors : ['Refused.']) } });
       return { json: out, banner: '' };

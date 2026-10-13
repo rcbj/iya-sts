@@ -2182,6 +2182,8 @@ class AdminViews {
       found: true,
       owners: roles.ownersOf(row),
       maxOwners: roles.MAX_OWNERS,
+      // Closed to its owners, and why (#607).
+      ownership: this.ownershipOf('role', row.name),
       requiredBy: requiredBy,
       holderCount: row.users.length + row.groups.length +
                    row.applications.length,
@@ -9363,6 +9365,8 @@ class AdminViews {
       json: Object.assign({ found: true }, info, {
         canWrite: !!groupWriter,
         group: pagedGroup,
+        // Closed to its owners, and why (#607).
+        ownership: this.ownershipOf('group', group.dn),
         membersPaging: this.pagingJson(memberPage.paging),
         claimedPaging: this.pagingJson(claimedPage.paging),
         known: knownHere,
@@ -9911,6 +9915,8 @@ class AdminViews {
     // ITS OWNERS (#604), resolved, for the Owners tab.
     (out as any).owners = applications.ownersOf(row);
     (out as any).maxOwners = applications.MAX_OWNERS;
+    // Closed to its owners, and why (#607).
+    (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
       ? { wstrustJwtScope: scopeWarnings } : {};
     log.debug("Leaving AdminViews.applicationPageData().");
@@ -12373,6 +12379,39 @@ class AdminViews {
    * @param key - the person
    * @returns the description, or null for an ordinary person
    */
+  // ---------------------------------------------------------------------------
+  // CLOSED TO ITS OWNERS (#607): what the Owners tabs draw beside their
+  // checkbox — whether an administrator's mark is set, and every reason the
+  // object is closed, the mark among them. `common/ownership.ts`'s answer,
+  // the same facts the access-control policy's owner rule reads; reached
+  // lazily, a library.
+  // ---------------------------------------------------------------------------
+  /**
+   * An object's owner-protection facts, for its Owners tab.
+   *
+   * @param kind - `role`, `group`, `service-account` or `application`
+   * @param name - the object
+   * @returns `{ kind, name, marked, protected, reasons }`
+   */
+  ownershipOf(kind, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.ownershipOf().");
+    let facts: any = null;
+    try {
+      facts = require('../common/ownership').objectOf(kind, name);
+    } catch (e) {
+      // Unreadable: drawn as closed, as the owner rule reads it.
+      log.debug("Caught in AdminViews.ownershipOf(): " +
+                ((e && e.message) || e));
+      facts = null;
+    }
+    log.debug("Leaving AdminViews.ownershipOf().");
+    return { kind: String(kind), name: String(name),
+             marked: !!(facts && facts.marked),
+             protected: facts ? !!facts.protected : true,
+             reasons: facts ? facts.reasons.slice(0) : [] };
+  }
+
   serviceAccountJson(key) {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
     log.debug("Entering AdminViews.serviceAccountJson().");
@@ -12393,6 +12432,8 @@ class AdminViews {
       // EVERY OWNER (#600), each `{ dn, kind, name }`; `kind` '' for a value
       // that no longer names a person or a group.
       owners: facts.owners,
+      // Closed to its owners, and why (#607).
+      ownership: this.ownershipOf('service-account', facts.username),
       destination: facts.destination || null,
       secretName: facts.secretName || null,
       rotatedAt: facts.rotatedAt || null,

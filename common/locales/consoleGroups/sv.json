@@ -120,5 +120,13 @@
   "owners.isOwnerTip": "Redan i tabellen ovan.",
   "owners.itself": "denna grupp",
   "owners.itselfTip": "En grupp kan inte äga sig själv.",
-  "owners.addTip": "Gör {value} till ägare nu. Det sparas direkt."
+  "owners.addTip": "Gör {value} till ägare nu. Det sparas direkt.",
+  "ownerProtection.heading": "Stängt för sina ägare",
+  "ownerProtection.lead": "Dess ägare kan läsa och ändra det via användarportalen och hanterings-API:et, inom det som ägarregeln i policyn access-control tillåter. Stängt kan de inte det, och en administratör ändrar det.",
+  "ownerProtection.checkbox": "Stängt för sina ägare",
+  "ownerProtection.checkboxTip": "Markerad kan dess ägare inte läsa eller ändra det via portalen eller hanterings-API:et. De förblir dess ägare.",
+  "ownerProtection.save": "Spara",
+  "ownerProtection.closedAnyway": "Det är stängt för sina ägare oavsett vad rutan säger:",
+  "ownerProtection.isMarked": "En administratör har stängt det för sina ägare.",
+  "ownerProtection.notMarked": "Ingen administratör har stängt det för sina ägare."
 }

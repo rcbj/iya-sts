@@ -2444,5 +2444,9 @@ the detail.
 `name`: owners, `protected` with `reasons`, `marked`) and writes the
 administrator's mark (`POST /ownership/set-protected`, `kind`, `name`,
 `protected`) — rcbj's decision 4, `stsOwnerProtected` on the object's own
-entry. No console form: the mark is an attribute, and this is its machine
-door beside an `ldapmodify`. Admin Read and Admin Write, as everything here.
+entry. Its console control (rcbj, 2026-10-13) is a checkbox on each object's
+Owners tab, posting `set-protected` to that tab's route — which is why the
+operation `mirrors` the four routes, `/admin/roles/owners`,
+`/admin/groups/owners`, `/admin/applications/owners` and
+`/admin/users/service-account` — and an `ldapmodify` reaches the attribute
+too. Admin Read and Admin Write, as everything here.

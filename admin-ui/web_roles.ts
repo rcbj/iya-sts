@@ -600,7 +600,12 @@ class RolesPage {
             route: '/admin/roles/owners', id: 'role-owners', field: 'role',
             value: role.name, stateKey: 'roleOwners', self: '',
             lead: t.html('consoleRoles.owners.lead'),
-            leadRead: t.html('consoleRoles.owners.leadRead') }) }
+            leadRead: t.html('consoleRoles.owners.leadRead') }) +
+          // Closed to its owners (#607).
+          GroupsPage.ownerProtectionSection(t, role.ownership, {
+            route: '/admin/roles/owners', id: 'role-owners', kind: 'role',
+            name: role.name, back: kit.queryWith(listView, {}),
+            write: !!role.canWrite && !!ctx.write, state: json.state }) }
     ]) + back;
   }
 
