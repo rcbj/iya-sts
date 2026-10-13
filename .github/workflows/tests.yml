@@ -152,12 +152,17 @@ jobs:
     # minutes building the images before any mode starts, which no mode bound
     # covers; tests/teardown_bounds.js adds thirty for it.
     #
+    # 180 SINCE 2026-10-13, the ceiling tests/teardown_bounds.js allows: on
+    # main 8fe81efa the build took 23 minutes, `memory` 56 and `single-node`
+    # was still running, healthy, when 150 cancelled it — two whole modes
+    # and the build no longer fit.
+    #
     # 120 SINCE 2026-09-14. The suite is 225 jobs now and `dispatch` alone
     # outgrew the launcher's 25-minute mode bound, which went to 50; this has
     # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
     # and above three healthy modes, measured at about 70 minutes on a
     # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git
@@ -461,7 +466,7 @@ jobs:
     needs: mirror
     runs-on: ubuntu-latest
     # The `tests` job's argument, for ONE mode: above the cluster mode's own
-    # bound (STS_CLUSTER_MODE_TIMEOUT, 100m — tests/tools/modes.sh) plus its
+    # bound (STS_CLUSTER_MODE_TIMEOUT, 130m — tests/tools/modes.sh) plus its
     # teardowns (STS_TEARDOWN_TIMEOUT, 5m each), so the bound that fires is the
     # one that can explain itself — tests/teardown_bounds.js asserts it. The
     # mode took 24.7 minutes on 2026-09-15 in development mode with one process
@@ -469,8 +474,9 @@ jobs:
     # outran the shared 50-minute bound. 150 since 2026-09-27: 115 did not
     # count the image build (nineteen minutes on a cold runner), so a run was
     # cancelled at 527 jobs before the mode's own bound could fire; the test
-    # now adds thirty minutes for it.
-    timeout-minutes: 150
+    # now adds thirty minutes for it. 175 since 2026-10-13, with the mode's
+    # bound raised to 130m (main 8fe81efa outgrew 100m at job 734 of 774).
+    timeout-minutes: 175
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
