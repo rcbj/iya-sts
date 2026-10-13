@@ -360,8 +360,8 @@ const BUILT_IN = [
   //
   // **IT IS NOT THE SAME ROLE AS REMOTE_PEPS AND MUST NOT BECOME ONE.** A
   // remote enforcement point pulls the documents this service enforces its own
-  // access with; a XACML caller asks a question and reads a demonstration
-  // policy. One group granting both would mean admitting somebody to the
+  // access with; a XACML caller asks a question and reads the repository's
+  // policies. One group granting both would mean admitting somebody to the
   // second silently admits them to the first, which is exactly the collapse
   // the two-register split in this file exists to prevent.
   // -------------------------------------------------------------------------
@@ -375,7 +375,7 @@ const BUILT_IN = [
           'REMOTE_PEPS: that role reaches the three /xacml/pep endpoints, ' +
           'which hand out the documents this service enforces its own access ' +
           'with, and one group granting both would make admitting a caller ' +
-          'to the demonstration surface silently admit it to those.',
+          'to the XACML surface proper silently admit it to those.',
     holds: function (who) {
       log.debug("Entering holds().");
       const wanted = xacmlUserGroupName().toLowerCase();

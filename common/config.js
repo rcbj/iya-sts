@@ -13805,7 +13805,7 @@ const SETTINGS = [
                  'REMOTE_PEPS reaches the three /xacml/pep endpoints, which ' +
                  'hand out the documents this service enforces its own ' +
                  'access with, and one group granting both would make ' +
-                 'admitting a caller to the demonstration surface silently ' +
+                 'admitting a caller to the XACML surface proper silently ' +
                  'admit it to those. Setting it to the empty string means ' +
                  'NOBODY holds the role, which closes those three endpoints ' +
                  'to every caller; that is the way to take the XACML surface ' +
@@ -13849,7 +13849,7 @@ const SETTINGS = [
                  'questions about somebody else\'s boundary — that is what a ' +
                  'PDP is for and what /xacml/pdp and every remote PEP ask it ' +
                  '— and this one answers a question about THIS service. Two ' +
-                 'questions, two documents, so that editing the demo policy ' +
+                 'questions, two documents, so that editing the root policy ' +
                  'cannot change who may sign in and narrowing a role cannot ' +
                  'change what /xacml/pdp answers. The `role-issuance` ' +
                  'policy is BUILT IN and is never seeded into ou=policies: ' +

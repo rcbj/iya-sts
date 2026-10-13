@@ -2485,8 +2485,8 @@ const SPECS: Spec[] = [
               'per relying party; automatic suspend, reactivate, delete, ' +
               'maintain and invalidate on directory changes and global ' +
               'sign-outs, only to a relying party that listed the command. ' +
-              'A demonstration relying party answers every command in ' +
-              'development. ' +
+              'The test peer (tests/peer/) plays a relying party that ' +
+              'answers every command. ' +
               'MISSING: acting as the relying party for another OP.' },
   { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
                                  '(draft 01)',
