@@ -734,8 +734,11 @@ const JOBS = [
   // two acts followed to their runs' ends, or their 400 where the data keys
   // are derived per run. It rotates one class of the default realm's keys,
   // which changes nothing another job can see: a value sealed under either
-  // key opens. `local: true`: this repository's own /admin-api.
-  { file: 'sts_data_keys.js',            browser: false, local: true },
+  // key opens. `local: true`: this repository's own /admin-api. Its own
+  // watchdog (2026-10-13): two whole-store passes may take ten minutes each
+  // on two nodes, past the 300 s default.
+  { file: 'sts_data_keys.js',            browser: false, local: true,
+    timeoutMs: 1500000 },
   { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
