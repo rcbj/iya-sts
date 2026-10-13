@@ -165,9 +165,9 @@
 // SPIFFE made the same move for its authorities on 2026-09-12 — so for a realm
 // nothing was consumed at startup, and `krb5.realm` and the nine rows that
 // database is built from are `realmRuntime`. What is still consumed for the
-// process stays refused on a realm: the sockets (`krb5.kdcPort`,
-// `krb5.servicePort`) and the development-mode trust with
-// `krb5.trustedRealm`. The test is still the rule;
+// process stays refused on a realm: the KDC's socket (`krb5.kdcPort`; the
+// protected service's, `krb5.servicePort`, left with #595) and the
+// development-mode trust with `krb5.trustedRealm`. The test is still the rule;
 // a setting whose material stays process-wide is still a no.
 //
 // ---------------------------------------------------------------------------
@@ -179,9 +179,9 @@
 // "value is not a function".
 //
 // IT PUBLISHES THE KERBEROS PASSWORDS, and that is deliberate and not new:
-// `GET /krb5/principals` already prints them, for the reason written there — a
-// debugger whose accounts are unusable without reading the source is worse than
-// one that says what they are.
+// `GET /krb5/principals` printed them too until #595 deleted it, for the
+// reason written there — a debugger whose accounts are unusable without
+// reading the source is worse than one that says what they are.
 //
 // Where they are published now needs one distinction. `/admin/config` is behind
 // the console gate, which is unconditional, and `GET /admin-api/config` is
@@ -4388,8 +4388,8 @@ const SETTINGS = [
                  'validating it the CLIENT\'s job and this server cannot see ' +
                  'whether it happens — so this is how to find out: a client ' +
                  'that accepts the result is not checking, and one that ' +
-                 'refuses it is. The same device as /spnego\'s three knobs ' +
-                 'and the reserved password "invalid". OFF by default, ' +
+                 'refuses it is. The same device as the reserved password ' +
+                 '"invalid". OFF by default, ' +
                  'reported on GET /oauth2/rfc9700 whichever mode is in ' +
                  'force, and every spoiled token is logged as spoiled — an ' +
                  'ID Token that is wrong in a way nobody remembers turning ' +
@@ -10619,15 +10619,12 @@ const SETTINGS = [
     restartReason: 'the TCP and UDP sockets are bound when the process starts',
     description: 'The KDC listens on TCP and UDP alike. 88 is privileged, so ' +
                  'a host run that is not root fails to bind it — which is ' +
-                 'recorded rather than thrown, and reported by GET ' +
-                 '/krb5/principals. 0 asks for any free port.' },
+                 'recorded rather than thrown, and logged. 0 asks for any ' +
+                 'free port.' },
 
-  { key: 'krb5.servicePort', group: 'Kerberos', label: 'Test service port',
-    env: 'KRB5_SERVICE_PORT', type: 'port', dflt: 8888, runtime: false,
-    restartReason: 'the socket is bound when the process starts',
-    description: 'The Kerberized test service that accepts an AP-REQ. A ' +
-                 'demonstration: a product process does not start it ' +
-                 '(#585).' },
+  // `krb5.servicePort`, the Kerberized test service's socket, was here
+  // until #595: that demonstration is the development companion's now
+  // (`companion/demo_kerberos.js`, COMPANION_KRB5_SERVICE_PORT).
 
   { key: 'krb5.servicePrincipal', group: 'Kerberos', label: 'Service principal',
     env: 'KRB5_SERVICE_PRINCIPAL', type: 'string',
@@ -10635,10 +10632,11 @@ const SETTINGS = [
     realmRuntime: true,
     restartReason: 'the account and its long-term keys are created at startup' +
                    REALM_BUILDS_ITS_OWN,
-    description: 'The SPN that test service holds, in the usual ' +
-                 'service/hostname form. The account the acceptor decrypts ' +
-                 'with is created FROM this name, with krb5.servicePassword ' +
-                 'and krb5.serviceSalt — until 2026-09-12 it was always ' +
+    description: 'The SPN the SPNEGO sign-in\'s acceptor holds, in the ' +
+                 'usual service/hostname form. The account the acceptor ' +
+                 'decrypts with is created FROM this name, with ' +
+                 'krb5.servicePassword and krb5.serviceSalt — until ' +
+                 '2026-09-12 it was always ' +
                  'HTTP/web.<realm domain> whatever this said. **A TRUST ' +
                  'REALM that sets none derives HTTP/web.<its own domain>** ' +
                  'where this is still the value shipped here, so a realm is ' +
@@ -10795,8 +10793,8 @@ const SETTINGS = [
     label: 'Largest AP-REQ the acceptor reads (bytes)',
     env: 'KRB5_SERVICE_MAX_TOKEN_BYTES', type: 'int', dflt: 65536,
     min: 1024, max: 16777216, runtime: true,
-    description: 'The acceptor on krb5.servicePort, and SPNEGO over HTTP, ' +
-                 'refuse a token larger than this.' },
+    description: 'The SPNEGO sign-in\'s acceptor refuses a token larger ' +
+                 'than this.' },
 
   { key: 'krb5.replayCacheMaxEntries', group: 'Kerberos',
     label: 'Replay cache size', env: 'KRB5_REPLAY_CACHE_MAX_ENTRIES',
@@ -10845,7 +10843,7 @@ const SETTINGS = [
       'every user\'s long-term keys are derived from it at startup' +
                    REALM_BUILDS_ITS_OWN,
     description: 'The password every user account here has. It is PUBLISHED ' +
-                 'by GET /krb5/principals on purpose: a debugger whose ' +
+                 'as this setting on purpose: a debugger whose ' +
                  'accounts are unusable without reading the source is worse ' +
                  'than one that says what they are.' },
 
@@ -10975,10 +10973,8 @@ const SETTINGS = [
     description: 'Whether /authn/spnego turns a Kerberos ticket into a ' +
                  'browser session — integrated authentication, available to ' +
                  'every application and to none in particular. With it off ' +
-                 'that endpoint answers 403 saying which setting it was, and ' +
-                 '/spnego/protected still performs the whole handshake and ' +
-                 'shows you both halves of it; what it will not do is give ' +
-                 'you a session. An application or a federation relationship ' +
+                 'that endpoint answers 403 saying which setting it was. An ' +
+                 'application or a federation relationship ' +
                  'that names the `spnego` mechanism while this is off is ' +
                  'REPORTED on the sign-in screen rather than meeting a 403 ' +
                  'halfway through a flow.' },

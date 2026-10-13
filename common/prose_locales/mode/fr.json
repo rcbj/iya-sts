@@ -724,12 +724,12 @@
     "text": "Les points de terminaison de démonstration et de contrôle de test existent"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "3984f2e4ba94f429",
-    "text": "Servis et listés : les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected."
+    "en": "e91d15ca7620fc31",
+    "text": "Servis et listés : les points de terminaison de test VC-API."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "b82d8439b897527e",
-    "text": "Aucun n’est servi ni listé. Chacun répond exactement comme un chemin sur lequel rien n’est enregistré — le 404 propre à Express, « Cannot GET » — et aucune page de métadonnées, page de console, documentation ni ligne de journal n’en nomme un. Un realm de développement au sein d’un processus en mode produit les conserve, sauf le socket du service protégé, qui appartient au processus. Les portes d’administration restent : /admin-api démarre une vérification et lit les principaux, et le portail utilisateur fait une offre de justificatif."
+    "en": "65526c68ee1acd20",
+    "text": "Aucun n’est servi ni listé. Chacun répond exactement comme un chemin sur lequel rien n’est enregistré — le 404 propre à Express, « Cannot GET » — et aucune page de métadonnées, page de console, documentation ni ligne de journal n’en nomme un. Un realm de développement au sein d’un processus en mode produit les conserve. Les portes d’administration restent : /admin-api démarre une vérification et lit les principaux, et le portail utilisateur fait une offre de justificatif."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

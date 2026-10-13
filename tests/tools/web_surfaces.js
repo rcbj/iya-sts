@@ -249,11 +249,10 @@ function authnCases(root) {
               spn: 'HTTP/sts.example', realm: 'EXAMPLE.COM', hosts: [],
               checks: [{ name: 'a check', ok: false, detail: '<x>' }] },
       ctx: spnegoEn },
-    { label: 'the SPNEGO door off, with the demonstration',
+    { label: 'the SPNEGO door off',
       path: '/authn/spnego',
       view: { door: 'spnego', kind: 'off',
               setting: 'krb5.spnegoAuthentication',
-              demoPath: '/spnego/protected',
               pending: { id: 'abc', protocol: 'SAML 2.0', application: '' } },
       ctx: spnegoEn },
     { label: 'signed in with a Kerberos ticket, two factors',
@@ -1005,117 +1004,9 @@ function descriptionCases(root) {
   ];
 }
 
-/**
- * The SPNEGO demonstration pages' cases (#583): the advertisement with the
- * sign-in on and off, in English and in Swedish; the body of every kind of
- * answer `/spnego/protected` gives — the bare challenge, a wrong scheme, an
- * empty token, an undecodable one, no common mechanism (with and without
- * `?mech=none`), a pessimistic token, a non-Kerberos mechanism, a refused
- * ticket, both wordings of a bad mechListMIC, a required MIC,
- * `request-mic`, an unmatched continuation, a continuation without the MIC,
- * a code no page knows, and the protected content (negotiated or bare,
- * mutual or `?mutual=off`).
- *
- * @param {string} root - the repository root
- * @returns {object[]} `[{ label, view, ctx, path }]`
- */
-function spnegoCases(root) {
-  log.debug("Entering spnegoCases().");
-  const ns = ['spnegoPages'];
-  const en = { t: translatorFor(root, ns, ['en']), query: {}, prefix: '',
-               origin: 'https://sts.example', here: '/spnego' };
-  const sv = Object.assign({}, en, { t: translatorFor(root, ns,
-                                                      ['sv', 'en']) });
-  const es = Object.assign({}, en, { t: translatorFor(root, ns,
-                                                      ['es', 'en']) });
-  const advert = { kind: 'advert', realm: 'EXAMPLE.COM<1>',
-    protectedResource: '/spnego/protected', signInResource: '/authn/spnego',
-    signInEnabled: true,
-    servicePrincipalName: 'HTTP/sts.example@EXAMPLE.COM',
-    mechanisms: [{ oid: '1.2.840.113554.1.2.2', name: 'Kerberos <5>' },
-                 { oid: '1.2.840.48018.1.2.2', name: 'Kerberos (MS)' }],
-    scheme: 'Negotiate' };
-  const checks = [{ name: 'the ticket <decrypts>', ok: true,
-                    detail: 'under the service key' },
-                  { name: 'the authenticator', ok: false,
-                    detail: 'skew & "late"' }];
-  const verdict = function (extra) {
-    return Object.assign({ kind: 'verdict', ok: false, code: '',
-      spn: 'HTTP/sts.example', reason: 'Because <of> & this.', scheme: '',
-      client: '', selected: '', selectedName: '', offered: [],
-      offeredNames: [], supported: [], continuation: false,
-      rawKerberos: false, micVerified: false, requirementReason: '',
-      mutual: false, mutualOff: false, micNote: '', checks: null }, extra);
-  };
-  const accepted = verdict({ ok: true, code: 'accepted',
-    client: 'alice@EXAMPLE.COM<1>', selected: '1.2.840.113554.1.2.2',
-    selectedName: 'Kerberos 5', micVerified: true, mutual: true,
-    checks: checks });
-  log.debug("Leaving spnegoCases().");
-  return [
-    { label: 'the advertisement, the sign-in on, in English',
-      path: '/spnego', ctx: en, view: advert },
-    { label: 'the advertisement, the sign-in off, in Swedish',
-      path: '/spnego', ctx: sv,
-      view: Object.assign({}, advert, { signInEnabled: false }) },
-    { label: 'the bare challenge', path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'no-authorization' }) },
-    { label: 'a wrong scheme, in Spanish', path: '/spnego/protected',
-      ctx: es, view: verdict({ code: 'wrong-scheme', scheme: 'Basic<x>' }) },
-    { label: 'an empty token', path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'empty-token' }) },
-    { label: 'an undecodable token', path: '/spnego/protected', ctx: sv,
-      view: verdict({ code: 'undecodable', checks: [] }) },
-    { label: 'no common mechanism', path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'no-common-mechanism',
-        offered: ['1.3.6.1.5.5.2<x>', '1.2.3'],
-        offeredNames: ['SPNEGO', ''],
-        supported: ['1.2.840.113554.1.2.2'] }) },
-    { label: 'no common mechanism, ?mech=none, in Spanish',
-      path: '/spnego/protected', ctx: es,
-      view: verdict({ code: 'no-common-mechanism', offered: ['1.2.3'],
-                      offeredNames: ['x'], supported: [] }) },
-    { label: 'a pessimistic token', path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'no-mech-token',
-                      selected: '1.2.840.113554.1.2.2',
-                      selectedName: 'Kerberos <5>' }) },
-    { label: 'a non-Kerberos mechanism', path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'non-kerberos-mechanism',
-                      selected: '1.3.6.1.4.1.311.2.2.10<x>' }) },
-    { label: 'a refused ticket, with the checks', path: '/spnego/protected',
-      ctx: sv, view: verdict({ code: 'ticket-refused', checks: checks }) },
-    { label: 'a bad mechListMIC on the first token',
-      path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'bad-mech-list-mic' }) },
-    { label: 'a bad mechListMIC on the continuation, in Spanish',
-      path: '/spnego/protected', ctx: es,
-      view: verdict({ code: 'bad-mech-list-mic', continuation: true }) },
-    { label: 'a required MIC', path: '/spnego/protected', ctx: en,
-      view: verdict({ code: 'mic-required',
-                      requirementReason: 'section 5 <requires> it' }) },
-    { label: 'request-mic', path: '/spnego/protected', ctx: sv,
-      view: verdict({ code: 'request-mic', checks: checks }) },
-    { label: 'an unmatched continuation', path: '/spnego/protected',
-      ctx: en, view: verdict({ code: 'no-pending-continuation' }) },
-    { label: 'a continuation without the MIC', path: '/spnego/protected',
-      ctx: en, view: verdict({ code: 'continuation-no-mic' }) },
-    { label: 'a code no page knows is a reject', path: '/spnego/protected',
-      ctx: en, view: verdict({ code: 'acceptor-threw' }) },
-    { label: 'the protected content, negotiated and mutual',
-      path: '/spnego/protected', ctx: en, view: accepted },
-    { label: 'the protected content, bare, ?mutual=off, in Swedish',
-      path: '/spnego/protected', ctx: sv,
-      view: Object.assign({}, accepted, { rawKerberos: true,
-        micVerified: false, requirementReason: 'no list <to protect>',
-        mutual: false, mutualOff: true, micNote: 'a note & "more"',
-        client: '' }) },
-    { label: 'the protected content, no AP-REP, in Spanish',
-      path: '/spnego/protected', ctx: es,
-      view: Object.assign({}, accepted, { mutual: false, checks: null }) },
-    { label: 'a view the page does not know', path: '/spnego', ctx: en,
-      view: { kind: 'other<1>' } }
-  ];
-}
+// The SPNEGO demonstration pages' cases (#583) went with the pages (#595):
+// `/spnego` and `/spnego/protected` are the development companion's, drawn
+// on its server (`tests/companion.js`).
 
 module.exports = [
   { name: 'the admin console',
@@ -1154,9 +1045,5 @@ module.exports = [
   { name: 'the description pages',
     pages: 'common/web_description_pages.ts', global: 'StsDescriptions',
     bundle: 'common/description-pages.bundle.js',
-    runtime: 'common/description-pages-spa.js', cases: descriptionCases },
-  { name: 'the SPNEGO demonstration pages',
-    pages: 'kerberos/web_spnego_pages.ts', global: 'StsSpnegoPages',
-    bundle: 'kerberos/spnego-pages.bundle.js',
-    runtime: 'kerberos/spnego-pages-spa.js', cases: spnegoCases }
+    runtime: 'common/description-pages-spa.js', cases: descriptionCases }
 ];

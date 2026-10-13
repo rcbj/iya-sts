@@ -5574,8 +5574,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
 // Everything above this line is about the express app, and it would be a
 // mistake to read the pool as being about HTTP. **The front process owns
 // every listener family and only the main port's HTTP is dispatched as
-// requests**: the Kerberos KDC on TCP and UDP 88, the Kerberos service on
-// 8888, the LDAP directory on 389 and 636, and SPIFFE's gRPC surfaces are the
+// requests**: the Kerberos KDC on TCP and UDP 88 (and the Kerberos service
+// on 8888, until #595 moved it to the development companion), the LDAP
+// directory on 389 and 636, and SPIFFE's gRPC surfaces are the
 // others that carry protocol work (the debugger listener and the plain-HTTP
 // PKI listener are HTTP too, and are not dispatched). The work those do has
 // exactly the same reason to leave the front process as a `/scim/v2` POST

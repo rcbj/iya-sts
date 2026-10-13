@@ -1812,8 +1812,8 @@
     "text": "破坏 ID Token 的 nonce（仅限开发）"
   },
   "oauth2.breakIdTokenNonce|description": {
-    "en": "05625a5855ffd20c",
-    "text": "仅限开发模式。在产品模式下，读取时会被忽略（记录一次，STS-CORE-0106），开启它会被拒绝（STS-CORE-0103）。在每个应携带 nonce 的 ID Token 中放入一个故意错误的 nonce。RFC 9700 第 2.1.1 和 4.5.3.2 节将验证它定为客户端的职责，而本服务器看不到验证是否发生——所以这就是检验的方法：接受结果的客户端没有检查，拒绝它的客户端则检查了。与 /spnego 的三个开关以及保留密码 \"invalid\" 是同一种手段。默认关闭，无论处于哪种模式都会在 GET /oauth2/rfc9700 上报告，每个被破坏的令牌都会被记录为已破坏——一个以没人记得开启过的方式出错的 ID Token，会耗掉一个代价高昂的下午。"
+    "en": "6aa61a678ff29707",
+    "text": "仅限开发模式。在产品模式下，读取时会被忽略（记录一次，STS-CORE-0106），开启它会被拒绝（STS-CORE-0103）。在每个应携带 nonce 的 ID Token 中放入一个故意错误的 nonce。RFC 9700 第 2.1.1 和 4.5.3.2 节将验证它定为客户端的职责，而本服务器看不到验证是否发生——所以这就是检验的方法：接受结果的客户端没有检查，拒绝它的客户端则检查了。与保留密码 \"invalid\" 是同一种手段。默认关闭，无论处于哪种模式都会在 GET /oauth2/rfc9700 上报告，每个被破坏的令牌都会被记录为已破坏——一个以没人记得开启过的方式出错的 ID Token，会耗掉一个代价高昂的下午。"
   },
   "oauth2.refreshIdleSeconds|label": {
     "en": "2342e96eee91f547",
@@ -5528,32 +5528,20 @@
     "text": "KDC 端口"
   },
   "krb5.kdcPort|description": {
-    "en": "603655a67c05bdd2",
-    "text": "KDC 同时在 TCP 和 UDP 上监听。88 是特权端口，因此非 root 运行的主机无法绑定它——这会被记录而不是抛出异常，并由 GET /krb5/principals 报告。0 表示使用任意空闲端口。"
+    "en": "e9d5103459853c9e",
+    "text": "KDC 同时在 TCP 和 UDP 上监听。88 是特权端口，因此非 root 运行的主机无法绑定它——这会被记录而不是抛出异常，并写入日志。0 表示使用任意空闲端口。"
   },
   "krb5.kdcPort|restartReason": {
     "en": "72484c04fc9a787a",
     "text": "TCP 和 UDP 套接字在进程启动时绑定"
-  },
-  "krb5.servicePort|label": {
-    "en": "3a89a3154901e25c",
-    "text": "测试服务端口"
-  },
-  "krb5.servicePort|description": {
-    "en": "f520a63e9c191a86",
-    "text": "接受 AP-REQ 的 Kerberos 化测试服务。这是演示：产品进程不会启动它（#585）。"
-  },
-  "krb5.servicePort|restartReason": {
-    "en": "e92026b5264f72ad",
-    "text": "套接字在进程启动时绑定"
   },
   "krb5.servicePrincipal|label": {
     "en": "1238b790587a7e38",
     "text": "服务主体"
   },
   "krb5.servicePrincipal|description": {
-    "en": "b3400d19bf033fa0",
-    "text": "该测试服务持有的 SPN，采用常见的 service/hostname 形式。接受方用于解密的账户由此名称结合 krb5.servicePassword 和 krb5.serviceSalt 创建——在 2026-09-12 之前，无论此项为何，它始终是 HTTP/web.<领域域名>。**未设置此项的信任领域会派生 HTTP/web.<其自身的域名>**（当此项仍为此处随附的值时），因此领域的名称处处都以其自身命名；在领域上设置此项可直接指定该领域的接受方名称。"
+    "en": "2143ab10c02f7141",
+    "text": "SPNEGO 登录的接受方持有的 SPN，采用常见的 service/hostname 形式。接受方用于解密的账户由此名称结合 krb5.servicePassword 和 krb5.serviceSalt 创建——在 2026-09-12 之前，无论此项为何，它始终是 HTTP/web.<领域域名>。**未设置此项的信任领域会派生 HTTP/web.<其自身的域名>**（当此项仍为此处随附的值时），因此领域的名称处处都以其自身命名；在领域上设置此项可直接指定该领域的接受方名称。"
   },
   "krb5.servicePrincipal|restartReason": {
     "en": "c04a88a95bd6f9b0",
@@ -5564,8 +5552,8 @@
     "text": "服务主体密码"
   },
   "krb5.servicePassword|description": {
-    "en": "203b6ef1fa4a5cfa",
-    "text": "krb5.servicePrincipal 所命名帐户的密码 —— 相当于一个 keytab。在产品模式下，随附的默认值会被拒绝：该值印在本仓库中，因此由它派生的服务密钥是任何人都能用来伪造票据的密钥。此时产品模式改为给该 SPN 一个随机密钥，只生成一次，密封在其应用条目上（在 /admin/kerberos/principals 上执行 Rotate 会交出 keytab），空密码也同样处理。将它设置为签发其票据的 KDC 中该 SPN 帐户的密码，它就会优先于那个密钥。在开发模式下，空密码不会创建帐户，接受方也不接受任何票据。"
+    "en": "cb9ee66eb558159b",
+    "text": "krb5.servicePrincipal 所指账户的密码——相当于 keytab。在产品模式下，随附的默认值会被拒绝：该值印在本代码库中，由它派生的服务密钥是任何人都可以为之伪造票据的密钥。未设置时不会创建服务账户，/authn/spnego 不接受任何票据，GET /admin-api/kerberos/principals 会说明原因。请将其设置为签发其票据的 KDC 中该 SPN 账户的密码。"
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -5660,8 +5648,8 @@
     "text": "接受方读取的最大 AP-REQ（字节）"
   },
   "krb5.serviceMaxTokenBytes|description": {
-    "en": "4a1900f646321bef",
-    "text": "krb5.servicePort 上的接受方以及基于 HTTP 的 SPNEGO 会拒绝大于此值的令牌。"
+    "en": "f5880e7b76f635b7",
+    "text": "SPNEGO 登录的接受方会拒绝大于此值的令牌。"
   },
   "krb5.replayCacheMaxEntries|label": {
     "en": "907b89cfdd599162",
@@ -5708,8 +5696,8 @@
     "text": "用户密码"
   },
   "krb5.userPassword|description": {
-    "en": "838f581b1ba65d90",
-    "text": "此处每个用户账户都使用的密码。它被有意通过 GET /krb5/principals 公开：一个不读源代码就无法使用其账户的调试器，比一个直接说明账户是什么的调试器更糟。"
+    "en": "d2f560802bb55976",
+    "text": "此处每个用户账户都使用的密码。它被有意作为此设置公开：一个不读源代码就无法使用其账户的调试器，比一个直接说明账户是什么的调试器更糟。"
   },
   "krb5.userPassword|restartReason": {
     "en": "51deddf8f1d90149",
@@ -5824,8 +5812,8 @@
     "text": "使用 Kerberos 票据登录"
   },
   "krb5.spnegoAuthentication|description": {
-    "en": "be06d364ace2ff42",
-    "text": "/authn/spnego 是否将 Kerberos 票据转换为浏览器会话——集成身份验证，对所有应用都可用，而不特定于某个应用。关闭时，该端点应答 403 并说明是哪项设置所致，/spnego/protected 仍会执行完整的握手并向您展示其两半；它不会做的是给您一个会话。在此项关闭时指定 `spnego` 机制的应用或联合关系，会在登录界面上被报告，而不是在流程进行到一半时遇到 403。"
+    "en": "78a74a328a889e90",
+    "text": "/authn/spnego 是否将 Kerberos 票据转换为浏览器会话——集成身份验证，对所有应用都可用，而不特定于某个应用。关闭时，该端点应答 403 并说明是哪项设置所致。在此项关闭时指定 `spnego` 机制的应用或联合关系，会在登录界面上被报告，而不是在流程进行到一半时遇到 403。"
   },
   "krb5.personKeys|label": {
     "en": "130db32cf78d7adf",

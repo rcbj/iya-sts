@@ -246,11 +246,14 @@ function childMain() {
       note(kerberosPages.indexOf('/admin/kerberos') >= 0 &&
            kerberosPages.indexOf('/admin/kerberos/claims') < 0 &&
            kerberosPages.indexOf('/admin/kerberos/principals') < 0 &&
-           ['/KdcProxy', '/krb5/principals', '/krb5/service', '/spnego',
-            '/spnego/protected', '/authn/spnego']
-             .every(function (route) {
-               return kerberos.indexOf(route) >= 0;
-             }),
+           ['/KdcProxy', '/authn/spnego'].every(function (route) {
+             return kerberos.indexOf(route) >= 0;
+           }) &&
+           // #595: the demonstrations left, and so did their rows.
+           ['/krb5/principals', '/krb5/service', '/spnego',
+            '/spnego/protected'].every(function (route) {
+             return kerberos.indexOf(route) < 0;
+           }),
            'the combined Kerberos page owns its protocol endpoints',
            'pages=' + kerberosPages.join(', ') + '; routes=' +
            kerberos.join(', '));

@@ -325,7 +325,8 @@ so must `admin-ui/admin.ts`.
    it can do instead is `oauth2.breakIdTokenNonce` — a deliberately wrong nonce,
    off by default, NOT part of this mode (it is useful in either), reported on
    `GET /oauth2/rfc9700` and logged on every token it spoils. That is the same
-   device as `/spnego`'s three knobs and the reserved password `invalid`: a
+   device as the reserved password `invalid` (and `/spnego`'s three knobs,
+   until #595 moved the page to the companion): a
    reachable negative. Do not fold it into the mode — a compliance flag that
    also breaks tokens is a flag nobody will turn on.
 

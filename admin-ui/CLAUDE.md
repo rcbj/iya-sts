@@ -3929,8 +3929,9 @@ tables, each refused only to a realm authority (`refusalFor()`):
   Any field of a body naming one is refused (`STS-ADMIN-0788`). **The `krb5.`
   PREFIX BECAME SIX KEYS on 2026-09-15**, for the reason Kerberos left
   `SERVICE_PAGES`: the ten rows a realm's principal database is built from are
-  the realm administrator's, and what stays the service's is the two sockets
-  (`krb5.kdcPort`, `krb5.servicePort`) and the development-mode trust
+  the realm administrator's, and what stays the service's is the KDC's socket
+  (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595) and the
+  development-mode trust
   (`krb5.trustedRealm` and its three).
   **The `admin.*` and `adminApi.*` gate settings were made `perProcess` for the
   same reason** — a realm override of the console's own groups would otherwise

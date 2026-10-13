@@ -32,8 +32,8 @@
     "text": "partial: anim na service at 42 method ang inihahain mula sa mga vendored proto, at 36 dito ang naipatupad. Ang anim na hindi ay may kanya-kanyang dahilan sa sagot — AppendBundle at PublishJWTAuthority (maglalathala sila ng authority na walang hawak na key ang server na ito), RefreshBundle (kukuha ito ng URL na inirehistro ng kung sino), at ang tatlong WIT method. NA-AUTHENTICATE AT PINAHIHINTULUTAN ANG CALLER: mutual TLS ang TCP port, kinukuha ang SPIFFE ID ng caller mula sa URI SAN ng X509-SVID nito at vine-verify laban sa trust bundle, at sinusuri ang bawat method laban sa sariling policy_data.json ng SPIRE — local, agent, admin, downstream — na pinagkakatiwalaan ang Unix socket bilang `local` gaya ng pagtitiwala ng tunay na spire-server sa pribado nitong socket. Dahil dito, hindi na unimplemented ang RenewAgent: nire-renew nito ang agent sa connection. Walang setting na nagbabalik sa dating posture, kung saan plain ang port at sinumang makaabot dito ay makakagawa ng registration entry na nagbibigay ng anumang identity: inalis ang spiffe.authRequired noong 2026-09-06."
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "df72e1139e447029",
-    "text": "partial: ang mga AS at TGS exchange sa TCP, UDP at MS-KKDCP, na may pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 na may dalang salt, mga ticket flag, pagpapatupad ng clock skew at ang katalogo ng error. Dalawang realm na may trust sa pagitan nila, kaya gumagana ang mga cross-realm referral. Sariling mga row ang FAST at OTP pre-authentication (RFC 6113, RFC 6560), pati ang PKINIT (RFC 4556); walang request signature, walang kpasswd (ang S4U ay [MS-SFU], sariling row nito). Sa protektadong serbisyo kabilang ang AP exchange, hindi dito. Nag-a-authenticate ang KAHIT ANONG username at iisang password ang pinagsasaluhan ng bawat user account, na inilalathala ng GET /krb5/principals: totoong vine-verify ang pre-authentication (ang password ang key, kaya kailangan), pero iisang password ito para sa lahat at ginagawa agad ang hindi kilalang username sa halip na tanggihan. IYAN ANG DEVELOPMENT MODE. Sa product mode, wala ang mga fixture account, ang pangalawang realm at bawat delegation rule, walang ginagawa kapag hiningi, walang password na inilalathala, umiiral lang ang naka-configure na service account kung saan nakatakda ang krb5.servicePassword sa ibang halaga bukod sa inilathalang default nito, at RANDOM ang krbtgt key ng bawat realm, naka-seal sa directory at nire-rotate ng krb5.krbtgt-rotate job (krb5.krbtgtRotationIntervalDays), at itinatago ang version na pinapalitan nito hanggang sa pinakamahabang buhay ng isang TGT sa ilalim nito; walang itinatago ang \"rotate and invalidate\". Walang standardized na post-quantum Kerberos enctype, kaya ang mga AES enctype ang ginagamit ng rotation. Ina-authenticate ng isang product KDC ang mga TAO sa directory gamit ang mga key na hinango sa sarili nilang password (pagkatapos nilang mag-sign in nang isang beses), at ang mga service principal gamit ang mga random key na ginawa ng operator; at ang taong may hawak o dapat may hawak ng second factor ay WALANG ticket na makukuha sa password lang (KDC_ERR_POLICY, pagkatapos ma-verify ang password) — sa pamamagitan lang ng FAST na may OTP pre-authentication, o gamit ang certificate sa pamamagitan ng PKINIT."
+    "en": "f830c0cae35e4109",
+    "text": "partial: ang mga AS at TGS exchange sa TCP, UDP at MS-KKDCP, na may pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 na may dalang salt, mga ticket flag, pagpapatupad ng clock skew at ang katalogo ng error. Dalawang realm na may trust sa pagitan nila, kaya gumagana ang mga cross-realm referral. Sariling mga row ang FAST at OTP pre-authentication (RFC 6113, RFC 6560), pati ang PKINIT (RFC 4556); walang request signature, walang kpasswd (ang S4U ay [MS-SFU], sariling row nito). Sa acceptor (SPNEGO) kabilang ang AP exchange, hindi dito. Nag-a-authenticate ang KAHIT ANONG username at iisang password ang pinagsasaluhan ng bawat user account, na inilalathala ng setting na krb5.userPassword: totoong vine-verify ang pre-authentication (ang password ang key, kaya kailangan), pero iisang password ito para sa lahat at ginagawa agad ang hindi kilalang username sa halip na tanggihan. IYAN ANG DEVELOPMENT MODE. Sa product mode, wala ang mga fixture account, ang pangalawang realm at bawat delegation rule, walang ginagawa kapag hiningi, walang password na inilalathala, umiiral lang ang naka-configure na service account kung saan nakatakda ang krb5.servicePassword sa ibang halaga bukod sa inilathalang default nito, at RANDOM ang krbtgt key ng bawat realm, naka-seal sa directory at nire-rotate ng krb5.krbtgt-rotate job (krb5.krbtgtRotationIntervalDays), at itinatago ang version na pinapalitan nito hanggang sa pinakamahabang buhay ng isang TGT sa ilalim nito; walang itinatago ang \"rotate and invalidate\". Walang standardized na post-quantum Kerberos enctype, kaya ang mga AES enctype ang ginagamit ng rotation. Ina-authenticate ng isang product KDC ang mga TAO sa directory gamit ang mga key na hinango sa sarili nilang password (pagkatapos nilang mag-sign in nang isang beses), at ang mga service principal gamit ang mga random key na ginawa ng operator; at ang taong may hawak o dapat may hawak ng second factor ay WALANG ticket na makukuha sa password lang (KDC_ERR_POLICY, pagkatapos ma-verify ang password) — sa pamamagitan lang ng FAST na may OTP pre-authentication, o gamit ang certificate sa pamamagitan ng PKINIT."
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -710,26 +710,6 @@
   "stsmetadata.endpoints./KdcProxy.what": {
     "en": "39d7480d625c43d6",
     "text": "Ipinapasa ang isang KDC-PROXY-MESSAGE sa KDC na nakikinig sa TCP at UDP port 88 sa process na ito. Hindi makapagbukas ng raw socket ang browser, kaya ganito naaabot ng in-browser client ang isang KDC nang walang api relay."
-  },
-  "stsmetadata.endpoints./krb5/principals.what": {
-    "en": "e857357e62157f67",
-    "text": "Ang principal database ng parehong realm: mga pangalan, salt (na HINDI mahahango sa principal name, kaya umiiral ang PA-ETYPE-INFO2), mga iniaalok na etype, ang mga sadyang maling configuration, at ang PAC identity na dala ng bawat account. Gayundin ang account policy — anumang username ay nakaka-authenticate, iisang password ang gamit ng lahat ng user, at dito nakasulat ang password na iyon. Hindi tunay na Kerberos endpoint — walang inilalathalang ganito ang isang KDC."
-  },
-  "stsmetadata.endpoints./krb5/service.what": {
-    "en": "0dd3e8c8492058d0",
-    "text": "Kung ano ang AP-REQ acceptor, kung saan nakikinig ang raw TCP socket nito, at ang sunud-sunod na pagsusuring inilalapat nito sa isang ticket. Hindi rin ito tunay na Kerberos endpoint."
-  },
-  "stsmetadata.endpoints./spnego.what": {
-    "en": "fcacaf13e1689e84",
-    "text": "Sinasabi na umiiral ang /spnego/protected, kung aling service principal name ang nasa likod nito, kung aling mga mechanism ang tinatanggap, at kung aling mga query knob ang nagpapabigo sa negotiation sa isang partikular na paraan. Wala sa mga iyon ang nasa mismong palitan ng protocol — kailangang hanguin ng client ang SPN mula sa URL at hanapin ang KDC mula sa sarili nitong configuration, kaya napakaraming SPNEGO failure ang walang naiiwang ebidensya sa wire. Idagdag ang ?format=json."
-  },
-  "stsmetadata.endpoints./spnego/pages.js.what": {
-    "en": "98f0627014fe9965",
-    "text": "NON-SPEC (#583). Ang runtime at mga renderer ng dalawang demonstration page ng SPNEGO, sa iisang file na binuo ng build-typescript.sh (kerberos/spnego-pages-spa.js) at inihahain nang naka-precompress: iginuguhit nito ang /spnego, at ang body ng bawat sagot na ibinibigay ng /spnego/protected, mula sa estadong dala ng bawat shell. Hindi kasama sa iginuguhit nito ang status ng negotiation at ang WWW-Authenticate header nito."
-  },
-  "stsmetadata.endpoints./spnego/protected.what": {
-    "en": "65103e3f5c4a9682",
-    "text": "Sumasagot ng 401 na may hubad na \"WWW-Authenticate: Negotiate\" sa request na hindi authenticated, at ng 200 na may AP-REP sa header na iyon sa isang valid na request. Ang mga Kerberos check ay sa krb5_service.js, walang binago — idinadagdag lang ng endpoint na ito ang negotiation at ang HTTP na nagdadala nito at walang sariling protocol code."
   },
   "stsmetadata.endpoints./xacml.what": {
     "en": "c6327138add686ae",
@@ -2376,8 +2356,8 @@
     "text": "itinatanong kung saan sa mga federated identity provider ng isang application magsa-sign in; kailangan ng ?authn= id, kaya sumasagot ng 400 kapag sinundan nang walang laman"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "827e8510ccf17768",
-    "text": "INTEGRATED AUTHENTICATION, AT ANG NAG-IISANG SIGN-IN DITO NA NAKASANDAL SA CREDENTIAL NA TUNAY NA VINE-VERIFY NG SERBISYONG ITO. Sa ibang lugar, ang na-type na username AY ang identity; hindi ganoon kaya gumana ang Kerberos, dahil ang password doon ay ang key — kaya sinusuri ng pintong ito ang tunay na service ticket laban sa tunay na long-term key, sa pamamagitan ng parehong acceptor na ginagamit ng /spnego/protected at walang sariling protocol code. Kasing-permissive pa rin ng pinapayagan ng protocol ang KDC sa likod nito (anumang username, iisang shared password, account na ginagawa sa unang pagkakita), na siyang nagpapanatiling maluwag ang development mode — tunay ang verification, hindi ang account policy. AVAILABLE ITO SA BAWAT APPLICATION at hindi nakarehistro sa alinman: inaalok ito ng button sa /authn/login para sa anumang flow na kasalukuyang nagaganap, ipinapadala ng appAuthnMechanism: spnego sa application entry ang mga tao ng application na iyon nang diretso rito, at ginagawa ng fedAuthnMechanism: spnego sa identity-provider-side na federation relationship na matugunan ng Kerberos ticket ang banyagang partner na hindi pa kailanman nakarinig ng Kerberos. Ang aangkinin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET — amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at wala talaga para sa ticket na walang inaangkin sa dalawa, dahil hindi magpapangalan ang serbisyong ito ng factor na walang credential na nagpatunay. Tumatanggap ito ng ?authn= at HINDI KAILANMAN returnTo: nasa pending record ang return address, kaya walang open-redirect surface dito. Ang client na hindi makakuha ng ticket ay makakakita ng page na may link sa sign-in screen, dahil dead end ang simpleng 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito. Ino-off ito ng krb5.spnegoAuthentication, at sumasagot ito pagkatapos ng 403 na sinasabi iyon sa halip na 404."
+    "en": "23818b4a272ea292",
+    "text": "INTEGRATED AUTHENTICATION, AT ANG NAG-IISANG SIGN-IN DITO NA NAKASANDAL SA CREDENTIAL NA TUNAY NA VINE-VERIFY NG SERBISYONG ITO. Sa ibang lugar, ang na-type na username AY ang identity; hindi ganoon kaya gumana ang Kerberos, dahil ang password doon ay ang key — kaya sinusuri ng pintong ito ang tunay na service ticket laban sa tunay na long-term key, sa pamamagitan ng sariling acceptor ng serbisyong ito at walang sariling protocol code. Kasing-permissive pa rin ng pinapayagan ng protocol ang KDC sa likod nito (anumang username, iisang shared password, account na ginagawa sa unang pagkakita), na siyang nagpapanatiling maluwag ang development mode — tunay ang verification, hindi ang account policy. AVAILABLE ITO SA BAWAT APPLICATION at hindi nakarehistro sa alinman: inaalok ito ng button sa /authn/login para sa anumang flow na kasalukuyang nagaganap, ipinapadala ng appAuthnMechanism: spnego sa application entry ang mga tao ng application na iyon nang diretso rito, at ginagawa ng fedAuthnMechanism: spnego sa identity-provider-side na federation relationship na matugunan ng Kerberos ticket ang banyagang partner na hindi pa kailanman nakarinig ng Kerberos. Ang aangkinin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET — amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at wala talaga para sa ticket na walang inaangkin sa dalawa, dahil hindi magpapangalan ang serbisyong ito ng factor na walang credential na nagpatunay. Tumatanggap ito ng ?authn= at HINDI KAILANMAN returnTo: nasa pending record ang return address, kaya walang open-redirect surface dito. Ang client na hindi makakuha ng ticket ay makakakita ng page na may link sa sign-in screen, dahil dead end ang simpleng 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito. Ino-off ito ng krb5.spnegoAuthentication, at sumasagot ito pagkatapos ng 403 na sinasabi iyon sa halip na 404."
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -3320,28 +3300,20 @@
     "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), nag-iisyu ng alinmang SAML dialect na signed ang assertion at opsyonal na encrypted para sa certificate ng requestor."
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "73e20c397fc290ee",
-    "text": "Isang KDC: AS-REQ / TGS-REQ, pre-authentication, apat na encryption type, isang Microsoft PAC sa ticket, cross-realm referral at constrained delegation. Ang mga row sa page na ito ay ang mga HTTP view nito at ang MS-KKDCP proxy nito, na umiiral dahil hindi makapagbubukas ng socket ang browser."
+    "en": "3048c833f899933d",
+    "text": "Isang KDC: AS-REQ / TGS-REQ, pre-authentication, apat na encryption type, isang Microsoft PAC sa ticket, mga cross-realm referral at constrained delegation. Ang row sa pahinang ito ay ang MS-KKDCP proxy nito, na umiiral dahil hindi makapagbukas ng socket ang browser."
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
     "text": "Ang KDC mismo ay TCP at UDP port 88, na hindi nakikita ng page na ito."
   },
-  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
-    "en": "3048c833f899933d",
-    "text": "Isang KDC: AS-REQ / TGS-REQ, pre-authentication, apat na encryption type, isang Microsoft PAC sa ticket, mga cross-realm referral at constrained delegation. Ang row sa pahinang ito ay ang MS-KKDCP proxy nito, na umiiral dahil hindi makapagbukas ng socket ang browser."
-  },
   "stsmetadata.protocols.SPNEGO.what": {
-    "en": "17e95091fc9d97ee",
-    "text": "Kerberos sa HTTP: sumasagot ang /spnego/protected ng 401 WWW-Authenticate: Negotiate, binabasa ang NegTokenInit na ibinabalik ng browser o client, at tinatanggap ang AP-REQ sa loob nito laban sa key ng service principal."
+    "en": "dcf9bfda53ee9570",
+    "text": "Kerberos sa HTTP: sumasagot ang /authn/spnego ng 401 WWW-Authenticate: Negotiate, binabasa ang NegTokenInit na ibinabalik ng browser, tinatanggap ang AP-REQ sa loob nito laban sa key ng service principal, at sina-sign in ang client nito (ang Authentication group)."
   },
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "Ang ticket na tinatanggap nito ay galing sa KDC sa port 88."
-  },
-  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
-    "en": "dcf9bfda53ee9570",
-    "text": "Kerberos sa HTTP: sumasagot ang /authn/spnego ng 401 WWW-Authenticate: Negotiate, binabasa ang NegTokenInit na ibinabalik ng browser, tinatanggap ang AP-REQ sa loob nito laban sa key ng service principal, at sina-sign in ang client nito (ang Authentication group)."
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

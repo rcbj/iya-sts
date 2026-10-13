@@ -84,7 +84,6 @@ interface InstalledModule {
 // report their listeners.
 interface StackSockets {
   krb5: any;
-  krb5Service: any;
   tlsServer: any;
   ldapServer: any;
   spiffeServer: any;
@@ -861,23 +860,19 @@ class ProtocolStack {
     // 14c's; and the KDC requires nothing new, so the parent project's COPY
     // closure does not move.
     require('../kerberos/krb5_home').install(krb5);
-    // The Kerberos-protected service. Like the KDC it registers its HTTP view
-    // at require time and starts its socket from listen(), for the same reason.
-    const krb5Service = require('../kerberos/krb5_service');
-    // The same acceptor over HTTP: SPNEGO. It must come AFTER krb5_service.js
-    // and the order is a dependency rather than a preference — it calls that
-    // module's accept() for every Kerberos check and adds none of its own.
-    // Unlike the two above it starts nothing: it is HTTP all the way down, so
-    // requiring it is the whole of its installation.
+    // The acceptor `/authn/spnego` uses, and its replay cache. Since #595 it
+    // registers no route and binds no socket: its demonstration view
+    // (`/krb5/service`) and the protected service's TCP socket
+    // (`krb5.servicePort`) are the development companion's now
+    // (`companion/demo_kerberos.js`). Still required here, in its old place,
+    // so the require order — and its load-time capability — is unchanged.
+    require('../kerberos/krb5_service');
+    // The SPNEGO sign-in's page shell. It must come AFTER krb5_service.js,
+    // in the order `spnego_exchange.js` needs them. Since #595 it registers
+    // nothing either: `/spnego` and `/spnego/protected` left with the
+    // demonstration for the companion, and with them their script
+    // `/spnego/pages.js` (#583).
     require('../kerberos/spnego');
-    // 17-pages. THE SPNEGO DEMONSTRATION PAGES' SCRIPT (#583):
-    // `/spnego/pages.js`, which draws `/spnego` and `/spnego/protected`'s
-    // bodies from the state their shells carry. `spnego.js` reaches this
-    // module lazily, when a page is drawn, so that file's require closure —
-    // the parent project's COPY set — does not grow; its one route collides
-    // with nothing, and sits beside the pages it draws.
-    this.register(app, require('../kerberos/spnego_pages'),
-                  'kerberos/spnego_pages');
     // -------------------------------------------------------------------------
     // AND THE SAME HANDSHAKE AS A SIGN-IN: /authn/spnego, which turns a
     // Kerberos ticket into the browser session every protocol family here
@@ -1987,7 +1982,6 @@ class ProtocolStack {
                       this.installed.length + " instance(s) built here.");
     return {
       krb5: krb5,
-      krb5Service: krb5Service,
       tlsServer: tlsServer,
       ldapServer: ldapServer,
       spiffeServer: spiffeServer,
@@ -2022,7 +2016,6 @@ export = {
   instanceOrigins: stack.instanceOrigins.bind(stack) as
     ProtocolStack['instanceOrigins'],
   krb5: sockets.krb5,
-  krb5Service: sockets.krb5Service,
   tlsServer: sockets.tlsServer,
   ldapServer: sockets.ldapServer,
   spiffeServer: sockets.spiffeServer,

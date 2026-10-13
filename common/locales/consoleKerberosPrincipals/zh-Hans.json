@@ -84,5 +84,9 @@
   "noButton": "<strong>再次下载 keytab。</strong>已存储的密钥永远不会被读出：服务主体的 keytab 由生成它的创建或轮换操作交付，丢失后通过轮换来替换。个人的 keytab（#59）由已知的密码派生：在“目录 &rarr; 用户”下其页面上的<strong>重置密码并下载 keytab</strong>，或其本人在 <code>/portal/kerberos</code> 上的密码。<strong>设置个人的密钥。</strong>密钥只来自此人的密码，别无其他来源；清除是唯一的控制操作，下一次经验证的登录会重新派生它们。",
   "linkApi": "通过管理 API 获取相同内容",
   "linkSettings": "Kerberos 设置",
-  "linkDb": "主体数据库"
+  "hDatabase": "主体数据库",
+  "database": "此 KDC 持有的每个主体，仅列出其公开字段：客户端从 KDC 自身应答中即可得知的盐值和加密类型、kvno 以及各项标志。开发模式的测试账户和首次出现时创建的名称都在其中；不含任何密钥或密码。",
+  "nounDatabase": "个主体",
+  "thSalt": "盐值",
+  "thFlags": "标志"
 }

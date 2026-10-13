@@ -76,7 +76,7 @@ To check which build a running container is, see
 | `openbao-seed` | this repository's | One-shot, idempotent. Initialises the store, writes the secrets, creates the Transit key `sts-kek`, issues the service its client certificate, and hands each node a single-use start-up token. |
 | `sts` | this repository's (`iyasec/iya-sts`) | The service. It waits until the database is healthy and the seeder has finished. |
 | `xacml-pep` | `iyasec/iya-sts-xacml-pep`, built from `xacml-pep/Dockerfile` | The [remote XACML PEP](remote-pep.md). It is only started with `--profile xacml`. |
-| `companion` | `iya-sts-companion`, built from `companion/` | **Development only.** The click-through demonstrations, played by a separate party in front of the service: a Example University issuer and a bar-door verifier for OpenID4VC (see [The companion](#the-companion-development-only)). It is only started with `--profile companion`. |
+| `companion` | `iya-sts-companion`, built from `companion/` | **Development only.** The click-through demonstrations, played by a separate party in front of the service: a Example University issuer and a bar-door verifier for OpenID4VC, and a Kerberos-protected page and TCP service (see [The companion](#the-companion-development-only)). It is only started with `--profile companion`. |
 
 The `sts` container starts as root for three steps:
 
@@ -103,6 +103,7 @@ so the service starts without the pinned management API secret.
 | 88, TCP and UDP | 88 | The Kerberos KDC, so `kinit` and a browser's SPNEGO sign-in work from the host ([Kerberos](#kerberos)) | `STS_KDC_HOST_PORT` |
 | 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
 | 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
+| 8888 | 8888 | The companion's Kerberos-protected TCP service (`companion` profile only) | `COMPANION_KRB5_HOST_PORT` |
 
 To move the main port, change only the host side. The service builds its
 published URLs from the `Host` header of each request. `STS_PKI_HOST_PORT` is
@@ -232,8 +233,9 @@ wrong place, and the symptom looks like an unrelated timeout.
 ## The companion (development only)
 
 The service ships no demonstration pages. The OpenID4VC issuer and verifier a
-person clicks through — and that the embedded debugger's credential pages
-point at — are a second container, started only when asked:
+person clicks through, and the Kerberos-protected page and service — what the
+embedded debugger's credential and Kerberos pages point at — are a second
+container, started only when asked:
 
 ```bash
 ADMIN_API_CLIENT_SECRET=$(openssl rand -base64 24) \
@@ -252,6 +254,22 @@ verifier's web site would:
   /admin-api/verifications/start`, naming its own `/verifier/done` as the
   page the wallet is sent to afterwards, and reads the verdict at `GET
   /admin-api/verifications?state=`.
+* **The Kerberos-protected page** (`/spnego`, `/spnego/protected`) and **TCP
+  service** (port 8888, `/krb5/service` describes it) are a Kerberos service
+  of the companion's own, accepted by MIT Kerberos with a keytab the KDC made
+  for it: at the first request that needs one, the companion asks `POST
+  /admin-api/kerberos/principals/create-service` for its principal — after a
+  restart, `rotate-service` — and writes the keytab only it can read.
+  [Kerberos](kerberos.md#the-demonstration-the-companions-kerberos-protected-page-and-service)
+  says what it does.
+
+  Its principal is `HTTP/<the host of COMPANION_PUBLIC_URL>`, the name a
+  client derives from the URL. At `localhost` that is `HTTP/localhost`, the
+  name the service's own `/authn/spnego` is reached under too, so give the
+  companion a host of its own (`COMPANION_PUBLIC_URL=http://companion.localhost:9700`,
+  or `COMPANION_KRB5_SPN`). The KDC is the service's: over port 88, or over
+  MS-KKDCP, which `kinit` speaks with `kdc = https://localhost:8081/KdcProxy`
+  in its `krb5.conf`.
 
 It calls `/admin-api` as an application of its own, `iya-sts-companion`,
 holding Admin Read and Admin Write. Give it either
@@ -270,6 +288,9 @@ only its own credentials afterwards.
 | `COMPANION_STS_CA_FILE` | empty | The service Root to verify its certificate against |
 | `COMPANION_STS_TLS_INSECURE` | `true` | With no CA file, do not verify the service's certificate. Development only |
 | `COMPANION_WALLET_URL` | empty | A wallet's issuance page for the offer's link, besides the `openid-credential-offer://` link and QR code |
+| `COMPANION_KRB5_SPN` | empty | The Kerberos demonstration's service principal; empty is `HTTP/<the host of COMPANION_PUBLIC_URL>` |
+| `COMPANION_KRB5_SERVICE_PORT` | `8888` | The protected TCP service's port inside the container; `off` binds none |
+| `COMPANION_KRB5_KEYTAB_DIR` | a fresh temporary directory | Where the keytab is written (mode 0600) |
 
 [Configuration](configuration.md) lists every setting and its environment
 variable.
@@ -311,4 +332,4 @@ variable.
 * [Encryption at rest](encryption-at-rest.md): OpenBao, the Transit key, rotation
 * [Management API](management-api.md): the first token on this stack
 * [Remote PEP](remote-pep.md): the `xacml` profile
-* [OpenID4VCI](oid4vci.md) and [OpenID4VP](oid4vp.md): what the companion demonstrates
+* [OpenID4VCI](oid4vci.md), [OpenID4VP](oid4vp.md) and [Kerberos](kerberos.md): what the companion demonstrates

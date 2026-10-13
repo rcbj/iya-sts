@@ -129,7 +129,6 @@ const EXEMPT = {
 const SOCKET_NAMES = Object.freeze({
   kdc: 'Key Distribution Center',
   kdcRealm: 'Key Distribution Center (realm {{realm}})',
-  krb5Service: 'The protected Kerberos service (AP-REQ)',
   mainPort: 'Client certificates on the main port',
   mainPortTransport: 'TLS (a client certificate asked for, never required)'
 });
@@ -441,11 +440,11 @@ class ProtocolEndpoints {
                                      '/account-api/devices/proof',
                                      '/.well-known/est/:label/simpleenroll',
                                      '/enroll/scep'].map(route),
-      '/admin/kerberos': [this.socket('kdc'), this.socket('krb5-service'),
-                          this.route('/KdcProxy'),
-                          this.route('/krb5/principals'),
-                          this.route('/krb5/service'), this.route('/spnego'),
-                          this.route('/spnego/protected'),
+      // The demonstrations `/krb5/principals`, `/krb5/service`, `/spnego`,
+      // `/spnego/protected` and the protected service's TCP socket left with
+      // #595: the first is `GET /admin-api/kerberos/principals`, the rest
+      // are the development companion's.
+      '/admin/kerberos': [this.socket('kdc'), this.route('/KdcProxy'),
                           this.route('/authn/spnego')],
       '/admin/ldap': [this.socket('ldap')],
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
@@ -501,23 +500,6 @@ class ProtocolEndpoints {
           { name: name, methods: [],
             url: 'udp://' + host + ':' + port, transport: 'UDP' }
         ];
-      },
-      'krb5-service': function (host) {
-        log.debug("Entering the krb5-service socket builder.");
-        // A DEMONSTRATION (#585) the PROCESS binds only in development:
-        // `processDemoOnly`'s question, through the shared app if something
-        // loaded it (never loaded from here, for the header's reason).
-        const shared = self.loaded('../common/app');
-        if (shared && shared.processDemoOnly &&
-            !shared.processDemoOnly.serves()) {
-          log.debug("Leaving the krb5-service socket builder. Not bound in " +
-                    "a product process.");
-          return [];
-        }
-        log.debug("Leaving the krb5-service socket builder.");
-        return [{ name: SOCKET_NAMES.krb5Service, methods: [],
-                  url: 'tcp://' + host + ':' + config.value('krb5.servicePort'),
-                  transport: 'TCP' }];
       },
       ldap: function (host) {
         log.debug("Entering the ldap socket builder.");

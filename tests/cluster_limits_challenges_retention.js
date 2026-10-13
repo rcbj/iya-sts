@@ -405,7 +405,9 @@ function childMain() {
       const spnego = require(ROOT + '/kerberos/krb5_spnego.js');
       const prim = require(ROOT + '/kerberos/krb5_primitives.js');
       const pendingHandle = realms.handleFor('spnego.pending');
-      const DOOR = '/spnego/protected';
+      // The sign-in's door: the demonstration page `/spnego/protected`,
+      // which this used until #595, is the development companion's now.
+      const DOOR = '/authn/spnego';
       const BALANCER = '10.9.9.9';
       const negotiation = function (client) {
         return { id: nodeCrypto.randomBytes(18).toString('base64url'),

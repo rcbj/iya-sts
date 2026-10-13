@@ -4883,10 +4883,11 @@ class OAuth2Server {
     // must validate this value, and no observation this server can make tells a
     // client that checks from one that does not. Spoiling it on purpose does: a
     // client that accepts the result is a client that is not checking. It is
-    // the same device as /spnego's three knobs and the literal password
-    // `invalid` — a reachable negative, off by default, and loud every single
-    // time, because an ID Token that is wrong in a way nobody remembers turning
-    // on would be the most expensive hour in this repository.
+    // the same device as the literal password `invalid` (and the three knobs
+    // `/spnego` took until #595) — a reachable negative, off by default,
+    // and loud every single time, because an ID Token that is wrong in a way
+    // nobody remembers turning on would be the most expensive hour in this
+    // repository.
     //
     // DEVELOPMENT MODE ONLY (#104, `mode.spoilsOnPurpose()`): read through
     // `mode.valueInForce()`, which answers the default in a product realm

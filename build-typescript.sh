@@ -256,13 +256,9 @@ bundle_surface "the description pages" common/web_description_pages.ts \
 # `/tls/forwarded` are Monitoring → TLS connection, a page of the console's
 # own bundle (`tls/web_tls_connection.ts`).
 
-# THE SPNEGO DEMONSTRATION PAGES (#583): `kerberos/spnego-pages.bundle.js`
-# (`StsSpnegoPages`, `web_spnego_pages.ts`) and `kerberos/spnego-pages-spa.js`
-# (`web_spnego_surface.ts`), served at `/spnego/pages.js` — never
-# `spnego_pages.js`, which is `spnego_pages.ts`.
-bundle_surface "the SPNEGO demonstration pages" kerberos/web_spnego_pages.ts \
-  StsSpnegoPages kerberos/spnego-pages.bundle.js \
-  kerberos/web_spnego_surface.ts kerberos/spnego-pages-spa.js
+# THE SPNEGO DEMONSTRATION PAGES' BUNDLE (#583) WENT WITH THEM (#595):
+# `/spnego` and `/spnego/protected` are the development companion's
+# (`companion/demo_kerberos.js`), which draws them on its server.
 
 # A PUBLIC SURFACE OF #569 IS ONE MORE LINE HERE, in the same shape, and one
 # row in `tests/tools/web_surfaces.js` (`common/CLAUDE.md`, *Static public

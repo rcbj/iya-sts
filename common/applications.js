@@ -132,9 +132,10 @@
 // (That page was unprotected when this was written; it is behind the console
 // gate since 2026-09-06, and an LDAP search never returns the attribute —
 // `ldap/ldap_server.js`'s `SECRET_ATTRIBUTES`.) The same objection applies to
-// `GET /krb5/principals`, which prints Kerberos passwords, and the answer is
-// the one written there: a debugger whose accounts are unusable without
-// reading the source is worse than one that says what they are. The secret is
+// `GET /krb5/principals`, which printed Kerberos passwords until #595, and
+// the answer is the one written there: a debugger whose accounts are
+// unusable without reading the source is worse than one that says what they
+// are. The secret is
 // generated per registration and lives on the entry, so it is written down
 // wherever the directory is (`persistence/CLAUDE.md`).
 //

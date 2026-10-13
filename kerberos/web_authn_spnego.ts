@@ -159,8 +159,8 @@ class WebAuthnSpnego {
   /**
    * The 403's page: the door is off. English, as a refusal is.
    *
-   * @param view - the view: `setting`, and `demoPath` where
-   *   this realm is served the demonstration
+   * @param view - the view: `setting` (a `demoPath`, the demonstration page,
+   *   until #595 moved it to the development companion)
    * @param t - the translator, for the link back only
    * @returns the HTML
    */
@@ -171,13 +171,7 @@ class WebAuthnSpnego {
       'with a Kerberos ticket, and <code>' + esc(view.setting) +
       '</code> is set to false.</div><p>Turn it on at <a href="' +
       esc(CONSOLE_PATH) + '">' + esc(CONSOLE_PATH) + '</a>, or ' +
-      'with <code>POST /admin-api/config/set</code>.' +
-      (view.demoPath
-         ? ' Nothing else changes when it is off: <a href="' +
-           esc(view.demoPath) + '">' + esc(view.demoPath) + '</a> still ' +
-           'performs the whole handshake and shows you both halves of it ' +
-           '&mdash; what it will not do is give you a session.'
-         : '') + '</p>' +
+      'with <code>POST /admin-api/config/set</code>.</p>' +
       WebAuthnSpnego.fallback(view, t);
   }
 

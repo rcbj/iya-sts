@@ -84,5 +84,9 @@
   "noButton": "<strong>Pag-download muli ng keytab.</strong> Hindi kailanman binabasa pabalik ang naka-store na key: ang keytab ng service principal ay ibinibigay ng create o rotate na gumawa nito, at pinapalitan ang nawalang keytab sa pamamagitan ng pag-rotate. Ang keytab ng isang TAO (#59) ay hinango mula sa password na hawak: <strong>I-reset ang password at i-download ang keytab</strong> sa kanyang pahina sa ilalim ng Directory &rarr; Users, o ang sarili niyang password sa <code>/portal/kerberos</code>. <strong>Pag-set ng mga key ng isang tao.</strong> Galing ang mga ito sa password ng tao at sa wala nang iba; ang pag-clear sa mga ito ang tanging kontrol, at hahanguin muli ang mga ito ng susunod na na-verify na pag-sign in.",
   "linkApi": "pareho sa pamamagitan ng management API",
   "linkSettings": "ang mga setting ng Kerberos",
-  "linkDb": "ang database ng principal"
+  "hDatabase": "Ang database ng principal",
+  "database": "Bawat principal na hawak ng KDC na ito, ayon lamang sa mga pampublikong field nito: ang salt at mga enctype na nalalaman ng client mula sa mismong mga sagot ng KDC, ang kvno at ang mga flag. Narito ang mga fixture ng development at ang mga pangalang nilikha sa unang pagkakita; walang key o password.",
+  "nounDatabase": "mga principal",
+  "thSalt": "Salt",
+  "thFlags": "Mga flag"
 }

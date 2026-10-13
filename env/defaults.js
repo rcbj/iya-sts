@@ -876,7 +876,6 @@ var config = {
     enabled: true,                                                 // Enable Kerberos
     realm: "EXAMPLE.COM",                                          // Realm; restart to apply
     kdcPort: 88,                                                   // KDC port; restart to apply
-    servicePort: 8888,                                             // Test service port; restart to apply
     servicePrincipal: "HTTP/web.example.com",                      // Service principal; restart to apply
     servicePassword: "service-account-password",                   // Service principal password; restart to apply
     serviceSalt: "",                                               // Service principal salt; restart to apply

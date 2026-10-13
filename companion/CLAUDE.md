@@ -21,17 +21,23 @@ is why it is shaped the way it is.
 | `companion_util.js` | The logger, the one page layout and its policy, cookies, bodies, answers |
 | `sts_client.js` | The ONE door into the service, and the only module that knows how |
 | `demo_oid4vc.js` | The OpenID4VC demonstration: `/issuer`, `/issuer/offer`, `/verifier`, `POST /verifier/start`, `/verifier/wait`, `/verifier/done` |
+| `demo_kerberos.js` | The Kerberos and SPNEGO demonstration (#595): `/spnego`, `/spnego/protected`, `/krb5/service`, and the protected TCP service on `COMPANION_KRB5_SERVICE_PORT` (8888) |
+| `krb5_error.js` | The one Kerberos message the companion writes itself: the KRB-ERROR its TCP service answers a refusal with |
 
-Node built-ins, `bunyan` and `qrcode`, pinned and installed from the committed
-lockfile. Plain JavaScript and no build: the service's TypeScript conversion
-(#50) is about the service, and this image has nothing to compile.
+Node built-ins, `bunyan`, `qrcode` and `kerberos`, pinned and installed from
+the committed lockfile. Plain JavaScript and no build of its own: the
+service's TypeScript conversion (#50) is about the service. `kerberos` is a
+native module, built from source in the image's first stage against Debian's
+MIT headers (no prebuilt binary is downloaded), and the final stage carries
+only `libgssapi-krb5-2`.
 
 **A DEMONSTRATION IS A MODULE WITH `describe()` AND `mount(router)`**, and a
-line in `companion.js`'s `this.demos`. #595 (P4, Kerberos and SPNEGO) is meant
-to be the second: a `demo_kerberos.js` beside this one, and whatever socket
-it needs (the protected service's TCP port) started from `listen()`, which is
-where the service starts its own sockets and for the same reason — a bind
-can fail, and a require must not.
+line in `companion.js`'s `this.demos`; one with a socket of its own has an
+optional `listen()`, which `Companion.listen()` calls once the pages listen —
+where the service starts its own sockets and for the same reason: a bind can
+fail, and a require must not. `demo_kerberos.js` (#595) is the second
+demonstration and the first with a socket; a failed bind is recorded and
+shown on `/krb5/service`, and the pages go on.
 
 ## How it reaches the service — as anybody would
 
@@ -115,6 +121,64 @@ owns the page. (The service does not append a `response_code` to a starter's
 page: binding the result to the browser is the starter's job, and the
 companion does it with its cookie.)
 
+## The Kerberos demonstration (#595)
+
+rcbj's decision 1 on #591 moved the service's `/spnego`, `/spnego/protected`,
+`/krb5/service` and the protected TCP service (`krb5.servicePort`) here. The
+service's versions were answered by the service's own acceptor with a key the
+service held for itself; here they are **a Kerberos service like any
+customer's**:
+
+* **ITS OWN PRINCIPAL AND KEYTAB, FROM THE KDC'S OPERATOR DOOR.**
+  `COMPANION_KRB5_SPN`, by default `HTTP/<the host of COMPANION_PUBLIC_URL>`
+  — the name a browser and `curl` derive from the URL. `sts_client.js`'s
+  `serviceKeytab()` asks `POST /admin-api/kerberos/principals/create-service`
+  (Admin Write, which the companion holds) for a random key and its MIT
+  keytab, handed over once; refused (the principal holds a stored key from an
+  earlier start, and the companion keeps nothing), it asks `rotate-service`,
+  whose keytab carries the version it replaced for a ticket already issued
+  under it. The keytab is written 0600 to a fresh temporary directory
+  (`COMPANION_KRB5_KEYTAB_DIR`) and named to MIT as `KRB5_KTNAME`. It is
+  asked for at the first request that needs it, and again after a failure,
+  for the registration's reason: a companion that came up first does not fail.
+* **MIT KERBEROS IS THE ACCEPTOR — DECIDED AGAINST PORTING ONE.** The `kerberos`
+  package (MongoDB's, Apache-2.0) is a thin N-API binding over
+  `gss_accept_sec_context()`; the companion calls `initializeServer('')`
+  (GSS_C_NO_CREDENTIAL: any principal the keytab holds — its one) and
+  `step()` once per request. The alternative was an acceptor ported from the
+  service's `krb5_service.js`, or the parent project's codec copied in as
+  vendored code; either would be the service agreeing with itself, which is
+  how its KDC once shipped advertising no PA-ENC-TIMESTAMP with every test
+  green (`kerberos/CLAUDE.md`). MIT checks what an acceptor checks — the
+  ticket under the keytab's key and kvno, the Authenticator, the clock, its
+  replay cache (`/var/tmp`), the GSS checksum — answers SPNEGO and the bare
+  Kerberos mechanism both, and so exercises the KDC as `mod_auth_gssapi`, a
+  JVM or a Windows service would. **It is required lazily**, so the pages and
+  `tests/companion.js` (whose tests image has no MIT libraries) load without
+  it; `deps.gss` is its stand-in there.
+* **WHAT IT DOES NOT HAVE.** The service's pages drew its own acceptor's
+  per-check table and took three knobs (`?mic=require`, `?mech=none`,
+  `?mutual=off`); both were properties of an acceptor the service wrote.
+  MIT's says whether the context was established and, if not, why in one
+  sentence — what a real operator sees — and takes no knobs. A context is
+  one request: a ticket's exchange completes in one round trip and nothing is
+  kept between requests. The negotiation's own diagnostics stay in the
+  service, at `/authn/spnego`.
+* **THE TCP SERVICE** speaks the framing the service's did: a 4-byte length,
+  then a GSS InitialContextToken carrying an AP-REQ (RFC 4121 section 4.1).
+  Accepted with mutual authentication, the GSS-wrapped AP-REP goes back;
+  accepted without, the connection is closed cleanly; refused, a KRB-ERROR —
+  which the binding does not hand over (it keeps MIT's error token and gives
+  back MIT's message), so `krb5_error.js` writes one: the code read off MIT's
+  message (`KRB_AP_ERR_SKEW`, `_REPEAT`, `_NOKEY`, … else `KRB_ERR_GENERIC`),
+  the message as the e-text. More than 64 KiB, or a length with the reserved
+  bit, closes the connection.
+* **TWO SERVICES, ONE HOST NAME, IS THE ONE THING TO WATCH.** A browser on the
+  laptop reaches both the service and the companion at `localhost`, and
+  Kerberos names a service by host, not port: both would be
+  `HTTP/localhost`. `docs/docker-compose.md` tells a user to give the
+  companion a host of its own.
+
 ## The pages carry no script
 
 The service's static-surface rule (root `CLAUDE.md`, *Pages with a script*)
@@ -148,7 +212,14 @@ pages over CDP, which is why that drive is part of the change.
 `tests/companion.js` (in process) runs the companion against a stand-in for
 `sts_client.js` and holds the pages, the policy, the offer's shape, the
 binding of a start, the `redirect_uri` a same-device start names and a
-cross-device one does not, and the verdict shown to one browser only. No
-protocol job needs the companion — every job uses the service's own doors
-(`/admin-api`, `/account-api`, the protocol endpoints) — so it is not on the
-test stack. End to end it was driven over CDP against a private stack.
+cross-device one does not, and the verdict shown to one browser only — and,
+for #595, the Kerberos demonstration with a stand-in acceptor and
+`sts_client.js`'s own provisioning over a stubbed `/admin-api` (create, then
+rotate when held; the keytab's file and mode; the RFC 4559 exchange's
+headers; the TCP framing; the KRB-ERROR, read back by the service's vendored
+codec). No protocol job needs the companion — every job uses the service's
+own doors (`/admin-api`, `/account-api`, the protocol endpoints) — so it is
+not on the test stack. End to end the OpenID4VC half was driven over CDP
+against a private stack, and the Kerberos half with MIT `kinit` and
+`curl --negotiate` from a throwaway container against the companion and the
+service's KDC.

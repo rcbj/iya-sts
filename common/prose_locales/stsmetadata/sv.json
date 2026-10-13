@@ -32,8 +32,8 @@
     "text": "partial: sex tjänster och 42 metoder betjänas från de vendorerade protos, varav 36 är implementerade. De sex som inte är det svarar var och en med ett skäl — AppendBundle och PublishJWTAuthority (de skulle publicera en utfärdare som den här servern inte har någon nyckel för), RefreshBundle (den skulle hämta en URL som någon registrerat) och de tre WIT-metoderna. ANROPAREN AUTENTISERAS OCH AUKTORISERAS: TCP-porten är ömsesidig TLS, anroparens SPIFFE-ID tas från dess X509-SVID:s URI-SAN och verifieras mot förtroendepaketet, och varje metod kontrolleras mot SPIRE:s egen policy_data.json — local, agent, admin, downstream — där Unix-socketen betros som `local` på samma sätt som en riktig spire-server litar på sin privata. RenewAgent slutade vara oimplementerad tack vare detta: den förnyar agenten på anslutningen. Det finns ingen inställning som återställer det gamla läget, där porten var okrypterad och vem som helst som nådde den kunde skapa en registreringspost som beviljade vilken identitet som helst: spiffe.authRequired togs bort 2026-09-06."
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "df72e1139e447029",
-    "text": "partial: AS- och TGS-utbytena över TCP, UDP och MS-KKDCP, med förautentisering (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 som bär saltet, biljettflaggor, tillämpning av klockavvikelse och felkatalogen. Två sfärer med ett förtroende mellan sig, så hänvisningar mellan sfärer fungerar. FAST- och OTP-förautentisering har egna rader (RFC 6113, RFC 6560), och det har även PKINIT (RFC 4556); inga förfrågningssignaturer, ingen kpasswd (S4U är [MS-SFU], en egen rad). AP-utbytet hör till den skyddade tjänsten, inte hit. VILKET användarnamn som helst autentiseras och alla användarkonton delar ETT lösenord, som GET /krb5/principals publicerar: förautentiseringen verifieras på riktigt (lösenordet är nyckeln, så det måste den), men det är samma lösenord för alla och ett okänt användarnamn skapas på stället i stället för att nekas. DET ÄR UTVECKLINGSLÄGE. I produktläge saknas testkontona, den andra sfären och varje delegeringsregel, ingenting skapas på begäran, inget lösenord publiceras, det konfigurerade tjänstekontot finns bara där krb5.servicePassword är satt till något annat än sitt publicerade standardvärde, och varje sfärs krbtgt-nyckel är SLUMPMÄSSIG, förseglad i katalogen och roterad av jobbet krb5.krbtgt-rotate (krb5.krbtgtRotationIntervalDays), där versionen den ersätter behålls så länge en TGT under den längst kan leva; \"rotera och ogiltigförklara\" behåller ingenting. Ingen postkvantkrypterings-enctype för Kerberos är standardiserad, så rotationen använder AES-enctyperna. En KDC i produktläge autentiserar katalogens PERSONER med nycklar härledda från deras egna lösenord (efter att de loggat in en gång), och tjänsteprincipaler med slumpmässiga nycklar som en operatör skapat; och en person som har eller måste ha en andra faktor får INGEN biljett enbart på lösenordet (KDC_ERR_POLICY, efter att lösenordet verifierats) — bara via FAST med OTP-förautentisering, eller med ett certifikat via PKINIT."
+    "en": "f830c0cae35e4109",
+    "text": "partial: AS- och TGS-utbytena över TCP, UDP och MS-KKDCP, med förautentisering (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 som bär saltet, biljettflaggor, tillämpning av klockavvikelse och felkatalogen. Två sfärer med ett förtroende mellan sig, så hänvisningar mellan sfärer fungerar. FAST- och OTP-förautentisering har egna rader (RFC 6113, RFC 6560), och det har även PKINIT (RFC 4556); inga förfrågningssignaturer, ingen kpasswd (S4U är [MS-SFU], en egen rad). AP-utbytet hör till mottagaren (SPNEGO), inte hit. VILKET användarnamn som helst autentiseras och alla användarkonton delar ETT lösenord, som inställningen krb5.userPassword publicerar: förautentiseringen verifieras på riktigt (lösenordet är nyckeln, så det måste den), men det är samma lösenord för alla och ett okänt användarnamn skapas på stället i stället för att nekas. DET ÄR UTVECKLINGSLÄGE. I produktläge saknas testkontona, den andra sfären och varje delegeringsregel, ingenting skapas på begäran, inget lösenord publiceras, det konfigurerade tjänstekontot finns bara där krb5.servicePassword är satt till något annat än sitt publicerade standardvärde, och varje sfärs krbtgt-nyckel är SLUMPMÄSSIG, förseglad i katalogen och roterad av jobbet krb5.krbtgt-rotate (krb5.krbtgtRotationIntervalDays), där versionen den ersätter behålls så länge en TGT under den längst kan leva; \"rotera och ogiltigförklara\" behåller ingenting. Ingen postkvantkrypterings-enctype för Kerberos är standardiserad, så rotationen använder AES-enctyperna. En KDC i produktläge autentiserar katalogens PERSONER med nycklar härledda från deras egna lösenord (efter att de loggat in en gång), och tjänsteprincipaler med slumpmässiga nycklar som en operatör skapat; och en person som har eller måste ha en andra faktor får INGEN biljett enbart på lösenordet (KDC_ERR_POLICY, efter att lösenordet verifierats) — bara via FAST med OTP-förautentisering, eller med ett certifikat via PKINIT."
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -710,26 +710,6 @@
   "stsmetadata.endpoints./KdcProxy.what": {
     "en": "39d7480d625c43d6",
     "text": "Vidarebefordrar ett KDC-PROXY-MESSAGE till den KDC som lyssnar på TCP- och UDP-port 88 i den här processen. En webbläsare kan inte öppna en rå socket, så det är så klienten i webbläsaren når en KDC utan api-reläet."
-  },
-  "stsmetadata.endpoints./krb5/principals.what": {
-    "en": "e857357e62157f67",
-    "text": "Huvudmannadatabasen för båda sfärerna: namn, salter (som INTE kan härledas ur huvudmannanamnet, vilket är varför PA-ETYPE-INFO2 finns), erbjudna etypes, de avsiktliga felkonfigurationerna och den PAC-identitet varje konto bär. Även kontopolicyn — vilket användarnamn som helst autentiseras, alla användare delar ett lösenord, och det är här det lösenordet står nedskrivet. Inte en riktig Kerberos-slutpunkt — en KDC publicerar inget av detta."
-  },
-  "stsmetadata.endpoints./krb5/service.what": {
-    "en": "0dd3e8c8492058d0",
-    "text": "Vad AP-REQ-mottagaren är, var dess råa TCP-socket lyssnar och de ordnade kontroller den tillämpar på en biljett. Inte heller en riktig Kerberos-slutpunkt."
-  },
-  "stsmetadata.endpoints./spnego.what": {
-    "en": "fcacaf13e1689e84",
-    "text": "Talar om att /spnego/protected finns, vilket tjänstehuvudmannanamn som står bakom den, vilka mekanismer som accepteras och vilka frågeparametrar som får förhandlingen att misslyckas på ett specifikt sätt. Inget av detta finns i själva protokollutbytet — en klient måste härleda SPN:et ur URL:en och hitta KDC:n ur sin egen konfiguration, vilket är varför så många SPNEGO-fel inte lämnar några spår på tråden. Lägg till ?format=json."
-  },
-  "stsmetadata.endpoints./spnego/pages.js.what": {
-    "en": "98f0627014fe9965",
-    "text": "NON-SPEC (#583). Körmiljön och renderarna för de två SPNEGO-demonstrationssidorna, i en enda fil som byggs av build-typescript.sh (kerberos/spnego-pages-spa.js) och serveras förkomprimerad: den ritar /spnego, och kroppen i varje svar som /spnego/protected ger, från det tillstånd varje skal bär. Förhandlingens status och dess WWW-Authenticate-huvud hör inte till det den ritar."
-  },
-  "stsmetadata.endpoints./spnego/protected.what": {
-    "en": "65103e3f5c4a9682",
-    "text": "Svarar 401 med ett naket \"WWW-Authenticate: Negotiate\" på en oautentiserad begäran, och 200 med ett AP-REP i det huvudet på en giltig. Kerberos-kontrollerna är krb5_service.js:s, oförändrade — den här slutpunkten lägger till förhandlingen och den HTTP som bär den och ingen egen protokollkod."
   },
   "stsmetadata.endpoints./xacml.what": {
     "en": "c6327138add686ae",
@@ -2376,8 +2356,8 @@
     "text": "frågar vid vilken av en applikations federerade identitetsleverantörer man ska logga in; kräver ett ?authn=-id, så att följa den utan det ger 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "827e8510ccf17768",
-    "text": "INTEGRERAD AUTENTISERING, OCH DEN ENDA INLOGGNINGEN HÄR SOM VILAR PÅ EN AUTENTISERINGSUPPGIFT SOM DEN HÄR TJÄNSTEN VERKLIGEN HAR VERIFIERAT. Överallt annars ÄR det inskrivna användarnamnet identiteten; Kerberos kan inte fungera så, eftersom lösenordet där är nyckeln — så den här dörren kontrollerar en verklig tjänstebiljett mot en verklig långtidsnyckel, via samma acceptor som /spnego/protected använder och utan egen protokollkod. KDC:n bakom den är fortfarande så tillåtande som protokollet medger (vilket användarnamn som helst, ett delat lösenord, ett konto som skapas vid första anblick), vilket är det som håller utvecklingsläget tillåtande — verifieringen är verklig, kontopolicyn är det inte. Den är TILLGÄNGLIG FÖR VARJE APPLIKATION och registrerad för ingen: en knapp på /authn/login erbjuder den för vilket flöde som redan pågår, appAuthnMechanism: spnego på en applikationspost skickar den applikationens personer direkt hit, och fedAuthnMechanism: spnego på en federationsrelation på identitetsleverantörssidan låter en Kerberos-biljett tillfredsställa en utomstående partner som aldrig har hört talas om Kerberos. Det som sessionen sedan påstår läses av BILJETTENS egna flaggor — amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och ingenting alls för en biljett som påstår ingen av dem, eftersom den här tjänsten inte namnger en faktor som ingen autentiseringsuppgift belägger. Den tar ?authn= och ALDRIG en returnTo: returadressen finns på den väntande posten, så det finns ingen yta för öppen omdirigering här alls. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ren 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden. krb5.spnegoAuthentication stänger av den, och den svarar då 403 med det angivet i stället för 404."
+    "en": "23818b4a272ea292",
+    "text": "INTEGRERAD AUTENTISERING, OCH DEN ENDA INLOGGNINGEN HÄR SOM VILAR PÅ EN AUTENTISERINGSUPPGIFT SOM DEN HÄR TJÄNSTEN VERKLIGEN HAR VERIFIERAT. Överallt annars ÄR det inskrivna användarnamnet identiteten; Kerberos kan inte fungera så, eftersom lösenordet där är nyckeln — så den här dörren kontrollerar en verklig tjänstebiljett mot en verklig långtidsnyckel, via tjänstens egen acceptor och utan egen protokollkod. KDC:n bakom den är fortfarande så tillåtande som protokollet medger (vilket användarnamn som helst, ett delat lösenord, ett konto som skapas vid första anblick), vilket är det som håller utvecklingsläget tillåtande — verifieringen är verklig, kontopolicyn är det inte. Den är TILLGÄNGLIG FÖR VARJE APPLIKATION och registrerad för ingen: en knapp på /authn/login erbjuder den för vilket flöde som redan pågår, appAuthnMechanism: spnego på en applikationspost skickar den applikationens personer direkt hit, och fedAuthnMechanism: spnego på en federationsrelation på identitetsleverantörssidan låter en Kerberos-biljett tillfredsställa en utomstående partner som aldrig har hört talas om Kerberos. Det som sessionen sedan påstår läses av BILJETTENS egna flaggor — amr [\"pwd\"] för pre-authent, [\"hwk\"] för hw-authent, båda för båda, och ingenting alls för en biljett som påstår ingen av dem, eftersom den här tjänsten inte namnger en faktor som ingen autentiseringsuppgift belägger. Den tar ?authn= och ALDRIG en returnTo: returadressen finns på den väntande posten, så det finns ingen yta för öppen omdirigering här alls. En klient som inte kan få en biljett möts av en sida med en länk till inloggningsskärmen, eftersom en ren 401 Negotiate är en återvändsgränd i varje webbläsare som inte är konfigurerad för den här värden. krb5.spnegoAuthentication stänger av den, och den svarar då 403 med det angivet i stället för 404."
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -3320,28 +3300,20 @@
     "text": "RST / RSTR över SOAP på /sts, i alla fyra versionerna (1.0 till och med 1.4), som utfärdar endera SAML-dialekten med intyget signerat och valfritt krypterat till den begärandes certifikat."
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "73e20c397fc290ee",
-    "text": "En KDC: AS-REQ / TGS-REQ, förautentisering, fyra krypteringstyper, en Microsoft PAC i biljetten, hänvisningar mellan realms och begränsad delegering. Raderna på den här sidan är dess HTTP-vyer och dess MS-KKDCP-proxy, som finns eftersom en webbläsare inte kan öppna en socket."
+    "en": "3048c833f899933d",
+    "text": "En KDC: AS-REQ / TGS-REQ, förautentisering, fyra krypteringstyper, en Microsoft-PAC i biljetten, hänvisningar mellan realmer och begränsad delegering. Raden på den här sidan är dess MS-KKDCP-proxy, som finns eftersom en webbläsare inte kan öppna ett uttag."
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
     "text": "Själva KDC:n är TCP- och UDP-port 88, som den här sidan inte kan se."
   },
-  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
-    "en": "3048c833f899933d",
-    "text": "En KDC: AS-REQ / TGS-REQ, förautentisering, fyra krypteringstyper, en Microsoft-PAC i biljetten, hänvisningar mellan realmer och begränsad delegering. Raden på den här sidan är dess MS-KKDCP-proxy, som finns eftersom en webbläsare inte kan öppna ett uttag."
-  },
   "stsmetadata.protocols.SPNEGO.what": {
-    "en": "17e95091fc9d97ee",
-    "text": "Kerberos över HTTP: /spnego/protected svarar 401 WWW-Authenticate: Negotiate, läser den NegTokenInit som en webbläsare eller en klient skickar tillbaka, och godtar AP-REQ inuti den mot tjänsteprincipalens nyckel."
+    "en": "dcf9bfda53ee9570",
+    "text": "Kerberos över HTTP: /authn/spnego svarar 401 WWW-Authenticate: Negotiate, läser den NegTokenInit som en webbläsare skickar tillbaka, godtar AP-REQ:n i den mot tjänsteprincipalens nyckel och loggar in dess klient (gruppen Authentication)."
   },
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "Biljetten den godtar kommer från KDC:n på port 88."
-  },
-  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
-    "en": "dcf9bfda53ee9570",
-    "text": "Kerberos över HTTP: /authn/spnego svarar 401 WWW-Authenticate: Negotiate, läser den NegTokenInit som en webbläsare skickar tillbaka, godtar AP-REQ:n i den mot tjänsteprincipalens nyckel och loggar in dess klient (gruppen Authentication)."
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

@@ -11595,21 +11595,26 @@ const CODES = [
     spec: 'KRB_AP_ERR_INAPP_CKSUM (50)' },
   { code: 'STS-KRB-0078',
     summary: 'A request to the Kerberos service\'s TCP listener exceeded ' +
-      'krb5.serviceMaxTokenBytes and the connection was closed.',
-    spec: 'connection closed' },
+      'krb5.serviceMaxTokenBytes and the connection was closed. Retired ' +
+      'by #595: the demonstration that raised it moved to the ' +
+      'development companion.',
+    spec: 'connection closed', retired: true },
   { code: 'STS-KRB-0079',
     summary: 'A request to the Kerberos service\'s TCP listener carried a ' +
       'length prefix with the reserved top bit set and the connection ' +
-      'was closed.',
-    spec: 'connection closed' },
+      'was closed. Retired by #595: the demonstration that raised it ' +
+      'moved to the development companion.',
+    spec: 'connection closed', retired: true },
   { code: 'STS-KRB-0080',
     summary: 'The Kerberos service failed to build a reply and closed the ' +
-      'connection.',
-    spec: 'connection closed' },
+      'connection. Retired by #595: the demonstration that raised it ' +
+      'moved to the development companion.',
+    spec: 'connection closed', retired: true },
   { code: 'STS-KRB-0081',
     summary: 'The Kerberos service\'s TCP listener failed, usually because ' +
-      'its port could not be bound.',
-    spec: '' },
+      'its port could not be bound. Retired by #595: the demonstration ' +
+      'that raised it moved to the development companion.',
+    spec: '', retired: true },
   { code: 'STS-KRB-0082',
     summary: 'A SPNEGO request carried no Authorization header and was ' +
       'answered with the bare Negotiate challenge.',
@@ -11664,8 +11669,10 @@ const CODES = [
     summary: 'A SPNEGO continuation carried no mechListMIC.',
     spec: 'HTTP 401, NegTokenResp negState reject' },
   { code: 'STS-KRB-0096',
-    summary: 'An unhandled failure on /spnego/protected.',
-    spec: 'HTTP 500 page' },
+    summary: 'An unhandled failure on /spnego/protected. Retired by #595: ' +
+      'the demonstration that raised it moved to the development ' +
+      'companion.',
+    spec: 'HTTP 500 page', retired: true },
   { code: 'STS-KRB-0097',
     summary: 'A SPNEGO sign-in at /authn/spnego was refused because ' +
       'krb5.spnegoAuthentication is off.',
@@ -12229,8 +12236,9 @@ const CODES = [
     summary: 'kerberos/spnego_pages.ts is present and did not load, so ' +
       'GET /spnego or /spnego/protected drew its page on the server, as a ' +
       'copy without that module does (#583). The negotiation itself is ' +
-      'unaffected.',
-    spec: 'logged; the page is drawn server-side' },
+      'unaffected. Retired by #595: the demonstration that raised it ' +
+      'moved to the development companion.',
+    spec: 'logged; the page is drawn server-side', retired: true },
   // 2026-10-12: the acceptor's random key in product.
   { code: 'STS-KRB-0210',
     summary: 'No random key could be made for the Kerberos acceptor\'s SPN, ' +

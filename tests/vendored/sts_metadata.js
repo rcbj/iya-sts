@@ -564,22 +564,18 @@ async function theDemonstrationsFollowTheMode(doc, consoleClient) {
     "GET /admin-api/mode should answer 200; got " + modeAnswer.status);
   const product = !!(modeAnswer.json || {}).isProduct;
   const listed = doc.endpoints.filter(function (e) { return e.demo; });
-  if (!product) {
-    // #591 moves them out phase by phase (#592 to #597 took more than
-    // twenty), so the floor is that some are still listed and marked.
-    assert.ok(listed.length > 0,
-      "a development realm should list its demonstration endpoints, marked " +
-      "demo; only " + listed.length + " were.");
-    log.info("[demos] OK — development: " + listed.length +
-             " demonstration endpoints listed and marked.");
-    log.debug("Leaving theDemonstrationsFollowTheMode().");
-    return;
-  }
+  // #591 moved them out phase by phase (#592 to #598), and #595 took the
+  // last — the Kerberos and SPNEGO ones, to the development companion — so
+  // NO realm lists one now, development included, and every former one
+  // answers as an unrouted path in either mode.
   assert.deepStrictEqual(listed.map(function (e) { return e.path; }), [],
-    "a product realm must list no demonstration endpoint (#585).");
+    "a " + (product ? "product" : "development") + " realm must list no " +
+    "demonstration endpoint (#585, #595).");
   const probes = [["GET", "/saml2/sp"], ["GET", "/issuer"],
                   ["GET", "/oid4vp/verifier"], ["GET", "/tls"],
-                  ["POST", "/ssf/receive"], ["GET", "/krb5/principals"]];
+                  ["POST", "/ssf/receive"], ["GET", "/krb5/principals"],
+                  ["GET", "/krb5/service"], ["GET", "/spnego"],
+                  ["GET", "/spnego/protected"]];
   for (const probe of probes) {
     const r = await common.httpJson(issuerBase + probe[1],
                                     { method: probe[0], redirect: "manual" });
@@ -587,11 +583,12 @@ async function theDemonstrationsFollowTheMode(doc, consoleClient) {
       new RegExp("Cannot " + probe[0] + " ").test(String(r.raw || "")
         .replace(/<[^>]*>/g, ""));
     assert.ok(unrouted, probe[0] + " " + probe[1] + " should answer as an " +
-              "unrouted path in a product realm (Express's own 404, #585); " +
+              "unrouted path (Express's own 404, #585, #595); " +
               "got " + r.status + " " + String(r.raw || "").slice(0, 80));
   }
-  log.info("[demos] OK — product: none listed, and " + probes.length +
-           " probed answer as unrouted paths.");
+  log.info("[demos] OK — " + (product ? "product" : "development") +
+           ": none listed, and " + probes.length + " probed answer as " +
+           "unrouted paths.");
   log.debug("Leaving theDemonstrationsFollowTheMode().");
 }
 

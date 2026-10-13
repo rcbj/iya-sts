@@ -5,8 +5,6 @@ nav_order: 7
 
 # A certificate authority, at `/admin/pki`
 
-> **Development mode only (#585):** `/krb5/principals` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 Protocols → PKI builds a **Root CA, an Intermediate CA and an Issuing CA** for
 the trust realm it is reached in, and issues **signing key pairs** from the
 bottom of it to applications.
@@ -423,7 +421,7 @@ is ephemeral — it exists so the request-worker pool can share minted rows — 
 sealing an entry that survives a restart under a key that does not would leave
 the certificate readable and the private half permanent garbage. That is the
 same rule an authenticator's shared secret follows, and in that mode the
-decision `oauthClientSecret` and `GET /krb5/principals` make still applies:
+decision `oauthClientSecret` and the development Kerberos password settings make still applies:
 a debugger whose credentials are unusable without reading the source is worse
 than one that says what they are.
 

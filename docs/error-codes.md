@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4295** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4289** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -2677,10 +2677,10 @@ Raised from: kerberos/.
 | `STS-KRB-0075` | The Kerberos acceptor refused a new Authenticator because its replay cache is full of entries still inside the replay window. | KRB_ERR_GENERIC (60) |
 | `STS-KRB-0076` | The Authenticator's 0x8003 GSS checksum presented to the Kerberos acceptor is malformed. | KRB_AP_ERR_INAPP_CKSUM (50) |
 | `STS-KRB-0077` | The Authenticator presented to the Kerberos acceptor carried a checksum type other than 0x8003. | KRB_AP_ERR_INAPP_CKSUM (50) |
-| `STS-KRB-0078` | A request to the Kerberos service's TCP listener exceeded krb5.serviceMaxTokenBytes and the connection was closed. | connection closed |
-| `STS-KRB-0079` | A request to the Kerberos service's TCP listener carried a length prefix with the reserved top bit set and the connection was closed. | connection closed |
-| `STS-KRB-0080` | The Kerberos service failed to build a reply and closed the connection. | connection closed |
-| `STS-KRB-0081` | The Kerberos service's TCP listener failed, usually because its port could not be bound. | — |
+| `STS-KRB-0078` *(retired)* | A request to the Kerberos service's TCP listener exceeded krb5.serviceMaxTokenBytes and the connection was closed. Retired by #595: the demonstration that raised it moved to the development companion. | connection closed |
+| `STS-KRB-0079` *(retired)* | A request to the Kerberos service's TCP listener carried a length prefix with the reserved top bit set and the connection was closed. Retired by #595: the demonstration that raised it moved to the development companion. | connection closed |
+| `STS-KRB-0080` *(retired)* | The Kerberos service failed to build a reply and closed the connection. Retired by #595: the demonstration that raised it moved to the development companion. | connection closed |
+| `STS-KRB-0081` *(retired)* | The Kerberos service's TCP listener failed, usually because its port could not be bound. Retired by #595: the demonstration that raised it moved to the development companion. | — |
 | `STS-KRB-0082` | A SPNEGO request carried no Authorization header and was answered with the bare Negotiate challenge. | HTTP 401 WWW-Authenticate: Negotiate |
 | `STS-KRB-0083` | A SPNEGO request carried an Authorization header naming a scheme other than Negotiate. | HTTP 401 WWW-Authenticate: Negotiate |
 | `STS-KRB-0084` | A SPNEGO request carried Negotiate with an empty token. | HTTP 401 WWW-Authenticate: Negotiate |
@@ -2695,7 +2695,7 @@ Raised from: kerberos/.
 | `STS-KRB-0093` | The SPNEGO acceptor sent request-mic and is waiting for the client's mechListMIC. | HTTP 401, NegTokenResp negState request-mic |
 | `STS-KRB-0094` | A bare SPNEGO NegTokenResp arrived with no negotiation in progress to continue. | HTTP 401, NegTokenResp negState reject |
 | `STS-KRB-0095` | A SPNEGO continuation carried no mechListMIC. | HTTP 401, NegTokenResp negState reject |
-| `STS-KRB-0096` | An unhandled failure on /spnego/protected. | HTTP 500 page |
+| `STS-KRB-0096` *(retired)* | An unhandled failure on /spnego/protected. Retired by #595: the demonstration that raised it moved to the development companion. | HTTP 500 page |
 | `STS-KRB-0097` | A SPNEGO sign-in at /authn/spnego was refused because krb5.spnegoAuthentication is off. | HTTP 403 page |
 | `STS-KRB-0098` | A valid Kerberos ticket was accepted at /authn/spnego and the issuance policy refused to start a session. | HTTP 403 page |
 | `STS-KRB-0099` | An unhandled failure on the SPNEGO sign-in at /authn/spnego. | HTTP 500 page |
@@ -2808,7 +2808,7 @@ Raised from: kerberos/.
 | `STS-KRB-0206` | The message router a service deployed as cells installs on TCP and UDP 88 failed on a message; it is answered by this cell's KDC as it was before the router (#588, 2026-10-12). | none — #98, RFC 4120 7.2 |
 | `STS-KRB-0207` | A Kerberos message on TCP or UDP 88 whose client is homed in another cell could not be answered there (the cell unreachable, or no reply); the client is told the KDC is unavailable, fail-closed (#588, 2026-10-12). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6 |
 | `STS-KRB-0208` | Another cell relayed a Kerberos message here with no message in it; the inter-cell operation kdc-message failed (#588, 2026-10-12). | none — #98 |
-| `STS-KRB-0209` | kerberos/spnego_pages.ts is present and did not load, so GET /spnego or /spnego/protected drew its page on the server, as a copy without that module does (#583). The negotiation itself is unaffected. | logged; the page is drawn server-side |
+| `STS-KRB-0209` *(retired)* | kerberos/spnego_pages.ts is present and did not load, so GET /spnego or /spnego/protected drew its page on the server, as a copy without that module does (#583). The negotiation itself is unaffected. Retired by #595: the demonstration that raised it moved to the development companion. | logged; the page is drawn server-side |
 | `STS-KRB-0210` | No random key could be made for the Kerberos acceptor's SPN, whose configured krb5.servicePassword product refused (empty or the published default), so the acceptor accepts no ticket. | — |
 | `STS-KRB-0211` | A node lost the race to make the Kerberos acceptor's random key and, re-reading the directory, did not find the winner's key yet; its acceptor refuses until it arrives. | — |
 | `STS-KRB-0212` | The Kerberos acceptor's random key was not made: this node could not ask the shared store whether another node was making it. | — |

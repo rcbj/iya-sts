@@ -32,8 +32,8 @@
     "text": "partial : six services et 42 méthodes sont servis à partir des protos intégrés, dont 36 sont implémentées. Les six qui ne le sont pas répondent chacune avec une raison — AppendBundle et PublishJWTAuthority (elles publieraient une autorité pour laquelle ce serveur ne détient aucune clé), RefreshBundle (elle récupérerait une URL que quelqu’un a enregistrée) et les trois méthodes WIT. L’APPELANT EST AUTHENTIFIÉ ET AUTORISÉ : le port TCP est en TLS mutuel, l’identifiant SPIFFE de l’appelant est tiré du SAN URI de son X509-SVID et vérifié contre le bundle de confiance, et chaque méthode est contrôlée selon le policy_data.json propre à SPIRE — local, agent, admin, downstream — le socket Unix étant considéré comme `local`, à la manière dont un vrai spire-server fait confiance à son socket privé. RenewAgent a cessé d’être non implémentée grâce à cela : elle renouvelle l’agent de la connexion. Aucun paramètre ne rétablit l’ancienne posture, où le port était en clair et où quiconque l’atteignait pouvait créer une entrée d’enregistrement accordant n’importe quelle identité : spiffe.authRequired a été supprimé le 2026-09-06."
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "df72e1139e447029",
-    "text": "partial : les échanges AS et TGS sur TCP, UDP et MS-KKDCP, avec la pré-authentification (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 portant le sel, les indicateurs de ticket, l’application de la tolérance d’horloge et le catalogue d’erreurs. Deux royaumes avec une relation d’approbation entre eux, de sorte que les renvois inter-royaumes fonctionnent. La pré-authentification FAST et OTP a ses propres lignes (RFC 6113, RFC 6560), tout comme PKINIT (RFC 4556) ; pas de signatures de requête, pas de kpasswd (S4U relève de [MS-SFU], sa propre ligne). L’échange AP appartient au service protégé, pas à celui-ci. N’IMPORTE QUEL nom d’utilisateur s’authentifie et tous les comptes utilisateur partagent UN SEUL mot de passe, que GET /krb5/principals publie : la pré-authentification est vérifiée pour de vrai (le mot de passe est la clé, il le faut donc), mais c’est le même mot de passe pour tout le monde et un nom d’utilisateur inconnu est créé sur-le-champ plutôt que refusé. C’EST LE MODE DÉVELOPPEMENT. En mode produit, les comptes de démonstration, le second royaume et toutes les règles de délégation sont absents, rien n’est créé à la demande, aucun mot de passe n’est publié, le compte de service configuré n’existe que là où krb5.servicePassword vaut autre chose que sa valeur par défaut publiée, et la clé krbtgt de chaque domaine est ALÉATOIRE, scellée dans l’annuaire et renouvelée par la tâche krb5.krbtgt-rotate (krb5.krbtgtRotationIntervalDays), la version qu’elle remplace étant conservée aussi longtemps que peut vivre au maximum un TGT émis sous elle ; « renouveler et invalider » ne conserve rien. Aucun enctype Kerberos post-quantique n’est normalisé ; le renouvellement utilise donc les enctypes AES. Un KDC en mode produit authentifie les PERSONNES de l’annuaire avec des clés dérivées de leurs propres mots de passe (après une première connexion), et les principaux de service avec des clés aléatoires créées par un opérateur ; et une personne qui détient ou doit détenir un second facteur n’obtient AUCUN ticket avec le seul mot de passe (KDC_ERR_POLICY, après vérification du mot de passe) — uniquement via FAST avec la pré-authentification OTP, ou avec un certificat via PKINIT."
+    "en": "f830c0cae35e4109",
+    "text": "partial : les échanges AS et TGS sur TCP, UDP et MS-KKDCP, avec la pré-authentification (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 portant le sel, les indicateurs de ticket, l’application de la tolérance d’horloge et le catalogue d’erreurs. Deux royaumes avec une relation d’approbation entre eux, de sorte que les renvois inter-royaumes fonctionnent. La pré-authentification FAST et OTP a ses propres lignes (RFC 6113, RFC 6560), tout comme PKINIT (RFC 4556) ; pas de signatures de requête, pas de kpasswd (S4U relève de [MS-SFU], sa propre ligne). L’échange AP appartient à l’accepteur (SPNEGO), pas à celui-ci. N’IMPORTE QUEL nom d’utilisateur s’authentifie et tous les comptes utilisateur partagent UN SEUL mot de passe, que publie le paramètre krb5.userPassword : la pré-authentification est vérifiée pour de vrai (le mot de passe est la clé, il le faut donc), mais c’est le même mot de passe pour tout le monde et un nom d’utilisateur inconnu est créé sur-le-champ plutôt que refusé. C’EST LE MODE DÉVELOPPEMENT. En mode produit, les comptes de démonstration, le second royaume et toutes les règles de délégation sont absents, rien n’est créé à la demande, aucun mot de passe n’est publié, le compte de service configuré n’existe que là où krb5.servicePassword vaut autre chose que sa valeur par défaut publiée, et la clé krbtgt de chaque domaine est ALÉATOIRE, scellée dans l’annuaire et renouvelée par la tâche krb5.krbtgt-rotate (krb5.krbtgtRotationIntervalDays), la version qu’elle remplace étant conservée aussi longtemps que peut vivre au maximum un TGT émis sous elle ; « renouveler et invalider » ne conserve rien. Aucun enctype Kerberos post-quantique n’est normalisé ; le renouvellement utilise donc les enctypes AES. Un KDC en mode produit authentifie les PERSONNES de l’annuaire avec des clés dérivées de leurs propres mots de passe (après une première connexion), et les principaux de service avec des clés aléatoires créées par un opérateur ; et une personne qui détient ou doit détenir un second facteur n’obtient AUCUN ticket avec le seul mot de passe (KDC_ERR_POLICY, après vérification du mot de passe) — uniquement via FAST avec la pré-authentification OTP, ou avec un certificat via PKINIT."
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -710,26 +710,6 @@
   "stsmetadata.endpoints./KdcProxy.what": {
     "en": "39d7480d625c43d6",
     "text": "Relaie un KDC-PROXY-MESSAGE vers le KDC qui écoute sur les ports TCP et UDP 88 dans ce processus. Un navigateur ne peut pas ouvrir de socket brut ; c’est donc ainsi que le client intégré au navigateur atteint un KDC sans le relais de l’api."
-  },
-  "stsmetadata.endpoints./krb5/principals.what": {
-    "en": "e857357e62157f67",
-    "text": "La base de principaux des deux domaines : noms, sels (qui ne se déduisent PAS du nom du principal, raison d’être de PA-ETYPE-INFO2), etypes proposés, les erreurs de configuration délibérées, et l’identité PAC que porte chaque compte. Également la politique de comptes — n’importe quel nom d’utilisateur s’authentifie, tous les utilisateurs partagent un même mot de passe, et c’est ici que ce mot de passe est consigné. Pas un véritable point de terminaison Kerberos — un KDC ne publie rien de tout cela."
-  },
-  "stsmetadata.endpoints./krb5/service.what": {
-    "en": "0dd3e8c8492058d0",
-    "text": "Ce qu’est l’accepteur AP-REQ, où son socket TCP brut écoute, et les vérifications ordonnées qu’il applique à un ticket. Pas un véritable point de terminaison Kerberos non plus."
-  },
-  "stsmetadata.endpoints./spnego.what": {
-    "en": "fcacaf13e1689e84",
-    "text": "Indique que /spnego/protected existe, quel nom de principal de service se trouve derrière, quels mécanismes sont acceptés, et quels paramètres de requête font échouer la négociation d’une manière précise. Rien de cela ne figure dans l’échange protocolaire lui-même — un client doit déduire le SPN de l’URL et trouver le KDC à partir de sa propre configuration, ce qui explique pourquoi tant d’échecs SPNEGO ne laissent aucune trace sur le réseau. Ajoutez ?format=json."
-  },
-  "stsmetadata.endpoints./spnego/pages.js.what": {
-    "en": "98f0627014fe9965",
-    "text": "NON-SPEC (#583). L’environnement d’exécution et les moteurs de rendu des deux pages de démonstration SPNEGO, en un seul fichier construit par build-typescript.sh (kerberos/spnego-pages-spa.js) et servi précompressé : il dessine /spnego, et le corps de chaque réponse que donne /spnego/protected, à partir de l’état que porte chaque coquille. Le statut de la négociation et son en-tête WWW-Authenticate ne font pas partie de ce qu’il dessine."
-  },
-  "stsmetadata.endpoints./spnego/protected.what": {
-    "en": "65103e3f5c4a9682",
-    "text": "Répond 401 avec un simple \"WWW-Authenticate: Negotiate\" à une requête non authentifiée, et 200 avec un AP-REP dans cet en-tête à une requête valide. Les vérifications Kerberos sont celles de krb5_service.js, inchangées — ce point de terminaison ajoute la négociation et le HTTP qui la transporte, et aucun code protocolaire propre."
   },
   "stsmetadata.endpoints./xacml.what": {
     "en": "c6327138add686ae",
@@ -2376,8 +2356,8 @@
     "text": "demande auprès duquel des fournisseurs d’identité fédérés d’une application se connecter ; requiert un identifiant ?authn=, si bien qu’il répond 400 lorsqu’il est suivi sans paramètres"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "827e8510ccf17768",
-    "text": "AUTHENTIFICATION INTÉGRÉE, ET LA SEULE CONNEXION ICI QUI REPOSE SUR UN IDENTIFIANT QUE CE SERVICE A RÉELLEMENT VÉRIFIÉ. Partout ailleurs, le nom d’utilisateur saisi EST l’identité ; Kerberos ne peut pas fonctionner ainsi, car le mot de passe y est la clé — cette porte vérifie donc un véritable ticket de service au regard d’une véritable clé à long terme, par le même accepteur qu’utilise /spnego/protected et sans code de protocole propre. Le KDC qui se trouve derrière reste aussi permissif que le protocole le permet (n’importe quel nom d’utilisateur, un mot de passe partagé, un compte créé à la première apparition), ce qui garde le mode développement permissif — la vérification est réelle, la politique de comptes ne l’est pas. Elle est DISPONIBLE POUR TOUTE APPLICATION et enregistrée pour aucune : un bouton sur /authn/login la propose pour le flux déjà en cours, appAuthnMechanism: spnego sur une entrée d’application y envoie directement les personnes de cette application, et fedAuthnMechanism: spnego sur une relation de fédération côté fournisseur d’identité permet à un ticket Kerberos de satisfaire un partenaire étranger qui n’a jamais entendu parler de Kerberos. Ce que la session revendique ensuite est lu dans les indicateurs propres du TICKET — amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et rien du tout pour un ticket ne revendiquant ni l’un ni l’autre, car ce service ne nommera pas un facteur dont aucun identifiant n’atteste. Elle prend ?authn= et JAMAIS un returnTo : l’adresse de retour est dans l’enregistrement en attente, il n’y a donc ici aucune surface de redirection ouverte. Un client qui ne peut pas obtenir de ticket arrive sur une page contenant un lien vers l’écran de connexion, car une simple 401 Negotiate est une impasse dans tout navigateur non configuré pour cet hôte. krb5.spnegoAuthentication la désactive, et elle répond alors 403 en le disant plutôt que 404."
+    "en": "23818b4a272ea292",
+    "text": "AUTHENTIFICATION INTÉGRÉE, ET LA SEULE CONNEXION ICI QUI REPOSE SUR UN IDENTIFIANT QUE CE SERVICE A RÉELLEMENT VÉRIFIÉ. Partout ailleurs, le nom d’utilisateur saisi EST l’identité ; Kerberos ne peut pas fonctionner ainsi, car le mot de passe y est la clé — cette porte vérifie donc un véritable ticket de service au regard d’une véritable clé à long terme, par l’accepteur propre à ce service et sans code de protocole propre. Le KDC qui se trouve derrière reste aussi permissif que le protocole le permet (n’importe quel nom d’utilisateur, un mot de passe partagé, un compte créé à la première apparition), ce qui garde le mode développement permissif — la vérification est réelle, la politique de comptes ne l’est pas. Elle est DISPONIBLE POUR TOUTE APPLICATION et enregistrée pour aucune : un bouton sur /authn/login la propose pour le flux déjà en cours, appAuthnMechanism: spnego sur une entrée d’application y envoie directement les personnes de cette application, et fedAuthnMechanism: spnego sur une relation de fédération côté fournisseur d’identité permet à un ticket Kerberos de satisfaire un partenaire étranger qui n’a jamais entendu parler de Kerberos. Ce que la session revendique ensuite est lu dans les indicateurs propres du TICKET — amr [\"pwd\"] pour pre-authent, [\"hwk\"] pour hw-authent, les deux pour les deux, et rien du tout pour un ticket ne revendiquant ni l’un ni l’autre, car ce service ne nommera pas un facteur dont aucun identifiant n’atteste. Elle prend ?authn= et JAMAIS un returnTo : l’adresse de retour est dans l’enregistrement en attente, il n’y a donc ici aucune surface de redirection ouverte. Un client qui ne peut pas obtenir de ticket arrive sur une page contenant un lien vers l’écran de connexion, car une simple 401 Negotiate est une impasse dans tout navigateur non configuré pour cet hôte. krb5.spnegoAuthentication la désactive, et elle répond alors 403 en le disant plutôt que 404."
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -3320,28 +3300,20 @@
     "text": "RST / RSTR sur SOAP à /sts, dans les quatre versions (1.0 à 1.4), émettant l’un ou l’autre dialecte SAML avec l’assertion signée et éventuellement chiffrée pour le certificat du demandeur."
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "73e20c397fc290ee",
-    "text": "Un KDC : AS-REQ / TGS-REQ, pré-authentification, quatre types de chiffrement, un PAC Microsoft dans le ticket, des renvois inter-domaines et la délégation contrainte. Les lignes de cette page sont ses vues HTTP et son proxy MS-KKDCP, qui existe parce qu’un navigateur ne peut pas ouvrir de socket."
+    "en": "3048c833f899933d",
+    "text": "Un KDC : AS-REQ / TGS-REQ, pré-authentification, quatre types de chiffrement, un PAC Microsoft dans le ticket, des renvois inter-realms et la délégation contrainte. La ligne de cette page est son proxy MS-KKDCP, qui existe parce qu’un navigateur ne peut pas ouvrir de socket."
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
     "text": "Le KDC lui-même est sur le port TCP et UDP 88, que cette page ne peut pas voir."
   },
-  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
-    "en": "3048c833f899933d",
-    "text": "Un KDC : AS-REQ / TGS-REQ, pré-authentification, quatre types de chiffrement, un PAC Microsoft dans le ticket, des renvois inter-realms et la délégation contrainte. La ligne de cette page est son proxy MS-KKDCP, qui existe parce qu’un navigateur ne peut pas ouvrir de socket."
-  },
   "stsmetadata.protocols.SPNEGO.what": {
-    "en": "17e95091fc9d97ee",
-    "text": "Kerberos sur HTTP : /spnego/protected répond 401 WWW-Authenticate: Negotiate, lit le NegTokenInit que renvoie un navigateur ou un client, et accepte l’AP-REQ qu’il contient au regard de la clé du principal de service."
+    "en": "dcf9bfda53ee9570",
+    "text": "Kerberos sur HTTP : /authn/spnego répond 401 WWW-Authenticate: Negotiate, lit le NegTokenInit qu’un navigateur renvoie, accepte l’AP-REQ qu’il contient avec la clé du principal de service, et connecte son client (le groupe Authentication)."
   },
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "Le ticket qu’il accepte provient du KDC sur le port 88."
-  },
-  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
-    "en": "dcf9bfda53ee9570",
-    "text": "Kerberos sur HTTP : /authn/spnego répond 401 WWW-Authenticate: Negotiate, lit le NegTokenInit qu’un navigateur renvoie, accepte l’AP-REQ qu’il contient avec la clé du principal de service, et connecte son client (le groupe Authentication)."
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

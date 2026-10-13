@@ -724,12 +724,12 @@
     "text": "示範與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "3984f2e4ba94f429",
-    "text": "提供並列出：VC-API 測試端點、受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端）、/krb5/principals、/spnego 與 /spnego/protected。"
+    "en": "e91d15ca7620fc31",
+    "text": "提供並列出：VC-API 測試端點。"
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "b82d8439b897527e",
-    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們，但受保護服務的通訊端除外，它屬於處理程序。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
+    "en": "65526c68ee1acd20",
+    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

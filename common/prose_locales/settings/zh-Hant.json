@@ -1812,8 +1812,8 @@
     "text": "破壞 ID Token nonce（僅限開發）"
   },
   "oauth2.breakIdTokenNonce|description": {
-    "en": "05625a5855ffd20c",
-    "text": "僅限開發模式。在產品模式下，讀取時會被忽略（只記錄一次，STS-CORE-0106），開啟它也會被拒絕（STS-CORE-0103）。在每個應帶有 nonce 的 ID Token 中放入「刻意錯誤」的 nonce。RFC 9700 第 2.1.1 與 4.5.3.2 節將驗證它定為「用戶端」的工作，而此伺服器無法看到驗證是否發生——因此這就是查明的方法：接受結果的用戶端沒有進行檢查，拒絕的則有。與 /spnego 的三個旋鈕以及保留密碼「invalid」屬於同一類裝置。預設為「關閉」，無論處於哪種模式都會在 GET /oauth2/rfc9700 上回報，每個被破壞的權杖也都會記錄為已破壞——一個以沒人記得曾經開啟的方式出錯的 ID Token，會讓人耗掉一個昂貴的下午。"
+    "en": "6aa61a678ff29707",
+    "text": "僅限開發模式。在產品模式下，讀取時會被忽略（只記錄一次，STS-CORE-0106），開啟它也會被拒絕（STS-CORE-0103）。在每個應帶有 nonce 的 ID Token 中放入「刻意錯誤」的 nonce。RFC 9700 第 2.1.1 與 4.5.3.2 節將驗證它定為「用戶端」的工作，而此伺服器無法看到驗證是否發生——因此這就是查明的方法：接受結果的用戶端沒有進行檢查，拒絕的則有。與保留密碼「invalid」屬於同一類裝置。預設為「關閉」，無論處於哪種模式都會在 GET /oauth2/rfc9700 上回報，每個被破壞的權杖也都會記錄為已破壞——一個以沒人記得曾經開啟的方式出錯的 ID Token，會讓人耗掉一個昂貴的下午。"
   },
   "oauth2.refreshIdleSeconds|label": {
     "en": "2342e96eee91f547",
@@ -5528,32 +5528,20 @@
     "text": "KDC 連接埠"
   },
   "krb5.kdcPort|description": {
-    "en": "603655a67c05bdd2",
-    "text": "KDC 同時在 TCP 與 UDP 上接聽。88 是特權連接埠，因此非 root 的主機執行無法繫結它——這會被記錄而非擲出例外，並由 GET /krb5/principals 回報。0 表示要求任一可用連接埠。"
+    "en": "e9d5103459853c9e",
+    "text": "KDC 同時在 TCP 與 UDP 上接聽。88 是特權連接埠，因此非 root 的主機執行無法繫結它——這會被記錄而非擲出例外，並寫入記錄。0 表示要求任一可用連接埠。"
   },
   "krb5.kdcPort|restartReason": {
     "en": "72484c04fc9a787a",
     "text": "TCP 與 UDP 通訊端在程序啟動時繫結"
-  },
-  "krb5.servicePort|label": {
-    "en": "3a89a3154901e25c",
-    "text": "測試服務連接埠"
-  },
-  "krb5.servicePort|description": {
-    "en": "f520a63e9c191a86",
-    "text": "接受 AP-REQ 的 Kerberos 化測試服務。這是示範：產品處理程序不會啟動它（#585）。"
-  },
-  "krb5.servicePort|restartReason": {
-    "en": "e92026b5264f72ad",
-    "text": "通訊端在程序啟動時繫結"
   },
   "krb5.servicePrincipal|label": {
     "en": "1238b790587a7e38",
     "text": "服務主體"
   },
   "krb5.servicePrincipal|description": {
-    "en": "b3400d19bf033fa0",
-    "text": "該測試服務所持有的 SPN，採常見的 service/hostname 形式。接受端用來解密的帳戶是「依此名稱」建立的，並使用 krb5.servicePassword 與 krb5.serviceSalt——在 2026-09-12 之前，不論此處為何，它一律是 HTTP/web.<realm domain>。**未設定此值的「信任領域」會衍生出 HTTP/web.<its own domain>**（當此處仍是隨附的值時），使領域處處以自己命名；在領域上設定它即可直接指名該領域的接受端。"
+    "en": "2143ab10c02f7141",
+    "text": "SPNEGO 登入的接受端所持有的 SPN，採常見的 service/hostname 形式。接受端用來解密的帳戶是「依此名稱」建立的，並使用 krb5.servicePassword 與 krb5.serviceSalt——在 2026-09-12 之前，不論此處為何，它一律是 HTTP/web.<realm domain>。**未設定此值的「信任領域」會衍生出 HTTP/web.<its own domain>**（當此處仍是隨附的值時），使領域處處以自己命名；在領域上設定它即可直接指名該領域的接受端。"
   },
   "krb5.servicePrincipal|restartReason": {
     "en": "c04a88a95bd6f9b0",
@@ -5564,8 +5552,8 @@
     "text": "服務主體密碼"
   },
   "krb5.servicePassword|description": {
-    "en": "203b6ef1fa4a5cfa",
-    "text": "krb5.servicePrincipal 所命名帳戶的密碼 —— 相當於一個 keytab。在產品模式下，隨附的預設值會被拒絕：該值印在本儲存庫中，因此由它推導的服務金鑰是任何人都能用來偽造票證的金鑰。此時產品模式改為給該 SPN 一把隨機金鑰，只產生一次，密封在其應用程式項目上（在 /admin/kerberos/principals 上執行 Rotate 會交出 keytab），空密碼也同樣處理。將它設為簽發其票證的 KDC 中該 SPN 帳戶的密碼，它就會優先於那把金鑰。在開發模式下，空密碼不會建立帳戶，接受端也不接受任何票證。"
+    "en": "cb9ee66eb558159b",
+    "text": "krb5.servicePrincipal 所指名之帳戶的密碼——相當於 keytab。在「產品模式」下，隨附的預設值會被拒絕：該值印在此存放庫中，因此由它衍生的服務金鑰是任何人都能為其偽造票證的金鑰。未設定時不會建立服務帳戶，/authn/spnego 不接受任何票證，GET /admin-api/kerberos/principals 會說明原因。請將它設為簽發其票證之 KDC 中該 SPN 帳戶的密碼。"
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -5660,8 +5648,8 @@
     "text": "接受端讀取的最大 AP-REQ（位元組）"
   },
   "krb5.serviceMaxTokenBytes|description": {
-    "en": "4a1900f646321bef",
-    "text": "krb5.servicePort 上的接受端以及透過 HTTP 的 SPNEGO，會拒絕大於此值的權杖。"
+    "en": "f5880e7b76f635b7",
+    "text": "SPNEGO 登入的接受端會拒絕大於此值的權杖。"
   },
   "krb5.replayCacheMaxEntries|label": {
     "en": "907b89cfdd599162",
@@ -5708,8 +5696,8 @@
     "text": "使用者密碼"
   },
   "krb5.userPassword|description": {
-    "en": "838f581b1ba65d90",
-    "text": "這裡每個使用者帳戶都擁有的密碼。它刻意由 GET /krb5/principals「公開」：一個不讀原始碼就無法使用其帳戶的偵錯工具，比直接說明帳戶為何的偵錯工具更糟。"
+    "en": "d2f560802bb55976",
+    "text": "這裡每個使用者帳戶都擁有的密碼。它刻意以此設定「公開」：一個不讀原始碼就無法使用其帳戶的偵錯工具，比直接說明帳戶為何的偵錯工具更糟。"
   },
   "krb5.userPassword|restartReason": {
     "en": "51deddf8f1d90149",
@@ -5824,8 +5812,8 @@
     "text": "以 Kerberos 票證登入"
   },
   "krb5.spnegoAuthentication|description": {
-    "en": "be06d364ace2ff42",
-    "text": "/authn/spnego 是否將 Kerberos 票證轉為瀏覽器工作階段——整合式驗證，可供每個應用程式使用，而非專屬於某一個。關閉時，該端點會回應 403 並指出是哪項設定，而 /spnego/protected 仍會執行完整的交握並顯示雙方的內容；它不會做的是給您一個工作階段。在此設定關閉時指名 `spnego` 機制的應用程式或聯盟關係，會在登入畫面上被「回報」，而不是在流程進行到一半時遇到 403。"
+    "en": "78a74a328a889e90",
+    "text": "/authn/spnego 是否將 Kerberos 票證轉為瀏覽器工作階段——整合式驗證，可供每個應用程式使用，而非專屬於某一個。關閉時，該端點會回應 403 並指出是哪項設定。在此設定關閉時指名 `spnego` 機制的應用程式或聯盟關係，會在登入畫面上被「回報」，而不是在流程進行到一半時遇到 403。"
   },
   "krb5.personKeys|label": {
     "en": "130db32cf78d7adf",

@@ -146,18 +146,14 @@ const ROWS: Row[] = [
     why: 'the W3C VC API signs and verifies documents it is handed with ' +
          'the realm\'s global-tier keys and status lists; no person\'s ' +
          'data is read' },
-  { prefix: '/krb5', strategy: 'local',
-    why: 'the Kerberos views read global configuration' },
   { prefix: '/KdcProxy', strategy: 'handler',
     handler: 'kerberos/krb5_home.ts',
     why: 'an AS-REQ names its client, and a TGS-REQ\'s ticket does; both ' +
          'are answered where the client is homed (the raw port 88 is not ' +
          'placed: kerberos/CLAUDE.md)' },
-  { prefix: '/spnego', strategy: 'affinity', browser: true,
-    why: 'a browser flow, served where the browser is pinned' },
-  // THE SPNEGO PAGES' SCRIPT (#583): the same file in every cell.
-  { prefix: '/spnego/pages.js', strategy: 'local',
-    why: 'the SPNEGO pages\' script, the same file in every cell (#583)' },
+  // `/krb5/principals`, `/krb5/service`, `/spnego`, `/spnego/protected`
+  // and `/spnego/pages.js` have no row: #595 deleted the first and moved the
+  // rest to the development companion.
   // --- the sign-in service and the browser flows ---
   { prefix: '/authn', strategy: 'affinity', browser: true,
     why: 'the sign-in screen is where D9\'s restart at home happens; a ' +

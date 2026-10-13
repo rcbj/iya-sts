@@ -39,14 +39,6 @@
     "en": "3f7729c5149376d6",
     "text": "TCP och UDP 88; Kerberos-meddelanden, inte TLS."
   },
-  "listeners.builtin.krb5-service.name": {
-    "en": "7e652746e02ec2bc",
-    "text": "Kerberos-testtjänst"
-  },
-  "listeners.builtin.krb5-service.what": {
-    "en": "eae5de4d9754b836",
-    "text": "Den SPNEGO-skyddade testtjänsten."
-  },
   "listeners.builtin.revocation.name": {
     "en": "384cb54062bffd4b",
     "text": "Återkallelse (vanlig HTTP)"
@@ -304,8 +296,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "49ef797d2558967c",
-    "text": "MS-KKDCP och Kerberos HTTP-vyer."
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP, Kerberos-KDC:n över HTTPS."
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",
