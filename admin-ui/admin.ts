@@ -528,9 +528,8 @@ import loginRealmChooser = require('../common/realm_chooser');
 // is ldap_server.js's, wired into that module through a slot for the
 // route-order reason rule 6 gives.
 import vcClaims = require('../oid4vc/vc_claims');
-// The other end of that: which of those claims the mock OID4VP Verifier — the
-// "bar door" at /oid4vp/verifier — ASKS a wallet for, and in which credential
-// format. A library like vc_claims.js and admin_stats.js, registering no route,
+// The other end of that: which of those claims the OID4VP Verifier ASKS a
+// wallet for, and in which credential format. A library like vc_claims.js and admin_stats.js, registering no route,
 // so requiring it here neither moves a route nor makes a cycle; vc_verifier.js
 // reads the same module from the other side of the require order.
 import vpConfig = require('../oid4vc/vc_verifier_config');
@@ -10091,17 +10090,15 @@ const PROTOCOL_SETTINGS_PAGES = [
            'selected. ' +
            'What is real is the signature, the proofs and the formats — ' +
            'which is the half a wallet has to get right.'],
-    links: [['/issuer', 'the issuer, for a person'],
-            ['/issuer/offer', 'a Credential Offer'],
-            ['/.well-known/openid-credential-issuer', 'the issuer metadata'],
+    links: [['/.well-known/openid-credential-issuer', 'the issuer metadata'],
             ['/admin/vc#vc-tab-claims', 'what a credential carries']] },
 
   { path: '/admin/oid4vp', title: 'OpenID4VP', settingsPath: '/admin/vc',
     settingsPage: '/admin/oid4vp',
     settingsGroup: 'OID4VP',
-    lead: '<strong>The demonstration Verifier at ' +
-          '<code>/oid4vp/verifier</code>, and ' +
-          'the settings around its request.</strong> The DCQL query — which ' +
+    lead: '<strong>The OpenID4VP Verifier, whose verifications start at ' +
+          '<code>POST /admin-api/verifications/start</code>, and the ' +
+          'settings around its request.</strong> The DCQL query — which ' +
           'credential, which claims — is ' +
           '<a href="/admin/vc#vc-tab-verifier-request">Verifier request</a> ' +
           'on the combined page; these settings are the client identifier it ' +
@@ -10123,9 +10120,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            'credential from a trusted foreign issuer, another realm or a ' +
            'foreign access token still verifies, is recorded on ' +
            '<a href="/admin/users">/admin/users</a> as a presentation, and ' +
-           'signs nobody in. The bar door at <code>/oid4vp/verifier</code> ' +
-           'signs nobody in whatever it is shown: nobody there asked to be ' +
-           'signed in.',
+           'signs nobody in. A verification an administrator or an ' +
+           'application starts signs nobody in whatever it is shown: nobody ' +
+           'there asked to be signed in.',
            '<strong>The Digital Credentials API is the default way in, and ' +
            'the plain QR code is off.</strong> A browser that has the API ' +
            'asks a wallet on this device or a nearby one, which the browser ' +
@@ -10148,8 +10145,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'is exempted by its certificate\'s thumbprint in <code>' +
            'oid4vp.statusOptionalIssuers</code>. The result page names the ' +
            'rule that refused.'],
-    links: [['/oid4vp/verifier', 'the verifier, for a person'],
-            ['/admin/vc#vc-tab-verifier-request', 'what it asks for']] },
+    links: [['/admin/vc#vc-tab-verifier-request', 'what it asks for']] },
 
   { path: '/admin/kerberos', title: 'Kerberos settings',
     lead: '<strong>The KDC on raw TCP and UDP 88, the same exchange over ' +

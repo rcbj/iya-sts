@@ -338,15 +338,14 @@ class ProtocolEndpoints {
         '/.well-known/openid-credential-issuer', '/.well-known/jwt-vc-issuer',
         '/oid4vci/nonce', '/oid4vci/credential',
         '/oid4vci/deferred_credential', '/oid4vci/notification',
-        '/oid4vci/credential-offer/:id', '/issuer', '/issuer/offer',
+        '/oid4vci/credential-offer/:id',
         // A person's own pre-authorized offer, on the portal (#589).
         '/account-api/credentials/offerable',
         '/account-api/credentials/offers',
         '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
         '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
         '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',
-        '/oid4vp/verifier', '/oid4vp/start', '/oid4vp/request/:id',
-        '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done',
+        '/oid4vp/request/:id', '/oid4vp/response',
         // The x509 Client Identifiers (#230), whose settings are here.
         '/oid4vp/verifier-certificate',
         // The wallet sign-in (#38), whose four settings are on this page.

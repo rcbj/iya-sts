@@ -813,92 +813,6 @@ function federationCases(root) {
 }
 
 /**
- * The OpenID4VC demonstration's cases (#582): the issuer's page, the offer
- * page while the offer is made and its QR page for H.2 and H.3, the bar
- * door asking for claims and for the whole credential (an ldp_vc request
- * leaving claims out), the start page, the request's QR page, and the
- * closing page accepted, refused and with nothing presented — in English
- * and in French.
- *
- * @param {string} root - the repository root
- * @returns {object[]} `[{ label, view, ctx, path }]`
- */
-function vcDemoCases(root) {
-  log.debug("Entering vcDemoCases().");
-  const en = { t: translatorFor(root, 'vcDemo', ['en']), query: {},
-               prefix: '', origin: 'https://sts.example', here: '/issuer' };
-  const fr = Object.assign({}, en,
-    { t: translatorFor(root, 'vcDemo', ['fr', 'en']) });
-  const offer = { mode: 'cross-device', txCode: '4821<7>',
-    offerUri: 'openid-credential-offer://?credential_offer=' +
-      encodeURIComponent(JSON.stringify({
-        credential_issuer: 'https://sts.example',
-        credential_configuration_ids: ['IdentityCredential'],
-        grants: { 'urn:ietf:params:oauth:grant-type:pre-authorized_code': {
-          'pre-authorized_code': 'abc"<code>', tx_code: { input_mode:
-            'numeric', length: 6 } } } })),
-    walletUrl: 'https://wallet.example/vc-issuance?credential_offer=x&y=<1>',
-    kind: 'offer' };
-  const verifier = { kind: 'verifier', format: 'dc+sd-jwt',
-    askingFor: 'dc+sd-jwt', askingType: 'urn:idptools:sd-jwt-vc:<identity>',
-    claims: ['given_name', 'birthdate & "co"'], ldpOmitted: [],
-    responseUri: 'https://sts.example/oid4vp/response',
-    wallet: 'https://wallet.example' };
-  const request = { kind: 'request', state: 'st<1>&2', pollSeconds: 4,
-    requestUri: 'openid4vp://?client_id=redirect_uri%3Ahttps%3A%2F%2Fsts.' +
-      'example&request_uri=https%3A%2F%2Fsts.example%2Foid4vp%2Frequest%2F' +
-      'abc',
-    walletUrl: 'https://wallet.example/vp?client_id=a&request_uri=b' };
-  const done = { kind: 'done', received: true, accepted: true,
-    claims: [{ name: 'given_name', value: 'Ada <L>' },
-             { name: 'address', value: '{"country":"US & co"}' }],
-    requested: ['given_name', 'address'] };
-  log.debug("Leaving vcDemoCases().");
-  return [
-    { label: 'the issuer\'s page, in English', path: '/issuer', ctx: en,
-      view: { kind: 'issuer', configurationId: 'Identity<Credential>',
-              wallet: 'https://wallet.example/?a=1&b=2',
-              issuer: 'https://sts.example/realm/"x"' } },
-    { label: 'the issuer\'s page, in French', path: '/issuer', ctx: fr,
-      view: { kind: 'issuer', configurationId: 'IdentityCredential',
-              wallet: 'https://wallet.example', issuer: 'https://sts.e' } },
-    { label: 'the offer page while the offer is made', ctx: en,
-      path: '/issuer/offer', view: { kind: 'offerStart',
-                                     mode: 'cross-device' } },
-    { label: 'the offer for another device (H.2), in English',
-      path: '/issuer/offer', view: offer, ctx: en },
-    { label: 'a deferred offer (H.3), in French', path: '/issuer/offer',
-      view: Object.assign({}, offer, { mode: 'deferred' }), ctx: fr },
-    { label: 'the bar door asking for two claims', path: '/oid4vp/verifier',
-      view: verifier, ctx: en },
-    { label: 'the bar door asking for the whole credential, no format named',
-      path: '/oid4vp/verifier', ctx: fr,
-      view: Object.assign({}, verifier, { format: '', claims: [] }) },
-    { label: 'an ldp_vc request leaving one claim out',
-      path: '/oid4vp/verifier', ctx: en,
-      view: Object.assign({}, verifier, { format: 'ldp_vc',
-        askingFor: 'ldp_vc', ldpOmitted: ['picture'] }) },
-    { label: 'an ldp_vc request leaving two claims out, in French',
-      path: '/oid4vp/verifier', ctx: fr,
-      view: Object.assign({}, verifier, { format: 'ldp_vc',
-        askingFor: 'ldp_vc', ldpOmitted: ['picture', 'age_over_21'] }) },
-    { label: 'the start page while the request is built',
-      path: '/oid4vp/start', ctx: en,
-      view: { kind: 'presentStart', mode: 'same-device' } },
-    { label: 'the request for another device', path: '/oid4vp/start',
-      view: request, ctx: en },
-    { label: 'the request for another device, in French',
-      path: '/oid4vp/start', view: request, ctx: fr },
-    { label: 'accepted', path: '/oid4vp/done', view: done, ctx: en },
-    { label: 'refused, in French', path: '/oid4vp/done', ctx: fr,
-      view: Object.assign({}, done, { accepted: false, claims: [] }) },
-    { label: 'nothing presented yet', path: '/oid4vp/done', ctx: en,
-      view: { kind: 'done', received: false, accepted: false, claims: [],
-              requested: [] } }
-  ];
-}
-
-/**
  * The description pages' cases (#584): each of the six families' pages
  * drawn from a view alone — the view each shell carries, its document
  * written here with the values that make escaping matter — in English and
@@ -1237,10 +1151,6 @@ module.exports = [
     pages: 'federation/web_federation_pages.ts', global: 'StsFederation',
     bundle: 'federation/federation-pages.bundle.js',
     runtime: 'federation/federation-pages-spa.js', cases: federationCases },
-  { name: 'the OpenID4VC demonstration',
-    pages: 'oid4vc/web_vc_demo_pages.ts', global: 'StsVcDemo',
-    bundle: 'oid4vc/vc-demo.bundle.js', runtime: 'oid4vc/vc-demo-spa.js',
-    cases: vcDemoCases },
   { name: 'the description pages',
     pages: 'common/web_description_pages.ts', global: 'StsDescriptions',
     bundle: 'common/description-pages.bundle.js',

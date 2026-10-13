@@ -233,14 +233,6 @@ bundle_surface "GNAP's interaction pages" gnap/web_gnap_interact_pages.ts \
 bundle_surface "the sign-out" logout/web_signout_pages.ts StsSignout \
   logout/signout.bundle.js logout/web_signout.ts logout/signout-spa.js
 
-# THE OPENID4VC DEMONSTRATION (#582): `oid4vc/vc-demo.bundle.js`
-# (`StsVcDemo`, `web_vc_demo_pages.ts`) and `oid4vc/vc-demo-spa.js`
-# (`web_vc_demo.ts`), served at `/issuer/demo.js` — never `vc_demo_api.js`
-# or `vc_demo_shell.js`, the server modules beside it.
-bundle_surface "the OpenID4VC demonstration" oid4vc/web_vc_demo_pages.ts \
-  StsVcDemo oid4vc/vc-demo.bundle.js oid4vc/web_vc_demo.ts \
-  oid4vc/vc-demo-spa.js
-
 # THE FEDERATION PAGES (#580): `federation/federation-pages.bundle.js`
 # (`StsFederation`, `web_federation_pages.ts`) and
 # `federation/federation-pages-spa.js` (`web_federation_surface.ts`), served

@@ -3058,11 +3058,8 @@ const REQUIREMENTS = [
   // endpoint.
   { id: 'demo-endpoints',
     what: 'The demonstration and test-control endpoints exist',
-    development: 'Served and listed: the demonstration issuer and ' +
-                 'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
-                 '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +
-                 'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
-                 'endpoints, the protected Kerberos service (/krb5/service ' +
+    development: 'Served and listed: the VC-API test endpoints, the ' +
+                 'protected Kerberos service (/krb5/service ' +
                  'and its TCP socket), /krb5/principals, /spnego and ' +
                  '/spnego/protected.',
     product: 'None of them is served or listed. Each answers exactly as a ' +

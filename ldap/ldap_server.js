@@ -4794,7 +4794,7 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 
 // And is it a DECENTRALIZED IDENTIFIER? A third shape of identity, arriving
 // from the Decentralized Identity endpoints — an ldp_vc's `did:jwk:…` subject,
-// whatever DID the OID4VP Verifier was shown, the one /did/generate mints. Like
+// whatever DID the OID4VP Verifier was shown. Like
 // DN_SHAPED this is deliberately not shared with admin_stats.js's
 // identical-looking test: that one decides whether to split an identity at an
 // '@', this one decides where an entry goes, and one knob turning both would
@@ -5286,8 +5286,8 @@ function didPlan(info) {
   const uid = didUid(did);
   // The description says how this entry came to exist, and for a DID the
   // default — "authenticated through X" — would be the wrong sentence in both
-  // halves: nobody typed a password, and at /did/generate nobody presented
-  // anything at all. So this plan carries its own.
+  // halves: nobody typed a password, and a DID presented to the Verifier is
+  // not an authentication. So this plan carries its own.
   const note = 'named by a decentralized identifier presented through ' +
     String(info.protocol || 'an unstated protocol') +
     (info.method ? ' (' + info.method + ')' : '');
@@ -5311,8 +5311,8 @@ function didPlan(info) {
   // visible on one object instead of one each on several. One person is one
   // entry here, which is the rule that wins.
   //
-  // A DID presented with no link — the OID4VP Verifier is shown one, or
-  // /did/generate mints one — still gets its own entry. There is nothing to
+  // A DID presented with no link — the OID4VP Verifier is shown one — still
+  // gets its own entry. There is nothing to
   // attach it to, and inventing a person to attach it to would be worse than a
   // digest for a name. If it was linked EARLIER, locateEntry() finds the entry
   // by `didSubject` before this plan is ever consulted, so no duplicate
@@ -16332,7 +16332,7 @@ const SERVICE_SENTENCES = Object.freeze({
     'attributes, which are this service\'s own names and not schema. A ' +
     'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
     'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
-    'to the OID4VP Verifier, the one /did/generate mints. Its entry goes ' +
+    'to the OID4VP Verifier. Its entry goes ' +
     'at uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — a ' +
     'did:jwk written out in full is a DN of several hundred characters, ' +
     'most of it key material — with the identifier itself kept whole on ' +

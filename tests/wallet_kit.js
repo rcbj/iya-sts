@@ -540,36 +540,30 @@ async function boot() {
                                       json: body });
   }
 
-  // THE OPENID4VC DEMONSTRATION'S START PAGES (#582): `GET /oid4vp/start`
-  // (and `/issuer/offer`) made the request and answered a 302 to the
-  // wallet; since #582 the shell creates nothing, its view answers the CSRF
-  // token, and the act is `POST /vc-demo-api/start` (`/offer`). This runs
-  // the three as the page's runtime does, and reads the answer as the 302
-  // it replaced: `headers.location` the wallet's address, the same bytes.
-  async function demoStart(urlPath, opts) {
+  // A VERIFICATION, STARTED AS `POST /admin-api/verifications/start`
+  // STARTS ONE (#594): through the Verifier's own `startVerification()`, in
+  // the realm `o.realm` names. The demonstration's `/oid4vp/start`, which
+  // these jobs drove until then, left for the development companion. The
+  // answer is read as that page's 302 was: `headers.location` the wallet's
+  // address. `query` is the start's names (`by`, `format`, …) as a query
+  // string or an object.
+  async function verificationStart(query, opts) {
     const o = opts || {};
-    const who = o.browser || browser();
-    const at = new URL(urlPath, base);
-    const page = /^(.*?)\/(issuer\/offer|oid4vp\/start)$/.exec(at.pathname);
-    const p = page ? page[1] : '';
-    const op = p + (page && page[2] === 'issuer/offer'
-      ? '/vc-demo-api/offer' : '/vc-demo-api/start');
-    const shell = await request('GET', urlPath, { browser: who });
-    const opened = await request('GET', op + at.search, { browser: who });
-    if (opened.status !== 200 || !opened.json || !opened.json.ok) {
-      return Object.assign({}, opened, { answer: opened, shell: shell });
-    }
-    const body = {};
-    at.searchParams.forEach(function (value, name) {
-      body[name] = value;
+    const asked = {};
+    new URLSearchParams(typeof query === 'string'
+      ? query.replace(/^[^?]*\?/, '') : query || {})
+      .forEach(function (value, name) {
+        asked[name] = value;
+      });
+    const started = await m.realms.run(o.realm || DEFAULT, function () {
+      return m.verifier.startVerification(fakeReq(o.prefix || ''), asked,
+                                          'body');
     });
-    const r = await act(who, op, body, { csrf: opened.json.csrf });
-    const j = r.json || {};
-    if (r.status === 200 && j.ok && j.location) {
-      return Object.assign({}, r, { status: 302, answer: r, shell: shell,
-        headers: Object.assign({}, r.headers, { location: j.location }) });
+    if (!started.ok) {
+      return { status: started.status, json: started, headers: {} };
     }
-    return Object.assign({}, r, { answer: r, shell: shell });
+    return { status: 302, json: started,
+             headers: { location: started.walletUrl } };
   }
 
   // The start, as the start page runs it: its shell (the arrival cookie),
@@ -748,7 +742,7 @@ async function boot() {
     issue: issue, presentSdJwt: presentSdJwt, presentJwtVc: presentJwtVc,
     presentLdp: presentLdp, present: present, pendingSignIn: pendingSignIn,
     start: start, collect: collect, act: act, formLike: formLike,
-    demoStart: demoStart,
+    verificationStart: verificationStart,
     refreshCsrf: refreshCsrf,
     responseCodeOf: responseCodeOf, idsOf: idsOf,
     vpToken: vpToken, respond: respond,

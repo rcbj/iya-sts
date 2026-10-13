@@ -6773,9 +6773,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/verifier-request', group: 'Management API',
     name: 'Verifier request (the bar door)',
     specs: ['oid4vp', 'sd-jwt-vc', 'vcdm', 'rfc4519'],
-    what: 'NON-SPEC. What the demonstration Verifier at /oid4vp/verifier ' +
-          'asks a ' +
-          'wallet for, in which credential format, and the dcql_query they ' +
+    what: 'NON-SPEC. What the OID4VP Verifier asks a wallet for, in which ' +
+          'credential format, and the dcql_query they ' +
           'build — from the function that builds the real one, so it is the ' +
           'next Authorization Request rather than a description of it. Each ' +
           'catalogue row also says whether the ISSUER currently mints that ' +
@@ -6798,23 +6797,42 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oid4vp', 'siopv2', 'rfc9101'],
     effect: 'builds an OID4VP Authorization Request and records its ' +
             'transaction',
-    what: 'NON-SPEC (#587). The administrator\'s /oid4vp/start, through the ' +
-          'same function: the body names what that page\'s query names ' +
-          '(format, by, client_id_prefix, response_type, response_mode, ' +
-          'mode, wallet), and the answer is JSON — the state, the wallet ' +
-          'URL a same-device start redirects to, the openid4vp:// (or ' +
+    what: 'NON-SPEC (#587). Where a verification starts, for an ' +
+          'administrator or an application holding Admin Write (#594: the ' +
+          'development companion\'s bar door is one). The body names ' +
+          'format, by, client_id_prefix, response_type, response_mode, ' +
+          'mode, wallet, and redirect_uri — the caller\'s page the Response ' +
+          'Endpoint sends the wallet to afterwards, one of the calling ' +
+          'client\'s registered redirect URIs where only registered ' +
+          'addresses are accepted. The answer is JSON: the state, the ' +
+          'wallet URL a same-device start goes to, the openid4vp:// (or ' +
           'siopv2://) URI a cross-device QR code carries, and the ' +
-          'request_uri by reference — rather than a redirect. Answered in ' +
-          'every mode. Mirrors the Start a verification form on ' +
-          '/admin/vc.' },
+          'request_uri by reference. Answered in every mode. Mirrors the ' +
+          'Start a verification form on /admin/vc.' },
   { path: '/admin-api/verifications', group: 'Management API',
     name: 'A verification\'s outcome',
     specs: ['oid4vp'],
-    what: 'NON-SPEC (#587). With ?state=, the verdict /oid4vp/result/:state ' +
-          'answers, from the same function (404 for a state with no ' +
+    what: 'NON-SPEC (#587). With ?state=, what the Verifier decided — ' +
+          'every check and the disclosed claims (404 for a state with no ' +
           'record); without, the realm\'s open verifications and what each ' +
           'decided, newest first — the list the Verifier request tab ' +
           'draws. A wallet sign-in is not listed.' },
+  { path: '/admin-api/oid4vci/last-request', group: 'Management API',
+    name: 'The last Credential Request',
+    specs: ['oid4vci', 'rfc7516'],
+    what: 'NON-SPEC (#594). How the OpenID4VCI issuer\'s last Credential ' +
+          'Request arrived: its media type and, encrypted, its JWE\'s kid, ' +
+          'alg and enc — never the request. A wallet cannot prove it ' +
+          'encrypted; only the issuer knows what arrived. Admin Read; until ' +
+          '#594 the development-only /oid4vci/last_request.' },
+  { path: '/admin-api/oid4vci/notifications', group: 'Management API',
+    name: 'A credential\'s notification',
+    specs: ['oid4vci'],
+    what: 'NON-SPEC (#594). With ?id=, what a wallet told the Notification ' +
+          'Endpoint about the credential that notification_id names: the ' +
+          'event, its description and when (404 for an id this issuer did ' +
+          'not issue). Admin Read; until #594 the development-only ' +
+          '/oid4vci/notification/:id.' },
 
   // --- WS-Trust ---
   { path: '/sts', group: 'WS-Trust', name: 'Security Token Service',
@@ -8559,68 +8577,9 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oid4vci', 'rfc6750'], what: 'Section 11: the wallet reports ' +
                               'what it did with the credential. Validated ' +
                               'and recorded.' },
-  { path: '/oid4vci/notification/:id', group: 'VC Issuance (OID4VCI)',
-    name: 'Notification readback (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests: what the wallet reported against a ' +
-          'notification_id.',
-    demo: true },
-  { path: '/oid4vci/last_request', group: 'VC Issuance (OID4VCI)',
-    name: 'Last Credential Request (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests: whether the last Credential Request arrived ' +
-          'encrypted, and how.',
-    demo: true },
   { path: '/oid4vci/credential-offer/:id', group: 'VC Issuance (OID4VCI)',
     name: 'Credential Offer by reference', specs: ['oid4vci'],
     what: 'Serves an offer fetched via credential_offer_uri.' },
-  { path: '/issuer', group: 'VC Issuance (OID4VCI)', name: 'Issuer web page',
-    specs: ['oid4vci'], what: 'Appendix H.1: where an End-User starts an ' +
-                              'issuer-initiated flow. A page of the ' +
-                              'demonstration\'s static surface since #582, ' +
-                              'drawn from /vc-demo-api/issuer.',
-    demo: true },
-  { path: '/issuer/offer', group: 'VC Issuance (OID4VCI)', name: 'Build a ' +
-      'Credential Offer',
-    specs: ['oid4vci'],
-    what: 'The page that builds an offer and either sends the browser to ' +
-          'the wallet or shows it as a QR code. ?mode=cross-device (H.2) and ' +
-          '?mode=deferred (H.3) select the pre-authorized code grant with a ' +
-          'Transaction Code. A page of the demonstration\'s static surface ' +
-          'since #582: the GET creates nothing, and its script makes the ' +
-          'offer at POST /vc-demo-api/offer.',
-    demo: true },
-  { path: '/issuer/demo.js', group: 'VC Issuance (OID4VCI)',
-    name: 'The demonstration pages\' script', specs: [],
-    what: 'NON-SPEC (#582). The runtime and renderers of the demonstration ' +
-          'issuer\'s and verifier\'s pages in one file, built by ' +
-          'build-typescript.sh (oid4vc/vc-demo-spa.js) and served ' +
-          'precompressed: it draws /issuer, /issuer/offer, ' +
-          '/oid4vp/verifier, /oid4vp/start and /oid4vp/done from ' +
-          '/vc-demo-api, makes their offers and requests there, and draws ' +
-          'the QR codes.',
-    demo: true },
-  { path: '/vc-demo-api', group: 'VC Issuance (OID4VCI)',
-    name: 'The demonstration API index', specs: [],
-    what: 'NON-SPEC (#582). The operations of the OpenID4VC ' +
-          'demonstration\'s API, each with the page or control it is the ' +
-          'door of (mirrors). Language-free.',
-    demo: true },
-  { path: '/vc-demo-api/issuer', group: 'VC Issuance (OID4VCI)',
-    name: 'The demonstration issuer\'s page', specs: [],
-    what: 'NON-SPEC (#582). What /issuer is drawn from: the credential ' +
-          'configuration on offer, the wallet and the issuer.',
-    demo: true },
-  { path: '/vc-demo-api/offer', group: 'VC Issuance (OID4VCI)',
-    name: 'Make a demonstration Credential Offer', specs: [],
-    effect: 'POST mints an offer',
-    what: 'NON-SPEC door to OpenID4VCI section 4 and Appendix H (#582). GET ' +
-          'answers the offer page\'s view and CSRF token, its query checked ' +
-          'and nothing minted; POST makes the offer — JSON, an Origin of ' +
-          'this service and X-CSRF-Token bound to the sts_session cookie — ' +
-          'through the same makeOffer() the portal uses, and answers the ' +
-          'wallet to go to (location) or the QR page\'s view: the ' +
-          'openid-credential-offer URI, the wallet link and the Transaction ' +
-          'Code.',
-    demo: true },
   { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
     name: 'BBS public key',
     specs: ['di-bbs'],
@@ -8750,15 +8709,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'generated on the application\'s Configuration tab or with ' +
           'POST /admin-api/applications/generate-did-key, which hands the ' +
           'private key out once.' },
-  { path: '/did/generate', group: 'Decentralized Identifiers',
-    name: 'Generate a verifiable DID (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests and for trying the DID Tools page: ' +
-          '?method=jwk mints a fresh P-256 key and returns a did:jwk with a ' +
-          'credential signed by it; ?method=web returns this service\'s own ' +
-          'did:web with one signed by the RS256 key its document publishes. ' +
-          'A DID with nothing signed by it could only be parsed, not ' +
-          'verified.',
-    demo: true },
   { path: '/.well-known/did-configuration.json', group: 'Decentralized ' +
                                                         'Identifiers',
     name: 'Domain Linkage Credential', specs: ['did-config', 'vcdm', 'rfc7519'],
@@ -8767,50 +8717,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'fetching host.' },
 
   // --- OID4VP ---
-  { path: '/oid4vp/verifier', group: 'VC Presentation (OID4VP)',
-    name: 'Verifier ' +
-      'web page',
-    specs: ['oid4vp'], what: 'Where a presentation starts: the verifier ' +
-                             'asks, the wallet answers. A page of the ' +
-                             'demonstration\'s static surface since #582, ' +
-                             'drawn from /vc-demo-api/verifier.',
-    demo: true },
-  { path: '/oid4vp/start', group: 'VC Presentation (OID4VP)', name: 'Build ' +
-      'an Authorization Request',
-    specs: ['oid4vp'],
-    what: 'The page that starts a presentation: response_type=vp_token with ' +
-          'a DCQL query, a fresh nonce and response_mode=direct_post, passed ' +
-          'by value or by reference, with a QR screen for cross-device. ' +
-          '`client_id_prefix` names the Client Identifier Prefix of THIS ' +
-          'request (section 5.9) and makes it signed; an x509 prefix ' +
-          'certifies the Verifier first (#230). A page of the ' +
-          'demonstration\'s static surface since #582: the GET creates ' +
-          'nothing, and its script starts the request at POST ' +
-          '/vc-demo-api/start.',
-    demo: true },
-  { path: '/vc-demo-api/verifier', group: 'VC Presentation (OID4VP)',
-    name: 'The demonstration Verifier\'s page', specs: [],
-    what: 'NON-SPEC (#582). What /oid4vp/verifier is drawn from: the claims ' +
-          'the Verifier asks for, the credential type, the format, what an ' +
-          'ldp_vc request leaves out, and where the wallet posts.',
-    demo: true },
-  { path: '/vc-demo-api/start', group: 'VC Presentation (OID4VP)',
-    name: 'Start a demonstration presentation', specs: [],
-    effect: 'POST builds a request',
-    what: 'NON-SPEC door to OpenID4VP (#582). GET answers the start page\'s ' +
-          'view and CSRF token, its query checked and nothing built; POST ' +
-          'starts the request — bound as every act is — through the same ' +
-          'startVerification() POST /admin-api/verifications/start uses, and ' +
-          'answers the wallet to go to (location) or the QR page\'s view: ' +
-          'the openid4vp URI, the wallet link and the state the page polls.',
-    demo: true },
-  { path: '/vc-demo-api/done', group: 'VC Presentation (OID4VP)',
-    name: 'The demonstration Verifier\'s verdict', specs: [],
-    what: 'NON-SPEC (#582). What /oid4vp/done is drawn from for ?state=: ' +
-          'whether a presentation arrived and was accepted, its claims and ' +
-          'what was asked for; the QR page polls it. A wallet sign-in\'s ' +
-          'transaction is not answered.',
-    demo: true },
   { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
     name: 'The Verifier\'s x509 identity',
     specs: ['oid4vp', 'rfc5280'],
@@ -8846,19 +8752,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'answers once, and sends a same-device wallet back with a ' +
           'response_code; the session itself is set on the browser\'s next ' +
           'request, never on this one, which is the wallet\'s.' },
-  { path: '/oid4vp/result/:state', group: 'VC Presentation (OID4VP)',
-    name: 'Verification verdict (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
-          'verdict for a presentation.',
-    demo: true },
-  { path: '/oid4vp/done', group: 'VC Presentation (OID4VP)',
-    name: 'Presentation ' +
-      'complete page',
-    specs: ['oid4vp'], what: 'Where the End-User lands after a cross-device ' +
-                             'presentation. A page of the demonstration\'s ' +
-                             'static surface since #582, drawn from ' +
-                             '/vc-demo-api/done.',
-    demo: true },
   // ===== ACME endpoints (acme/) =====
   { path: '/enroll/acme/directory', group: 'ACME', name: 'The ACME directory',
     specs: ['rfc8555', 'acme-profiles', 'rfc9773'],

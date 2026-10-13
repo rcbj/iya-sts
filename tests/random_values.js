@@ -61,7 +61,7 @@ const log = require('bunyan').createLogger({ name: 'random_values',
 // What is not the service's own source — no_periodic_timers.js's list.
 const SKIP = new RegExp('(^|/)(node_modules|tests|coverage|debugger/embedded|' +
                         'common/vendored|node-ldapjs|deploy|xacml-pep|docs|' +
-                        '\\.claude|types)(/|$)');
+                        '\\.claude|types|companion)(/|$)');
 
 // GNAP's user-code alphabet (gnap/gnap_grants.ts), the one that was biased.
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

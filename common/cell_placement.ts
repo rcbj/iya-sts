@@ -129,13 +129,9 @@ const ROWS: Row[] = [
   { prefix: '/policy', strategy: 'local', why: 'a static page' },
   { prefix: '/did.json', strategy: 'local',
     why: 'the realm\'s DID document is the global tier\'s' },
-  { prefix: '/did', strategy: 'local',
-    why: 'the realm\'s DID documents are the global tier\'s' },
   { prefix: '/applications', strategy: 'local',
     why: 'an application\'s DID document is drawn from its entry, and ' +
          'ou=applications is the global tier\'s' },
-  { prefix: '/issuer', strategy: 'local',
-    why: 'issuer metadata is the global tier\'s' },
   { prefix: '/bbs', strategy: 'local',
     why: 'the realm\'s BBS key is the global tier\'s' },
   { prefix: '/FederationMetadata', strategy: 'local',
@@ -361,32 +357,14 @@ const ROWS: Row[] = [
   { prefix: '/oid4vci/credential-offer', strategy: 'artifact', segment: 3,
     why: 'an offer is found where it was minted (D10)' },
   { prefix: '/oid4vp', strategy: 'affinity', browser: true,
-    why: 'the verifier\'s browser pages, where the browser is pinned' },
-  { prefix: '/oid4vp/verifier', strategy: 'local',
-    why: 'verifier metadata is the global tier\'s' },
+    why: 'anything else of the verifier\'s, where the browser is pinned' },
   { prefix: '/oid4vp/verifier-certificate', strategy: 'local',
     why: 'verifier metadata is the global tier\'s' },
   { prefix: '/oid4vp/request', strategy: 'artifact', segment: 3,
     why: 'a wallet fetches a request where it was minted (D10)' },
-  { prefix: '/oid4vp/result', strategy: 'artifact', browser: true,
-    segment: 3, why: 'a result is found where it was minted (D10)' },
   { prefix: '/oid4vp/response', strategy: 'handler',
     handler: 'oid4vc/vc_verifier.ts',
     why: 'a wallet\'s direct_post names its transaction in the body' },
-  // THE DEMONSTRATION'S API (#582), placed as the pages it is the door of
-  // are: the issuer's views and its offer where `/issuer` is (local), the
-  // bar door's start where `/oid4vp` is (the pinned browser), and the
-  // closing page's view where its state was minted, as `/oid4vp/result`.
-  { prefix: '/vc-demo-api', strategy: 'local',
-    why: 'the demonstration issuer\'s pages and offers, and the bar door\'s ' +
-         'page: global configuration, or minted where asked (#582)' },
-  { prefix: '/vc-demo-api/start', strategy: 'affinity', browser: true,
-    why: 'the bar door\'s start (#582), where the browser is pinned, as ' +
-         '/oid4vp/start' },
-  { prefix: '/vc-demo-api/done', strategy: 'artifact', browser: true,
-    query: ['state'],
-    why: 'a verdict is found where its request was minted (D10), as at ' +
-         '/oid4vp/result (#582)' },
   // --- GNAP --- (`gnap/gnap_cells.ts` argues each row)
   { prefix: '/gnap', strategy: 'handler', handler: 'gnap/gnap_cells.ts',
     why: 'a grant request is placed by the instance, token or person it ' +

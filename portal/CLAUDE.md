@@ -1432,7 +1432,9 @@ OpenID4VCI Credential Offer (Appendix H.2, or H.3 deferred) of one of the
 realm's credential configurations, for the person's OWN wallet. It was the
 product behaviour of the demo issuer's `/issuer/offer` until rcbj decided on
 2026-10-12 that it is a real self-service feature; `oid4vc/CLAUDE.md` has
-that history and the one `makeOffer()` both doors call.
+that history and `makeOffer()`, which the demo issuer called too until it left
+for the development companion on #594 (which links a person here for a
+pre-authorized offer).
 
 * **Two operations** (`portal_wallet.ts`): `GET
   /account-api/credentials/offerable` (the page's view: the configurations,
@@ -1446,7 +1448,7 @@ that history and the one `makeOffer()` both doors call.
   token's `sub`, and a body naming anybody is ignored — the A01 rule above.
 * **IT IS MADE ON THE SIGN-ON SESSION THE TOKEN WAS ISSUED ON**
   (`caller.signOn`), which CAEP reports as `session-presented` naming
-  OpenID4VCI, as `/issuer/offer` did. Where the token registry no longer says
+  OpenID4VCI. Where the token registry no longer says
   which session that was — it is capped — or the session continued without
   signing in, the offer is REFUSED (`STS-PORTAL-0590`) rather than made on
   nothing; signing in again cures it. `STS-PORTAL-0310` is the same answer

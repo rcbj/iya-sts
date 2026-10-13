@@ -20,7 +20,8 @@
 //   * did:web  — this realm's own DID, its document from vc_did.ts;
 //   * did:key  — the realm's Ed25519, P-256 and P-384 keys, as the VC-API
 //                adapter names its issuers;
-//   * did:jwk  — one minted by this service's /did/generate;
+//   * did:jwk  — one this job makes from a P-256 key of its own (#594:
+//                the service's /did/generate is gone);
 //
 // each resolved through oid4vc/vc_did_resolver.ts (/vc-api/resolve,
 // /vc-api/dereference) in both representations it produces
@@ -304,11 +305,13 @@ async function test() {
                    "ecdsa-rdfc-2019-p384"].map(function (name) {
     return ctx.issuers[name].id;
   });
-  const generated = await kit.call("GET", ctx.realmBase +
-                                   "/did/generate?method=jwk");
-  assert.strictEqual(generated.status, 200, "/did/generate: " +
-                     generated.text.slice(0, 300));
-  const didJwk = generated.json.did;
+  // A did:jwk of the job's own (#594): the identifier IS the public key,
+  // so it resolves with no network call and no service minted it.
+  const holderJwk = require("crypto").generateKeyPairSync("ec",
+    { namedCurve: "P-256" }).publicKey.export({ format: "jwk" });
+  const didJwk = "did:jwk:" + Buffer.from(JSON.stringify(
+    { crv: holderJwk.crv, kty: holderJwk.kty, x: holderJwk.x,
+      y: holderJwk.y })).toString("base64url");
   log.info("  " + didWeb + ", " + didKeys.length + " did:key, " +
            didJwk.slice(0, 40) + "…");
   own.json = await settledDocument(ctx, own);

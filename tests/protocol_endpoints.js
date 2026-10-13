@@ -210,8 +210,8 @@ function childMain() {
           '/admin/vc-verifier-config'].every(function (page) {
            return table.pages().indexOf(page) < 0;
          }) &&
-         vcRoutes.indexOf('/issuer') >= 0 &&
-         vcRoutes.indexOf('/oid4vp/verifier') >= 0 &&
+         vcRoutes.indexOf('/oid4vci/credential-offer/:id') >= 0 &&
+         vcRoutes.indexOf('/oid4vp/response') >= 0 &&
          vcRoutes.indexOf('/oid4vci/status-lists') >= 0,
          'the single Verifiable Credentials page lists issuer, verifier and ' +
          'status endpoints',

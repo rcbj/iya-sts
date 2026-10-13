@@ -9,8 +9,8 @@
 // AN OPENID4VCI PRE-AUTHORIZED CODE IS REDEEMED FOR A TOKEN ABOUT THE PERSON
 // THE OFFER NAMED (#158, 2026-10-05), over the wire.
 //
-// A cross-device Credential Offer (from `/issuer/offer`, and in product from
-// the user portal since #589), redeemed at the token endpoint by a wallet
+// A cross-device Credential Offer (the user portal's since #589; the demo
+// issuer's `/issuer/offer` until #594), redeemed at the token endpoint by a wallet
 // that names no client (OID4VCI section 6.1's anonymous access), returned
 // an access token with
 // `"sub": ""` and `"client_id": ""` — both REQUIRED by RFC 9068 section 2.2,
@@ -18,17 +18,13 @@
 // recorded whom it was for when it was MINTED, and in development that is
 // `oid4vci.offerUsername`, who may have no entry yet.
 //
-// In a throwaway realm it leaves behind:
-//
-//   * development: `oid4vci.offerUsername` is a person with NO entry when the
-//     offer is minted — the case that produced the empty `sub`; the entry
-//     appears at redemption, and the token must carry its subject;
-//   * product: the person signs in to the user portal and makes the offer
-//     for their own wallet on /portal/wallet (`POST
-//     /account-api/credentials/offers`, #589) — where `/issuer/offer` minted
-//     it for the person signed in until #589;
-//
-// and in both, the access token's `sub` is the `urn:uuid:` subject the same
+// In a throwaway realm it leaves behind, in either mode, the person signs
+// in to the user portal and makes the offer for their own wallet on
+// /portal/wallet (`POST /account-api/credentials/offers`, #589). The
+// development case this job also held — an offer minted by the demo issuer
+// for `oid4vci.offerUsername` before that person had an entry — went with
+// the demo issuer on #594: no door left mints an offer for a person the
+// directory does not hold. In both, the access token's `sub` is the `urn:uuid:` subject the same
 // person's ID Token carries, and its `client_id` is the defined value for an
 // anonymous wallet, never an empty string.
 //
@@ -42,8 +38,6 @@ const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const portal = require("./portal_signin.js");
-// The demonstration issuer's offer page over `/vc-demo-api` (#582).
-const vcDemo = require("./vc_demo.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -254,34 +248,6 @@ async function idTokenOf(b) {
   return decode(redeemed.body.id_token);
 }
 
-// A cross-device offer from the realm's offer page in browser `b`: its
-// pre-authorized code, and the Transaction Code the page shows the person.
-// The page is a static surface's since #582: its act, `POST
-// /vc-demo-api/offer`, answers the QR page's view — the offer URI and the
-// wallet link the page draws, and the Transaction Code (`vc_demo.js`).
-async function crossDeviceOffer(b) {
-  log.debug("Entering crossDeviceOffer().");
-  const page = await vcDemo.offer(b.jar, base, { mode: "cross-device" });
-  assert.strictEqual(page.status, 200, "the offer page: " + page.status +
-                     " " + page.location + " " + String(page.text || "")
-                       .slice(0, 300));
-  const view = page.view || {};
-  const link = String(view.walletUrl || "");
-  const txCode = String(view.txCode || "");
-  const carried = /[?&]credential_offer=([^&]+)/.exec(link);
-  assert.ok(carried, "the offer page links the offer by value: " +
-            link.slice(0, 300));
-  assert.strictEqual(String(view.offerUri), "openid-credential-offer://?" +
-                     link.slice(link.indexOf("?") + 1), "the QR code and " +
-                     "the wallet link carry the same offer");
-  const offer = JSON.parse(decodeURIComponent(carried[1]));
-  const grant = (offer.grants || {})[PRE_AUTH] || {};
-  assert.ok(grant["pre-authorized_code"], "the offer carries a " +
-            "pre-authorized code: " + JSON.stringify(offer).slice(0, 400));
-  log.debug("Leaving crossDeviceOffer().");
-  return { code: grant["pre-authorized_code"], txCode: txCode };
-}
-
 // A cross-device offer the person makes for their own wallet on the user
 // portal (#589): signed in as the static portal, `POST
 // /account-api/credentials/offers` answers the offer and the Transaction
@@ -323,25 +289,15 @@ async function test() {
     "created the relying party");
   await ok(api + "/consent/grant-global-consent",
            { client: CLIENT, scope: "openid" }, "consented openid");
-  await ok(api + "/config/set", { key: "oid4vci.offerUsername",
-                                  value: HOLDER },
-           "made " + HOLDER + " the realm's offer username");
-
   const b = browser();
-  let idToken = null;
-  if (product) {
-    log.info("=== 1. product: " + HOLDER + " signs in, then makes the " +
-             "offer on /portal/wallet ===");
-    await ok(api + "/users/create", { username: HOLDER, invent: false,
-      credential: "password", password: PASSWORD,
-      attributes: { cn: "VCI " + HOLDER, givenName: "VCI", sn: "Holder",
-                    mail: HOLDER + "@vci158.test" } }, "created " + HOLDER);
-    idToken = await idTokenOf(b);
-  } else {
-    log.info("=== 1. development: the offer is minted for " + HOLDER +
-             ", who has no entry yet ===");
-  }
-  const offer = product ? await portalOffer() : await crossDeviceOffer(b);
+  log.info("=== 1. " + HOLDER + " signs in, then makes the offer on " +
+           "/portal/wallet ===");
+  await ok(api + "/users/create", { username: HOLDER, invent: false,
+    credential: "password", password: PASSWORD,
+    attributes: { cn: "VCI " + HOLDER, givenName: "VCI", sn: "Holder",
+                  mail: HOLDER + "@vci158.test" } }, "created " + HOLDER);
+  let idToken = await idTokenOf(b);
+  const offer = await portalOffer();
 
   log.info("=== 2. an anonymous wallet redeems it ===");
   const redeemed = await postForm(base + "/oauth2/token", {

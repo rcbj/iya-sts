@@ -4,26 +4,28 @@
 'use strict';
 // File: tests/admin_api_verifications.js
 // ===========================================================================
-// THE ADMINISTRATOR'S TWIN OF `/oid4vp/start` AND `/oid4vp/result/:state`
-// (#587, 2026-10-12), AND THE KERBEROS ACCOUNT POLICY ON
+// STARTING A VERIFICATION AND READING ITS OUTCOME AT `/admin-api` (#587,
+// 2026-10-12; the only doors since #594), AND THE KERBEROS ACCOUNT POLICY ON
 // `GET /admin-api/kerberos/principals`.
 //
-// The demonstration Verifier's pages become development-only (#585), and a
-// product-mode job — or an operator — still has to start a verification and
-// read what was decided. `POST /admin-api/verifications/start` and
-// `GET /admin-api/verifications` do it through the Verifier's own
-// `startVerification()` and `verificationOutcome()`, the functions the pages
-// call. What this holds, in a CHILD PROCESS with the whole stack on an
-// ephemeral port and tokens minted as the token endpoint mints them:
+// `POST /admin-api/verifications/start` and `GET /admin-api/verifications`
+// build and read through the Verifier's own `startVerification()` and
+// `verificationOutcome()`; the demonstration's `/oid4vp/start` and
+// `/oid4vp/result/:state`, which they were the twins of, left for the
+// development companion on #594. What this holds, in a CHILD PROCESS with
+// the whole stack on an ephemeral port and tokens minted as the token
+// endpoint mints them:
 //
-//   1. a start by value builds the request the page builds: the same wallet,
-//      and every parameter but the two fresh ones (`nonce`, `state`) equal
-//      to what `/oid4vp/start`'s redirect carries;
+//   1. a start by value answers its state, wallet URL and openid4vp:// URI;
+//      a start may name the page its wallet is sent to afterwards
+//      (`redirect_uri`, #594), one that is not an http(s) URL is refused,
+//      and a product realm accepts only the calling client's registered
+//      redirect URIs;
 //   2. a start by reference answers the `request_uri` its wallet URL
 //      carries, and the Request Object is served there;
-//   3. the outcome by `state` is the object `/oid4vp/result/:state`
-//      answers, with `found: true` — before a wallet answers, and after a
-//      verdict is written onto the transaction;
+//   3. the outcome by `state` is the Verifier's own, with `found: true` —
+//      before a wallet answers, and after a verdict is written onto the
+//      transaction;
 //   4. without `state`, the open verifications, the started one among them
 //      with its verdict's claim NAMES; an unknown state is 404;
 //   5. the refusals: a value outside a closed set, and Admin Read starting
@@ -143,66 +145,60 @@ function childMain() {
     note(!!writer && !!reader, 'precondition: two access tokens were minted',
          [!!writer, !!reader].join(','));
 
-    // --- 1. by value: the request the page builds ---------------------------
-    // THE PAGE'S START IS AN ACT ON `/vc-demo-api` SINCE #582: its shell,
-    // its view and `POST /vc-demo-api/start`, whose `location` is the
-    // address the page's 302 named (read here as that 302).
-    const vcDemo = require(ROOT_DIR + '/tests/tools/vc_demo');
-    const page = await vcDemo.start({ port: port, jar: {},
-                                      query: { format: 'dc+sd-jwt' } });
+    // --- 1. by value ---------------------------------------------------------
     let r = await call(port, 'POST', '/admin-api/verifications/start',
                        writer, { format: 'dc+sd-jwt' });
     let j = r.json || {};
-    note(page.status === 302 && !!page.location,
-         'precondition: /oid4vp/start redirects to the wallet',
-         page.status + ' ' + page.location.slice(0, 120));
     note(r.status === 200 && j.ok === true && typeof j.state === 'string' &&
          j.state.length > 10 && typeof j.walletUrl === 'string' &&
          j.walletUrl === j.wallet + '?' + j.query &&
          /^openid4vp:\/\/\?/.test(j.requestUri) &&
          j.requestUri.slice('openid4vp://?'.length) === j.query &&
-         j.byReference === false && !j.request_uri,
+         j.byReference === false && !j.request_uri && j.redirectUri === '',
          '1a. a start answers its state, the wallet URL (the wallet and the ' +
-         'query), and the openid4vp:// URI a QR code carries',
+         'query), the openid4vp:// URI a QR code carries, and no ' +
+         'completion page when it named none',
          r.status + ' ' + r.text.slice(0, 400));
-    if (page.location && j.walletUrl) {
-      const fromPage = paramsOf(page.location);
-      const fromApi = paramsOf(j.walletUrl);
-      note(page.location.split('?')[0] === j.walletUrl.split('?')[0],
-           '1b. the operation sends the holder to the wallet the page does',
-           page.location.split('?')[0] + ' vs ' + j.walletUrl.split('?')[0]);
-      const names = Object.keys(fromPage).sort();
-      const differ = names.filter(function (name) {
-        return name !== 'nonce' && name !== 'state' &&
-               fromPage[name] !== fromApi[name];
-      });
-      note(JSON.stringify(names) ===
-           JSON.stringify(Object.keys(fromApi).sort()) &&
-           differ.length === 0 && fromApi.state === j.state &&
-           fromApi.nonce === j.nonce && fromPage.state !== fromApi.state,
-           '1c. and with the same parameters, every one equal but the ' +
-           'fresh nonce and state',
-           JSON.stringify(names) + ' differ=' + JSON.stringify(differ));
-    }
     const byValueState = j.state;
-    // The page's QR code for another device (#582): the request's URI,
-    // carrying the same parameters but the fresh nonce and state.
-    const qrPage = await vcDemo.start({ port: port, jar: {},
-      query: { format: 'dc+sd-jwt', mode: 'cross-device' } });
-    const qrView = qrPage.view || {};
-    const fromQr = /^openid4vp:\/\/\?/.test(String(qrView.requestUri))
-      ? paramsOf('https://x.invalid/?' +
-                 String(qrView.requestUri).slice('openid4vp://?'.length))
-      : {};
-    note(qrPage.status === 200 && qrView.kind === 'request' &&
-         typeof qrView.state === 'string' && fromQr.state === qrView.state &&
-         JSON.stringify(Object.keys(fromQr).sort()) ===
-           JSON.stringify(Object.keys(paramsOf(j.walletUrl || '')).sort()) &&
-         qrView.walletUrl.split('?')[1] ===
-           String(qrView.requestUri).slice('openid4vp://?'.length),
-         '1d. the page\'s QR view carries the openid4vp:// URI — the same ' +
-         'parameters, and the wallet link the same query',
-         qrPage.status + ' ' + JSON.stringify(qrView).slice(0, 300));
+    // THE STARTER'S COMPLETION PAGE (#594): the Response Endpoint's
+    // redirect_uri, which the demonstration's own /oid4vp/done was until
+    // then. Development accepts any absolute URL; a product realm, only one
+    // of the calling client's registered redirect URIs.
+    const DONE = 'https://rp.example/verified';
+    r = await call(port, 'POST', '/admin-api/verifications/start', writer,
+                   { mode: 'same-device', redirect_uri: DONE });
+    j = r.json || {};
+    note(r.status === 200 && j.redirectUri === DONE,
+         '1b. a start may name the page its wallet is sent to afterwards',
+         r.status + ' ' + r.text.slice(0, 300));
+    r = await call(port, 'POST', '/admin-api/verifications/start', writer,
+                   { redirect_uri: 'javascript:alert(1)' });
+    note(r.status === 400 && r.json && r.json.ok === false,
+         '1c. a redirect_uri that is not an absolute http(s) URL is ' +
+         'refused (STS-VC-0123)', r.status + ' ' + r.text.slice(0, 200));
+    const prodCheck = await inDefault(function () {
+      const made = realms.create({ id: 'avprod', name: 'avprod',
+        overrides: { 'global.mode': 'product' } });
+      return realms.run(made.realm, function () {
+        const apps = require(ROOT_DIR + '/common/applications');
+        const registered = (apps.clientConfigOf('sts-admin-console')
+          .redirect_uris || [])[0] || '';
+        return {
+          registered: registered,
+          own: registered
+            ? vcVerifier.completionUriFor(registered, 'sts-admin-console')
+            : null,
+          other: vcVerifier.completionUriFor(DONE, 'sts-admin-console'),
+          nobody: vcVerifier.completionUriFor(registered, '')
+        };
+      });
+    });
+    note(prodCheck.registered && prodCheck.own &&
+         prodCheck.own.uri === prodCheck.registered &&
+         prodCheck.other && prodCheck.other.error &&
+         prodCheck.nobody && prodCheck.nobody.error,
+         '1d. in a product realm, only one of the calling client\'s ' +
+         'registered redirect URIs is accepted', JSON.stringify(prodCheck));
 
     // --- 2. by reference --------------------------------------------------
     r = await call(port, 'POST', '/admin-api/verifications/start', writer,
@@ -225,24 +221,23 @@ function childMain() {
     }
     const byReferenceState = j.state;
 
-    // --- 3. the outcome, as the result page answers it ----------------------
+    // --- 3. the outcome --------------------------------------------------------
     r = await call(port, 'GET', '/admin-api/verifications?state=' +
                    encodeURIComponent(byValueState), reader);
-    const result = await call(port, 'GET', '/oid4vp/result/' +
-                              encodeURIComponent(byValueState), '');
     j = r.json || {};
-    const sameAsPage = function (api, pageJson) {
+    const direct = await inDefault(function () {
+      return vcVerifier.verificationOutcome(byValueState);
+    });
+    const sameAsVerifier = function (api, outcome) {
       const copy = Object.assign({}, api);
       delete copy.found;
       delete copy.protocolEndpoints;
-      return JSON.stringify(copy) === JSON.stringify(pageJson);
+      return JSON.stringify(copy) === JSON.stringify(outcome);
     };
     note(r.status === 200 && j.found === true && j.received === false &&
-         j.verdict === null && result.status === 200 &&
-         sameAsPage(j, result.json),
-         '3a. Admin Read reads the outcome: the result page\'s object, ' +
-         'found and not yet received', r.status + ' ' + r.text.slice(0, 300) +
-         ' | page ' + result.text.slice(0, 200));
+         j.verdict === null && sameAsVerifier(j, direct),
+         '3a. Admin Read reads the outcome: the Verifier\'s own, found and ' +
+         'not yet received', r.status + ' ' + r.text.slice(0, 300));
     await inDefault(async function () {
       const record = vcVerifier.transactionFor(byValueState);
       record.verdict = { ok: true, at: new Date().toISOString(),
@@ -253,23 +248,11 @@ function childMain() {
     });
     r = await call(port, 'GET', '/admin-api/verifications?state=' +
                    encodeURIComponent(byValueState), reader);
-    const decided = await call(port, 'GET', '/oid4vp/result/' +
-                               encodeURIComponent(byValueState), '');
     j = r.json || {};
     note(r.status === 200 && j.received === true && j.verdict &&
-         j.verdict.ok === true && j.verdict.claims.given_name === 'Ada' &&
-         sameAsPage(j, decided.json),
-         '3b. once a verdict is on the transaction, both doors answer it',
-         r.status + ' ' + r.text.slice(0, 300));
-    const doneView = await vcDemo.done({ port: port, state: byValueState });
-    const dv = doneView.view || {};
-    note(doneView.status === 200 && dv.kind === 'done' &&
-         dv.received === true && dv.accepted === true &&
-         JSON.stringify(dv.claims) ===
-           JSON.stringify([{ name: 'given_name', value: 'Ada' }]),
-         '3c. and the closing page\'s view (/vc-demo-api/done, #582) says ' +
-         'what was decided', doneView.status + ' ' +
-         JSON.stringify(dv).slice(0, 300));
+         j.verdict.ok === true && j.verdict.claims.given_name === 'Ada',
+         '3b. once a verdict is on the transaction, the operation answers ' +
+         'it', r.status + ' ' + r.text.slice(0, 300));
 
     // --- 4. the open list, and an unknown state -----------------------------
     r = await call(port, 'GET', '/admin-api/verifications', reader);
@@ -415,8 +398,8 @@ async function run(t) {
 module.exports = {
   name: 'admin_api_verifications',
   describe: 'POST /admin-api/verifications/start and GET ' +
-            '/admin-api/verifications build and read what /oid4vp/start and ' +
-            '/oid4vp/result build and read, and the Kerberos account ' +
+            '/admin-api/verifications start and read a verification, and ' +
+            'the Kerberos account ' +
             'policy is on GET /admin-api/kerberos/principals (#587)',
   run: run
 };

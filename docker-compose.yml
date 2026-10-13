@@ -231,6 +231,37 @@ services:
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-60000}
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
 
+  companion:
+    container_name: ${STS_COMPANION_CONTAINER_NAME:-sts-companion}
+    hostname: companion
+    profiles: ["companion"]
+    image: ${STS_COMPANION_IMAGE:-iya-sts-companion}
+    build:
+      context: ./companion
+    ports:
+      - "${COMPANION_HOST_PORT:-9700}:9700"
+    depends_on:
+      sts:
+        condition: service_healthy
+    environment:
+      - COMPANION_PORT=9700
+      - COMPANION_PUBLIC_URL=${COMPANION_PUBLIC_URL:-http://localhost:9700}
+      - COMPANION_STS_URL=${COMPANION_STS_URL:-https://sts:8081}
+      - COMPANION_STS_PUBLIC_URL=${COMPANION_STS_PUBLIC_URL:-https://localhost:8081}
+      - COMPANION_STS_CA_FILE=${COMPANION_STS_CA_FILE:-}
+      - COMPANION_STS_TLS_INSECURE=${COMPANION_STS_TLS_INSECURE:-true}
+      - COMPANION_CLIENT_ID=${COMPANION_CLIENT_ID:-iya-sts-companion}
+      - COMPANION_CLIENT_SECRET=${COMPANION_CLIENT_SECRET:-}
+      - COMPANION_BOOTSTRAP_SECRET=${ADMIN_API_CLIENT_SECRET:-}
+      - COMPANION_WALLET_URL=${COMPANION_WALLET_URL:-}
+      - COMPANION_LOG_LEVEL=${COMPANION_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9700,path:'/healthz'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 networks:
   default:
     ipam:

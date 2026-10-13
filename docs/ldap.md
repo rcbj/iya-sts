@@ -4,8 +4,6 @@ title: LDAP
 
 # LDAP
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/did/generate` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 iya-sts runs an **embedded LDAP v3 directory**
 ([RFC 4511](https://www.rfc-editor.org/rfc/rfc4511)) on two raw sockets: TCP
 389 in the clear and TCP 636 over TLS (LDAPS). It is not a side feature. The
@@ -496,10 +494,9 @@ of those attributes.
 
 ### A decentralized identifier
 
-Three places hand over a DID: the subject of an issued `ldp_vc` (a `did:jwk`
-built from the holder key the wallet proved possession of), whatever DID
-presents a credential to the OID4VP Verifier, and the `did:jwk` that
-`/did/generate` mints on request. Each gets an entry, which matters most at the
+Two places hand over a DID: the subject of an issued `ldp_vc` (a `did:jwk`
+built from the holder key the wallet proved possession of), and whatever DID
+presents a credential to the OID4VP Verifier. Each gets an entry, which matters most at the
 Credential Issuer: OID4VCI lets the authorization server be somebody else, so a
 **foreign** access token whose subject this service has never seen is the
 ordinary case, and without an entry the credential would describe somebody with
@@ -527,17 +524,16 @@ the Verifier, the entry that records it is found and nothing new is created. A
 DID with no link still gets its own digest-named entry, because inventing a
 person to attach it to would be worse.
 
-**None of the three is a sign-on**, and each record says so. A presentation to
-the Verifier at `/oid4vp/verifier` starts no session and issues no token; it is
+**Neither is a sign-on**, and each record says so. A presentation to
+the Verifier for a verification started at `POST /admin-api/verifications/start`
+starts no session and issues no token; it is
 *recorded*. (A presentation to `/authn/wallet` is a sign-on, of the entry the
 credential was issued for rather than of its DID — see
 [OpenID4VP and wallet sign-in](oid4vp.md).) A credential request records that an access token was
 presented, not that anybody authenticated; in development mode this service does
 not verify one it did not issue, and product mode refuses one it cannot verify.
-`/did/generate` records an identity this service *created*, with nothing
-presented. The `did:web` that endpoint returns for `?method=web` gets no entry:
-it is this service's OWN identity, published at `/.well-known/did.json`, and an
-entry for it would file the issuer among the people.
+This service's own `did:web`, published at `/.well-known/did.json`, gets no
+entry: an entry for it would file the issuer among the people.
 
 ### A SPIFFE identity
 

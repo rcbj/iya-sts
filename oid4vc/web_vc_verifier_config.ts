@@ -52,16 +52,13 @@ class VcVerifierConfigPage {
     const requested = json.requested;
     const query = json.dcqlQuery;
 
-    // The demonstration verifier page is linked only where this realm is
-    // served it (#585); a product realm's verifications start from this tab
-    // or `POST /admin-api/verifications/start` (#587), which the sentence
-    // names in its place.
-    const verifierAt = json.verifierPage
-      ? '<a href="' + kit.esc(json.verifierPage) + '">' +
-        kit.esc(json.verifierPage) + '</a>'
-      : '<code>POST /admin-api/verifications/start</code>';
+    // A verification starts from this tab or `POST /admin-api/
+    // verifications/start` (#587) — the demonstration's bar door, which this
+    // sentence linked in a development realm, left for the development
+    // companion on #594.
     const inner = kit.note(t.html('consoleVcVerifierConfig.intro1') +
-      verifierAt + t.html('consoleVcVerifierConfig.intro2')) +
+      '<code>POST /admin-api/verifications/start</code>' +
+      t.html('consoleVcVerifierConfig.intro2')) +
 
       kit.note(t.html('consoleVcVerifierConfig.catalogue1') + '<a ' +
       'href="/admin/vc">/admin/vc</a>' +
@@ -159,14 +156,15 @@ class VcVerifierConfigPage {
       '</button></form></div>';
   }
 
-  // START A VERIFICATION (#587): the console's twin of `/oid4vp/start`'s
-  // links, as one form with a menu per thing a start may name. It posts to
+  // START A VERIFICATION (#587): one form with a menu per thing a start may
+  // name (the demonstration's `/oid4vp/start` links named the same, until
+  // #594). It posts to
   // this tab, which the runtime resolves to `POST
   // /admin-api/verifications/start` through that operation's `mirrors`; its
   // answer's `message` — the state, the wallet URL and the openid4vp:// URI
   // — is what the strip then shows. Every menu but the format's opens on
   // "the Verifier's default", an EMPTY value the start reads as absent, so
-  // pressing Start with nothing chosen is the page's plain link.
+  // pressing Start with nothing chosen asks for the defaults.
   /**
    * Draws the Start a verification form, its menus read off the view's
    * `startChoices`.
@@ -272,7 +270,6 @@ class VcVerifierConfigPage {
    */
   static vpFormatsSection(json, t) {
     const format = json.format;
-    const verifierPage = json.verifierPage;
     const rows = json.formats.map(function (item) {
       const configs = item.configurations.map(function (id) {
         return '<code>' + kit.esc(id) + '</code>';
@@ -287,12 +284,7 @@ class VcVerifierConfigPage {
         kit.esc(item.identifierText) + '</code></td>' +
         '<td>' + kit.esc(item.selectiveDisclosure) + '</td>' +
         '<td>' + kit.esc(item.holderBinding) + '</td>' +
-        '<td>' + configs + '</td>' +
-        '<td>' + (verifierPage
-          ? '<a href="' + kit.esc(verifierPage + '?format=' +
-                                  encodeURIComponent(item.id)) +
-            '">' + t.html('consoleVcVerifierConfig.presentOne') + '</a>'
-          : '') + '</td></tr>';
+        '<td>' + configs + '</td></tr>';
     }).join('');
     return '<form method="post" action="/admin/vc-verifier-config"><input ' +
       'type="hidden" name="action" ' +
@@ -302,7 +294,7 @@ class VcVerifierConfigPage {
       t.html('consoleVcVerifierConfig.thIdentifiedBy') + '</th><th>' +
       t.html('consoleVcVerifierConfig.thSelective') + '</th><th>' +
       t.html('consoleVcVerifierConfig.thHolderBinding') + '</th><th>' +
-      t.html('consoleVcVerifierConfig.thIssuedAs') + '</th><th></th></tr>' +
+      t.html('consoleVcVerifierConfig.thIssuedAs') + '</th></tr>' +
       rows + '</table>' +
       '<div class="formrow"><button>' +
       t.html('consoleVcVerifierConfig.askDefault') + '</button>' +

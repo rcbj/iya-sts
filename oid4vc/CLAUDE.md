@@ -6,14 +6,11 @@ DID Core with DIF domain linkage.
 | File | What it is |
 |---|---|
 | `vc_configs.ts` | The credential configurations. Exists to break a require cycle. |
-| `vc_offers.ts` | The Credential Offer pages and the pre-authorized codes. Same reason. Since #582 its two pages answer the demonstration's shell, and it answers their views and the act (`issuerView()`, `offerChecked()`, `offerAct()`). |
+| `vc_offers.ts` | The Credential Offer's state and the pre-authorized codes, `makeOffer()` (the portal's offer, #589) and `/oid4vci/credential-offer/{id}`. Exists to break a require cycle. The demonstration issuer's pages left for `companion/` on #594. |
 | `vc_claims.ts` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
 | `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
 | `vc_issuer.ts` | The three credential endpoints. |
-| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. Since #582 the bar door's three pages answer the demonstration's shell, and it answers their views and the act (`verifierView()`, `startChecked()`, `startAct()`, `doneView()`). |
-| `vc_demo_shell.ts` | The demonstration issuer's and verifier's ONE shell (#582) and their script, `/issuer/demo.js`. A library over libraries, so `vc_offers.ts` and `vc_verifier.ts` can send it where their routes always were. |
-| `vc_demo_api.ts` | `/vc-demo-api` (#582): the index, the five pages' views, and the two acts — the offer and the start — bound as `/authn-api`'s are. *The demonstration's pages are a static surface* below. |
-| `web_vc_demo_views.ts`, `web_vc_demo_pages.ts`, `web_vc_demo.ts` | The demonstration's pages drawn in the browser (#582): the renderers (the QR codes by `common/web_qr.ts`), the page table (the bundle `vc-demo.bundle.js`, `StsVcDemo`) and the runtime (`vc-demo-spa.js`, served at `/issuer/demo.js`), whose request QR page polls with `web_vc_signin.ts`'s `WalletFlow`. `web_` modules. |
+| `vc_verifier.ts` | The OpenID4VP Verifier: the request object, the response endpoint, every check — what `POST /admin-api/verifications/start` starts (`startVerification()`, `completionUriFor()`) and every sign-in's request goes through. The bar door's pages left for `companion/` on #594. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
 | `vc_signin.ts` | Signing in with a wallet: the shells `/authn/wallet` and `/authn/wallet/wait`, and the `/authn-api/wallet` operations `authn/authn_api.ts` hands it — the start, the wait view, the collection and the Digital Credentials API answer (#574). |
 | `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`common/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
@@ -93,8 +90,7 @@ consumers of that definition, not co-owners of it.
 
 3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
    OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
-   CARRIES; this says what the mock Verifier — the bar door at `/oid4vp/verifier` —
-   ASKS FOR, and which of the three credential formats it asks in. Both ends read
+   CARRIES; this says what the Verifier ASKS FOR, and which of the three credential formats it asks in. Both ends read
    it (`vc_verifier.ts` early, `admin.js` and `admin-core/` late), so it
    registers no route and requires only `helpers.js`, `realms.js`, `config.js`,
    `vc_claims.ts` and `vc_configs.ts`, none of which registers anything
@@ -141,8 +137,8 @@ consumers of that definition, not co-owners of it.
   OID4VP Verifier checks properly — issuer signature, every Disclosure digest
   against `_sd`, the Key Binding JWT including `sd_hash`, the nonce, the
   audience, the validity window and whether the claims asked for arrived — and
-  a presentation made at `/oid4vp/verifier` then says yes on a web page and
-  stops: nobody there asked to be signed in, and a session started because a
+  a presentation made to a verification an administrator started (the bar
+  door at `/oid4vp/verifier` until #594) is decided and stops: nobody there asked to be signed in, and a session started because a
   bar door was shown a credential would be one nobody requested. **It IS
   recorded, which is a different claim and the two must not be merged** — the
   holder goes through `recordAuthentication()` like every other accepted
@@ -670,8 +666,8 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   slot per DNS name, sixteen at most per realm (`STS-PKI-0205`).
 * **ISSUED BEFORE THE BUILD, READ DURING IT.** Issuing a certificate is
   asynchronous and `buildVpRequest()` is not. So `prepareSignedClientId()`
-  is awaited first by `/oid4vp/start` (inside `startVerification()`, which
-  `POST /admin-api/verifications/start` shares, #587), by `/authn/wallet` and
+  is awaited first by `startVerification()` (`POST
+  /admin-api/verifications/start`, #587), by `/authn/wallet` and
   by the
   verifier-certificate document. It issues the certificate, or answers the
   one in place when it is over the same key and more than a day from
@@ -699,7 +695,7 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   host. `x509_hash` needs no name, and signs under a nameless certificate
   where none can be had, so it works unconfigured in product.
 * **PER REALM OR PER REQUEST.** `oid4vp.clientIdPrefix` is the realm's
-  choice, and `/oid4vp/start?client_id_prefix=` is one request's choice
+  choice, and a start's `client_id_prefix` is one request's choice
   (section 5.9 has the Verifier choose per request). Naming a prefix makes
   the request signed. The sign-in's Digital Credentials API request is
   signed under the same certificate.
@@ -726,8 +722,8 @@ wallet does, using only node's `crypto`, and refuses the mismatches.
 `client.client_id` = the bare DNS name for `x509_san_dns` (the suite adds the
 prefix itself) and `client.request_object_trust_anchor_pem` = the
 `trust_anchor_pem` from `/oid4vp/verifier-certificate`. The variant is
-`request_method: request_uri_signed`. The End-User starts at
-`/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
+`request_method: request_uri_signed`. A verification is started at `POST
+/admin-api/verifications/start` with `client_id_prefix: <prefix>`. In product mode, also set
 `oid4vp.x509DnsName` to the realm's host.
 
 ## AN APPLICATION'S DID (rcbj, 2026-10-01)
@@ -794,7 +790,7 @@ application declared for the `did` family (its own checkbox, `applications.js`
 The literals became `config.js` rows whose `dflt` is the old value, read per
 use: credential lifetimes, the proof `iat` window, the c_nonce and offer
 lifetimes, the issuer display name, the wallet pages, the encryption `enc`
-lists, the Domain Linkage and `/did/generate` lifetimes, the Verifier's request
+lists, the Domain Linkage lifetime (and `/did/generate`'s, until #594), the Verifier's request
 lifetime, expected `vct` and claim cap. The credential CATALOGUE — configuration
 display names and colours, the `VCI_*` identifiers — stays code on purpose: it
 is what `vc_configs.ts` exists to hold, and a setting per string would be a
@@ -809,7 +805,8 @@ second catalogue. What is more than a number, and what
   see the section below — and the one that reaches `oid4vci.txCodeMaxAttempts`
   SPENDS it.
 * **A PERSON'S OWN PRE-AUTHORIZED OFFER IS THE PORTAL'S (#589, 2026-10-12)**,
-  and `GET /issuer/offer` MINTS NONE WHERE THE TEST CONTROLS ARE CLOSED. A
+  and since #594 the demo issuer that minted one for anybody is not this
+  service's at all. A
   cross-device or deferred offer carries a pre-authorized code, which IS an
   authorization: minting one for `oid4vci.offerUsername` for anybody who loads
   the page is H.2's demo, and a test control, which development keeps. From
@@ -821,17 +818,15 @@ second catalogue. What is more than a number, and what
   `POST /account-api/credentials/offers` (`portal/portal_wallet.ts`, drawn by
   `portal/web_wallet.ts`, the QR code by `common/web_qr.ts`), and
   `STS-VC-0027` (a "continue without signing in" session refused there) is
-  retired. **The `/issuer` pages are development-only since #585**: a
-  product realm answers them as unregistered paths (Express's own 404). From
-  #589 until then a product realm's pre-authorized request was sent on to
-  `/portal/wallet` (303); that was dropped, because a demonstration in a
-  product realm is not there at all, and nothing depended on the redirect.
-  A same-device offer grants nothing and is not gated.
+  retired. **The `/issuer` pages were development-only from #585 and left
+  for the development companion on #594** (`companion/`), which links a
+  person to `/portal/wallet` for a pre-authorized offer and makes the
+  same-device one — which grants nothing — itself.
   **ONE FUNCTION MAKES EVERY OFFER**: `VcOffers.makeOffer()` — the
   CAEP presentation, `buildCredentialOffer()`, the sweep of expired state, the
   reference stored and cell-stamped, the `openid-credential-offer://` URI and
-  the wallet link — called by `/issuer/offer` and by the portal's operation,
-  so the two cannot come to differ. **The portal's offer is CAEP's
+  the wallet link — called by the portal's operation (and by `/issuer/offer`
+  until #594). **The portal's offer is CAEP's
   `session-presented`** (#240, 2026-09-26): it is made on the authority of the
   sign-on session the portal's token was issued on (`caller.signOn`, #568),
   since the pre-authorized code authorizes a credential about the person and
@@ -840,10 +835,9 @@ second catalogue. What is more than a number, and what
   inside the call because this file is a store module `oauth2.js` requires. A
   token whose sign-on session is no longer known, or a session that continued
   without signing in, is refused (`STS-PORTAL-0590`) rather than offered on
-  nothing. Development's `/issuer/offer` for the fixed test person reads no
-  session and sends nothing, and neither does a same-device offer.
+  nothing.
   `tests/portal_wallet.js` holds the operations and the page;
-  `sts_caep_oauth_grants.js`, `sts_oid4vci_preauth_subject.js` (product) and
+  `sts_caep_oauth_grants.js`, `sts_oid4vci_preauth_subject.js` and
   `sts_oid4vci_conformance.js` (the pre-authorized plan) make their offers
   there.
 * **THE PERSON IS RESOLVED WHEN THE CODE IS REDEEMED, NOT TAKEN FROM THE OFFER
@@ -869,7 +863,7 @@ second catalogue. What is more than a number, and what
   default and exactly the old path; any other synchronous algorithm this realm
   holds a key for through `helpers.signingKeyFor()`. The metadata names it, the
   DID document publishes that key beside the RSA one, the Domain Linkage
-  Credential and `/did/generate` use it, and the Verifier's
+  Credential uses it (and `/did/generate` did, until #594), and the Verifier's
   `verifyIssuerSignature()` finds the realm's key by `alg` and `kid` — plus
   anything in `oid4vp.trustedIssuerCertificates`, used as keys and nothing more.
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
@@ -908,7 +902,8 @@ second catalogue. What is more than a number, and what
   shared blob first, so a process adopting a sibling's backfill does not make a
   second key — written down, and offered on as an enrichment
   (`keystore.enriches()`). `tests/vci_request_encryption_key.js` pins all of it.
-* **`/oid4vci/last_request` IS PER REALM TOO (2026-09-12).** It was one `let`, so
+* **THE LAST-REQUEST RECORD IS PER REALM TOO (2026-09-12)** — `/oid4vci/last_request`
+  until #594, `GET /admin-api/oid4vci/last-request` since. It was one `let`, so
   a realm's debugging endpoint reported however another realm's last Credential
   Request had arrived, kid included. **Persisted since 2026-09-14 (#46)**
   (`vc_issuer.lastCredentialRequest`, one key): behind a balancer the wallet's
@@ -1117,117 +1112,79 @@ bbs-2023 suite at the adapter (no ticket asks for its suite).
 the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
 (`tests/CLAUDE.md`, *The W3C VC and DID suites*).
 
-## THE BAR DOOR'S START AND RESULT, SHARED WITH `/admin-api` (#587, 2026-10-12)
+## THE DEMONSTRATION LEFT THE SERVICE (#594, 2026-10-12)
 
-`/oid4vp/start` and `/oid4vp/result/:state` are a demonstration, and #585
-makes them development-only. An administrator — and every product-mode job —
-starts a verification at `POST /admin-api/verifications/start` and reads it at
-`GET /admin-api/verifications?state=` instead, so the two doors must build and
-read the SAME thing:
+**The OpenID4VC demonstration is the development companion's** (`companion/`,
+rcbj's decision 1 on #591): the issuer's page `/issuer`, the offer
+`/issuer/offer`, the bar door `/oid4vp/verifier`, its start `/oid4vp/start`,
+its closing page `/oid4vp/done`, their script `/issuer/demo.js` and API
+`/vc-demo-api` (the static surface #582 made them), and the non-spec
+`/oid4vp/result/:state` are no longer routes of this service in any mode.
+`companion/CLAUDE.md` argues the companion; what changed HERE:
 
-* **`startVerification(req, asked, where)`** is everything the start page did
-  before it sent anything: the `OID4VC_QUERY` check (now `checkParsed()`, so a
-  body is held to the page's schema), `prepareSignedClientId()`,
-  `buildVpRequest()`, `vpRequestQuery()` and `vpWalletFor()` — which takes
-  the wallet a caller NAMED as an argument now, because a body has no
-  `req.query.wallet`. It returns `{ ok, record, query, wallet, walletUrl,
-  requestUri, mode }` or `{ ok: false, status, code, error }` and sends
-  nothing; the page's act (`POST /vc-demo-api/start` since #582, through
-  `startAct()`) answers `walletUrl` as its `location` or the QR page's view
-  around `requestUri`, and the operation answers JSON.
-* **`verificationOutcome(state)`** is the result page's object, read straight
-  from the store as the page always read it (not `transactionFor()`, which
-  removes an expired transaction: "what did it decide" outlives "may it still
-  be answered").
-* **`recentVerifications(limit)`** lists the open bar-door transactions for
-  the console's Verifier request tab and the bare `GET`. A sign-in's
-  transaction is never listed — it names a person.
-* **`START_VOCABULARY`** exports the lists the start's schema is built from
-  (`RESPONSE_TYPES`, `RESPONSE_MODES`, `START_MODES`, `BY`, the signed
-  prefixes, the formats), so the operation's closed sets are these lists
-  (#86).
+* **A VERIFICATION STARTS ONLY AT `POST /admin-api/verifications/start`**
+  (#587) and is read at `GET /admin-api/verifications?state=`.
+  `startVerification(req, asked, where, options)` is everything the start
+  page did before it sent anything — the `OID4VC_QUERY` check
+  (`checkParsed()`), `prepareSignedClientId()`, `buildVpRequest()`,
+  `vpRequestQuery()` and `vpWalletFor()` — and returns `{ ok, record,
+  query, wallet, walletUrl, requestUri, mode }` or `{ ok: false, status,
+  code, error }`; `verificationOutcome(state)` reads the store directly (not
+  `transactionFor()`, which removes an expired transaction: "what did it
+  decide" outlives "may it still be answered"); `recentVerifications()`
+  lists the open ones for the console and the bare `GET`, never a sign-in's;
+  `START_VOCABULARY` is the operation's closed sets (#86). The companion's
+  bar door is an application calling these.
+* **THE RESPONSE ENDPOINT'S `redirect_uri` IS THE STARTER'S** (OpenID4VP 1.0
+  section 8.2). It named `/oid4vp/done?state=…` for every verification that
+  was not a sign-in — a demonstration page, so a product verification sent
+  the person to a 404. The start now names it (`redirect_uri`, checked by
+  `completionUriFor()`: the calling client's registered redirect URIs where
+  only registered addresses are accepted, any absolute http(s) URL without a
+  fragment elsewhere, `STS-VC-0123` otherwise), it rides on the transaction
+  as `completionUri`, and `afterResponseUri()` answers it. A start that
+  named none is answered `{}` — no `redirect_uri` — and a SIOPv2
+  `form_post` answer with no page is told in plain text that it arrived. A
+  SIGN-IN's transaction is unchanged: its wallet goes back to the sign-in's
+  own page with the `response_code`.
+* **NOBODY HERE MAKES A SAME-DEVICE OFFER ANY MORE.** `makeOffer()` and
+  `buildCredentialOffer()` keep the H.1 branch (an `issuer_state` the
+  authorization endpoint honours), and the portal makes the two
+  pre-authorized ones (#589); the companion makes its same-device offer
+  itself with no `issuer_state`, which section 4.1.1 allows. `walletFor()`
+  and `oid4vci.allowedWalletUrls` went with the offer page — the portal's
+  link goes to the configured wallet only (`configuredWalletUrl()`).
+* **THE ISSUER'S READBACKS ARE ADMIN READ OPERATIONS**: `GET
+  /admin-api/oid4vci/last-request` (`lastCredentialRequest()`, the record
+  per realm and persisted as before) and `GET
+  /admin-api/oid4vci/notifications?id=` (`notificationRecord()`, 404
+  `STS-VC-0024`). They were `/oid4vci/last_request` and
+  `/oid4vci/notification/:id`, answered to anybody in a development realm.
+* **`/did/generate` IS GONE**, with `oid4vci.generatedDidCredentialLifetimeS`:
+  it minted a did:jwk and a credential signed by it for tests, and test
+  tooling makes its own keys (`sts_did_test_suite.js` makes its did:jwk from
+  a P-256 key of its own).
+* **RETIRED CODES**: `STS-VC-0025`, `0026` (the offer page's query and
+  wallet), `0046` (`/did/generate`'s method), `0116`–`0119` (`/vc-demo-api`'s
+  binding). Never reused.
 
-`tests/admin_api_verifications.js` holds the two doors equal (every
-parameter but the fresh nonce and state; the result object byte for byte),
-and `sts_oid4vp_wallet.js` drives the demonstration once more in development
-so it is not left untested.
+The protocol endpoints are unchanged: the issuer metadata, the credential,
+nonce, deferred and notification endpoints, the token endpoint's
+pre-authorized grant, `/oid4vci/credential-offer/{id}`, the request object,
+the response endpoint (but for the `redirect_uri` above), the DC API and the
+status lists.
+
+`tests/admin_api_verifications.js` holds the start and the outcome,
+`tests/oid4vp_sign_in.js` section 7 the starter's page and its absence,
+`tests/oauth_oid4vc_hardcoded.js` 6a that none of the demonstration's
+routes exists, and `tests/companion.js` the companion.
 
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
-`/issuer`, `/issuer/offer`, `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, the demonstration's script `/issuer/demo.js` and its API `/vc-demo-api` (#582), `/oid4vp/result/{state}`, the readbacks `/oid4vci/last_request` and `/oid4vci/notification/{id}`, `/did/generate`. (The W3C VC API was on this list until #598 made it a product surface.) **Not** `/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`, which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`) uses and #569's rule keeps unchanged. The verifier-request tab links the demonstration page (`verifierPage`) only where it is served. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
-
-## The demonstration's pages are a static surface (#582, 2026-10-12)
-
-**The five pages a person reads in this family's demonstration — the
-issuer's page `/issuer`, the offer `/issuer/offer`, the bar door
-`/oid4vp/verifier`, its start `/oid4vp/start` and its closing page
-`/oid4vp/done` — are drawn in the browser since #582** (#569;
-`common/CLAUDE.md` 3cl). `docs/user-facing-pages.md` holds the inventory
-taken before the change. What a WALLET is handed did not change, and that is
-the first thing to keep: every protocol endpoint (the issuer metadata, the
-credential, nonce, deferred and notification endpoints, the token
-endpoint's pre-authorized grant, `/oid4vci/credential-offer/{id}`, the
-request object, the response endpoint and its `redirect_uri`, the DC API,
-the status lists) answers as before, and the `openid-credential-offer://`
-and `openid4vp://` links and QR contents are `makeOffer()`'s and
-`startVerification()`'s, to the byte (`tests/vc_demo_api.js` 4 and 5,
-`tests/admin_api_verifications.js` 1d).
-
-* **ONE SHELL** (`vc_demo_shell.ts`) for the five paths, sent by the routes
-  where they always were — `vc_offers.ts` registers `/issuer` and
-  `/issuer/offer` just before `oauth2.ts`'s routes (rule 2), `vc_verifier.ts`
-  the bar door's three — so the route order did not move. It loads
-  `/issuer/demo.js` and `/web/card.css` (`WebCardCss.VC_DEMO_CSS`, scoped to
-  `.vcdemo`): `script-src 'self'`, `style-src 'self'`, `connect-src 'self'`
-  and the sign-in service's origin where it is elsewhere (the language
-  chooser), through `app.contentSecurityPolicy()`.
-* **ITS OWN SURFACE, NOT ROUTES OF ANOTHER**: these paths are the `oid4vc`
-  hosted application's (#472), which may be on a listener of its own, so the
-  script is under `/issuer` and the API `/vc-demo-api` is in that
-  application's prefixes (and its `demoPrefixes`). One surface for both
-  halves, because the issuer and the bar door are one demonstration; the
-  verifier's pages load a script under `/issuer` because `/oid4vp` holds the
-  protocol's own endpoints, which a product realm keeps.
-* **A GET CREATES NOTHING; THE START PAGES ACT ONCE THEY ARE DRAWN.** `GET
-  /issuer/offer` and `GET /oid4vp/start` minted an offer or a request and
-  answered a 302 or a QR page. Their views now check the query
-  (`STS-VC-0025`, `0026`, `0032`) and mint nothing — #574's rule, since a
-  prefetcher follows a GET — and the runtime sends `POST /vc-demo-api/offer`
-  or `/start` once per navigation, with the page's query as its body. A
-  `location` (the wallet on this device, the address the 302 named)
-  REPLACES the page in the history, so Back does not make a second; a `view`
-  (the QR page for another device) is drawn in place. A deep link still
-  works: the address is the page's, and its query is what the act is asked.
-* **EVERY ACT IS BOUND AS `/authn-api`'S ARE** (#571): a JSON body
-  (`STS-VC-0116`), an Origin of this service (`0117`), and the X-CSRF-Token
-  of the browser's `sts_session` cookie (`0118`), asked before anything is
-  minted; `/issuer/offer` and `/oid4vp/start` are arrival paths
-  (`authn.ts`), so a browser arriving without the cookie is given one. A
-  throw is `0119`. `STS-VC-0028` and `0034` (a QR code the server could not
-  render) are retired: the browser draws the codes from the URIs with
-  `common/web_qr.ts`, and a URI too long for any code says so above the
-  links that still carry it.
-* **THE REQUEST'S QR PAGE POLLS** `GET /vc-demo-api/done?state=` every
-  `oid4vp.signInPollS` with the wallet sign-in's `WalletFlow` (#574) — its
-  fields `protected` since #582 so `web_vc_demo.ts`'s `DemoPoll` overrides
-  what a page starts and what the poll asks, and the one timer stays where
-  `tests/no_periodic_timers.js` records it — and moves on to the closing page
-  once the wallet on the other device has answered. The server-drawn page
-  had no poll; the person had nothing to look at but the QR code. The
-  issuer's QR page does not poll: an issuer is not told when a wallet
-  redeems.
-* **THE CLOSING PAGE'S VIEW** (`doneView()`) is the verdict, the claims as
-  text and what was asked for, for the state in the query, as the page drew
-  it — but **never a wallet sign-in's transaction**, which names a person
-  and whose wallet is never sent here (`recentVerifications()`'s rule). The
-  server-drawn page showed whatever state it was handed.
-* **THE WORDS** are the `vcDemo` catalogs in every language; the
-  identifiers, URIs and claims are drawn as they are; refusals are English.
-  The renderers are held to the bundle by `tests/web_surfaces.js`'s round
-  trip (`tests/tools/web_surfaces.js`, `vcDemoCases`).
-
-A test or a job that drove the old GETs drives the three steps instead:
-`tests/tools/vc_demo.js` in process, `tests/wallet_kit.js`'s `demoStart()`,
-and `tests/vendored/vc_demo.js` for the local jobs
-(`sts_oid4vci_preauth_subject`, `sts_oid4vci_conformance`,
-`sts_oid4vp_wallet`). `tests/vc_demo_api.js` holds the surface.
+Nothing of this family is a demonstration any more: the OpenID4VC
+demonstration left for the development companion on #594 (above), and the W3C
+VC API, the last one here, became a product surface on #598. **Not ever**
+`/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`,
+which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`)
+uses and #569's rule keeps unchanged. `common/CLAUDE.md` (`mode.js`) argues
+the `demoOnly` rule and `tests/demo_endpoints.js` holds it.

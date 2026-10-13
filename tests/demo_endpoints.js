@@ -69,19 +69,15 @@ function childMain() {
   const REALM_MARKED = [
     // The SAML and WS-Federation mock relying parties were deleted (#592),
     // and the commands mock relying party moved to the test peer and
-    // /xacml/protected to the remote PEP (#596).
-    '/issuer', '/issuer/offer', '/oid4vp/verifier', '/oid4vp/start',
-    '/oid4vp/done', '/oid4vp/result/:state', '/spnego', '/spnego/protected',
+    // /xacml/protected to the remote PEP (#596). The OpenID4VC
+    // demonstration (its pages, `/issuer/demo.js`, `/vc-demo-api`,
+    // `/oid4vp/result/:state`), the issuer's two readbacks and
+    // `/did/generate` left with #594.
+    '/spnego', '/spnego/protected',
     '/krb5/service', '/krb5/principals',
     // The W3C VC API left this list with #598: a product surface, off by
     // default behind vcApi.enabled; its status-list publish hook is
     // `POST /admin-api/vc-status/publish` now.
-    '/oid4vci/last_request', '/oid4vci/notification/:id', '/did/generate',
-    // The demonstration issuer's and verifier's static surface (#582): its
-    // script and the API its five pages are drawn from.
-    '/issuer/demo.js', '/vc-demo-api', '/vc-demo-api/issuer',
-    '/vc-demo-api/offer', '/vc-demo-api/verifier', '/vc-demo-api/start',
-    '/vc-demo-api/done',
     // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
     // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
     // (Monitoring → TLS connection) left with #597.

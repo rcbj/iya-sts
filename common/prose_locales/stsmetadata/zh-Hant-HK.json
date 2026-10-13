@@ -991,18 +991,6 @@
     "en": "8639d41af202fd90",
     "text": "非規範。一個模式背後的五個 URL：select、add、remove、defaults、populate。變更選取會「掃過」目錄——ou=users 下的每個人都會獲得其缺少的已選屬性，依其用戶名稱以確定性方式虛構，而已存在的屬性絕不會被覆寫。簽發者元數據由同一份選取建構，因此公告的內容不會與產生的內容脫節。對應 POST /admin/vc。"
   },
-  "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "2b65c93c64dbe5de",
-    "text": "非規範。/oid4vp/verifier 的示範 Verifier 向錢包要求什麼、以哪種認證格式，以及它們所建構的 dcql_query——來自建構真實請求的同一個函數，因此它就是下一個 Authorization Request，而非對它的描述。每個目錄列也會說明「簽發者」目前是否產生該宣告。對應 GET /admin/vc-verifier-config。"
-  },
-  "stsmetadata.endpoints./admin-api/verifications/:action.what": {
-    "en": "c9f5ea170ff74a38",
-    "text": "非規範（#587）。管理員的 /oid4vp/start，透過同一個函數：主體指名該頁面查詢所指名的內容（format、by、client_id_prefix、response_type、response_mode、mode、wallet），而回答是 JSON——state、同裝置啟動時重新導向的錢包 URL、跨裝置 QR code 所承載的 openid4vp://（或 siopv2://）URI，以及以參照方式提供的 request_uri——而不是重新導向。在每種模式下都會回應。對應 /admin/vc 上的「開始驗證」表單。"
-  },
-  "stsmetadata.endpoints./admin-api/verifications.what": {
-    "en": "fa8817d6ab626cf0",
-    "text": "非規範（#587）。帶有 ?state= 時，回傳 /oid4vp/result/:state 所回答的判定，來自同一個函數（沒有記錄的 state 回傳 404）；不帶時，回傳此領域尚未結束的驗證及各自的判定，最新的在前——即 Verifier 請求分頁所繪製的清單。錢包登入不會列出。"
-  },
   "stsmetadata.endpoints./sts/cert.what": {
     "en": "bb1a31c1486e5138",
     "text": "其金鑰簽署判斷提示的 PEM 證書，讓信賴方能夠驗證它們。"

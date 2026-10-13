@@ -37,11 +37,6 @@
 import forge = require('node-forge');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
-import app = require('../common/app');
-// THE DEMONSTRATION MARK (#585), read off the shared app here because
-// `registerRoutes(app)`'s parameter shadows the name — and a stand-in app
-// a test passes carries no mark. `common/app.js` argues it.
-const demoOnly = app.demoOnly;
 import helpers = require('../common/helpers');
 import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
@@ -842,116 +837,6 @@ class VcDid {
     return token;
   }
 
-  // ---------------------------------------------------------------------------
-  // NON-SPEC, for tests and for trying the DID Tools page: generate a DID that
-  // can actually be VERIFIED.
-  //
-  // No specification defines this. It exists because a DID on its own proves
-  // nothing — the interesting checks are "does a key in this document verify
-  // something it signed" and "does an origin vouch for this DID" — and both
-  // need an artifact to check. Handing back a DID with no credential signed by
-  // it would make a test that could only assert the document parsed.
-  //
-  // Two methods, because they exercise genuinely different code in the wallet:
-  //
-  //   jwk  the identifier IS the key, so it resolves with NO network call.
-  //        Generated fresh per request from a new P-256 key, and the
-  //        credential is signed with that key (ES256) — so verifying it
-  //        exercises the local-decode path end to end and cannot pass by
-  //        accident against this service's RSA key.
-  //   web  this service's own did:web, whose document is served at
-  //        /.well-known/did.json and whose domain linkage is at
-  //        /.well-known/did-configuration.json. The credential is signed with
-  //        the RS256 key that document publishes.
-  //
-  // did:key is deliberately absent: encoding one needs multicodec varints and
-  // base58btc, which live in the wallet (client/src/did.js) and would be a
-  // second implementation here — exactly the kind of duplication that lets two
-  // encoders agree with each other and with nobody else.
-  // ---------------------------------------------------------------------------
-  private generatedDidJwk(): any {
-    const { log } = this.deps;
-    log.debug("Entering VcDid.generatedDidJwk().");
-    const pair = stsCrypto.generateKeyPairSync('ec',
-                                               { namedCurve: 'P-256' });
-    const publicJwk = pair.publicKey.export({ format: 'jwk' });
-    // The member order is the one a did:jwk is conventionally built from, and
-    // it is not cosmetic: the identifier is the base64url of these exact
-    // bytes, so a different order is a different DID for the same key.
-    const ordered = { crv: publicJwk.crv, kty: publicJwk.kty, x: publicJwk.x,
-                      y: publicJwk.y };
-    const did = 'did:jwk:' +
-                Buffer.from(JSON.stringify(ordered), 'utf8')
-                  .toString('base64')
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const document = {
-      '@context': ['https://www.w3.org/ns/did/v1',
-                   'https://w3id.org/security/suites/jws-2020/v1'],
-      id: did,
-      verificationMethod: [{ id: did + '#0', type: 'JsonWebKey2020',
-                             controller: did,
-                             publicKeyJwk: ordered }],
-      authentication: [did + '#0'],
-      assertionMethod: [did + '#0']
-    };
-    log.debug("Leaving VcDid.generatedDidJwk(). did=" + did.slice(0, 40) +
-              "…");
-    return { did: did, document: document, publicJwk: ordered,
-             privateKeyPem: pair.privateKey.export(
-                 { type: 'pkcs8', format: 'pem' }) };
-  }
-
-  // An SD-JWT VC naming `issuerDid` as its iss and signed with the key that
-  // DID publishes. Minimal on purpose — one Disclosure and a cnf — because
-  // what is being tested is the SIGNATURE against a resolved document, not the
-  // credential's shape. `privateKey` is whatever jsonwebtoken will sign with:
-  // the ONE caller that names the STS key passes the parsed KeyObject that
-  // helpers.js holds, and the one that generates a throwaway did:jwk key
-  // passes that key's PEM, because it has never been parsed and is used
-  // exactly once. Both are valid here and the parameter is named for the pair
-  // rather than for either.
-  private credentialSignedBy(issuerDid: string, privateKey: any, alg: string,
-                             kid?: string): string {
-    const { log, logArtifact, config, stsCrypto } = this.deps;
-    log.debug("Entering VcDid.credentialSignedBy(). alg=" + alg);
-    const now = Math.floor(Date.now() / 1000);
-    const salt = stsCrypto.randomBytes(16).toString('base64url');
-    const disclosure = Buffer.from(JSON.stringify([salt, 'given_name', 'Ada']),
-                                   'utf8')
-      .toString('base64url');
-    // The disclosure is base64url, so its ASCII and UTF-8 bytes are one.
-    const digest = stsCrypto.digest('sha256', disclosure, 'base64url');
-    const holder = stsCrypto.generateKeyPairSync('ec',
-                                                 { namedCurve: 'P-256' });
-    const holderJwk = holder.publicKey.export({ format: 'jwk' });
-    const payload = {
-      iss: issuerDid, nbf: now,
-      // `oid4vci.generatedDidCredentialLifetimeS`, an hour by default
-      // (2026-09-12).
-      exp: now +
-           (Number(config.value('oid4vci.generatedDidCredentialLifetimeS')) ||
-            3600),
-      vct: 'urn:idptools:did-tools:generated',
-      sub: 'urn:uuid:' + stsCrypto.randomUuid(),
-      cnf: { jwk: { kty: holderJwk.kty, crv: holderJwk.crv, x: holderJwk.x,
-                    y: holderJwk.y } },
-      _sd_alg: 'sha-256', _sd: [digest]
-    };
-    const header: Record<string, unknown> = { alg: alg, typ: 'dc+sd-jwt' };
-    if (kid) {
-      header.kid = kid;
-    }
-    logArtifact('generated SD-JWT VC', 'before signing',
-                { header: header, payload: payload });
-    // certificate-header: none — a key the request generated and nobody
-    // certified, so there is no chain to name.
-    const signed = stsCrypto.signJws(payload, privateKey,
-                                     { algorithm: alg, header: header });
-    logArtifact('generated SD-JWT VC', 'after signing', signed);
-    log.debug("Leaving VcDid.credentialSignedBy().");
-    return signed + '~' + disclosure + '~';
-  }
-
   // The DID this issuer should be named by for a given CONFIGURATION, or ""
   // when it should keep the https identifier it has always used — in which
   // case every builder behaves exactly as it did before any of this existed.
@@ -991,18 +876,21 @@ class VcDid {
     return SD_JWT_ISSUER_DID ? this.stsDid(req) : '';
   }
 
-  // The four routes, in the order they were registered at load before
-  // #50's R1. Called by `common/protocol_stack.ts`.
+  // The routes, in the order they were registered at load before #50's R1
+  // (`/did/generate`, a test control that minted a DID and a credential
+  // signed by it, left on #594: test tooling makes its own keys). Called by
+  // `common/protocol_stack.ts`.
   /**
-   * Registers the four routes — the two DID documents, the DID configuration
-   * and `/did/generate` — in the order they were always registered.
+   * Registers the routes — the two DID documents, the DID configuration and
+   * an application's DID document — in the order they were always
+   * registered.
    *
    * Called by `common/protocol_stack.ts`.
    *
    * @param app - the shared express application
    */
   registerRoutes(app: any): void {
-    const { log, errorCodes, logArtifact, baseUrlOf, stats } = this.deps;
+    const { log, errorCodes, logArtifact, baseUrlOf } = this.deps;
     log.debug("Entering VcDid.registerRoutes().");
     const self = this;
 
@@ -1058,100 +946,6 @@ class VcDid {
       res.status(200).type('application/json')
          .send(JSON.stringify(doc, null, 2));
       log.debug("Leaving the DID Configuration endpoint.");
-    });
-
-    app.get('/did/generate', demoOnly, async function (req, res) {
-      log.debug("Entering the DID generator endpoint.");
-      const method = String(req.query.method || 'jwk').toLowerCase();
-      if (method !== 'jwk' && method !== 'web') {
-        errorCodes.mark(res, 'STS-VC-0046');
-        res.status(400).type('application/json').send(JSON.stringify({
-          error: 'invalid_request',
-          error_description: 'method must be jwk or web. did:key is not ' +
-            'generated here: encoding one needs multicodec and base58btc, ' +
-            'which live in the wallet, and a second implementation would be ' +
-            'free to agree only with itself.'
-        }, null, 2));
-        log.debug("Leaving the DID generator endpoint. Refused method " +
-                  method + ".");
-        return;
-      }
-
-      let body;
-      if (method === 'jwk') {
-        const generated = self.generatedDidJwk();
-        // ---------------------------------------------------------------------
-        // The DID this endpoint just minted, recorded — which is what gives it
-        // a directory entry, through the observer admin_stats.js installs for
-        // ldap_server.js.
-        //
-        // It is the weakest of the recording sites in this service and it is
-        // worth being explicit about why it is here at all: nothing was
-        // PRESENTED and nobody was authenticated. What happened is that this
-        // service created an identity, which is the same act as seeding a
-        // Kerberos principal on first sight, and an identity this service
-        // created that appears in no directory is the gap this endpoint had.
-        // The method says plainly that it was generated.
-        //
-        // The `web` branch below gets NO such call, and that is a difference
-        // rather than an omission: the DID there is this service's OWN — the
-        // issuer's identity, already published at /.well-known/did.json — and
-        // a directory entry for it would file the issuer among the people,
-        // with an invented given name and a fictional mailbox attached to the
-        // thing that signs every credential.
-        // ---------------------------------------------------------------------
-        stats.recordAuthentication({
-          presented: generated.did,
-          protocol: 'W3C DID Core',
-          method: 'did:jwk generated at /did/generate',
-          note: 'Minted by this service on request. Nothing was presented ' +
-                'and nobody was authenticated; the key pair behind it was ' +
-                'generated here and is returned to the caller.'
-        });
-        body = {
-          method: 'jwk',
-          did: generated.did,
-          document: generated.document,
-          // The document resolves from the identifier itself, so there is
-          // nothing to fetch and nothing for a caller to point a URL at.
-          documentUrl: '',
-          verificationMethod: generated.did + '#0',
-          credential: self.credentialSignedBy(generated.did,
-                                              generated.privateKeyPem,
-                                              'ES256',
-                                              generated.did + '#0')
-        };
-      } else {
-        const did = self.stsDid(req);
-        const signer = self.didSigner();
-        body = {
-          method: 'web',
-          did: did,
-          document: await self.stsDidDocument(req),
-          // Where did:web actually resolves this DID: the well-known path for
-          // a bare host, `<base>/did.json` for one with a path (a trust
-          // realm).
-          documentUrl: baseUrlOf(req) +
-                       (self.didHasPath(req) ? '/did.json' :
-                         '/.well-known/did.json'),
-          didConfigurationUrl: baseUrlOf(req) +
-                               '/.well-known/did-configuration.json',
-          origin: baseUrlOf(req),
-          verificationMethod: did + '#' + signer.kid,
-          credential: self.credentialSignedBy(did, signer.key, signer.alg,
-                                              signer.kid)
-        };
-      }
-      logArtifact('generated DID', 'as returned',
-                  { method: body.method, did: body.did });
-      // no-store for the same reason as every other document describing these
-      // keys: a jwk DID is new on every call, and the web one describes a key
-      // regenerated at each start in development mode.
-      res.set('Cache-Control', 'no-store');
-      res.status(200).type('application/json')
-         .send(JSON.stringify(body, null, 2));
-      log.debug("Leaving the DID generator endpoint. method=" + body.method +
-                ".");
     });
 
     // -------------------------------------------------------------------------

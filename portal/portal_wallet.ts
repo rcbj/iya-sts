@@ -28,8 +28,9 @@
 // portal's rule (OWASP A01, `portal/CLAUDE.md`): the offer names
 // `caller.username` and its subject, and nobody else can be named.
 //
-// **THE OFFER IS MADE BY `oid4vc/vc_offers.ts`'s `makeOffer()`, THE ONE
-// FUNCTION `/issuer/offer` CALLS TOO** — not a second implementation. What
+// **THE OFFER IS MADE BY `oid4vc/vc_offers.ts`'s `makeOffer()`** (which the
+// demo issuer's `/issuer/offer` called too, until it left the service on
+// #594) — not a second implementation. What
 // an offer is (the code, its lifetime, the Transaction Code, the reference
 // stamped for its cell, the URIs) is said once there.
 //
@@ -38,7 +39,7 @@
 // gate refuses a token whose session has ended), and that session is what
 // the offer's authority rests on — nobody authenticates for the code. So the
 // sign-on session is handed to `makeOffer()`, which reports it
-// `session-presented` naming OpenID4VCI exactly as the issuer page did. A
+// `session-presented` naming OpenID4VCI. A
 // token whose session the registry no longer knows, or a session that
 // continued without signing in, is REFUSED rather than offered on nothing
 // (`STS-PORTAL-0590`): an offer is a credential about the person, made on
@@ -46,8 +47,9 @@
 // session.
 //
 // The same in both modes: this is the person's own credential, made for the
-// person who asked. Development's `/issuer/offer` still mints for
-// `oid4vci.offerUsername` for anybody, which is the demo.
+// person who asked. The demo issuer that minted for `oid4vci.offerUsername`
+// for anybody left for the development companion on #594, which sends a
+// person here for a pre-authorized offer.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');

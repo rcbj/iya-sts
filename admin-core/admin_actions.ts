@@ -7279,7 +7279,7 @@ class AdminActions {
   //
   // WHAT THE BAR DOOR ASKS FOR — the other end of the page above. /admin/vc
   // decides what an issued credential CARRIES; this decides what the Verifier
-  // at /oid4vp/verifier ASKS FOR, and the two are deliberately separate
+  // ASKS FOR, and the two are deliberately separate
   // settings because the interesting states are the ones where they disagree. A
   // Verifier asking for a claim the issuer is not minting is the negative that
   // exercises a wallet's "I cannot satisfy this request" path, and there is no

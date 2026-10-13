@@ -724,8 +724,8 @@
     "text": "示範與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "533d4ffebabb9b7b",
-    "text": "提供並列出：示範簽發方與驗證方頁面（/issuer、/issuer/offer、/oid4vp/verifier、/oid4vp/start、/oid4vp/done、/oid4vp/result/{state}），OpenID4VCI 回讀端點，/did/generate，VC-API 測試端點，受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端），/krb5/principals，/spnego 與 /spnego/protected。"
+    "en": "3984f2e4ba94f429",
+    "text": "提供並列出：VC-API 測試端點、受保護的 Kerberos 服務（/krb5/service 及其 TCP 通訊端）、/krb5/principals、/spnego 與 /spnego/protected。"
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

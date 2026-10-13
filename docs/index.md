@@ -5,7 +5,7 @@ nav_order: 1
 
 # iya-sts
 
-> **Development mode only (#585):** `/oid4vp/verifier` and `/spnego` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/spnego` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 An identity service that speaks every protocol family the sidebar lists in one
 Node process, in one of two modes (`global.mode`).
@@ -191,7 +191,7 @@ the diagram and a walk through each layer.
 | TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls/sign-in`, `/admin/tls-connection` | [tls](tls.md) |
 | SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
 | OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md) |
-| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/verifier`, `/authn/wallet` | [oid4vp](oid4vp.md) |
+| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/*`, `/authn/wallet`, `/admin-api/verifications` | [oid4vp](oid4vp.md) |
 | Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc#vc-tab-status` | [oid4vci](oid4vci.md) |
 | W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
 | The W3C VC API (VCALM) — an issuer, holder, verifier and status service over Data Integrity (RDFC, JCS, ecdsa-sd-2023) and VC-JOSE-COSE, and DID resolution; off until a realm turns it on | `/vc-api/*` | [vc-api](vc-api.md) |

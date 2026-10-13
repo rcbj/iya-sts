@@ -3032,10 +3032,7 @@ class AdminViews {
         VERIFICATIONS_SHOWN),
       // What the Start a verification form may name, read off the Verifier
       // (#587) so the form's menus are the lists the start checks against.
-      startChoices: this.deps.vcVerifier.START_VOCABULARY,
-      // The demonstration verifier page, where this realm is served it
-      // (#585); the tab links it, and each format's Present one, only then.
-      verifierPage: mode.servesDemoEndpoints() ? '/oid4vp/verifier' : null
+      startChoices: this.deps.vcVerifier.START_VOCABULARY
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +
@@ -3046,11 +3043,9 @@ class AdminViews {
   // ---------------------------------------------------------------------------
   // `GET /admin-api/verifications` (#587) — the OpenID4VP Verifier's, NOT a
   // person's identity verifications (`verificationsJson()`, #127). With
-  // `state`, the verdict
-  // `/oid4vp/result/:state` answers — the same object from the same
-  // function, `found: true` beside it — or `found: false` for a state this
-  // realm holds no record of, which the operation answers 404 with
-  // STS-VC-0042 as the result page does. Without it, the realm's open
+  // `state`, the verdict `verificationOutcome()` answers, `found: true`
+  // beside it — or `found: false` for a state this realm holds no record
+  // of, which the operation answers 404 with STS-VC-0042. Without it, the realm's open
   // verifications, newest first: the list the Verifier request tab draws.
   // ---------------------------------------------------------------------------
   /**

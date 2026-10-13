@@ -1135,6 +1135,14 @@
     "en": "1a34e870e6381c91",
     "text": "Ang resulta ng isang verification"
   },
+  "endpoints.route./admin-api/oid4vci/last-request.name": {
+    "en": "ccc72f51fb477e25",
+    "text": "Ang huling Credential Request"
+  },
+  "endpoints.route./admin-api/oid4vci/notifications.name": {
+    "en": "a7bb4ad24eb592cf",
+    "text": "Ang notification ng isang credential"
+  },
   "endpoints.route./sts.name": {
     "en": "974efec49bd38548",
     "text": "Security Token Service"
@@ -1747,41 +1755,9 @@
     "en": "e1a25561e414b22c",
     "text": "Notification endpoint"
   },
-  "endpoints.route./oid4vci/notification/:id.name": {
-    "en": "deea622c6c4f613a",
-    "text": "Pagbasa pabalik ng notification (hindi spec endpoint)"
-  },
-  "endpoints.route./oid4vci/last_request.name": {
-    "en": "401134042ffcd533",
-    "text": "Huling Credential Request (hindi spec endpoint)"
-  },
   "endpoints.route./oid4vci/credential-offer/:id.name": {
     "en": "357ca7bdfcc31665",
     "text": "Credential Offer sa pamamagitan ng reference"
-  },
-  "endpoints.route./issuer.name": {
-    "en": "8c387c4af4624cf3",
-    "text": "Web page ng issuer"
-  },
-  "endpoints.route./issuer/offer.name": {
-    "en": "8c1458927d4601d8",
-    "text": "Bumuo ng Credential Offer"
-  },
-  "endpoints.route./issuer/demo.js.name": {
-    "en": "1f0b6574385bc78a",
-    "text": "Ang script ng mga demonstration page"
-  },
-  "endpoints.route./vc-demo-api.name": {
-    "en": "2b22cd669050aa08",
-    "text": "Ang index ng demonstration API"
-  },
-  "endpoints.route./vc-demo-api/issuer.name": {
-    "en": "b84b2e59bd5d0c1a",
-    "text": "Ang page ng demonstration issuer"
-  },
-  "endpoints.route./vc-demo-api/offer.name": {
-    "en": "f43ad9bc295e1e95",
-    "text": "Gumawa ng demonstration Credential Offer"
   },
   "endpoints.route./bbs/keys/:id.name": {
     "en": "58347a1730d54e91",
@@ -1835,33 +1811,9 @@
     "en": "7d0bcaaf2c946cba",
     "text": "Ang DID document ng isang application"
   },
-  "endpoints.route./did/generate.name": {
-    "en": "a1c060c730eef358",
-    "text": "Gumawa ng verifiable DID (hindi spec endpoint)"
-  },
   "endpoints.route./.well-known/did-configuration.json.name": {
     "en": "ea3b5de3683521ad",
     "text": "Domain Linkage Credential"
-  },
-  "endpoints.route./oid4vp/verifier.name": {
-    "en": "d4002638665322b1",
-    "text": "Web page ng verifier"
-  },
-  "endpoints.route./oid4vp/start.name": {
-    "en": "316fa1e4051e38a7",
-    "text": "Bumuo ng Authorization Request"
-  },
-  "endpoints.route./vc-demo-api/verifier.name": {
-    "en": "fe6ec994860492a6",
-    "text": "Ang page ng demonstration Verifier"
-  },
-  "endpoints.route./vc-demo-api/start.name": {
-    "en": "897fe21b25f7d1c4",
-    "text": "Magsimula ng demonstration presentation"
-  },
-  "endpoints.route./vc-demo-api/done.name": {
-    "en": "a423dc9b8b3cf4b6",
-    "text": "Ang hatol ng demonstration Verifier"
   },
   "endpoints.route./oid4vp/verifier-certificate.name": {
     "en": "9e006ca613ebe851",
@@ -1874,14 +1826,6 @@
   "endpoints.route./oid4vp/response.name": {
     "en": "041dda1707b526b4",
     "text": "Response URI"
-  },
-  "endpoints.route./oid4vp/result/:state.name": {
-    "en": "14e2c5c0b3aca8de",
-    "text": "Hatol ng verification (hindi spec endpoint)"
-  },
-  "endpoints.route./oid4vp/done.name": {
-    "en": "f324991aa3adb3d3",
-    "text": "Pahina ng tapos na presentation"
   },
   "endpoints.route./enroll/acme/directory.name": {
     "en": "104ffd34f6a0e8e7",

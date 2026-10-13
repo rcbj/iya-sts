@@ -59,14 +59,6 @@
     "en": "07cb90695b268c4c",
     "text": "La página bajo la URL de la cartera a la que se entrega una Credential Offer. El predeterminado es la propia página de cartera del depurador."
   },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "Otras URL de cartera que puede nombrar un enlace de oferta (modo producto)"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "EN MODO PRODUCTO, las URL de cartera, además de oid4vci.walletUrl, que puede nombrar el parámetro de consulta `wallet` de /issuer/offer. Cualquier otra se rechaza, porque un enlace de oferta que envía al usuario final adonde diga su cadena de consulta es una redirección abierta que lleva un código preautorizado. Desarrollo acepta cualquier URL, que es como se apunta a este servicio una cartera en un portátil."
-  },
   "oid4vci.credentialCertificateHeader|description": {
     "en": "91cae7f95584d095",
     "text": "Si una CREDENCIAL dc+sd-jwt o jwt_vc_json emitida nombra la cadena de certificados de la clave que la firmó. SD-JWT VC nombra `x5c` como una de las formas en que un verificador puede encontrar la clave de un emisor, de modo que una cartera o un verificador que nunca obtiene los metadatos de este emisor aún puede comprobar la firma contra un ancla de confianza. ldp_vc no es un JWS y no se ve afectado. El x5c aquí (y en un Status List Token) deja fuera del final el ancla de confianza, la Root del servicio, como exige HAIP 1.0 sección 6.1.1; HAIP también exige x5c, así que un dominio HAIP define x5c. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la Root del servicio, DER en base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que una parte que confía que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. A las cabeceras JWE nunca se les da una — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
@@ -96,8 +88,8 @@
     "text": "Ofrece «Iniciar sesión con un ID autoemitido» en /authn/login: una solicitud SIOPv2 (response_type=id_token) cuyo ID Token la cartera firma con su propia clave. Solo inicia la sesión de la persona que INSCRIBIÓ esa clave — en /portal/self-issued, o por un administrador en /admin/users — en todos los modos, y ofrece la misma página de inscripción. DESACTIVADO por defecto: una nueva vía de entrada es algo que un dominio activa."
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "Cómo debe autenticar una cartera una solicitud FIRMADA (OpenID4VP sección 5.9). pre-registered: oid4vp.clientId, que la cartera conoce por otro canal. decentralized_identifier: el did:web del dominio, con la solicitud firmada con una clave que su documento enumera. verifier_attestation: un Verifier Attestation JWT en la cabecera `jwt` de la solicitud — oid4vp.verifierAttestation, o uno que este dominio firma para sí mismo, en el que una cartera confía solo si confía en este dominio. openid_federation: el identificador de entidad de este dominio, cuya Entity Configuration está en /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, un dNSName del certificado del verificador, cuya cadena la solicitud lleva en x5c. x509_hash: el SHA-256 de ese certificado. Ambos firman con oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate muestra el certificado y ambos Client Identifiers. /oid4vp/start?client_id_prefix= lo elige por solicitud. Una solicitud sin firmar siempre usa redirect_uri."
+    "en": "8e5bc19e401b8880",
+    "text": "Cómo debe autenticar una cartera una solicitud FIRMADA (OpenID4VP sección 5.9). pre-registered: oid4vp.clientId, que la cartera conoce por otro canal. decentralized_identifier: el did:web del dominio, con la solicitud firmada con una clave que su documento enumera. verifier_attestation: un Verifier Attestation JWT en la cabecera `jwt` de la solicitud — oid4vp.verifierAttestation, o uno que este dominio firma para sí mismo, en el que una cartera confía solo si confía en este dominio. openid_federation: el identificador de entidad de este dominio, cuya Entity Configuration está en /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, un dNSName del certificado del verificador, cuya cadena la solicitud lleva en x5c. x509_hash: el SHA-256 de ese certificado. Ambos firman con oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate muestra el certificado y ambos Client Identifiers. El client_id_prefix de un inicio de verificación lo elige por solicitud. Una solicitud sin firmar siempre usa redirect_uri."
   },
   "oid4vp.x509DnsName|description": {
     "en": "de449adfa5dc57ee",
@@ -140,16 +132,16 @@
     "text": "Otras URL de cartera que puede nombrar un enlace de solicitud (producto)"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "EN MODO PRODUCTO, las URL de cartera, además de oid4vp.walletUrl, que puede nombrar el parámetro de consulta `wallet` de la página de inicio del verificador; cualquier otra se rechaza como redirección abierta. El desarrollo acepta cualquier URL."
+    "en": "12e0e5f89e591fc8",
+    "text": "EN MODO PRODUCTO, las URL de cartera además de oid4vp.walletUrl que puede nombrar el `wallet` de un inicio de verificación; cualquier otra se rechaza como redirección abierta. Desarrollo acepta cualquier URL."
   },
   "oid4vp.signIn|label": {
     "en": "762000c7e5e841a9",
     "text": "Iniciar sesión con una cartera"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "Ofrece «Iniciar sesión con una cartera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una cartera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una cartera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; el verificador en /oid4vp/verifier no se ve afectado."
+    "en": "0f2c1a100385463b",
+    "text": "Ofrece «Iniciar sesión con una cartera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una cartera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una cartera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; una verificación que inicia un administrador no se ve afectada."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

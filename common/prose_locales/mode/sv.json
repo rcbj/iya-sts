@@ -724,8 +724,8 @@
     "text": "Demonstrations- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "533d4ffebabb9b7b",
-    "text": "Serveras och listas: demonstrationssidorna för utfärdaren och verifieraren (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), OpenID4VCI-återläsningarna, /did/generate, VC-API:ets testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-socket), /krb5/principals, /spnego och /spnego/protected."
+    "en": "3984f2e4ba94f429",
+    "text": "Serveras och listas: VC-API:s testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-socket), /krb5/principals, /spnego och /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

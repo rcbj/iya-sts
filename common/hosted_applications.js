@@ -136,15 +136,14 @@ const APPLICATIONS = [
   { id: 'oidfed', label: 'OpenID Federation',
     what: 'The Entity Configuration and the federation endpoints.',
     prefixes: ['/oidfed', '/.well-known/openid-federation'], exact: [] },
-  // `/vc-demo-api` IS THE DEMONSTRATION ISSUER'S AND VERIFIER'S API
-  // (#582): their pages are a static surface drawn from it, so the two are
-  // one application on one listener, as `/gnap` and `/gnap-api` are; and,
-  // like everything under `/issuer`, a demonstration.
+  // THE DEMONSTRATION ISSUER AND VERIFIER (`/issuer`, `/vc-demo-api`) AND
+  // `/did/generate` LEFT ON #594, for the development companion and the
+  // test tooling; `/vc-api` became a product surface on #598, so no
+  // demonstration prefix is left here.
   { id: 'oid4vc', label: 'Verifiable credentials',
     what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
-    demoPrefixes: ['/issuer', '/did', '/vc-demo-api'],
-    prefixes: ['/oid4vci', '/oid4vp', '/issuer', '/did', '/applications',
-               '/bbs', '/vc-api', '/vc-demo-api', '/.well-known/did.json',
+    prefixes: ['/oid4vci', '/oid4vp', '/applications',
+               '/bbs', '/vc-api', '/.well-known/did.json',
                '/.well-known/did-configuration.json',
                '/.well-known/openid-credential-issuer',
                '/.well-known/jwt-vc-issuer'],

@@ -5,8 +5,6 @@ nav_order: 11
 
 # The eight CAEP events, and what makes each one fire
 
-> **Development mode only (#585):** `/issuer/offer` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 This service is a **CAEP transmitter**. The Continuous Access Evaluation Profile
 1.0 (final, 2 September 2025) is a vocabulary about **sessions** spoken over
 [Shared Signals](https://openid.net/specs/openid-sharedsignals-framework-1_0.html);
@@ -211,7 +209,7 @@ presents its credential again (*Sessions that are not a browser's*, below):
 | GNAP | an interaction that meets a live sign-on session and approves without a new authentication | `GNAP` |
 | OpenID Connect CIBA | a person **approving** a backchannel request on `/portal/ciba`: the client is issued tokens on the strength of the session's `acr`, `amr` and `auth_time`, and the tokens are issued ON that session. A denial honours nothing and sends nothing | `OpenID Connect CIBA` |
 | OpenID Connect Native SSO | a second app's token exchange at `/oauth2/token`: it is issued tokens on the sign-on session the first app's ID Token names, with no new authentication. Sent after the tokens are issued, so a refused exchange sends nothing | `OpenID Connect Native SSO` |
-| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer a person makes for their own wallet on `/portal/wallet` (`POST /account-api/credentials/offers`, #589; `/issuer/offer` until then), in both modes: the pre-authorized code is the authorization for a credential about them, made on the authority of the sign-on session the portal's token was issued on. A same-device offer carries no authorization, and development's `/issuer/offer` mints the pre-authorized offer for a fixed test person without reading any session, so neither sends it | `OpenID4VCI` |
+| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer a person makes for their own wallet on `/portal/wallet` (`POST /account-api/credentials/offers`, #589; `/issuer/offer` until then), in both modes: the pre-authorized code is the authorization for a credential about them, made on the authority of the sign-on session the portal's token was issued on. A same-device offer carries no authorization, so it sends nothing | `OpenID4VCI` |
 
 All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.

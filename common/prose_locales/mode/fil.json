@@ -724,8 +724,8 @@
     "text": "Umiiral ang mga demonstration at test-control endpoint"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "533d4ffebabb9b7b",
-    "text": "Inihahain at nakalista: ang mga demonstration page ng issuer at verifier (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), ang mga readback ng OpenID4VCI, /did/generate, ang mga test endpoint ng VC-API, ang protektadong serbisyo ng Kerberos (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected."
+    "en": "3984f2e4ba94f429",
+    "text": "Inihahain at inililista: ang mga VC-API test endpoint, ang protektadong Kerberos service (/krb5/service at ang TCP socket nito), /krb5/principals, /spnego at /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

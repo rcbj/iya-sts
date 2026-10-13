@@ -2052,8 +2052,8 @@
     "text": "modifie le contenu de chaque Verifiable Credential FUTURE, ET écrit dans l’annuaire LDAP"
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "2b65c93c64dbe5de",
-    "text": "NON-SPEC. Ce que le Verifier de démonstration de /oid4vp/verifier demande à un portefeuille, dans quel format d’attestation, et la dcql_query qui en résulte — produite par la fonction qui construit la vraie, si bien qu’il s’agit de la prochaine Authorization Request et non d’une description de celle-ci. Chaque ligne du catalogue indique aussi si l’ÉMETTEUR émet actuellement cette revendication. Équivalent de GET /admin/vc-verifier-config."
+    "en": "356223783345c682",
+    "text": "NON SPÉCIFIÉ. Ce que le Verifier OID4VP demande à un portefeuille, dans quel format de justificatif, et le dcql_query qu’ils construisent — depuis la fonction qui construit le vrai, c’est donc la prochaine Authorization Request et non une description de celle-ci. Chaque ligne du catalogue dit aussi si l’ÉMETTEUR émet actuellement cette claim. Reflète GET /admin/vc-verifier-config."
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",
@@ -2064,16 +2064,24 @@
     "text": "modifie la dcql_query de chaque Authorization Request OID4VP FUTURE"
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.what": {
-    "en": "c9f5ea170ff74a38",
-    "text": "NON-SPEC (#587). Le /oid4vp/start de l’administrateur, par la même fonction : le corps nomme ce que nomme la requête de cette page (format, by, client_id_prefix, response_type, response_mode, mode, wallet), et la réponse est en JSON — l’état, l’URL du portefeuille vers laquelle redirige un démarrage sur le même appareil, l’URI openid4vp:// (ou siopv2://) que porte un code QR inter-appareils, et le request_uri par référence — plutôt qu’une redirection. Répond dans tous les modes. Équivalent du formulaire Démarrer une vérification de /admin/vc."
+    "en": "5c53718a6c9ef2b0",
+    "text": "NON SPÉCIFIÉ (#587). Où une vérification démarre, pour un administrateur ou une application détenant Admin Write (#594 : le bar door du companion de développement en est une). Le corps nomme format, by, client_id_prefix, response_type, response_mode, mode, wallet et redirect_uri — la page de l’appelant vers laquelle le Response Endpoint envoie ensuite le portefeuille, l’une des redirect URIs enregistrées du client appelant là où seules les adresses enregistrées sont acceptées. La réponse est du JSON : le state, l’URL de portefeuille vers laquelle va un démarrage sur le même appareil, l’URI openid4vp:// (ou siopv2://) que porte un code QR pour un autre appareil, et le request_uri par référence. Répond dans tous les modes. Reflète le formulaire Start a verification de /admin/vc."
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "construit une Authorization Request OID4VP et enregistre sa transaction"
   },
   "stsmetadata.endpoints./admin-api/verifications.what": {
-    "en": "fa8817d6ab626cf0",
-    "text": "NON-SPEC (#587). Avec ?state=, le verdict que donne /oid4vp/result/:state, par la même fonction (404 pour un état sans enregistrement) ; sans, les vérifications ouvertes du domaine et ce que chacune a décidé, de la plus récente à la plus ancienne — la liste que dessine l’onglet de la requête du Verifier. Une connexion par portefeuille n’y figure pas."
+    "en": "ceb50a3bb3405239",
+    "text": "NON SPÉCIFIÉ (#587). Avec ?state=, ce que le Verifier a décidé — chaque contrôle et les claims divulguées (404 pour un state sans enregistrement) ; sans, les vérifications ouvertes du domaine et ce que chacune a décidé, les plus récentes d’abord — la liste que dessine l’onglet Verifier request. Une connexion par portefeuille n’est pas listée."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/last-request.what": {
+    "en": "d4af7f3693d7a14e",
+    "text": "NON SPÉCIFIÉ (#594). Comment la dernière Credential Request de l’émetteur OpenID4VCI est arrivée : son type de média et, chiffrée, le kid, l’alg et l’enc de son JWE — jamais la requête. Un portefeuille ne peut pas prouver qu’il a chiffré ; seul l’émetteur sait ce qui est arrivé. Admin Read ; jusqu’à #594, le /oid4vci/last_request réservé au développement."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/notifications.what": {
+    "en": "0a95a0766878a671",
+    "text": "NON SPÉCIFIÉ (#594). Avec ?id=, ce qu’un portefeuille a dit au Notification Endpoint du justificatif que nomme ce notification_id : l’événement, sa description et quand (404 pour un id que cet émetteur n’a pas émis). Admin Read ; jusqu’à #594, le /oid4vci/notification/:id réservé au développement."
   },
   "stsmetadata.endpoints./sts.what": {
     "en": "66812a407152a91b",
@@ -2851,45 +2859,9 @@
     "en": "dfd57a70ba809091",
     "text": "Section 11 : le portefeuille signale ce qu’il a fait de l’attestation. Validé et enregistré."
   },
-  "stsmetadata.endpoints./oid4vci/notification/:id.what": {
-    "en": "f24e1023bd81678a",
-    "text": "NON-SPEC, pour les tests : ce que le portefeuille a signalé pour un notification_id."
-  },
-  "stsmetadata.endpoints./oid4vci/last_request.what": {
-    "en": "55716420ece93ddf",
-    "text": "NON-SPEC, pour les tests : si la dernière Credential Request est arrivée chiffrée, et comment."
-  },
   "stsmetadata.endpoints./oid4vci/credential-offer/:id.what": {
     "en": "68a05b1b31fe7152",
     "text": "Sert une offre récupérée via credential_offer_uri."
-  },
-  "stsmetadata.endpoints./issuer.what": {
-    "en": "948a7409a3fb1a86",
-    "text": "Annexe H.1 : là où un utilisateur final commence un flux initié par l’émetteur. Une page de la surface statique de la démonstration depuis #582, dessinée à partir de /vc-demo-api/issuer."
-  },
-  "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "47aafb085693f976",
-    "text": "La page qui construit une offre et soit envoie le navigateur vers le portefeuille, soit l’affiche sous forme de code QR. ?mode=cross-device (H.2) et ?mode=deferred (H.3) choisissent l’autorisation par code pré-autorisé avec un code de transaction. Une page de la surface statique de la démonstration depuis #582 : le GET ne crée rien, et son script fait l’offre à POST /vc-demo-api/offer."
-  },
-  "stsmetadata.endpoints./issuer/demo.js.what": {
-    "en": "873440e0c0834837",
-    "text": "NON-SPEC (#582). L’exécution et les moteurs de rendu des pages de l’émetteur et du vérificateur de démonstration dans un seul fichier, construit par build-typescript.sh (oid4vc/vc-demo-spa.js) et servi précompressé : il dessine /issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start et /oid4vp/done à partir de /vc-demo-api, y fait leurs offres et leurs demandes, et dessine les codes QR."
-  },
-  "stsmetadata.endpoints./vc-demo-api.what": {
-    "en": "f0d867a593ea76ea",
-    "text": "NON-SPEC (#582). Les opérations de l’API de la démonstration OpenID4VC, chacune avec la page ou la commande dont elle est la porte (mirrors). Sans langue."
-  },
-  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
-    "en": "68d3f0eed386add2",
-    "text": "NON-SPEC (#582). Ce à partir de quoi /issuer est dessiné : la configuration d’attestation offerte, le portefeuille et l’émetteur."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.what": {
-    "en": "17204bdcd2333d91",
-    "text": "NON-SPEC, porte vers la section 4 et l’annexe H d’OpenID4VCI (#582). GET répond la vue de la page d’offre et son jeton CSRF, sa requête vérifiée et rien n’étant émis ; POST fait l’offre — JSON, une Origin de ce service et un X-CSRF-Token lié au cookie sts_session — par le même makeOffer() que le portail, et répond le portefeuille où aller (location) ou la vue de la page QR : l’URI openid-credential-offer, le lien du portefeuille et le code de transaction."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
-    "en": "2f295f0c5407473c",
-    "text": "POST émet une offre"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -2987,37 +2959,9 @@
     "en": "590e41dd0e817cfb",
     "text": "répond 404 sauf si l’application est déclarée pour la famille did et possède une clé"
   },
-  "stsmetadata.endpoints./did/generate.what": {
-    "en": "a5a93d3c52cea4cc",
-    "text": "NON-SPEC, pour les tests et pour essayer la page DID Tools : ?method=jwk génère une nouvelle clé P-256 et renvoie un did:jwk avec une attestation signée par celle-ci ; ?method=web renvoie le did:web propre à ce service avec une attestation signée par la clé RS256 que publie son document. Un DID sans rien de signé par lui ne pourrait qu’être analysé, pas vérifié."
-  },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
     "text": "Prouve que cette origine et ce DID sont la même entité. Pour did:web, c’est la seule preuve non circulaire : résoudre did:web:host signifie récupérer host."
-  },
-  "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "179e4cfdad61673b",
-    "text": "Là où commence une présentation : le vérificateur demande, le portefeuille répond. Une page de la surface statique de la démonstration depuis #582, dessinée à partir de /vc-demo-api/verifier."
-  },
-  "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "2fce28c03d8db666",
-    "text": "La page qui lance une présentation : response_type=vp_token avec une requête DCQL, un nonce frais et response_mode=direct_post, passée par valeur ou par référence, avec un écran QR pour un autre appareil. `client_id_prefix` nomme le préfixe d’identifiant client de CETTE demande (section 5.9) et la rend signée ; un préfixe x509 certifie d’abord le vérificateur (#230). Une page de la surface statique de la démonstration depuis #582 : le GET ne crée rien, et son script lance la demande à POST /vc-demo-api/start."
-  },
-  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
-    "en": "905f6536ecad196e",
-    "text": "NON-SPEC (#582). Ce à partir de quoi /oid4vp/verifier est dessiné : les déclarations que le vérificateur demande, le type d’attestation, le format, ce qu’une demande ldp_vc laisse de côté et où le portefeuille envoie."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.what": {
-    "en": "e4075c708b0e75f9",
-    "text": "NON-SPEC, porte vers OpenID4VP (#582). GET répond la vue de la page de démarrage et son jeton CSRF, sa requête vérifiée et rien n’étant construit ; POST lance la demande — liée comme chaque acte — par le même startVerification() que POST /admin-api/verifications/start, et répond le portefeuille où aller (location) ou la vue de la page QR : l’URI openid4vp, le lien du portefeuille et l’état que la page interroge."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.effect": {
-    "en": "722eefdf9a57521a",
-    "text": "POST construit une demande"
-  },
-  "stsmetadata.endpoints./vc-demo-api/done.what": {
-    "en": "662a67fbe8c42ffe",
-    "text": "NON-SPEC (#582). Ce à partir de quoi /oid4vp/done est dessiné pour ?state= : si une présentation est arrivée et a été acceptée, ses déclarations et ce qui a été demandé ; la page QR l’interroge. La transaction d’une connexion par portefeuille n’y est pas répondue."
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3030,14 +2974,6 @@
   "stsmetadata.endpoints./oid4vp/response.what": {
     "en": "a0c3cbde113f8f11",
     "text": "Là où le portefeuille envoie par POST le vp_token — et, pour une requête SIOPv2 (#129), l’id_token auto-émis, par direct_post ou via le navigateur par form_post — et là où il est réellement vérifié : signature de l’émetteur (post-quantique comprise), chaque condensé de Disclosure au regard de _sd, le Key Binding JWT y compris sd_hash — ou le VP JWT, ou la preuve de détention Data Integrity —, la fenêtre de validité, la liste de statuts de l’attestation, et l’arrivée ou non des revendications demandées. Pour une transaction démarrée à /authn/wallet, il décide aussi QUI la présentation connecte, répond une seule fois, et renvoie un portefeuille sur le même appareil avec un response_code ; la session elle-même est définie lors de la requête suivante du navigateur, jamais lors de celle-ci, qui est celle du portefeuille."
-  },
-  "stsmetadata.endpoints./oid4vp/result/:state.what": {
-    "en": "6a76827ac70fae49",
-    "text": "NON-SPEC, pour l’étape 3 du portefeuille et pour les tests : le verdict contrôle par contrôle d’une présentation."
-  },
-  "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "32b182a1f19bad6a",
-    "text": "Là où arrive l’utilisateur final après une présentation sur un autre appareil. Une page de la surface statique de la démonstration depuis #582, dessinée à partir de /vc-demo-api/done."
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

@@ -2052,8 +2052,8 @@
     "text": "cambia lo que contiene cada Verifiable Credential FUTURA, Y escribe en el directorio LDAP"
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "2b65c93c64dbe5de",
-    "text": "NON-SPEC. Lo que el Verifier de demostración en /oid4vp/verifier pide a una billetera, en qué formato de credencial, y el dcql_query que construyen, a partir de la función que construye el real, de modo que es la próxima Authorization Request y no una descripción de ella. Cada fila del catálogo dice además si el EMISOR acuña actualmente ese claim. Refleja GET /admin/vc-verifier-config."
+    "en": "356223783345c682",
+    "text": "NO ESPECIFICADO. Lo que el Verifier OID4VP pide a una billetera, en qué formato de credencial, y el dcql_query que construyen — desde la función que construye el real, así que es la siguiente Authorization Request y no una descripción de ella. Cada fila del catálogo dice además si el EMISOR acuña ese claim actualmente. Refleja GET /admin/vc-verifier-config."
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",
@@ -2064,16 +2064,24 @@
     "text": "cambia el dcql_query de cada Authorization Request de OID4VP FUTURA"
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.what": {
-    "en": "c9f5ea170ff74a38",
-    "text": "NON-SPEC (#587). El /oid4vp/start del administrador, mediante la misma función: el cuerpo nombra lo que nombra la consulta de esa página (format, by, client_id_prefix, response_type, response_mode, mode, wallet), y la respuesta es JSON (el state, la URL de la billetera a la que redirige un inicio en el mismo dispositivo, el URI openid4vp:// (o siopv2://) que lleva un código QR entre dispositivos, y el request_uri por referencia) en lugar de una redirección. Se responde en todos los modos. Refleja el formulario Iniciar una verificación de /admin/vc."
+    "en": "5c53718a6c9ef2b0",
+    "text": "NO ESPECIFICADO (#587). Donde empieza una verificación, para un administrador o una aplicación con Admin Write (#594: el bar door del companion de desarrollo es una). El cuerpo nombra format, by, client_id_prefix, response_type, response_mode, mode, wallet y redirect_uri — la página del llamante a la que el Response Endpoint envía después a la billetera, una de las redirect URIs registradas del cliente que llama donde solo se aceptan direcciones registradas. La respuesta es JSON: el state, la URL de billetera a la que va un inicio en el mismo dispositivo, la URI openid4vp:// (o siopv2://) que lleva un código QR para otro dispositivo, y el request_uri por referencia. Se responde en todos los modos. Refleja el formulario Start a verification de /admin/vc."
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "construye una Authorization Request de OID4VP y registra su transacción"
   },
   "stsmetadata.endpoints./admin-api/verifications.what": {
-    "en": "fa8817d6ab626cf0",
-    "text": "NON-SPEC (#587). Con ?state=, el veredicto que responde /oid4vp/result/:state, a partir de la misma función (404 para un state sin registro); sin él, las verificaciones abiertas del dominio y lo que decidió cada una, de la más reciente a la más antigua: la lista que dibuja la pestaña Solicitud del verificador. No se lista un inicio de sesión con billetera."
+    "en": "ceb50a3bb3405239",
+    "text": "NO ESPECIFICADO (#587). Con ?state=, lo que decidió el Verifier — cada comprobación y los claims divulgados (404 para un state sin registro); sin él, las verificaciones abiertas del dominio y lo que decidió cada una, las más recientes primero — la lista que dibuja la pestaña Verifier request. Un inicio de sesión con billetera no se lista."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/last-request.what": {
+    "en": "d4af7f3693d7a14e",
+    "text": "NO ESPECIFICADO (#594). Cómo llegó la última Credential Request al emisor OpenID4VCI: su tipo de medio y, cifrada, el kid, alg y enc de su JWE — nunca la solicitud. Una billetera no puede probar que cifró; solo el emisor sabe qué llegó. Admin Read; hasta #594, el /oid4vci/last_request solo de desarrollo."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/notifications.what": {
+    "en": "0a95a0766878a671",
+    "text": "NO ESPECIFICADO (#594). Con ?id=, lo que una billetera dijo al Notification Endpoint sobre la credencial que nombra ese notification_id: el evento, su descripción y cuándo (404 para un id que este emisor no emitió). Admin Read; hasta #594, el /oid4vci/notification/:id solo de desarrollo."
   },
   "stsmetadata.endpoints./sts.what": {
     "en": "66812a407152a91b",
@@ -2851,45 +2859,9 @@
     "en": "dfd57a70ba809091",
     "text": "Sección 11: la billetera informa de lo que hizo con la credencial. Se valida y se registra."
   },
-  "stsmetadata.endpoints./oid4vci/notification/:id.what": {
-    "en": "f24e1023bd81678a",
-    "text": "NON-SPEC, para pruebas: lo que la billetera informó contra un notification_id."
-  },
-  "stsmetadata.endpoints./oid4vci/last_request.what": {
-    "en": "55716420ece93ddf",
-    "text": "NON-SPEC, para pruebas: si la última Credential Request llegó cifrada, y cómo."
-  },
   "stsmetadata.endpoints./oid4vci/credential-offer/:id.what": {
     "en": "68a05b1b31fe7152",
     "text": "Sirve una oferta obtenida mediante credential_offer_uri."
-  },
-  "stsmetadata.endpoints./issuer.what": {
-    "en": "948a7409a3fb1a86",
-    "text": "Apéndice H.1: donde un usuario final inicia un flujo iniciado por el emisor. Una página de la superficie estática de la demostración desde #582, dibujada a partir de /vc-demo-api/issuer."
-  },
-  "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "47aafb085693f976",
-    "text": "La página que construye una oferta y envía el navegador a la billetera o la muestra como código QR. ?mode=cross-device (H.2) y ?mode=deferred (H.3) eligen la concesión de código preautorizado con un código de transacción. Una página de la superficie estática de la demostración desde #582: el GET no crea nada, y su script hace la oferta en POST /vc-demo-api/offer."
-  },
-  "stsmetadata.endpoints./issuer/demo.js.what": {
-    "en": "873440e0c0834837",
-    "text": "NON-SPEC (#582). El tiempo de ejecución y los renderizadores de las páginas del emisor y del verificador de demostración en un solo archivo, creado por build-typescript.sh (oid4vc/vc-demo-spa.js) y servido precomprimido: dibuja /issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start y /oid4vp/done a partir de /vc-demo-api, hace allí sus ofertas y solicitudes, y dibuja los códigos QR."
-  },
-  "stsmetadata.endpoints./vc-demo-api.what": {
-    "en": "f0d867a593ea76ea",
-    "text": "NON-SPEC (#582). Las operaciones de la API de la demostración OpenID4VC, cada una con la página o el control del que es la puerta (mirrors). Sin idioma."
-  },
-  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
-    "en": "68d3f0eed386add2",
-    "text": "NON-SPEC (#582). De lo que se dibuja /issuer: la configuración de credencial ofrecida, la billetera y el emisor."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.what": {
-    "en": "17204bdcd2333d91",
-    "text": "NON-SPEC, puerta a la sección 4 y el apéndice H de OpenID4VCI (#582). GET responde la vista de la página de oferta y su token CSRF, con su consulta comprobada y sin emitir nada; POST hace la oferta — JSON, un Origin de este servicio y un X-CSRF-Token vinculado a la cookie sts_session — con el mismo makeOffer() que usa el portal, y responde la billetera a la que ir (location) o la vista de la página QR: la URI openid-credential-offer, el enlace de la billetera y el código de transacción."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
-    "en": "2f295f0c5407473c",
-    "text": "POST emite una oferta"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -2987,37 +2959,9 @@
     "en": "590e41dd0e817cfb",
     "text": "responde 404 salvo que la aplicación esté declarada para la familia did y tenga una clave"
   },
-  "stsmetadata.endpoints./did/generate.what": {
-    "en": "a5a93d3c52cea4cc",
-    "text": "NON-SPEC, para pruebas y para probar la página DID Tools: ?method=jwk acuña una clave P-256 nueva y devuelve un did:jwk con una credencial firmada por ella; ?method=web devuelve el did:web propio de este servicio con una firmada por la clave RS256 que publica su documento. Un DID sin nada firmado por él solo podría analizarse, no verificarse."
-  },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
     "text": "Demuestra que este origen y este DID son la misma entidad. Para did:web es la única prueba no circular: resolver did:web:host significa obtener host."
-  },
-  "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "179e4cfdad61673b",
-    "text": "Donde empieza una presentación: el verificador pide, la billetera responde. Una página de la superficie estática de la demostración desde #582, dibujada a partir de /vc-demo-api/verifier."
-  },
-  "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "2fce28c03d8db666",
-    "text": "La página que inicia una presentación: response_type=vp_token con una consulta DCQL, un nonce nuevo y response_mode=direct_post, pasada por valor o por referencia, con una pantalla QR para otro dispositivo. `client_id_prefix` nombra el prefijo de identificador de cliente de ESTA solicitud (sección 5.9) y la hace firmada; un prefijo x509 certifica antes al verificador (#230). Una página de la superficie estática de la demostración desde #582: el GET no crea nada, y su script inicia la solicitud en POST /vc-demo-api/start."
-  },
-  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
-    "en": "905f6536ecad196e",
-    "text": "NON-SPEC (#582). De lo que se dibuja /oid4vp/verifier: las declaraciones que pide el verificador, el tipo de credencial, el formato, lo que deja fuera una solicitud ldp_vc y adónde envía la billetera."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.what": {
-    "en": "e4075c708b0e75f9",
-    "text": "NON-SPEC, puerta a OpenID4VP (#582). GET responde la vista de la página de inicio y su token CSRF, con su consulta comprobada y sin construir nada; POST inicia la solicitud — vinculada como todo acto — con el mismo startVerification() que usa POST /admin-api/verifications/start, y responde la billetera a la que ir (location) o la vista de la página QR: la URI openid4vp, el enlace de la billetera y el estado que consulta la página."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.effect": {
-    "en": "722eefdf9a57521a",
-    "text": "POST construye una solicitud"
-  },
-  "stsmetadata.endpoints./vc-demo-api/done.what": {
-    "en": "662a67fbe8c42ffe",
-    "text": "NON-SPEC (#582). De lo que se dibuja /oid4vp/done para ?state=: si llegó una presentación y se aceptó, sus declaraciones y lo que se pidió; la página QR lo consulta. No se responde la transacción de un inicio de sesión con billetera."
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3030,14 +2974,6 @@
   "stsmetadata.endpoints./oid4vp/response.what": {
     "en": "a0c3cbde113f8f11",
     "text": "Donde la billetera envía por POST el vp_token (y, para una solicitud SIOPv2 (#129), el id_token autoemitido, por direct_post o a través del navegador por form_post) y donde se verifica de verdad: la firma del emisor (poscuántica incluida), cada resumen de Disclosure contra _sd, el Key Binding JWT incluido sd_hash (o el VP JWT, o la prueba de titular Data Integrity), la ventana de validez, la lista de estado de la credencial, y si llegaron los claims pedidos. Para una transacción iniciada en /authn/wallet también decide A QUIÉN inicia sesión la presentación, responde una sola vez y devuelve una billetera del mismo dispositivo con un response_code; la sesión en sí se establece en la siguiente solicitud del navegador, nunca en esta, que es la de la billetera."
-  },
-  "stsmetadata.endpoints./oid4vp/result/:state.what": {
-    "en": "6a76827ac70fae49",
-    "text": "NON-SPEC, para el paso 3 de la billetera y para pruebas: el veredicto por comprobación de una presentación."
-  },
-  "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "32b182a1f19bad6a",
-    "text": "Donde llega el usuario final tras una presentación desde otro dispositivo. Una página de la superficie estática de la demostración desde #582, dibujada a partir de /vc-demo-api/done."
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

@@ -76,8 +76,8 @@
     "text": "與主連接埠（{{port}}）提供的憑證與金鑰相同。它是{{provenance}}：GET /tls/server-certificate 會以 PEM 提供它。兩個通訊端只需一個錨點，這就是它們共用它的原因。"
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "23f1b072b3557932",
-    "text": "項目 uid=<name>,{{usersDn}} 會在 <name> 第一次透過「任何」協定向本服務驗證身分時出現。LDAP 繫結不會植入項目（它出示的是 DN，而不是使用者名稱），OAuth 用戶端也不會。經驗證的 TLS「用戶端憑證」是唯一本身已經是 DN 的身分：其項目保留主體自己的葉 RDN——CN=alice,O=Example 對應 cn=alice,{{usersDn}}——若整個主體已位於 {{baseDn}} 之下則保留整個主體，而完整的主體、簽發者、序號與有效期間以 x509* 屬性存放在項目上，這些是本服務自己的名稱，不是結構描述。「去中心化識別碼」是第三種形式，既不是名稱也不是 DN：簽發憑證的 did:jwk 主體、向 OID4VP Verifier 出示的任何 DID、/did/generate 產生的 DID。其項目位於 uid=did-<DID 之 SHA-256 的 12 個十六進位字元>,{{usersDn}}——完整寫出的 did:jwk 是長達數百個字元的 DN，大部分是金鑰資料——識別碼本身則完整保存在項目上的 didSubject 中，其方法則保存在 didMethod 中。請以 didSubject 而非 uid 搜尋該人：在這些項目上 uid 是摘要，didSubject 才是身分。"
+    "en": "7e10a7e3ec45179d",
+    "text": "項目 uid=<name>,{{usersDn}} 會在 <name> 第一次透過「任何」協定向本服務驗證身分時出現。LDAP 繫結不會植入項目（它出示的是 DN，而不是使用者名稱），OAuth 用戶端也不會。經驗證的 TLS「用戶端憑證」是唯一本身已經是 DN 的身分：其項目保留主體自己的葉 RDN——CN=alice,O=Example 對應 cn=alice,{{usersDn}}——若整個主體已位於 {{baseDn}} 之下則保留整個主體，而完整的主體、簽發者、序號與有效期間以 x509* 屬性存放在項目上，這些是本服務自己的名稱，不是結構描述。「去中心化識別碼」是第三種形式，既不是名稱也不是 DN：簽發憑證的 did:jwk 主體、向 OID4VP Verifier 出示的任何 DID。其項目位於 uid=did-<DID 之 SHA-256 的 12 個十六進位字元>,{{usersDn}}——完整寫出的 did:jwk 是長達數百個字元的 DN，大部分是金鑰資料——識別碼本身則完整保存在項目上的 didSubject 中，其方法則保存在 didMethod 中。請以 didSubject 而非 uid 搜尋該人：在這些項目上 uid 是摘要，didSubject 才是身分。"
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",

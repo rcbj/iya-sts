@@ -4828,8 +4828,8 @@
     "text": "Username ng offer"
   },
   "oid4vci.offerUsername|description": {
-    "en": "e6877be76f9deb35",
-    "text": "Kaninong credential ang binubuo ng mga issuer-initiated offer page. Galing ang mga claim sa directory entry ng taong iyon."
+    "en": "695af4bfbf87397a",
+    "text": "Kung sino ang pinapangalanan ng pre-authorized na alok kapag walang pinapangalanan ang gumawa nito. Walang pintong gumagawa nito mula nang umalis sa serbisyo ang demonstration issuer (#594): ang alok ng portal ay pinapangalanan ang taong naka-sign in."
   },
   "oid4vci.requestEncryptionRequired|label": {
     "en": "6d21301aa0a0ed47",
@@ -4870,14 +4870,6 @@
   "oid4vci.walletIssuancePath|description": {
     "en": "07cb90695b268c4c",
     "text": "Ang pahina sa ilalim ng wallet URL na pinagbibigyan ng Credential Offer. Ang default ay ang sariling wallet page ng debugger."
-  },
-  "oid4vci.allowedWalletUrls|label": {
-    "en": "b8b46e8ecc6e5362",
-    "text": "Iba pang wallet URL na puwedeng pangalanan ng offer link (product)"
-  },
-  "oid4vci.allowedWalletUrls|description": {
-    "en": "e4f4ca5250f1d512",
-    "text": "SA PRODUCT MODE, ang mga wallet URL bukod sa oid4vci.walletUrl na puwedeng pangalanan ng `wallet` query parameter sa /issuer/offer. Tinatanggihan ang anumang iba, dahil ang offer link na nagpapadala sa End-User saanman sabihin ng query string nito ay open redirect na may dalang pre-authorized code. Tumatanggap ng anumang URL ang development, na siyang paraan para maituro sa serbisyong ito ang wallet sa isang laptop."
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -4924,8 +4916,8 @@
     "text": "Algorithm na ipinipirma sa mga credential"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "73a0a13f9f08d4aa",
-    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration at ng did:web credential ng /did/generate. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito."
+    "en": "6503fe55086c7b70",
+    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -4982,14 +4974,6 @@
   "oid4vci.domainLinkageLifetimeS|description": {
     "en": "13d65b9bdd4bbd2d",
     "text": "Gaano katagal sinasabi ng Domain Linkage Credential sa /.well-known/did-configuration.json na valid ito. Pinipirmahan ito kada request, kaya ito ang window kung kailan maaaring paniwalaan ang naka-cache na kopya."
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|label": {
-    "en": "bf758e3b501600cc",
-    "text": "Tagal ng credential ng /did/generate (s)"
-  },
-  "oid4vci.generatedDidCredentialLifetimeS|description": {
-    "en": "916bddfcec82f0c9",
-    "text": "Gaano katagal valid ang SD-JWT VC na pinipirmahan ng /did/generate gamit ang DID na ibinabalik nito."
   },
   "oid4vci.sdJwtIssuerDid|label": {
     "en": "e4c593273192dcfc",
@@ -5068,8 +5052,8 @@
     "text": "Client Identifier prefix ng pinirmahang request"
   },
   "oid4vp.clientIdPrefix|description": {
-    "en": "2bc9c2d6babebcfb",
-    "text": "Paano ia-authenticate ng wallet ang isang PINIRMAHANG request (OpenID4VP section 5.9). pre-registered: oid4vp.clientId, na alam ng wallet out of band. decentralized_identifier: ang did:web ng realm, pinirmahan ang request gamit ang key na nakalista sa document nito. verifier_attestation: isang Verifier Attestation JWT sa `jwt` header ng request — oid4vp.verifierAttestation, o isang pinipirmahan ng realm na ito para sa sarili nito, na pinagkakatiwalaan lang ng wallet kung pinagkakatiwalaan nito ang realm na ito. openid_federation: ang entity identifier ng realm na ito, na ang Entity Configuration ay nasa /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, isang dNSName ng certificate ng Verifier, na ang chain ay dala ng request sa x5c. x509_hash: ang SHA-256 ng certificate na iyon. Parehong pumipirma gamit ang oid4vp.x509SigningAlgorithm; ipinapakita ng /oid4vp/verifier-certificate ang certificate at ang dalawang Client Identifier. Pumipili kada request ang /oid4vp/start?client_id_prefix=. Laging gumagamit ng redirect_uri ang hindi pinirmahang request."
+    "en": "8e5bc19e401b8880",
+    "text": "Paano ia-authenticate ng wallet ang isang PINIRMAHANG request (OpenID4VP section 5.9). pre-registered: oid4vp.clientId, na alam ng wallet out of band. decentralized_identifier: ang did:web ng realm, pinirmahan ang request gamit ang key na nakalista sa document nito. verifier_attestation: isang Verifier Attestation JWT sa `jwt` header ng request — oid4vp.verifierAttestation, o isang pinipirmahan ng realm na ito para sa sarili nito, na pinagkakatiwalaan lang ng wallet kung pinagkakatiwalaan nito ang realm na ito. openid_federation: ang entity identifier ng realm na ito, na ang Entity Configuration ay nasa /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, isang dNSName ng certificate ng Verifier, na ang chain ay dala ng request sa x5c. x509_hash: ang SHA-256 ng certificate na iyon. Parehong pumipirma gamit ang oid4vp.x509SigningAlgorithm; ipinapakita ng /oid4vp/verifier-certificate ang certificate at ang dalawang Client Identifier. Pumipili kada request ang client_id_prefix ng pagsisimula ng beripikasyon. Laging gumagamit ng redirect_uri ang hindi pinirmahang request."
   },
   "oid4vp.x509DnsName|label": {
     "en": "99725e353310d18b",
@@ -5364,8 +5348,8 @@
     "text": "Ibang wallet URL na maaaring pangalanan ng request link (product)"
   },
   "oid4vp.allowedWalletUrls|description": {
-    "en": "14528fef5acf3929",
-    "text": "SA PRODUCT MODE, ang mga wallet URL bukod sa oid4vp.walletUrl na maaaring pangalanan ng `wallet` query parameter sa start page ng Verifier; tinatanggihan ang iba bilang open redirect. Tumatanggap ng anumang URL ang development."
+    "en": "12e0e5f89e591fc8",
+    "text": "SA PRODUCT MODE, ang mga wallet URL bukod sa oid4vp.walletUrl na maaaring pangalanan ng `wallet` ng pagsisimula ng beripikasyon; tinatanggihan ang iba bilang open redirect. Tumatanggap ng anumang URL ang development."
   },
   "oid4vp.trustedIssuerCertificates|label": {
     "en": "8c7b7fba802f8166",
@@ -5396,8 +5380,8 @@
     "text": "Mag-sign in gamit ang wallet"
   },
   "oid4vp.signIn|description": {
-    "en": "6ded6e5b0fe7d334",
-    "text": "Mag-alok ng \"Sign in with a wallet\" sa /authn/login at sagutin ang /authn/wallet: isang OpenID4VP request — sa pamamagitan ng Digital Credentials API, o sa pamamagitan ng link sa parehong device — para sa credential na na-issue ng realm na ito, sa anumang format na pinapangalanan ng oid4vp.signInFormats, na ang na-verify na presentation — kasama ang sariwang holder proof — ay nagsisimula ng session para sa directory entry na pinag-issue-han ng credential, at nagpapatuloy sa anumang flow na naghihintay sa sign-in screen. Maaari ring maging second factor ang wallet pagkatapos ng password, at humihingi ng second factor pagkatapos ng wallet kapag dalawa ang hinihingi ng request. Ang credential mula sa ibang issuer, o na-issue sa access token na hindi ini-issue ng serbisyong ito, ay nagve-verify pa rin at walang sina-sign in. Ang Off ay nag-aalis ng button at nagsasara ng pinto; hindi apektado ang Verifier sa /oid4vp/verifier."
+    "en": "0f2c1a100385463b",
+    "text": "Mag-alok ng \"Sign in with a wallet\" sa /authn/login at sagutin ang /authn/wallet: isang OpenID4VP request — sa pamamagitan ng Digital Credentials API, o sa pamamagitan ng link sa parehong device — para sa credential na na-issue ng realm na ito, sa anumang format na pinapangalanan ng oid4vp.signInFormats, na ang na-verify na presentation — kasama ang sariwang holder proof — ay nagsisimula ng session para sa directory entry na pinag-issue-han ng credential, at nagpapatuloy sa anumang flow na naghihintay sa sign-in screen. Maaari ring maging second factor ang wallet pagkatapos ng password, at humihingi ng second factor pagkatapos ng wallet kapag dalawa ang hinihingi ng request. Ang credential mula sa ibang issuer, o na-issue sa access token na hindi ini-issue ng serbisyong ito, ay nagve-verify pa rin at walang sina-sign in. Ang Off ay nag-aalis ng button at nagsasara ng pinto; hindi apektado ang beripikasyong sinisimulan ng administrator."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

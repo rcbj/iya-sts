@@ -2052,8 +2052,8 @@
     "text": "ändrar vad varje FRAMTIDA Verifiable Credential innehåller, OCH skriver till LDAP-katalogen"
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "2b65c93c64dbe5de",
-    "text": "NON-SPEC. Vad demonstrationsverifieraren på /oid4vp/verifier ber en plånbok om, i vilket credential-format, och den dcql_query de bygger — från funktionen som bygger den riktiga, så det är nästa Authorization Request snarare än en beskrivning av den. Varje katalograd säger också om UTFÄRDAREN för närvarande skapar det anspråket. Speglar GET /admin/vc-verifier-config."
+    "en": "356223783345c682",
+    "text": "ICKE-SPEC. Vad OID4VP-verifieraren ber en plånbok om, i vilket intygsformat, och den dcql_query de bygger — från funktionen som bygger den riktiga, så det är nästa Authorization Request och inte en beskrivning av den. Varje katalograd säger också om UTFÄRDAREN för närvarande präglar den claim. Speglar GET /admin/vc-verifier-config."
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",
@@ -2064,16 +2064,24 @@
     "text": "ändrar dcql_query för varje FRAMTIDA OID4VP Authorization Request"
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.what": {
-    "en": "c9f5ea170ff74a38",
-    "text": "NON-SPEC (#587). Administratörens /oid4vp/start, via samma funktion: kroppen namnger det som den sidans fråga namnger (format, by, client_id_prefix, response_type, response_mode, mode, wallet), och svaret är JSON — state, den plånboks-URL som en start på samma enhet omdirigerar till, den openid4vp://- (eller siopv2://-) URI som en QR-kod för annan enhet bär, och request_uri genom referens — snarare än en omdirigering. Besvaras i alla lägen. Speglar formuläret Starta en verifiering på /admin/vc."
+    "en": "5c53718a6c9ef2b0",
+    "text": "ICKE-SPEC (#587). Där en verifiering startar, för en administratör eller en applikation som har Admin Write (#594: utvecklingskompanjonens bar door är en). Kroppen anger format, by, client_id_prefix, response_type, response_mode, mode, wallet och redirect_uri — anroparens sida som Response Endpoint sedan skickar plånboken till, en av den anropande klientens registrerade redirect URI:er där bara registrerade adresser accepteras. Svaret är JSON: state, plånboks-URL:en som en start på samma enhet går till, den openid4vp://- (eller siopv2://-)URI som en QR-kod för en annan enhet bär, och request_uri som referens. Besvaras i alla lägen. Speglar formuläret Start a verification på /admin/vc."
   },
   "stsmetadata.endpoints./admin-api/verifications/:action.effect": {
     "en": "32628cde0015eafc",
     "text": "bygger en OID4VP Authorization Request och registrerar dess transaktion"
   },
   "stsmetadata.endpoints./admin-api/verifications.what": {
-    "en": "fa8817d6ab626cf0",
-    "text": "NON-SPEC (#587). Med ?state= det utslag som /oid4vp/result/:state svarar, från samma funktion (404 för ett state utan post); utan, sfärens öppna verifieringar och vad var och en avgjorde, nyaste först — listan som fliken Verifier request ritar. En plånboksinloggning listas inte."
+    "en": "ceb50a3bb3405239",
+    "text": "ICKE-SPEC (#587). Med ?state=, vad verifieraren beslutade — varje kontroll och de avslöjade claims (404 för ett state utan post); utan, sfärens öppna verifieringar och vad var och en beslutade, nyast först — listan som fliken Verifier request ritar. En plånboksinloggning listas inte."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/last-request.what": {
+    "en": "d4af7f3693d7a14e",
+    "text": "ICKE-SPEC (#594). Hur OpenID4VCI-utfärdarens senaste Credential Request kom fram: dess medietyp och, krypterad, dess JWE:s kid, alg och enc — aldrig begäran. En plånbok kan inte bevisa att den krypterade; bara utfärdaren vet vad som kom fram. Admin Read; fram till #594 det utvecklingsbara /oid4vci/last_request."
+  },
+  "stsmetadata.endpoints./admin-api/oid4vci/notifications.what": {
+    "en": "0a95a0766878a671",
+    "text": "ICKE-SPEC (#594). Med ?id=, vad en plånbok sade till Notification Endpoint om intyget som det notification_id anger: händelsen, dess beskrivning och när (404 för ett id som den här utfärdaren inte utfärdade). Admin Read; fram till #594 det utvecklingsbara /oid4vci/notification/:id."
   },
   "stsmetadata.endpoints./sts.what": {
     "en": "66812a407152a91b",
@@ -2851,45 +2859,9 @@
     "en": "dfd57a70ba809091",
     "text": "Avsnitt 11: plånboken rapporterar vad den gjorde med credentialet. Valideras och registreras."
   },
-  "stsmetadata.endpoints./oid4vci/notification/:id.what": {
-    "en": "f24e1023bd81678a",
-    "text": "NON-SPEC, för tester: vad plånboken rapporterade mot ett notification_id."
-  },
-  "stsmetadata.endpoints./oid4vci/last_request.what": {
-    "en": "55716420ece93ddf",
-    "text": "NON-SPEC, för tester: om den senaste Credential Request kom krypterad, och hur."
-  },
   "stsmetadata.endpoints./oid4vci/credential-offer/:id.what": {
     "en": "68a05b1b31fe7152",
     "text": "Serverar ett erbjudande som hämtas via credential_offer_uri."
-  },
-  "stsmetadata.endpoints./issuer.what": {
-    "en": "948a7409a3fb1a86",
-    "text": "Bilaga H.1: där en slutanvändare startar ett utfärdarinitierat flöde. En sida i demonstrationens statiska yta sedan #582, ritad från /vc-demo-api/issuer."
-  },
-  "stsmetadata.endpoints./issuer/offer.what": {
-    "en": "47aafb085693f976",
-    "text": "Sidan som bygger ett erbjudande och antingen skickar webbläsaren till plånboken eller visar det som en QR-kod. ?mode=cross-device (H.2) och ?mode=deferred (H.3) väljer beviljandet med förauktoriserad kod och en transaktionskod. En sida i demonstrationens statiska yta sedan #582: GET skapar inget, och dess skript gör erbjudandet vid POST /vc-demo-api/offer."
-  },
-  "stsmetadata.endpoints./issuer/demo.js.what": {
-    "en": "873440e0c0834837",
-    "text": "NON-SPEC (#582). Körtiden och renderarna för demonstrationsutfärdarens och -verifierarens sidor i en fil, byggd av build-typescript.sh (oid4vc/vc-demo-spa.js) och serverad förkomprimerad: den ritar /issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start och /oid4vp/done från /vc-demo-api, gör deras erbjudanden och begäranden där och ritar QR-koderna."
-  },
-  "stsmetadata.endpoints./vc-demo-api.what": {
-    "en": "f0d867a593ea76ea",
-    "text": "NON-SPEC (#582). OpenID4VC-demonstrationens API-operationer, var och en med den sida eller kontroll den är dörren till (mirrors). Språkoberoende."
-  },
-  "stsmetadata.endpoints./vc-demo-api/issuer.what": {
-    "en": "68d3f0eed386add2",
-    "text": "NON-SPEC (#582). Det /issuer ritas från: intygskonfigurationen som erbjuds, plånboken och utfärdaren."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.what": {
-    "en": "17204bdcd2333d91",
-    "text": "NON-SPEC-dörr till OpenID4VCI avsnitt 4 och bilaga H (#582). GET svarar med erbjudandesidans vy och dess CSRF-token, frågan kontrollerad och inget utfärdat; POST gör erbjudandet — JSON, en Origin från den här tjänsten och X-CSRF-Token bunden till kakan sts_session — genom samma makeOffer() som portalen använder, och svarar med plånboken att gå till (location) eller QR-sidans vy: openid-credential-offer-URI:n, plånbokslänken och transaktionskoden."
-  },
-  "stsmetadata.endpoints./vc-demo-api/offer.effect": {
-    "en": "2f295f0c5407473c",
-    "text": "POST utfärdar ett erbjudande"
   },
   "stsmetadata.endpoints./bbs/keys/:id.what": {
     "en": "cae7c81242a39f00",
@@ -2987,37 +2959,9 @@
     "en": "590e41dd0e817cfb",
     "text": "svarar 404 om inte applikationen är deklarerad för did-familjen och har en nyckel"
   },
-  "stsmetadata.endpoints./did/generate.what": {
-    "en": "a5a93d3c52cea4cc",
-    "text": "NON-SPEC, för tester och för att prova sidan DID Tools: ?method=jwk skapar en färsk P-256-nyckel och returnerar en did:jwk med ett credential signerat av den; ?method=web returnerar den här tjänstens egen did:web med ett signerat av den RS256-nyckel som dess dokument publicerar. En DID utan något signerat av den kunde bara tolkas, inte verifieras."
-  },
   "stsmetadata.endpoints./.well-known/did-configuration.json.what": {
     "en": "39a67bfa435b8a37",
     "text": "Bevisar att det här ursprunget och den här DID:en är samma entitet. För did:web är det det enda icke-cirkulära beviset: att lösa upp did:web:host innebär att hämta host."
-  },
-  "stsmetadata.endpoints./oid4vp/verifier.what": {
-    "en": "179e4cfdad61673b",
-    "text": "Där en presentation börjar: verifieraren frågar, plånboken svarar. En sida i demonstrationens statiska yta sedan #582, ritad från /vc-demo-api/verifier."
-  },
-  "stsmetadata.endpoints./oid4vp/start.what": {
-    "en": "2fce28c03d8db666",
-    "text": "Sidan som startar en presentation: response_type=vp_token med en DCQL-fråga, en ny nonce och response_mode=direct_post, skickad som värde eller via referens, med en QR-skärm för en annan enhet. `client_id_prefix` namnger klientidentifierarprefixet för DENNA begäran (avsnitt 5.9) och gör den signerad; ett x509-prefix certifierar först verifieraren (#230). En sida i demonstrationens statiska yta sedan #582: GET skapar inget, och dess skript startar begäran vid POST /vc-demo-api/start."
-  },
-  "stsmetadata.endpoints./vc-demo-api/verifier.what": {
-    "en": "905f6536ecad196e",
-    "text": "NON-SPEC (#582). Det /oid4vp/verifier ritas från: uppgifterna verifieraren frågar efter, intygstypen, formatet, vad en ldp_vc-begäran utelämnar och vart plånboken skickar."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.what": {
-    "en": "e4075c708b0e75f9",
-    "text": "NON-SPEC-dörr till OpenID4VP (#582). GET svarar med startsidans vy och dess CSRF-token, frågan kontrollerad och inget byggt; POST startar begäran — bunden som varje handling — genom samma startVerification() som POST /admin-api/verifications/start använder, och svarar med plånboken att gå till (location) eller QR-sidans vy: openid4vp-URI:n, plånbokslänken och tillståndet sidan frågar efter."
-  },
-  "stsmetadata.endpoints./vc-demo-api/start.effect": {
-    "en": "722eefdf9a57521a",
-    "text": "POST bygger en begäran"
-  },
-  "stsmetadata.endpoints./vc-demo-api/done.what": {
-    "en": "662a67fbe8c42ffe",
-    "text": "NON-SPEC (#582). Det /oid4vp/done ritas från för ?state=: om en presentation kom fram och godtogs, dess uppgifter och vad som efterfrågades; QR-sidan frågar efter det. En plånboksinloggnings transaktion besvaras inte."
   },
   "stsmetadata.endpoints./oid4vp/verifier-certificate.what": {
     "en": "fe49dbc875af3ae1",
@@ -3030,14 +2974,6 @@
   "stsmetadata.endpoints./oid4vp/response.what": {
     "en": "a0c3cbde113f8f11",
     "text": "Dit plånboken POSTar vp_token — och, för en SIOPv2-begäran (#129), den självutfärdade id_token, via direct_post eller genom webbläsaren via form_post — och där den verkligen verifieras: utfärdarens signatur (postkvantum inräknat), varje Disclosure-sammanfattning mot _sd, Key Binding JWT inklusive sd_hash — eller VP JWT, eller Data Integrity-innehavarbeviset — giltighetsfönstret, credentialets statuslista, och om de efterfrågade anspråken kom fram. För en transaktion som startats på /authn/wallet avgör den också VEM presentationen loggar in, svarar en gång, och skickar tillbaka en plånbok på samma enhet med en response_code; själva sessionen sätts vid webbläsarens nästa begäran, aldrig på den här, som är plånbokens."
-  },
-  "stsmetadata.endpoints./oid4vp/result/:state.what": {
-    "en": "6a76827ac70fae49",
-    "text": "NON-SPEC, för plånbokens steg 3 och för tester: utslaget per kontroll för en presentation."
-  },
-  "stsmetadata.endpoints./oid4vp/done.what": {
-    "en": "32b182a1f19bad6a",
-    "text": "Där slutanvändaren hamnar efter en presentation från en annan enhet. En sida i demonstrationens statiska yta sedan #582, ritad från /vc-demo-api/done."
   },
   "stsmetadata.endpoints./enroll/acme/directory.what": {
     "en": "977b365cc9acb665",

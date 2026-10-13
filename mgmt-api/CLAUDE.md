@@ -2294,15 +2294,29 @@ with where it is published and how many operations it holds, so the console's
 every other page, and rule 7's parity check finds its management GET. It
 requires `admin:read` and changes nothing.
 
-## `/admin-api/verifications` — THE DEMONSTRATION VERIFIER'S ADMINISTRATOR TWIN (#587, 2026-10-12)
+## `/admin-api/verifications` — WHERE A VERIFICATION STARTS AND IS READ (#587, 2026-10-12; the only doors since #594)
 
 `POST /admin-api/verifications/start` (Admin Write) and `GET
-/admin-api/verifications` (Admin Read) do what the demonstration Verifier's
-`/oid4vp/start` and `/oid4vp/result/:state` do, as JSON and in every mode.
-Those pages become development-only (#585); an operator in product, and every
-product-mode job (`sts_oid4vp_wallet.js`, `sts_siop.js`, `sts_oid4vp_x509.js`,
-`sts_oid4vp_status_reference.js`, `sts_oid4vp_conformance.js`), starts a
-verification here instead.
+/admin-api/verifications` (Admin Read) start an OpenID4VP verification and
+read what was decided, as JSON and in every mode. They were the twins of the
+demonstration Verifier's `/oid4vp/start` and `/oid4vp/result/:state`, which
+left for the development companion on #594 (`companion/`, whose bar door is
+an application calling these); an operator, every job
+(`sts_oid4vp_wallet.js`, `sts_siop.js`, `sts_oid4vp_x509.js`,
+`sts_oid4vp_status_reference.js`, `sts_oid4vp_conformance.js`) and the
+companion start one here.
+
+* **`redirect_uri`: THE STARTER'S OWN COMPLETION PAGE (#594).** OpenID4VP 1.0
+  section 8.2 lets the Response Endpoint answer a `redirect_uri` the wallet
+  sends the browser to. It named the demonstration's `/oid4vp/done` for every
+  verification — a 404 in product — so whose page it is now belongs to the
+  start: `vcVerifier.completionUriFor(asked, res.locals.apiClientId)` holds it,
+  where only registered addresses are accepted, to the CALLING CLIENT's
+  registered redirect URIs (matched whole), and to an absolute http(s) URL
+  with no fragment anywhere; 400 `STS-VC-0123` otherwise, never replaced. It
+  rides on the transaction (`record.completionUri`), the answer says it back
+  as `redirectUri`, and a start that names none is answered by the Response
+  Endpoint with no `redirect_uri` — `{}`, the section's MAY.
 
 * **`start` IS AN ACTION OF `/verifications/:action`**, not a literal path
   (2026-10-12), for `/cells/:action`'s reason: the suite probes every POST
@@ -2312,10 +2326,9 @@ verification here instead.
   `vcVerifier.startVerification(req, asked, where)` validates what was asked
   against the page's own schema, issues the x509 certificate first where one
   is needed, calls `buildVpRequest()`, builds the query and applies the
-  wallet rule, and RETURNS what it built; the page redirects or draws a QR
-  code from it and this operation answers it. `verificationOutcome(state)` is
-  the result page's object, which `GET ?state=` answers with `found: true`.
-  The refusals are the page's, status and code: 400 `STS-VC-0032`, 400
+  wallet rule, and RETURNS what it built; this operation answers it.
+  `verificationOutcome(state)` is what `GET ?state=` answers with `found:
+  true`. The refusals, status and code: 400 `STS-VC-0032`, 400
   `STS-VC-0033`, 500 with the builder's code (`STS-VC-0092`,
   `STS-VC-0110`–`0113`), and 404 `STS-VC-0042` for an unknown state.
 * **THE START IS THE ONE WRITE THAT CALLS A PROTOCOL MODULE RATHER THAN AN
@@ -2324,8 +2337,7 @@ verification here instead.
   the did:web, the OpenID Federation entity identifier, the x509 name), and
   an action never sees a request (`tests/admin_actions_layer.js`). Rule 7
   loses nothing — the static console's form posts to this operation, so there
-  is no second admin door — and the sharing that matters, with the page, is
-  in the Verifier. The READ is an ordinary view,
+  is no second admin door. The READ is an ordinary view,
   `adminViews.presentationVerificationsJson(req)` (named apart from #127's
   `verificationsJson()`, a person's identity verifications).
 * **WITHOUT `state` IT LISTS, AND THAT IS WHAT MAKES IT A RESOURCE.** The
@@ -2347,10 +2359,22 @@ verification here instead.
   `/admin/vc-verifier-config` with `action=start`, which `vcTabLinks()`
   moves to the tab and `WebForms.resolve()` sends here through this row's
   `mirrors`; the answer's `message` is what the strip shows.
-* **CELLS (#98) ARE NOT FOLLOWED.** `/oid4vp/result/:state` is placed on the
-  cell that minted the state; this read answers from the cell it arrives at.
+* **CELLS (#98) ARE NOT FOLLOWED.** This read answers from the cell it
+  arrives at (the demonstration's `/oid4vp/result/:state` was placed on the
+  cell that minted the state).
   A start and its read through the same address meet in the same cell, which
   is every caller here; a cross-cell read is not built.
+
+## `/admin-api/oid4vci/last-request` and `/admin-api/oid4vci/notifications` — WHAT THE ISSUER SAW (#594)
+
+Admin Read, every mode. They were the non-spec, development-only `GET
+/oid4vci/last_request` and `GET /oid4vci/notification/:id`, answered to
+anybody; what a wallet sent and what it said it did with a credential are an
+operator's facts, and a wallet under test (and the job driving it) asks them
+here with a token. `vcIssuer.lastCredentialRequest()` and
+`notificationRecord(id)` answer them, the second as a query parameter
+(`?id=`) because no GET in this table takes a path parameter; an unknown id is
+404 `STS-VC-0024`. No console page draws them (`mirrors` says so).
 
 `GET /admin-api/kerberos/principals` gained `accountPolicy` in the same change
 (`anyUsernameAuthenticates`, `neverCreated`, `serviceHosts` — the facts
