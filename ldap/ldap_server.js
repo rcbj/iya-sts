@@ -11917,31 +11917,248 @@ function credentialCensus(names) {
             ' name(s).');
   const out = (names || []).map(function (name) {
     const stored = locateEntry(String(name == null ? '' : name)).stored;
-    if (!stored) {
-      return null;
-    }
-    const a = stored.attributes;
-    const password = (a.userpassword || []).length > 0 &&
-                     !!String(a.userpassword[0]);
-    return {
-      password: password,
-      webauthn: (a.stswebauthncredential || []).slice(0),
-      totp: (a.ststotpcredential || [])[0]
-        ? String(a.ststotpcredential[0]) : '',
-      // The mail channel's `personEntry()` reads only an entry with a name
-      // (`usernameOfEntry()`), so the census hands the four over on the same
-      // condition — otherwise an entry that channel refuses would be counted
-      // as holding an emailed factor.
-      mail: usernameOfEntry(stored)
-        ? { mail: (a.mail || []).slice(0),
-            stsmailverified: (a.stsmailverified || []).slice(0),
-            stsmailfactor: (a.stsmailfactor || []).slice(0),
-            stsmailfactorfailures: (a.stsmailfactorfailures || []).slice(0) }
-        : null
-    };
+    return stored ? censusOfEntry(stored) : null;
   });
   log.debug('Leaving credentialCensus().');
   return out;
+}
+
+// One entry's census values, raw — what `credentialCensus()` hands over per
+// name and `credentialTallies()` per holder (#610).
+// Called once per person in a census, so no Entering/Leaving pair: two lines
+// per person would drown the page's own log.
+function censusOfEntry(stored) {
+  const a = stored.attributes;
+  const password = (a.userpassword || []).length > 0 &&
+                   !!String(a.userpassword[0]);
+  return {
+    password: password,
+    webauthn: (a.stswebauthncredential || []).slice(0),
+    totp: (a.ststotpcredential || [])[0]
+      ? String(a.ststotpcredential[0]) : '',
+    // The mail channel's `personEntry()` reads only an entry with a name
+    // (`usernameOfEntry()`), so the census hands the four over on the same
+    // condition — otherwise an entry that channel refuses would be counted
+    // as holding an emailed factor.
+    mail: usernameOfEntry(stored)
+      ? { mail: (a.mail || []).slice(0),
+          stsmailverified: (a.stsmailverified || []).slice(0),
+          stsmailfactor: (a.stsmailfactor || []).slice(0),
+          stsmailfactorfailures: (a.stsmailfactorfailures || []).slice(0) }
+      : null
+  };
+}
+
+// ---------------------------------------------------------------------------
+// THE WHOLE DIRECTORY'S CREDENTIAL TILES, WITHOUT LISTING EVERYBODY (#610).
+//
+// `/admin/users`' tiles — a second factor, password only, no way in yet —
+// counted the CAPPED list, so on a bulk-loaded realm they described the
+// first five thousand people and said so nowhere. rcbj asked for each to
+// count the realm's whole directory without a full scan. What makes that
+// possible is that every one of them is a question about the FEW people who
+// hold a credential attribute, plus one count:
+//
+//   * `people` and `withPassword` are COUNTED: in a windowed process the
+//     store's `count(*)` and `count(*) FILTER (WHERE attr_names ? …)` in one
+//     statement (`DirectoryWindow.countHolding()`), the values themselves
+//     being sealed; in memory, one pass over `ou=users` reading the one
+//     attribute's presence.
+//   * `holders` are the people holding any of the attributes the caller
+//     names — `common/credentials.ts` names them, since what an enrolment
+//     is decided there — each handed over RAW, exactly as
+//     `credentialCensus()` hands a named person over, for that file to
+//     interpret by its own rules (key roles, the sealed TOTP verdict, the
+//     emailed factor under the realm's policy). In a windowed process they
+//     are the store's holders (`holders()`, the `attr_names` probe), read
+//     back through the window; in memory the same pass collects them.
+//
+// So the store reads O(holders) entries and counts the rest, and the memory
+// pass is O(people in the realm) — **a walk, said here**: the in-memory
+// directory keeps no tally per attribute, for `countUnderContainer()`'s
+// reason. "Holds a password" is the attribute's presence with a value in
+// both modes, which is the census's reading of it but for a `userPassword`
+// whose first value is empty — counted here, not there.
+//
+// KEPT until something is written under `ou=users` (the subtree clock, which
+// this process's own writes and the rows it applies move), and in a windowed
+// process for at most ten seconds besides, for another process's writes.
+// ---------------------------------------------------------------------------
+const credentialTalliesMemo = realms.keyed(function () {
+  return { version: -1, at: 0, spec: '', value: null };
+});
+const credentialTalliesCount =
+  cacheRegistry.counter('ldap.credential-tallies');
+
+/**
+ * Counts the ambient realm's people and those holding a password, and hands
+ * over, raw, everybody holding any of the named credential attributes.
+ *
+ * @param spec - `{ password, holding }`: the password attribute and the
+ *   credential attributes, as `credentials.ts` names them
+ * @returns `{ people, withPassword, holders: [{ name, raw }] }`
+ */
+function credentialTallies(spec) {
+  log.debug('Entering credentialTallies().');
+  const passwordAttribute = String((spec && spec.password) || 'userPassword')
+    .toLowerCase();
+  const holding = ((spec && spec.holding) || []).map(function (one) {
+    return String(one).toLowerCase();
+  });
+  const signature = passwordAttribute + '|' + holding.join(',');
+  const version = subtreeVersion(usersDn());
+  const held = credentialTalliesMemo();
+  if (held.value && held.version === version && held.spec === signature &&
+      (!directoryWindow || Date.now() - held.at <= 10000)) {
+    credentialTalliesCount.hit();
+    log.debug('Leaving credentialTallies(). Kept.');
+    return held.value;
+  }
+  credentialTalliesCount.miss();
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  const holds = function (stored, attribute) {
+    const values = stored.attributes[attribute];
+    return Array.isArray(values) && values.length > 0;
+  };
+  const value = { people: 0, withPassword: 0, holders: [] };
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    const counted = directoryWindow.countHolding(realmId, base,
+                                                 passwordAttribute);
+    value.people = counted.n;
+    value.withPassword = counted.holding;
+    const seen = new Set();
+    holding.forEach(function (attribute) {
+      directoryWindow.holders(realmId, base, attribute, function (entry) {
+        return holds(entry, attribute);
+      }).forEach(function (hit) {
+        if (hit.key !== base && hit.key.endsWith(suffix) &&
+            !seen.has(hit.key)) {
+          seen.add(hit.key);
+          value.holders.push({ name: usernameOfEntry(hit.entry),
+                               raw: censusOfEntry(hit.entry) });
+        }
+      });
+    });
+  } else {
+    eachEntryInRealm(function (stored, key) {
+      if (key === base || !String(key).endsWith(suffix)) {
+        return;
+      }
+      value.people += 1;
+      if (holds(stored, passwordAttribute)) {
+        value.withPassword += 1;
+      }
+      if (holding.some(function (attribute) {
+        return holds(stored, attribute);
+      })) {
+        value.holders.push({ name: usernameOfEntry(stored),
+                             raw: censusOfEntry(stored) });
+      }
+    });
+  }
+  held.version = version;
+  held.at = Date.now();
+  held.spec = signature;
+  held.value = value;
+  log.debug('Leaving credentialTallies(). ' + value.people + ' people, ' +
+            value.holders.length + ' holding a credential.');
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// HOW MANY OF A LIST OF NAMES ARE PEOPLE IN THIS DIRECTORY (#610).
+//
+// "Never signed in here" is the directory's people less those of them the
+// register has seen authenticate. The register is small and in memory (at
+// most `stats.MAX_USERS`), so the question is asked per NAME, never per
+// person: in memory the username index, a Map lookup each — the rule
+// `existingUserEntry()` applies, a `uid` or the RDN value, either case; in a
+// windowed process two batched questions rather than one round trip a name —
+// `byKeys` for the DN the name WOULD have (`uid=<name>,ou=users`, which is
+// how this service names everybody it creates), and `withNames` for the
+// names that missed, which finds an entry named otherwise (`cn=…` with a
+// `uid`) by its RDN or its `uid` lookup form. That second statement filters
+// the container's rows, so it is linear in them like a count; the answer is
+// kept for ten seconds while the names and `ou=users` stay the same.
+// ---------------------------------------------------------------------------
+const peopleNamedMemo = realms.keyed(function () {
+  return { version: -1, at: 0, names: '', value: 0 };
+});
+
+/**
+ * Counts how many people in the ambient realm's directory answer to any of
+ * the given names, by `existingUserEntry()`'s rule.
+ *
+ * @param names - the names
+ * @returns the count
+ */
+function countPeopleNamed(names) {
+  log.debug('Entering countPeopleNamed(). ' + (names || []).length +
+            ' name(s).');
+  const wanted = Array.from(new Set((names || []).map(function (one) {
+    return String(one == null ? '' : one).trim().toLowerCase();
+  }).filter(function (one) {
+    return !!one;
+  }))).sort();
+  // PEOPLE, not names: two names one person answers to (a `uid` and the
+  // RDN, say) are one person signed in.
+  if (!directoryWindow) {
+    const index = usernameIndexNow();
+    const people = new Set();
+    wanted.forEach(function (name) {
+      if (index.has(name)) {
+        people.add(index.get(name));
+      }
+    });
+    log.debug('Leaving countPeopleNamed(). ' + people.size + ', from the ' +
+              'index.');
+    return people.size;
+  }
+  const joined = wanted.join('\n');
+  const version = subtreeVersion(usersDn());
+  const held = peopleNamedMemo();
+  if (held.names === joined && held.version === version &&
+      Date.now() - held.at <= 10000) {
+    log.debug('Leaving countPeopleNamed(). ' + held.value + ', kept.');
+    return held.value;
+  }
+  const base = normalizeDn(usersDn());
+  const found = new Set();
+  const people = new Set();
+  const asked = new Set(wanted);
+  // Every name an entry under `ou=users` answers to that is one of these,
+  // and the entry, once.
+  const note = function (entry) {
+    usernameKeysOf(entry).forEach(function (name) {
+      if (asked.has(name)) {
+        found.add(name);
+        people.add(normalizeDn(entry.dn));
+      }
+    });
+  };
+  const isPerson = function (entry, key) {
+    return normalizeDn(parentDn(entry.dn)) === base && !!key;
+  };
+  const dnKeys = wanted.map(function (name) {
+    return normalizeDn('uid=' + escapeDnValue(name) + ',' + usersDn());
+  });
+  (windowedFind('byKeys', [dnKeys], isPerson) || [])
+    .forEach(note);
+  const missed = wanted.filter(function (name) {
+    return !found.has(name);
+  });
+  if (missed.length) {
+    (windowedFind('withNames', [base, missed], isPerson) || [])
+      .forEach(note);
+  }
+  held.names = joined;
+  held.version = version;
+  held.at = Date.now();
+  held.value = people.size;
+  log.debug('Leaving countPeopleNamed(). ' + people.size + ', asked.');
+  return people.size;
 }
 
 // ---------------------------------------------------------------------------
@@ -11995,7 +12212,11 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     // the first names of them without listing the rest (#610) — the
     // headline and the capped list of `/admin/users`.
     personCount: personCount,
-    personNamesUpTo: personNamesUpTo
+    personNamesUpTo: personNamesUpTo,
+    // The whole directory's credential tiles, and how many names are
+    // people here (#610).
+    credentialTallies: credentialTallies,
+    countPeopleNamed: countPeopleNamed
   });
 }
 
@@ -22496,6 +22717,59 @@ function describeDirectoryCaches() {
             }),
             basis: 'subtree version'
           });
+        });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.credential-tallies',
+    title: 'People and credential holders, counted',
+    description: 'How many people the realm defines, how many hold a ' +
+      'password, everybody holding a credential attribute (raw), and how ' +
+      'many of the names seen signing in are people here: the tiles of ' +
+      '/admin/users over the whole directory without listing it (#610).',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return 2;
+    },
+    bound: 'Structural: one tally and one name count per realm; the tally ' +
+      'holds the people holding a credential, not everybody.',
+    lifetime: function () {
+      return 'Until anything under the realm\'s ou=users is written, and ' +
+        'in a process holding the directory as a window onto the store ' +
+        'for at most ten seconds.';
+    },
+    entries: function () {
+      const out = [];
+      credentialTalliesMemo.existing().forEach(function (held, id) {
+        if (!held.value) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: 'ou=users (' + held.value.people + ' people, ' +
+            held.value.holders.length + ' holding a credential)',
+          validUntil: directoryWindow ? held.at + 10000 : null,
+          valid: inRealmById(id, function () {
+            return held.version === subtreeVersion(usersDn());
+          }),
+          basis: 'subtree version'
+        });
+      });
+      peopleNamedMemo.existing().forEach(function (held, id) {
+        if (!held.at) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: 'names seen (' + held.value + ' people here)',
+          validUntil: held.at + 10000,
+          valid: inRealmById(id, function () {
+            return held.version === subtreeVersion(usersDn());
+          }),
+          basis: 'subtree version'
         });
       });
       return out;

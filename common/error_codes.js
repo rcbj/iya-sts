@@ -6170,6 +6170,11 @@ const CODES = [
     summary: 'Counting this realm\'s people for the users list\'s headline ' +
       '(#610) threw; the list is drawn without the directory\'s count.',
     spec: '' },
+  { code: 'STS-AUTHN-0335',
+    summary: 'Counting this realm\'s credential holders, or which names ' +
+      'seen signing in are people in its directory, for the users list\'s ' +
+      'tiles (#610) threw; those tiles are drawn from the list instead.',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

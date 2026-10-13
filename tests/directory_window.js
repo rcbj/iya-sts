@@ -166,6 +166,14 @@ function fakeBridge(rows) {
         return under(r.dn_key, args[1]);
       });
     }
+    if (name === 'countHolding') {
+      const list = sorted(args[0]).filter(function (r) {
+        return under(r.dn_key, args[1]);
+      });
+      return { n: list.length, holding: list.filter(function (r) {
+        return (r.attrs[args[2]] || []).length > 0;
+      }).length };
+    }
     throw new Error('the fake bridge knows no ' + name);
   };
   log.debug("Leaving fakeBridge().");
@@ -509,6 +517,11 @@ function lookups(t) {
           'reading');
   t.equal(o.w.countUnder('default', USERS), 5,
           'D2-12. where countUnder() asks the store every time');
+  const holding = o.w.countHolding('default', USERS, 'oauthconsent');
+  t.equal(JSON.stringify(holding), JSON.stringify({ n: 5, holding: 1 }),
+          'D2-13. countHolding() is countUnder()\'s count and, in the same ' +
+          'statement, the holders of an attribute, both moved by this ' +
+          'process\'s changes');
   o.w.collect(new Set());
   log.debug("Leaving lookups().");
 }

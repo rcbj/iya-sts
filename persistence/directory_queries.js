@@ -302,6 +302,56 @@ function count(realm, baseKey) {
 }
 
 /**
+ * How many entries are strictly under a base, and how many of them hold an
+ * attribute (by NAME — `attr_names`, the one column of an entry's attributes
+ * the database can read): one pass, `count(*) FILTER`, for a page's tiles
+ * (#610). Linear in the realm's rows, as `count()` is.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @returns the statement; its one row's `n` and `holding` are the counts
+ */
+function countHolding(realm, baseKey, attribute) {
+  log.debug("Entering countHolding().");
+  log.debug("Leaving countHolding().");
+  return { text: 'SELECT count(*)::bigint AS n, count(*) FILTER (WHERE ' +
+                 'attr_names ? $4)::bigint AS holding FROM sts_ldap_entries ' +
+                 'WHERE realm = $1 AND ' + underClause(2, 3, false),
+           values: [String(realm), String(baseKey), suffixLength(baseKey),
+                    String(attribute).toLowerCase()] };
+}
+
+/**
+ * The entries directly under a container that answer to ANY of a list of
+ * login names — `byName()`'s question for many names at once (#610): an RDN
+ * value, or a `uid` (its lookup form, keyed by `directory_codec.keyArgs()`).
+ *
+ * @param realm - the realm id
+ * @param parentKey - the container's normalised DN (`ou=users,<base>`)
+ * @param names - the names; each `{ key, rdn }` once keyed
+ * @returns the statement
+ */
+function withNames(realm, parentKey, names) {
+  log.debug("Entering withNames().");
+  const list = Array.isArray(names) ? names : [];
+  const rdns = list.map(function (one) {
+    return one && typeof one === 'object'
+      ? String(one.rdn || '')
+      : String(one == null ? '' : one).trim().toLowerCase();
+  });
+  const keys = list.map(function (one) {
+    return JSON.stringify([keyed(one, 'name', true)]);
+  });
+  log.debug("Leaving withNames().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND (rdn_value = ' +
+                 'ANY($3::text[]) OR name_keys @> ANY($4::jsonb[])) ORDER BY ' +
+                 'dn_key',
+           values: [String(realm), String(parentKey), rdns, keys] };
+}
+
+/**
  * Whether anything is under a key: `hasChildren()`'s question.
  *
  * @param realm - the realm id
@@ -439,7 +489,8 @@ function rowOf(row) {
 
 /**
  * The answer to a named query from its result rows: rows in the directory's
- * shape, except `count` (a number) and `hasChild` (a boolean).
+ * shape, except `count` (a number), `countHolding` (`{ n, holding }`) and
+ * `hasChild` (a boolean).
  *
  * @param name - the query's name
  * @param rows - the result rows
@@ -451,6 +502,11 @@ function answerOf(name, rows) {
   if (name === 'count') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
+  }
+  if (name === 'countHolding') {
+    log.debug("Leaving answerOf(). Two counts.");
+    return { n: Number((list[0] || {}).n || 0),
+             holding: Number((list[0] || {}).holding || 0) };
   }
   if (name === 'hasChild' || name === 'anyWithAttribute') {
     log.debug("Leaving answerOf(). A yes or a no.");
@@ -485,8 +541,10 @@ const QUERIES = {
   equalUnder: equalUnder,
   page: page,
   count: count,
+  countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  withNames: withNames,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
@@ -528,8 +586,10 @@ module.exports = {
   equalUnder: equalUnder,
   page: page,
   count: count,
+  countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  withNames: withNames,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,

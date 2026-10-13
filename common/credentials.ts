@@ -5093,6 +5093,130 @@ class Credentials {
     return out;
   }
 
+  // ===========================================================================
+  // THE TILES OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
+  //
+  // The tiles on `/admin/users` counted the CAPPED list. These are the same
+  // facts over every person the realm's directory defines, without listing
+  // them: the directory COUNTS its people and those holding a password, and
+  // hands over, raw, only the people holding one of the attributes named
+  // here — the ones without any of them hold no key, no authenticator and
+  // no emailed factor by this file's own rules, so their facts are known
+  // without reading them: a password or nothing. The holders are
+  // interpreted by `factsFromValues()`, the census's function, so a key's
+  // role, the sealed TOTP verdict (`sealedSecretVerdict()`, each secret
+  // opened at most once per process and key set) and the emailed factor
+  // under the realm's policy are decided exactly as for one person.
+  // **Nothing here is approximated by presence** except the password, which
+  // the directory counts by the attribute holding a value — the census
+  // reads its first value as well, so an empty first value counts there as
+  // no password and here as one.
+  //
+  // The definitions, over the realm's people (`ou=users`):
+  //   people        everybody there;
+  //   withSecond    holds a second factor (`mfaRequired`);
+  //   withTotp, withKeys, primaryKeys, unreadable — as the census's own;
+  //   passwordOnly  holds a password and no second factor;
+  //   noWayIn       holds neither a password nor a sign-in key (`usable`).
+  // Null where the directory offers no tally; the caller then has only the
+  // list.
+  // ===========================================================================
+  /**
+   * Counts the census's facts over every person the realm's directory
+   * defines, reading only the people who hold a credential attribute.
+   *
+   * @returns `{ people, withPassword, withSecond, withTotp, withKeys,
+   *   primaryKeys, passwordOnly, unreadable, noWayIn }`, or null
+   */
+  directoryFactorCounts() {
+    const { log, errorCodes } = this.deps;
+    const { PASSWORD_ATTRIBUTE, WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } =
+      Credentials;
+    log.debug('Entering Credentials.directoryFactorCounts().');
+    const tallies = this.directoryHook('credentialTallies');
+    if (!tallies) {
+      log.debug('Leaving Credentials.directoryFactorCounts(). No tally.');
+      return null;
+    }
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.directoryFactorCounts(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
+    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
+      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
+    }
+    let tally = null;
+    try {
+      tally = tallies({ password: PASSWORD_ATTRIBUTE, holding: holding });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting this realm\'s credential holders ' +
+                'threw: ' + ((e && e.message) || e));
+      tally = null;
+    }
+    if (!tally) {
+      log.debug('Leaving Credentials.directoryFactorCounts(). No answer.');
+      return null;
+    }
+    const out = { people: Number(tally.people) || 0,
+                  withPassword: Number(tally.withPassword) || 0,
+                  withSecond: 0, withTotp: 0, withKeys: 0, primaryKeys: 0,
+                  passwordOnly: 0, unreadable: 0, noWayIn: 0 };
+    // The holders with a password and a second factor come off
+    // `passwordOnly`, and those with no password and a sign-in key off
+    // `noWayIn`; everybody else is a password or nothing.
+    let passwordAndSecond = 0;
+    let keyWithoutPassword = 0;
+    (tally.holders || []).forEach((holder) => {
+      const f = this.factsFromValues(holder.raw, holder.name, mailFactor);
+      out.withSecond += f.mfaRequired ? 1 : 0;
+      out.withTotp += f.totp ? 1 : 0;
+      out.withKeys += f.mfaKeys > 0 ? 1 : 0;
+      out.primaryKeys += f.primaryKeys > 0 ? 1 : 0;
+      out.unreadable += f.totp && !f.totpUsable ? 1 : 0;
+      passwordAndSecond += f.password && f.mfaRequired ? 1 : 0;
+      keyWithoutPassword += !f.password && f.primaryKeys > 0 ? 1 : 0;
+    });
+    out.passwordOnly = Math.max(0, out.withPassword - passwordAndSecond);
+    out.noWayIn = Math.max(0, out.people - out.withPassword -
+                           keyWithoutPassword);
+    log.debug('Leaving Credentials.directoryFactorCounts(). ' + out.people +
+              ' people, ' + (tally.holders || []).length + ' read.');
+    return out;
+  }
+
+  /**
+   * Counts how many of the given names answer to a person in the realm's
+   * directory — the register's names, asked per name, never per person.
+   *
+   * @param names - the names
+   * @returns the count, or null where the directory offers no such count
+   */
+  directoryPeopleNamed(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleNamed().');
+    const hook = this.directoryHook('countPeopleNamed');
+    let n = null;
+    if (hook) {
+      try {
+        n = Number(hook(names || [])) || 0;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0335') +
+                  'credentials: counting which names are people here ' +
+                  'threw: ' + ((e && e.message) || e));
+        n = null;
+      }
+    }
+    log.debug('Leaving Credentials.directoryPeopleNamed(). ' + n);
+    return n;
+  }
+
   // `mechanismsFor()`'s answer cut down to the census's members, for the
   // one-name fallback — so both paths hand back one shape.
   private factsOf(mechanisms) {
@@ -9202,6 +9326,8 @@ export = {
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorCensus: slot.forward('factorCensus'),
+  directoryFactorCounts: slot.forward('directoryFactorCounts'),
+  directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),
   checkActivation: slot.forward('checkActivation'),
   consumeActivation: slot.forward('consumeActivation'),

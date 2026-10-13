@@ -1011,6 +1011,72 @@ class DirectoryWindow {
     return this.sizeIn(realmId);
   }
 
+  /**
+   * How many entries are strictly under a base and how many of them hold an
+   * attribute, now: the store's two counts in one statement and this
+   * process's changes not yet written (#610). An entry "holds" an attribute
+   * when it carries the NAME with at least one value — what the store's
+   * `attr_names` says, the only reading of an entry's attributes the
+   * database can make, its values being sealed.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param attribute - the attribute name, lower-cased as stored
+   * @returns `{ n, holding }`
+   */
+  countHolding(realmId: string, base: string, attribute: string):
+      { n: number; holding: number } {
+    log.debug("Entering DirectoryWindow.countHolding(). " + attribute);
+    const has = function (entry: Entry | null | undefined): number {
+      const values = entry ? (entry.attributes || {})[attribute] : null;
+      return Array.isArray(values) && values.length > 0 ? 1 : 0;
+    };
+    let n = 0;
+    let holding = 0;
+    this.residentOf(realmId).forEach(function (entry, key) {
+      if (key !== base && DirectoryWindow.within(key, base)) {
+        n += 1;
+        holding += has(entry);
+      }
+    });
+    const reaches = this.deps.windowedContainers(realmId).some(function (c) {
+      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
+    });
+    if (reaches && this.bridge) {
+      const stored = this.bridge.query('countHolding',
+        [realmId, base, attribute]) as { n: number; holding: number };
+      n += Number(stored && stored.n) || 0;
+      holding += Number(stored && stored.holding) || 0;
+      // `countUnder()`'s net, and the attribute's beside it: the entry as
+      // it is here against its BASE, the JSON the store holds.
+      this.dirty.forEach((ck) => {
+        const cut = ck.indexOf('\n');
+        const key = ck.slice(cut + 1);
+        if (ck.slice(0, cut) !== realmId || key === base ||
+            !DirectoryWindow.within(key, base) || this.inFlight.has(ck)) {
+          return;
+        }
+        const slot = this.lru.peek(ck) as Slot;
+        let before: Entry | null = null;
+        if (slot.base !== null) {
+          try {
+            before = JSON.parse(slot.base) as Entry;
+          } catch (e) {
+            log.debug("Caught in DirectoryWindow.countHolding(): " +
+                      ((e && e.message) || e));
+            // A base that does not parse is one this window wrote itself
+            // and cannot be; counted as an entry holding nothing.
+            before = { dn: key, attributes: {} } as Entry;
+          }
+        }
+        n += (slot.entry ? 1 : 0) - (before ? 1 : 0);
+        holding += has(slot.entry) - has(before);
+      });
+    }
+    log.debug("Leaving DirectoryWindow.countHolding().");
+    return { n: Math.max(0, n), holding: Math.max(0, holding) };
+  }
+
   // ---------------------------------------------------------------------
   // A CONTAINER'S COUNT FOR A PAGE'S HEADLINE (#610, 2026-10-13).
   //

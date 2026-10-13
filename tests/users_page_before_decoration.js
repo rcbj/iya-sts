@@ -38,7 +38,10 @@
 //   7. (#610) `directoryPeople` is the number of people the directory
 //      DEFINES — more than the scan cap here — counted without the
 //      directory's `persons()` being asked, `scanned` is how many names the
-//      capped list read, and a person created moves the count at once.
+//      capped list read, and a person created moves the count at once; and
+//      every tile in `directoryCounts` is what a brute-force count over the
+//      whole directory gives — each person asked on their own — not over
+//      the capped list.
 //
 // The timings printed are information only; nothing here asserts a clock.
 //
@@ -303,6 +306,42 @@ function oldHolders(known) {
   });
   log.debug("Leaving oldHolders().");
   return { rows: rows, scanned: scanned, capped: capped };
+}
+
+// THE TILES OVER THE WHOLE DIRECTORY, the slow way (#610): every person
+// `allPersons()` lists, asked on their own through `mechanismsFor()` and
+// `totpOf()`, which really opens the secret; and the register's
+// authenticated names checked one by one against the directory.
+function bruteForceTiles() {
+  log.debug("Entering bruteForceTiles().");
+  const out = { people: 0, withPassword: 0, withSecond: 0, withTotp: 0,
+                withKeys: 0, primaryKeys: 0, passwordOnly: 0, unreadable: 0,
+                noWayIn: 0, signedInHere: 0, neverSignedInHere: 0 };
+  ldap.allPersons().forEach(function (entry) {
+    const name = ldap.usernameOfEntry(entry);
+    const m = credentials.mechanismsFor(name);
+    const opened = credentials.totpOf(name);
+    out.people += 1;
+    out.withPassword += m.password ? 1 : 0;
+    out.withSecond += m.mfaRequired ? 1 : 0;
+    out.withTotp += opened ? 1 : 0;
+    out.withKeys += m.mfaKeys > 0 ? 1 : 0;
+    out.primaryKeys += m.primaryKeys > 0 ? 1 : 0;
+    out.passwordOnly += m.password && !m.mfaRequired ? 1 : 0;
+    out.unreadable += opened && opened.unusable ? 1 : 0;
+    out.noWayIn += m.usable ? 0 : 1;
+  });
+  const people = new Set();
+  stats.userRows().forEach(function (row) {
+    const entry = row.authenticated ? ldap.existingUserEntry(row.key) : null;
+    if (entry) {
+      people.add(entry.dn.toLowerCase());
+    }
+  });
+  out.signedInHere = people.size;
+  out.neverSignedInHere = out.people - people.size;
+  log.debug("Leaving bruteForceTiles().");
+  return out;
 }
 
 function oldView(query) {
@@ -601,6 +640,27 @@ function body(t, tally) {
   const roster7 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
   t.equal(roster7.directoryPeople, defined + 1,
           '7f. /admin-api/mfa carries the same count');
+
+  // The tiles, against every person in the directory asked on their own.
+  reset();
+  const tiled = view({});
+  const wanted = bruteForceTiles();
+  t.equal(counts.persons, 0,
+          '7g. the tiles are counted without persons() being asked');
+  t.equal(JSON.stringify(tiled.directoryCounts), JSON.stringify(wanted),
+          '7h. every tile counts the whole directory, as a brute-force ' +
+          'count of every person gives it');
+  t.check(wanted.withSecond > 0 && wanted.passwordOnly > 0 &&
+          wanted.noWayIn > 0 && wanted.unreadable > 0 &&
+          wanted.people > SCAN_LIMIT,
+          '(precondition) a mix of credentials, past the scan cap',
+          JSON.stringify(wanted));
+  t.check(tiled.factors.withSecond < wanted.withSecond,
+          '7i. where the list\'s own count, over the capped list, is ' +
+          'smaller', tiled.factors.withSecond + ' < ' + wanted.withSecond);
+  const roster8 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
+  t.equal(JSON.stringify(roster8.directoryCounts), JSON.stringify(wanted),
+          '7j. /admin-api/mfa carries the same tiles');
   log.debug("Leaving body().");
 }
 

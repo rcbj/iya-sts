@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4326** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4327** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 294
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 295
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1455,6 +1455,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0332` | Too many usernameless passkey ceremonies were armed from this address (POST /authn-api/pending/{id}/passkey/options): its own per-address budget, security.rateLimitPerAddress in security.rateLimitWindowS. No challenge was minted. | HTTP 429 with Retry-After, { ok: false, next: refused, errors } |
 | `STS-AUTHN-0333` | A sign-in at the sign-in screen named a person where the passkey policy requires a passkey sign-in with no username (requireUsernameless, #608): the application signs in with a passkey alone, and the screen asks for no username. | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
+| `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
 
 ## STS-OAUTH
 
