@@ -332,7 +332,7 @@ in.** A valid certificate for an entry outside the group is refused, and the
 refusal says the certificate itself was fine. There are **two** groups because
 the second set of endpoints hands out the documents this service enforces its
 own access with, and a named person's directory attributes. Admitting a caller
-to the demonstration endpoints must not admit it to those. `POST /xacml/pip`
+to the XACML endpoints proper must not admit it to those. `POST /xacml/pip`
 is outside `/xacml/pep/`, but it takes the narrower role because what it
 returns is personal data. A person is given a role by being added to the
 group, and that takes effect on their next request.
