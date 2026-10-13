@@ -1190,7 +1190,8 @@ async function checkTheCollection(t) {
   const drawn = again ? Page.render(again.json, kit.context({}, true)) : '';
   t.check(!!again && again.banner === '' &&
           again.json.state.collected.rows.length === 2 &&
-          /id="gc-result"/.test(drawn) && /gc could not be obtained/.test(drawn),
+          /id="gc-result"/.test(drawn) &&
+          /gc could not be obtained/.test(drawn),
           'the runtime draws the answer in place: a row per isolate above ' +
           'the table, a failed isolate\'s reason in it', drawn.slice(0, 200));
   const refused = WebAnswers.redraw('/admin/node-health', 'collect-garbage',
