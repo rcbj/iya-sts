@@ -1139,6 +1139,10 @@
     "en": "e5e65ad85891ab58",
     "text": "Un propriétaire a été retiré d'un groupe"
   },
+  "audit.actions.group.owner-protected.label": {
+    "en": "872bbc2dca2a5974",
+    "text": "Un groupe a été fermé à ses propriétaires, ou leur a été rouvert"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Le keytab d’une personne a été créé à partir d’un mot de passe fourni"

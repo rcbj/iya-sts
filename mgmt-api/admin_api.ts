@@ -22039,7 +22039,7 @@ class AdminApi {
           if (action !== 'set-protected') {
             errorCodes.mark(res, 'STS-API-0134');
             self.sendJson(res, 400, { ok: false, errors: ['Unknown action "' +
-              action.slice(0, 64) + '". The one is set-protected.'] });
+              action.slice(0, 64) + '". The one is: set-protected.'] });
             log.debug("Leaving the management API ownership action " +
                       "endpoint. Unknown action.");
             return;
