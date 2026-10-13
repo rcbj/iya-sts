@@ -23,6 +23,9 @@
 //                                                 naming the companion's
 //                                                 completion page (#594)
 //   GET  /admin-api/verifications?state=          what the Verifier decided
+//   POST /admin-api/kerberos/principals/create-service   the companion's
+//        (rotate-service after a restart)        own service principal and
+//                                                 its keytab (#595)
 //
 // **ITS OWN CLIENT.** `COMPANION_CLIENT_ID` and `COMPANION_CLIENT_SECRET`
 // name an application an operator registered: it declares the two scopes,
@@ -330,6 +333,44 @@ class StsClient {
     }
     log.debug("Leaving StsClient.adminApi(). " + r.status);
     return r;
+  }
+
+  /**
+   * A keytab for one of the companion's own service principals (#595): the
+   * KDC makes a random key for it and hands it over ONCE, so a companion
+   * that restarted — and kept nothing — asks for the key to be rotated,
+   * which hands over a new keytab (carrying the version it replaced, for a
+   * ticket already issued under it).
+   *
+   * @param {string} spn - the service principal name, `HTTP/host`
+   * @returns {Promise<object>} the reply: `principal`, `kvno`, `etypes`,
+   *   `keytab` (base64), and `rotated` when it was a rotation
+   */
+  async serviceKeytab(spn) {
+    log.debug("Entering StsClient.serviceKeytab(). " + spn);
+    const made = await this.adminApi("POST",
+                                     "/kerberos/principals/create-service",
+                                     { spn: spn });
+    if (made.status === 200 && made.json && made.json.keytab) {
+      log.debug("Leaving StsClient.serviceKeytab(). Created.");
+      return made.json;
+    }
+    // Refused, most often because the principal holds a stored key from an
+    // earlier start: a new key, and its keytab.
+    log.info("companion: " + spn + " was not created (" + made.status +
+             "); rotating its key instead.");
+    const turned = await this.adminApi("POST",
+                                       "/kerberos/principals/rotate-service",
+                                       { spn: spn });
+    if (turned.status !== 200 || !turned.json || !turned.json.keytab) {
+      log.debug("Leaving StsClient.serviceKeytab(). Refused.");
+      throw new Error("the KDC gave no keytab for " + spn + ": create-" +
+                      "service answered " + made.status + " " +
+                      made.text.slice(0, 200) + " and rotate-service " +
+                      turned.status + " " + turned.text.slice(0, 200));
+    }
+    log.debug("Leaving StsClient.serviceKeytab(). Rotated.");
+    return Object.assign({ rotated: true }, turned.json);
   }
 
   /**
