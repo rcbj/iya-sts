@@ -4528,7 +4528,13 @@ async function theDelegationPageDefinesAndGrants(driver) {
   // would hand it a promise, it would count the check as passed and any
   // failure inside would surface as an unhandled rejection long after the
   // ledger said the run was green.
-  const register = await open(driver, realm("/admin/delegation"));
+  //
+  // ON THE REGISTER'S OWN TAB (2026-10-12): Monitoring → Delegation is drawn
+  // as tabs since that day, the register on `register`, and the page opens
+  // on Metadata. `survey()` reads `innerText`, which a hidden panel is not in,
+  // so the bare path read a page that held the grant and showed none of it.
+  const register = await open(driver, realm(
+    "/admin/delegation#delegation-tab-register"));
   check("the delegation page's register agrees with it", function () {
     assert.ok(register.text.indexOf(baseUri + "write") >= 0,
       "ONE WRITE, TWO PAGES. The grant was typed on the application's page " +

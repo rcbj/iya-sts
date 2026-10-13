@@ -245,14 +245,23 @@ async function test() {
   });
 
   log.info("=== 2. an ACME account binding key, shown once ===");
-  const made = await post(owner, { action: "create-eab", username: OTHER,
-                                   kid: "ignored" });
+  // A01 (#568, and /account-api's strict bodies since 87142740): a body
+  // naming somebody else is REFUSED — `username` is no field of this
+  // operation — and makes nothing. The key is then made with a `kid` the
+  // operation ignores, and is named for the OWNER.
+  const named = await post(owner, { action: "create-eab", username: OTHER });
+  check("a body naming somebody else is refused, not honoured", function () {
+    assert.strictEqual(named.status, 400, "answered " + named.status);
+    assert.ok(!(named.json && named.json.view && named.json.view.fresh),
+              "a key was made for a body naming somebody else");
+  });
+  const made = await post(owner, { action: "create-eab", kid: "ignored" });
   const expectedPrefix = "eab-p-" + Buffer.from(OWNER).toString("base64url");
   const fresh = (made.json && made.json.view && made.json.view.fresh) || {};
   const kid = String(fresh.kid || "");
   const hmac = String(fresh.hmacKey || "");
-  check("it is made, named for the OWNER though the body named the other " +
-        "person, and its HMAC key is on the page", function () {
+  check("it is made, named for the OWNER whatever `kid` the body named, " +
+        "and its HMAC key is on the page", function () {
     assert.strictEqual(made.status, 200, "answered " + made.status);
     assert.ok(kid.indexOf(expectedPrefix + "-") === 0,
               "the key id " + kid + " does not name " + OWNER);
