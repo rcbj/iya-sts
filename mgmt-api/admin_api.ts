@@ -142,6 +142,9 @@ import lingeringClose = require('../common/lingering_close');
 // A service account's owner bound, which the document states (#600). A
 // library: the actions layer loaded it long before this module.
 import serviceAccounts = require('../common/service_accounts');
+// Who owns what, and what an owner may not touch (#607): a library whose
+// reads are lazy, so this require moves no route and closes no cycle.
+import ownership = require('../common/ownership');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
@@ -1067,6 +1070,12 @@ class AdminApi {
     // WHAT ONLY THE CONSOLE DRAWS, LEFT OUT OF A MANAGEMENT ANSWER (#454):
     // the members the registration loop names for an operation whose
     // console twin answers them (`withConsoleRoutes()`).
+    // AN OWNER'S READ (#607): the one object, not the register around it.
+    const ownerProjection = res.locals && res.locals.ownerProjection;
+    if (typeof ownerProjection === 'function' && status === 200 && body &&
+        typeof body === 'object' && !Array.isArray(body)) {
+      body = ownerProjection(body);
+    }
     const consoleMembers = res.locals && res.locals.consoleMembers;
     if (consoleMembers && status === 200 && body && typeof body === 'object' &&
         !Array.isArray(body)) {
@@ -4581,15 +4590,33 @@ class AdminApi {
           { name: 'failing', in: 'query', required: false,
             schema: { type: 'string', enum: ['true'] },
             description: '`true`: only accounts whose last rotation ' +
-                         'failed.' }
+                         'failed.' },
+          { name: 'account', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One service account, by username (#607): the ' +
+                         'answer is `{ found, account }` alone — `account` ' +
+                         'as a row of `accounts` is, with ' +
+                         '`ownerProtected` — and an owner of the account ' +
+                         'may ask it with owner:read.' }
         ] as any[]).concat(this.pagingParameters()),
-        responseDescription: 'The accounts, the policy and the totals.',
+        responseDescription: 'The accounts, the policy and the totals; or, ' +
+                             'with `account`, that one account.',
         responseSchema: { type: 'object',
           description: '`policy`, `totals`, `filter`, `accounts` and ' +
-                       '`paging`.' },
+                       '`paging`; or `found` and `account`.' },
         handler: function (req, res) {
           log.debug("Entering the management API service accounts " +
                     "endpoint.");
+          // ONE ACCOUNT (#607): the read an owner may ask, and the facts the
+          // portal's page draws — never the realm's other accounts.
+          const one = String((req.query || {}).account || '').trim();
+          if (one) {
+            const facts = serviceAccounts.of(one);
+            self.sendJson(res, 200, { found: !!facts, account: facts });
+            log.debug("Leaving the management API service accounts " +
+                      "endpoint. One account.");
+            return;
+          }
           self.sendJson(res, 200,
                         adminViews.serviceAccountsMonitorJson(req.query));
           log.debug("Leaving the management API service accounts " +
@@ -21925,6 +21952,115 @@ class AdminApi {
         ] },
 
       // -----------------------------------------------------------------------
+      // OWNERSHIP (#607): what an OWNER may administer through this API, and
+      // the administrator's mark that closes an object to its owners (rcbj's
+      // decision 4). The facts are `common/ownership.ts`'s — the same ones
+      // the access-control policy's owner rule reads through the PIP — so
+      // this answer and that decision cannot disagree. NO CONSOLE FORM: the
+      // mark is an attribute on the object's own entry
+      // (`stsOwnerProtected`), and this is its machine door beside an
+      // `ldapmodify` by a holder of Admin Write.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/ownership', tag: 'Ownership',
+        operationId: 'getOwnership',
+        summary: 'Who owns an object, and whether its owners may ' +
+                 'administer it',
+        description: 'One role, group, service account or application ' +
+                     '(#607): `found`, its `dn`, its `owners` (DNs as ' +
+                     'stored), `protected` — whether it is CLOSED to its ' +
+                     'owners, who may then not administer it through this ' +
+                     'API with owner:read and owner:write — with ' +
+                     '`reasons`, one sentence each, and `marked`, whether ' +
+                     'an administrator\'s mark is one of them. An object is ' +
+                     'closed when it is a native or built-in role, a role ' +
+                     'authorizing a permission of this service, a group ' +
+                     'this service grants through by its name or a member ' +
+                     'of such a role, one of this service\'s own ' +
+                     'applications or one declaring or holding such a ' +
+                     'permission, a service account holding one, or marked.',
+        mirrors: 'no console form — the owner rule\'s facts; the mark is ' +
+                 'stsOwnerProtected on the entry',
+        parameters: [
+          { name: 'kind', in: 'query', required: true,
+            schema: { type: 'string', enum: ownership.KINDS.slice(0) },
+            description: 'Which kind of object.' },
+          { name: 'name', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'A role\'s name, a group\'s cn or DN, a service ' +
+                         'account\'s username, an application\'s ' +
+                         'identifier.' }
+        ],
+        responseDescription: 'The object\'s ownership facts.',
+        responseSchema: { type: 'object',
+          description: '`kind`, `name`, `found`, `dn`, `owners`, ' +
+                       '`protected`, `reasons` and `marked`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API ownership endpoint.");
+          const query = req.query || {};
+          self.sendJson(res, 200, ownership.objectOf(String(query.kind || ''),
+                                                     String(query.name || '')));
+          log.debug("Leaving the management API ownership endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/ownership/:action', tag: 'Ownership',
+        mirrors: 'no console form — the mark is stsOwnerProtected on the ' +
+                 'entry',
+        handler: function (req, res) {
+          log.debug("Entering the management API ownership action endpoint.");
+          const body = parseBody(req);
+          const action = String(req.params.action || '');
+          if (action !== 'set-protected') {
+            errorCodes.mark(res, 'STS-API-0134');
+            self.sendJson(res, 400, { ok: false, errors: ['Unknown action "' +
+              action.slice(0, 64) + '". The one is set-protected.'] });
+            log.debug("Leaving the management API ownership action " +
+                      "endpoint. Unknown action.");
+            return;
+          }
+          const caller = res.locals.apiCaller || {};
+          const result = ownership.setProtected(body.kind, body.name,
+            body.protected === true || String(body.protected) === 'true',
+            { actor: String(caller.name || ''), channel: 'http',
+              protocol: 'management API', origin: 'management API' });
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0134');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API ownership action endpoint.");
+        },
+        actions: [
+          { action: 'set-protected', operationId: 'setOwnerProtected',
+            summary: 'Close an object to its owners, or open it again',
+            description: 'Writes `stsOwnerProtected` on the object\'s own ' +
+                         'entry (#607, rcbj\'s decision 4), keeping ' +
+                         'everything else: `protected` true closes it — its ' +
+                         'owners may no longer read or change it through ' +
+                         'this API with owner:read and owner:write — and ' +
+                         'false takes the mark off, which opens it unless ' +
+                         'another reason closes it (`GET ' + BASE +
+                         '/ownership`). An owner stays an owner either way.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ownership.KINDS.slice(0),
+                        description: 'Which kind of object.' },
+                name: { type: 'string',
+                        description: 'The object, as GET ' + BASE +
+                                     '/ownership names it.' },
+                protected: { type: ['boolean', 'string'],
+                             description: 'true closes it to its owners; ' +
+                                          'false opens it again.' }
+              },
+              required: ['kind', 'name', 'protected'],
+              examples: [{ kind: 'role', name: 'staff', protected: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it changed, and the mark as it ' +
+                                 'now stands (`ownerProtected`).' }
+        ] },
+
+      // -----------------------------------------------------------------------
       // POLICIES (2026-09-12; every kind since #64). Two operations over
       // `adminViews.policiesView()` and `adminActions.policiesAction()` — the
       // same two functions /admin/policies calls, so the page and this
@@ -23667,6 +23803,78 @@ class AdminApi {
                                      path === BASE + DEVICE_COMPLIANCE_PATH);
   }
 
+  // ---------------------------------------------------------------------------
+  // THE OBJECT AN OWNER WOULD ADMINISTER (#607): the row of OWNER_OPERATIONS
+  // the request is, the object it names, the action, and — for an
+  // application action that writes attributes — every attribute it would
+  // write, read the way the handler reads them (`fieldsCoveredBy()`), so the
+  // owner rule is asked about each. Null for a request that is not one an
+  // owner may ask, or that names no object.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the object an owner's request would administer.
+   *
+   * @param req - the request, inside the gate (`req.path` below BASE)
+   * @returns `{ kind, id, action, attributes, project }`, or null
+   */
+  ownedOperationOf(req) {
+    const { log, parseBody, adminActions } = this.deps;
+    log.debug("Entering AdminApi.ownedOperationOf().");
+    const path = String(req.path || '').replace(/\/+$/, '')
+      .replace(new RegExp('^' + BASE + '(?=/)'), '');
+    const method = String(req.method || '').toUpperCase();
+    let matched: OwnerOperation | null = null;
+    let action = '';
+    OWNER_OPERATIONS.forEach(function (row) {
+      if (matched || row.method !== method) {
+        return;
+      }
+      if (row.path && row.path === path) {
+        matched = row;
+        action = 'read';
+        return;
+      }
+      const found = row.pattern ? row.pattern.exec(path) : null;
+      if (found) {
+        matched = row;
+        action = found[1];
+      }
+    });
+    if (!matched) {
+      log.debug("Leaving AdminApi.ownedOperationOf(). Not an owner's " +
+                "operation.");
+      return null;
+    }
+    const row: OwnerOperation = matched;
+    const query = req.query || {};
+    const body = method === 'GET' ? {} : (parseBody(req) || {});
+    const id = row.target(query, body).trim();
+    if (!id) {
+      log.debug("Leaving AdminApi.ownedOperationOf(). It names no object.");
+      return null;
+    }
+    // THE ATTRIBUTES AN APPLICATION ACT WOULD WRITE: one for the three
+    // single-attribute acts, every one an `update-fields` body covers, and
+    // the declared families where it carries them.
+    let attributes: string[] = [];
+    if (row.kind === 'application') {
+      if (['set', 'add', 'remove'].indexOf(action) >= 0) {
+        attributes = [String(body.attribute || '')].filter(Boolean);
+      } else if (action === 'update-fields') {
+        attributes = adminActions.fieldsCoveredBy(body).slice(0);
+        if ((body.protocolsPresent || body.protocols !== undefined ||
+             body.protocol !== undefined) &&
+            attributes.indexOf('appAllowedProtocol') < 0) {
+          attributes.push('appAllowedProtocol');
+        }
+      }
+    }
+    log.debug("Leaving AdminApi.ownedOperationOf(). " + row.kind + " " +
+              action + ".");
+    return { kind: row.kind, id: id, action: action,
+             attributes: attributes, project: row.project || null };
+  }
+
   // The operation a request is, as the CONSOLE path it mirrors and the action
   // it names: `/admin-api/pki/build-root` is a POST of `build-root` to
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
@@ -23737,9 +23945,11 @@ class AdminApi {
     const { log, realms, scopePolicy } = this.deps;
     log.debug("Entering AdminApi.declaredAdminScopes().");
     const clientId = String(claims.client_id || '');
-    // The device compliance feed's scope (#164) is held to the same rule.
+    // The device compliance feed's scope (#164) is held to the same rule,
+    // and an owner's two (#607).
     const held = scopePolicy.ADMIN_SCOPES
-      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE]);
+      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE])
+      .concat(scopePolicy.OWNER_SCOPES);
     const undeclared = realms.run(realms.get(tokenRealm), function () {
       return scopes.filter(function (one) {
         return held.indexOf(one) >= 0 &&
@@ -24512,7 +24722,41 @@ class AdminApi {
         const scopes = declared.kept;
         const effective = rolePermissions.effectiveRoles(claims, scopes,
                                                          tokenRealm);
-        const neededScope = scopesWanted;
+        // ---------------------------------------------------------------------
+        // AN OWNER'S TOKEN (#607). A token carrying `owner:read` or
+        // `owner:write` and NOT the admin scope this operation needs is an
+        // owner's question: the scope it uses is the owner one, and the
+        // policy is asked the owner rule's question — which object, which
+        // action, OWNER_READ or OWNER_WRITE — beside the administrator's.
+        // Only for an operation an owner may ask (OWNER_OPERATIONS), and only
+        // in the realm that issued the token: an owner's identity and the
+        // object's owner values are DNs of ONE realm's directory, and the
+        // same username in another realm is a different person. Anything
+        // else is refused in so many words here (STS-API-0132), because the
+        // policy's refusal would only say a role was missing.
+        // ---------------------------------------------------------------------
+        const ownerScope = req.method === 'GET' ? 'owner:read' : 'owner:write';
+        const ownerPath = !mdmFeed && !consoleOp &&
+          carried.indexOf(scopesWanted) < 0 &&
+          carried.indexOf(ownerScope) >= 0;
+        const owned = ownerPath ? self.ownedOperationOf(req) : null;
+        if (ownerPath && (!owned || tokenRealm !== realms.currentId())) {
+          errorCodes.mark(res, 'STS-API-0132');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This access token carries ' + ownerScope + ' and not ' +
+            scopesWanted + ', so it is an OWNER\'s token, and an owner\'s ' +
+            'token reaches only the operations on one role, group, service ' +
+            'account or application it names — GET ' + BASE + '/roles?role=, ' +
+            '/groups?group=, /applications?application= or ' +
+            '/service-accounts?account=, and POST ' + BASE + '/roles/{action}, ' +
+            '/groups/{action}, /applications/{action} or /users/{action} ' +
+            'naming the object' + (owned ? ', in the realm that issued the ' +
+            'token' : '') + '. A list is not one: what you own is ' +
+            '/account-api/owned/{kind}. ' + req.method + ' ' +
+            (req.originalUrl || req.url) + ' is ' + (owned
+              ? 'in another realm.' : 'not one of these.')] });
+        }
+        const neededScope = ownerPath ? ownerScope : scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
@@ -24536,7 +24780,11 @@ class AdminApi {
             // THE ROLE THAT AUTHORIZES IT, and where it is granted: a
             // person's console role on the roster, anything else on the
             // role itself (#309: device:compliance is DEVICE_COMPLIANCE's).
-            (effective.subject.kind !== 'application' &&
+            (ownerPath
+              ? 'An owner\'s scope is authorized by owning something in ' +
+                'the realm that issued the token: be named an owner of a ' +
+                'role, group, service account or application there'
+              : effective.subject.kind !== 'application' &&
              neededScope !== 'device:compliance'
               ? 'Grant the console role on /admin/rbac (or POST ' +
                 '/admin-api/rbac/grant)'
@@ -24601,10 +24849,22 @@ class AdminApi {
               : (req.method === 'GET' ? ['ADMIN_READ'] : ['ADMIN_WRITE'])));
         const requiredAllRoles = consoleOp && !frameOnly
           ? [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'] : [];
+        // THE OWNER RULE'S QUESTION (#607), on an owner's token: the object,
+        // the action, the attributes it writes, the person, and the owner
+        // role it needs. The administrator's requirement above is still
+        // asked, so the first rule decides exactly as before and the second
+        // can only add an owner.
+        const ownedObject = owned ? {
+          kind: owned.kind, id: owned.id, action: owned.action,
+          attributes: owned.attributes,
+          requiredRole: req.method === 'GET' ? 'OWNER_READ' : 'OWNER_WRITE',
+          person: String(effective.subject.name || '')
+        } : null;
         const policy = accessGate.check({
           resource: accessGate.RESOURCE.MANAGEMENT_API,
           action: req.method === 'GET' ? accessGate.ACTION.READ
                                        : accessGate.ACTION.WRITE,
+          ownedObject: ownedObject,
           // THE REQUIREMENT IS STATED HERE AND ENFORCED THERE. `requiredRoles`
           // travels in the REQUEST — the `access-control` document is written
           // to take it from there, which is what lets one policy decide for
@@ -24618,6 +24878,25 @@ class AdminApi {
                      sessionId: null },
           context: { method: req.method, path: req.originalUrl || req.url }
         });
+        if (!policy.allowed && ownedObject) {
+          log.info('admin-api: the access policy\'s owner rule refused ' +
+                   req.method + ' ' + (req.originalUrl || req.url) + ' for ' +
+                   ownedObject.person + '. ' + policy.why);
+          errorCodes.mark(res, 'STS-API-0133');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'The access policy\'s owner rule refused this request. An owner ' +
+            'may ' + (req.method === 'GET' ? 'read' : 'change') + ' the ' +
+            ownedObject.kind + ' "' + ownedObject.id + '" only when it ' +
+            'names them, or a group they are in, as an owner; when it is ' +
+            'not closed to its owners (a native or protected role, a group ' +
+            'or application this service grants through, or one an ' +
+            'administrator closed); when "' + ownedObject.action + '" is ' +
+            'an action its kind allows an owner' +
+            (ownedObject.attributes.length ? ', and every attribute it ' +
+              'writes (' + ownedObject.attributes.join(', ') + ') is one an ' +
+              'owner may write' : '') +
+            '; and never to take its last owner off. ' + policy.why] });
+        }
         if (!policy.allowed) {
           log.info('admin-api: the access policy refused ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + '. ' +
@@ -24675,6 +24954,13 @@ class AdminApi {
         // its token is the session, so the caller this gate verified is
         // who they are asked about.
         req.adminApiCaller = res.locals.apiCaller;
+        // WHAT AN OWNER IS ANSWERED (#607): a read whose answer carries more
+        // than the one object — the role register around one role — is
+        // narrowed to it in `sendJson()`.
+        if (owned && owned.project) {
+          res.locals.ownerProjection = owned.project;
+        }
+        res.locals.apiCaller.owner = !!owned;
         return next();
       }
       // ---------------------------------------------------------------------
@@ -24901,6 +25187,91 @@ const BASE = '/admin-api';
 // The device compliance feed's path below BASE (#164 phase 3): the one
 // operation whose token carries device:compliance rather than an admin scope.
 const DEVICE_COMPLIANCE_PATH = '/device-compliance';
+// ---------------------------------------------------------------------------
+// THE OPERATIONS AN OWNER MAY ASK (#607), below BASE: one object of the four
+// kinds a person may own, read or changed. `ownedOperationOf()` reads a
+// request against this table; a request it does not find is not an owner's
+// question, and a token carrying only the owner scopes is refused there
+// (STS-API-0132) rather than asked. WHICH of these an owner may take, on
+// which object, is the access-control policy's owner rule — never this
+// table, which only names the object the request reaches.
+//
+//   kind      what the policy's urn:sts:xacml:object-kind says
+//   path      the path below BASE, or a pattern whose group is the action
+//   target    how the request names the object: a query parameter for a
+//             read, a body member for an act
+//   project   for a read whose answer carries more than the one object:
+//             what of it an owner is answered
+//
+// A READ needs its target: `GET /roles` with no `role` is the whole register,
+// a list, and lists are refused to an owner (rcbj's decision 6) — the portal
+// lists through `/account-api/owned/*`.
+// ---------------------------------------------------------------------------
+interface OwnerOperation {
+  method: string;
+  kind: string;
+  path?: string;
+  pattern?: RegExp;
+  target: (query: any, body: any) => string;
+  project?: (answer: any) => any;
+}
+const OWNER_OPERATIONS: OwnerOperation[] = [
+  { method: 'GET', kind: 'role', path: '/roles',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.role || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      log.debug("Leaving project().");
+      return { role: answer && answer.role };
+    } },
+  { method: 'GET', kind: 'group', path: '/groups',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.group || '');
+    } },
+  { method: 'GET', kind: 'application', path: '/applications',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.application || '');
+    } },
+  { method: 'GET', kind: 'service-account', path: '/service-accounts',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.account || '');
+    } },
+  { method: 'POST', kind: 'role', pattern: /^\/roles\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.role || '');
+    } },
+  { method: 'POST', kind: 'group', pattern: /^\/groups\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.group || '');
+    } },
+  { method: 'POST', kind: 'application',
+    pattern: /^\/applications\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.application || '');
+    } },
+  { method: 'POST', kind: 'service-account',
+    pattern: /^\/users\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.user || body.username || '');
+    } }
+];
 // THE ACCESS GATE, armed by `xacml/xacml_access_pep.ts` at 23c. A LEAF
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.

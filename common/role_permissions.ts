@@ -115,6 +115,9 @@ interface RolePermissionsDeps {
   applications: typeof applications;
   audit: typeof audit;
   adminRbac: typeof adminRbac;
+  // Whether a person owns anything (#607), asked lazily: the owner roles
+  // are computed from it.
+  ownsAnything: (username: string) => boolean;
 }
 
 // The admin console's own client, whose issuance is a sign-in to the console
@@ -182,7 +185,12 @@ class RolePermissions {
     helpers.log.debug("Entering RolePermissions.defaultDeps().");
     helpers.log.debug("Leaving RolePermissions.defaultDeps().");
     return { log: log, realms: realms, roles: roles,
-             applications: applications, audit: audit, adminRbac: adminRbac };
+             applications: applications, audit: audit, adminRbac: adminRbac,
+             ownsAnything: function ownsAnything(username: string): boolean {
+               log.debug("Entering ownsAnything().");
+               log.debug("Leaving ownsAnything().");
+               return require('./ownership').ownsAnything(username);
+             } };
   }
 
   // The values of a space-delimited scope.
@@ -225,10 +233,15 @@ class RolePermissions {
     const { log, roles, applications } = this.deps;
     log.debug("Entering RolePermissions.isGated().");
     // THE NATIVE PERMISSIONS (#303, #309): admin:read, admin:write and
-    // device:compliance, each authorized by its native role.
-    const native = roles.NATIVE_ROLES.some(function (row) {
-      return row.permission === value;
-    });
+    // device:compliance, each authorized by its native role — and since
+    // #607 owner:read and owner:write, each by its computed owner role.
+    const permissionOf = function (row: { permission: string }): string {
+      log.debug("Entering permissionOf().");
+      log.debug("Leaving permissionOf().");
+      return row.permission;
+    };
+    const native = roles.NATIVE_ROLES.map(permissionOf)
+      .concat(roles.OWNER_ROLES.map(permissionOf)).indexOf(value) >= 0;
     if (native) {
       log.debug("Leaving RolePermissions.isGated(). Native.");
       return true;
@@ -359,6 +372,7 @@ class RolePermissions {
     const who = subject || {};
     const name = String(who.name || '').trim();
     const kind = who.kind === 'application' ? 'application' : 'user';
+    const self = this;
     return this.inRealm(realmId, function () {
       // `ids` (#310): an application's role by its full
       // `<role>@<application>`, the name its rolePermission is keyed by and
@@ -418,6 +432,27 @@ class RolePermissions {
         } else {
           why = 'the console roster of the realm "' + realms.currentId() +
                 '" could not be read';
+        }
+        // THE OWNER ROLES (#607): computed — rcbj's decision 2 — from
+        // whether anything in this realm names the person or a group of
+        // theirs as an owner, NOW. They are built-in roles that authorize a
+        // permission, so they go with the configured ones: what can
+        // authorize is what this list is.
+        let owns = false;
+        try {
+          owns = self.deps.ownsAnything(name);
+        } catch (e) {
+          // Not knowing whether somebody owns anything owns them nothing.
+          log.debug("Caught in RolePermissions.heldRoles(): " +
+                    ((e && e.message) || e));
+          owns = false;
+        }
+        if (owns) {
+          roles.OWNER_ROLES.forEach(function (row) {
+            if (configured.indexOf(row.name) < 0) {
+              configured.push(row.name);
+            }
+          });
         }
       }
       log.debug("Leaving RolePermissions.heldRoles(). " +
@@ -566,6 +601,10 @@ class RolePermissions {
     // roster, and the roster's answer must not depend on the entry being
     // there.
     roles.NATIVE_ROLES.forEach(function (row) {
+      out[row.name] = [row.permission];
+    });
+    // And the two owner roles (#607), built in and each authorizing its own.
+    roles.OWNER_ROLES.forEach(function (row) {
       out[row.name] = [row.permission];
     });
     log.debug("Leaving RolePermissions.permissionsByRole().");

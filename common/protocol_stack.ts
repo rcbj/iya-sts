@@ -615,6 +615,11 @@ class ProtocolStack {
     // A gated permission goes with the subject's roles (#302, #303). A
     // library `oauth2`, the management API's gate and the XACML PIP read,
     // built before the first of them for the debugger permission's reason.
+    // Who owns what (#607): a library `role_permissions` asks for the
+    // computed owner roles, and the management API's gate and the XACML PIP
+    // for the owner rule's facts — all at request time, so built just before
+    // the first of them.
+    this.build('common/ownership', require('./ownership'), 'Ownership');
     this.build('common/role_permissions',
                require('./role_permissions'), 'RolePermissions');
     this.build('oauth-oidc/oauth2', require('../oauth-oidc/oauth2'),

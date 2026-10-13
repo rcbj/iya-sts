@@ -2038,7 +2038,10 @@ function recordHttp(req, res, detail) {
     // /admin/metrics can be lined up without guessing.
     protocol: '',
     summary: req.method + ' ' + path + ' → ' + res.statusCode +
-             (posted ? ' (' + posted + ')' : ''),
+             (posted ? ' (' + posted + ')' : '') +
+             // AS AN OWNER (#607): the management API's gate let the call
+             // through on the owner rule, so a delegated change reads as one.
+             (caller && caller.owner ? ' as an owner' : ''),
     detail: {
       method: req.method,
       status: res.statusCode,
@@ -2046,7 +2049,8 @@ function recordHttp(req, res, detail) {
       matched: !!info.matched,
       durationMs: info.durationMs || 0,
       query: queryText(req.query),
-      postedAction: posted
+      postedAction: posted,
+      via: caller && caller.owner ? 'owner' : ''
     }
   });
   log.debug("Leaving recordHttp(). Recorded as " + action + ".");

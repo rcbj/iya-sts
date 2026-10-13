@@ -44,6 +44,9 @@
 //   stsRotationFailures          consecutive failed rotations,
 //   stsRotationLastError         the code of the last failure, and
 //   stsRotationLastAttempt       when the job last tried (ms).
+//   stsOwnerProtected            TRUE: closed to its owners (#607) — an
+//                                administrator's mark, which the
+//                                access-control policy's owner rule reads.
 //
 // The rotation state is on the ENTRY, not in a process, because any node may
 // run the job next (#49) and the count of failures has to survive it moving.
@@ -85,7 +88,8 @@ const ATTRIBUTES = ['stsServiceAccount', 'stsServiceAccountOwner',
                     'stsSecretDestination', 'stsSecretName',
                     'stsPasswordRotatedAt', 'stsPreviousPassword',
                     'stsPreviousPasswordExpires', 'stsRotationFailures',
-                    'stsRotationLastError', 'stsRotationLastAttempt'];
+                    'stsRotationLastError', 'stsRotationLastAttempt',
+                    'stsOwnerProtected'];
 
 /**
  * The attributes no directory read hands out: the previous password's hash.
@@ -142,7 +146,11 @@ const SCHEMA = {
     { name: 'stsRotationLastError',
       what: 'The error code of the last failed rotation.' },
     { name: 'stsRotationLastAttempt',
-      what: 'When the rotation job last tried this account (ms).' }
+      what: 'When the rotation job last tried this account (ms).' },
+    { name: 'stsOwnerProtected',
+      what: 'TRUE: the account\'s owners may not administer it through ' +
+            '/admin-api (#607) — an administrator\'s mark, read by the ' +
+            'access-control policy\'s owner rule. Absent is FALSE.' }
   ]
 };
 
@@ -182,6 +190,8 @@ interface ServiceAccountFacts {
   rotatedAt: string;
   previousPasswordExpires: number;
   rotation: { failures: number; lastError: string; lastAttempt: number };
+  // Closed to its owners (#607).
+  ownerProtected: boolean;
 }
 
 interface Refusal {
@@ -490,7 +500,8 @@ class ServiceAccounts {
         failures: Number(value('stsRotationFailures')) || 0,
         lastError: value('stsRotationLastError'),
         lastAttempt: Number(value('stsRotationLastAttempt')) || 0
-      }
+      },
+      ownerProtected: value('stsOwnerProtected').toUpperCase() === 'TRUE'
     };
     log.debug("Leaving ServiceAccounts.of().");
     return out;
@@ -786,6 +797,40 @@ class ServiceAccounts {
   }
 
   /**
+   * Marks a service account closed to its owners, or opens it again (#607,
+   * rcbj's decision 4), writing at once and keeping everything else.
+   *
+   * @param username - the service account
+   * @param flag - true closes it to its owners
+   * @returns `{ ok: true, account, changed }`, or a refusal with a code
+   */
+  setOwnerProtected(username: unknown, flag: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.setOwnerProtected().");
+    const facts = this.of(username);
+    if (!facts) {
+      log.debug("Leaving ServiceAccounts.setOwnerProtected(). Not an " +
+                "account.");
+      return this.notOne(username);
+    }
+    const wanted = flag === true;
+    if (facts.ownerProtected === wanted) {
+      log.debug("Leaving ServiceAccounts.setOwnerProtected(). Unchanged.");
+      return { ok: true, account: facts, changed: false,
+               username: facts.username };
+    }
+    if (!this.directory.writeServiceAccount(facts.dn,
+          { stsOwnerProtected: wanted ? 'TRUE' : null })) {
+      log.debug("Leaving ServiceAccounts.setOwnerProtected(). Not written.");
+      return this.refusal('STS-SVCACCT-0027', 'The directory would not ' +
+        'write ' + facts.dn + '.');
+    }
+    log.debug("Leaving ServiceAccounts.setOwnerProtected(). Written.");
+    return { ok: true, account: this.of(facts.dn), changed: true,
+             username: facts.username };
+  }
+
+  /**
    * Takes one owner off a service account, writing at once (#602). Refused
    * for a value that is not one of its owners, and — through `set()` — for
    * the last owner while the policy requires one.
@@ -1051,6 +1096,7 @@ export = {
   set: slot.forward('set'),
   addOwner: slot.forward('addOwner'),
   removeOwner: slot.forward('removeOwner'),
+  setOwnerProtected: slot.forward('setOwnerProtected'),
   setDestination: slot.forward('setDestination'),
   previousPassword: slot.forward('previousPassword'),
   recordRotated: slot.forward('recordRotated'),

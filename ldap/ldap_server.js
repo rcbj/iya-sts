@@ -21052,6 +21052,96 @@ function removeGroupOwner(group, owner, options) {
 }
 
 /**
+ * A group's ownership facts (#607), for `common/ownership.ts`: its DN, its
+ * cn, its owner values as stored, and whether it is closed to its owners.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @returns `{ dn, cn, owners, ownerProtected }`, or null for no group
+ */
+function groupOwnership(group) {
+  log.debug('Entering groupOwnership().');
+  const found = groupForOwners(group, 'groupOwnership');
+  if (found.refusal) {
+    log.debug('Leaving groupOwnership(). No such group.');
+    return null;
+  }
+  const at = found.stored.attributes || {};
+  const out = {
+    dn: found.stored.dn,
+    cn: String((at.cn || [''])[0]),
+    owners: (at.owner || []).map(String).filter(Boolean),
+    ownerProtected: String((at.stsownerprotected || [''])[0])
+      .toUpperCase() === 'TRUE'
+  };
+  log.debug('Leaving groupOwnership().');
+  return out;
+}
+
+/**
+ * Marks a group closed to its owners, or opens it again (#607, rcbj's
+ * decision 4): `stsOwnerProtected` on the entry, every other attribute kept.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @param flag - true closes it to its owners
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ *   row
+ * @returns `{ ok: true, changed, dn, ownerProtected }`, or a refusal marked
+ *   with its error code
+ */
+function setGroupOwnerProtected(group, flag, options) {
+  log.debug('Entering setGroupOwnerProtected().');
+  const opts = options || {};
+  const found = groupForOwners(group, 'setGroupOwnerProtected');
+  if (found.refusal) {
+    log.debug('Leaving setGroupOwnerProtected(). No such group.');
+    return found.refusal;
+  }
+  const stored = found.stored;
+  const wanted = flag === true;
+  const was = String(((stored.attributes || {}).stsownerprotected ||
+                      [''])[0]).toUpperCase() === 'TRUE';
+  if (was === wanted) {
+    log.debug('Leaving setGroupOwnerProtected(). Unchanged.');
+    return { ok: true, changed: false, dn: stored.dn,
+             ownerProtected: wanted };
+  }
+  const object = entryObject(stored);
+  const attributes = {};
+  Object.keys(object.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0 ||
+        name.toLowerCase() === 'stsownerprotected') {
+      return;
+    }
+    attributes[name] = object.attributes[name].slice(0);
+  });
+  if (wanted) {
+    attributes.stsOwnerProtected = ['TRUE'];
+  }
+  const written = writeGroupEntry(stored.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving setGroupOwnerProtected(). Not written: ' +
+              written.reason);
+    return coded(errorCodes.codeOf(written), { ok: false,
+      reason: written.reason,
+      errors: ['The mark could not be written onto ' + stored.dn + ' (' +
+               written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: 'group.owner-protected',
+    actor: String(opts.actor || ''),
+    target: stored.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: stored.dn + (wanted ? ' was closed to its owners'
+                                 : ' was opened to its owners again'),
+    detail: { ownerProtected: wanted }
+  });
+  log.debug('Leaving setGroupOwnerProtected(). Written.');
+  return { ok: true, changed: true, dn: stored.dn, ownerProtected: wanted };
+}
+
+/**
  * Lists the groups of this realm whose `owner` values name any of the DNs
  * given (#604): the user portal's Resources I own, where the DNs are the
  * person's own and those of every group they are in.
@@ -22457,6 +22547,11 @@ module.exports = {
   MAX_GROUP_OWNERS: MAX_GROUP_OWNERS,
   // What a person owns (#604): the portal's Resources I own.
   groupsOwnedBy: groupsOwnedBy,
+  // Who owns a group, and whether it is closed to them (#607):
+  // `common/ownership.ts`'s reads and its one write here.
+  groupOwnership: groupOwnership,
+  setGroupOwnerProtected: setGroupOwnerProtected,
+  resolveOwner: resolveServiceAccountOwner,
   memberDnFor: memberDnFor,
   deleteGroupEntry: deleteGroupEntry,
   // The sweep, so that somebody provisioned over SCIM gets the same credential

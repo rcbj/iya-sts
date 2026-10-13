@@ -14710,6 +14710,20 @@ class OAuth2Server {
         // Onto the refresh token as well as into the access token's audience,
         // so that a refresh cannot widen what this grant authorized.
         resources: forResources,
+        // AND THE REFRESH TOKEN KEEPS EVERY RESOURCE THE AUTHORIZATION
+        // REQUEST NAMED (#607, rcbj 2026-10-13), as the refresh grant's
+        // `grantResources` always kept them: a Token Request naming one of
+        // them picks the AUDIENCE of the access token it mints, and the
+        // grant behind the refresh token is still the one the person
+        // approved. Until then a code redeemed for one resource left a
+        // refresh token for that one alone, so a client that asked for two
+        // could never be issued a token for the second — the user portal,
+        // which holds a token for `/account-api` and one for `/admin-api`
+        // off one sign-in. It still cannot widen: the refresh grant refuses
+        // a resource the grant does not carry (STS-OAUTH-0217). Only where
+        // the request named resources: a grant whose audience a scope
+        // derived keeps `tokenSet()`'s own reading.
+        ...(granted.length ? { grantResources: granted } : {}),
         user: record.user, client_id: record.client_id, scope: record.scope,
         nonce: record.nonce, auth_time: record.auth_time, amr: record.amr,
         acr: record.acr,

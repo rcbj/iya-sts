@@ -20044,6 +20044,23 @@ const CODES = [
       'set was refused (#493); the refusal\'s own code names why when it ' +
       'has one.',
     spec: 'HTTP 400' },
+  { code: 'STS-API-0132',
+    summary: 'A management API request carrying only an owner\'s scopes ' +
+      '(owner:read, owner:write) reached an operation that is not one an ' +
+      'owner may ask: an owner token reaches only the operations on one ' +
+      'object of the four kinds it may own (#607).',
+    spec: 'HTTP 403' },
+  { code: 'STS-API-0133',
+    summary: 'The access-control policy\'s owner rule refused a management ' +
+      'API request made with an owner\'s token (#607): the caller does not ' +
+      'own the object, the object is closed to its owners, the action is ' +
+      'not one an owner may take on its kind, or it would remove the last ' +
+      'owner.',
+    spec: 'HTTP 403' },
+  { code: 'STS-API-0134',
+    summary: 'A request to close an object to its owners, or open it again, ' +
+      'named no kind of the four or no object (#607).',
+    spec: 'HTTP 400' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
