@@ -5976,12 +5976,12 @@
     "text": "Hur stor katalogen får bli. Ett tak snarare än ett mål: poster dyker upp för var och en som autentiserar sig genom något protokoll här. Räknas över varje sfär som den här processen håller; i en begäranarbetare med ldap.workerDirectory=postgres-lru i stället över sfärens rader i lagret."
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "Katalog i begäranarbetare"
+    "en": "d0f2a4d1725d58e0",
+    "text": "Katalog i minnet, eller som ett fönster"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "Hur en begärans- eller ytarbetare håller katalogen. memory (standardvärdet): varje post, i varje process. postgres-lru: personerna och enheterna som ett fönster med högst ldap.workerCacheEntries poster, resten läses från PostgreSQL när de efterfrågas — en arbetares minne växer inte längre med katalogen, och en miss kostar en tur och retur till databasen. Kräver persistence.mode=postgres och en enda cell; frontprocessen håller alltid hela katalogen."
+    "en": "af2208b6228d6f59",
+    "text": "Hur varje process — frontprocessen och varje förfrågnings- eller ytworker — håller katalogen. auto (standard, #320): postgres-lru där det kan fungera — persistence.mode=postgres och en enda cell — och memory överallt annars. memory: varje post, i varje process. postgres-lru: personerna och enheterna som ett fönster på högst ldap.workerCacheEntries poster per process, resten läses från PostgreSQL när de efterfrågas — minnet växer inte längre med antalet personer, och en miss kostar en tur och retur till databasen under vilken den processen inte gör något annat. Kräver persistence.mode=postgres och en enda cell."
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",
