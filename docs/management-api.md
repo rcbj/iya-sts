@@ -424,7 +424,10 @@ cover:
   persistence, the database, encryption at rest, secrets, caches, the worker
   pools, node health, the scheduler, the cluster, the error-code table and
   the audit log. `GET /admin-api/worker-pools` and `GET /admin-api/node-health`
-  answer every cluster node by name, with `?node=<name>` for one.
+  answer every cluster node by name, with `?node=<name>` for one;
+  `POST /admin-api/node-health/collect-garbage` runs a full V8 garbage
+  collection in the answering node's front process and worker threads, and
+  stops each thread while it runs (#611).
 * **Identities.** People and groups in the directory, second factors (TOTP,
   WebAuthn, recovery codes), password policies, sessions and sign-out. Each
   security key on `GET /admin-api/users?user=` carries `attestation` — what

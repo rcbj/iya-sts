@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4320** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4323** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 89
+* [Service core (`STS-CORE`)](#sts-core) — 92
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 48
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 79
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
@@ -145,7 +145,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts, common/heap_collector.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -238,6 +238,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0155` | A write would put the applications that read the sign-on session on listeners whose host names its cookie cannot reach: several host names with authn.cookieDomain empty (the cookie is host-only), a host name not under authn.cookieDomain, or an authn.cookieDomain that is not a DNS name (#472). | the write is refused; nothing is changed |
 | `STS-CORE-0156` | A write would take the management API off the listener the request making it arrived on, with no confirmation: nothing on that listener would answer the next one. PUT /admin-api/listeners/applications with confirm, or listeners.adminOnMain at the next start (#472). | the write is refused; nothing is changed |
 | `STS-CORE-0157` | The custom listeners and their mapping this process was started with (the environment, an appconfig file, or the store) break a rule a write of them would be refused for, or could not be read (#472). | the service does not start; logged when the listeners cannot be reconciled |
+| `STS-CORE-0158` | A garbage collection asked for on Monitoring → Node Health (POST /admin-api/node-health/collect-garbage) did not run in one isolate — the front process's main thread or a worker thread: V8 would not hand its gc to a new context, or gc threw (#611). The answer's row for that isolate says why; the others still ran. | HTTP 500 when the front process's own did not run and nothing else was asked; otherwise HTTP 200 with that row's ok false |
+| `STS-CORE-0159` | A worker thread asked to run a garbage collection by Monitoring → Node Health did not answer within its bound (#611). It may still be collecting; the answer lists it under unanswered. | none — HTTP 200, the thread listed under unanswered |
+| `STS-CORE-0160` | A garbage collection was asked for on Monitoring → Node Health with an action the operation does not have, or a target that is neither `all`, `front`, nor the threadId of a ready worker thread of this node (#611). Nothing was collected. | HTTP 400 for an unknown action or a malformed target, 404 for a thread this node does not have |
 
 ## STS-WORKER
 
