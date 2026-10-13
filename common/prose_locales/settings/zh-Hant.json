@@ -5984,12 +5984,12 @@
     "text": "目錄可成長到多大。這是上限而非目標：任何透過此處任一協定驗證的人都會出現項目。計算範圍為此程序所持有的每個領域；在 ldap.workerDirectory=postgres-lru 的要求工作執行緒中，則改為計算儲存區中該領域的列。"
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "要求工作執行緒中的目錄"
+    "en": "d0f2a4d1725d58e0",
+    "text": "目錄保存在記憶體中，或作為視窗"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "要求或介面工作執行緒如何保存目錄。memory（預設值）：每個程序保存每個項目。postgres-lru：人員與裝置以最多 ldap.workerCacheEntries 個項目的視窗保存，其餘在被要求時從 PostgreSQL 讀取——工作執行緒的記憶體不再隨目錄成長，未命中則需一次資料庫往返。需要 persistence.mode=postgres 且為單一 cell；前端程序一律保存整個目錄。"
+    "en": "af2208b6228d6f59",
+    "text": "每個程序——前端程序以及每個請求或介面 worker——如何保存目錄。auto（預設值，#320）：在能運作的地方使用 postgres-lru——persistence.mode=postgres 且只有一個單元——其他地方使用 memory。memory：每個項目，在每個程序中。postgres-lru：人員和裝置作為每個程序最多 ldap.workerCacheEntries 個項目的視窗，其餘在需要時從 PostgreSQL 讀取——記憶體不再隨人數增長，一次未命中需要一次資料庫往返，期間該程序不做其他任何事。需要 persistence.mode=postgres 且只有一個單元。"
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",

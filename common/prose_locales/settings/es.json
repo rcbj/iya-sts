@@ -5984,12 +5984,12 @@
     "text": "Cuánto puede crecer el directorio. Un techo más que un objetivo: aparecen entradas para cualquiera que se autentique aquí mediante cualquier protocolo. Se cuenta sobre todos los dominios que tiene este proceso; en un worker de solicitudes con ldap.workerDirectory=postgres-lru, sobre las filas del dominio en el almacén."
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "Directorio en los workers de solicitudes"
+    "en": "d0f2a4d1725d58e0",
+    "text": "Directorio en memoria o como ventana"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "Cómo mantiene el directorio un worker de solicitudes o de superficie. memory (el predeterminado): todas las entradas, en cada proceso. postgres-lru: las personas y los dispositivos como una ventana de como máximo ldap.workerCacheEntries entradas, y el resto se lee de PostgreSQL cuando se pide — la memoria de un worker ya no crece con el directorio, y un fallo de caché cuesta un viaje de ida y vuelta a la base de datos. Requiere persistence.mode=postgres y una sola celda; el proceso frontal siempre mantiene el directorio completo."
+    "en": "af2208b6228d6f59",
+    "text": "Cómo cada proceso — el proceso frontal y cada worker de solicitudes o de superficie — mantiene el directorio. auto (el valor predeterminado, #320): postgres-lru donde puede funcionar — persistence.mode=postgres y una sola celda — y memory en todos los demás casos. memory: cada entrada, en cada proceso. postgres-lru: las personas y los dispositivos como una ventana de como máximo ldap.workerCacheEntries entradas por proceso; el resto se lee de PostgreSQL cuando se pide — la memoria ya no crece con el número de personas, y un fallo cuesta un viaje de ida y vuelta a la base de datos durante el cual ese proceso no hace nada más. Requiere persistence.mode=postgres y una sola celda."
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",

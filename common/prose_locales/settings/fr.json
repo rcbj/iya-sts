@@ -5984,12 +5984,12 @@
     "text": "La taille que l’annuaire peut atteindre. Un plafond plutôt qu’un objectif : des entrées apparaissent pour quiconque s’authentifie ici par n’importe quel protocole. Compté sur tous les domaines que détient ce processus ; dans un worker de requêtes avec ldap.workerDirectory=postgres-lru, sur les lignes du domaine dans le stockage."
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "Annuaire dans les workers de requêtes"
+    "en": "d0f2a4d1725d58e0",
+    "text": "Annuaire en mémoire, ou en fenêtre"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "La manière dont un worker de requêtes ou de surfaces détient l’annuaire. memory (la valeur par défaut) : chaque entrée, dans chaque processus. postgres-lru : les personnes et les appareils sous forme d’une fenêtre d’au plus ldap.workerCacheEntries entrées, le reste étant lu dans PostgreSQL à la demande — la mémoire d’un worker ne croît plus avec l’annuaire, et un défaut de cache coûte un aller-retour vers la base de données. Nécessite persistence.mode=postgres et une seule cellule ; le processus frontal détient toujours l’annuaire complet."
+    "en": "af2208b6228d6f59",
+    "text": "Comment chaque processus — le processus frontal et chaque worker de requêtes ou de surface — détient l’annuaire. auto (par défaut, #320) : postgres-lru là où il peut fonctionner — persistence.mode=postgres et une seule cellule — et memory partout ailleurs. memory : chaque entrée, dans chaque processus. postgres-lru : les personnes et les appareils sous forme d’une fenêtre d’au plus ldap.workerCacheEntries entrées par processus, le reste lu dans PostgreSQL à la demande — la mémoire ne croît plus avec le nombre de personnes, et un défaut coûte un aller-retour vers la base de données pendant lequel ce processus ne fait rien d’autre. Nécessite persistence.mode=postgres et une seule cellule."
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",

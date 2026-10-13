@@ -1168,21 +1168,32 @@ let boundTlsPort = LDAPS_PORT;
 // bug in the debugger.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// OR A WINDOW ONTO THE STORE, IN A REQUEST OR SURFACE WORKER (#349).
+// OR A WINDOW ONTO THE STORE, IN EVERY PROCESS (#349, #320).
 //
-// With `ldap.workerDirectory=postgres-lru` a worker holds the people and the
-// devices — everything strictly under `ou=users` and `ou=devices` of each
-// realm — as a bounded window, and asks the store for the rest; every other
-// entry is held whole, as here. `ldap/directory_window.ts` is the whole of it,
-// and it has this Map's shape, so nothing below reads it differently. The
-// FRONT process always holds the whole directory: it owns the listeners and
-// its own writes (#349's design; moving it too is a later decision). Memory
-// and ldif stores cannot have a window — `persistence.start()` refuses the
-// setting with them (STS-LDAP-0133).
+// With the window (`ldap.workerDirectory` `auto` on a postgres store and one
+// cell, or `postgres-lru`) a process holds the people and the devices —
+// everything strictly under `ou=users` and `ou=devices` of each realm — as a
+// bounded window, and asks the store for the rest; every other entry is held
+// whole, as here. `ldap/directory_window.ts` is the whole of it, and it has
+// this Map's shape, so nothing below reads it differently. Memory and ldif
+// stores cannot have a window — `persistence.start()` refuses an explicit
+// postgres-lru with them (STS-LDAP-0133), and `auto` does not ask for one.
+//
+// **THE FRONT PROCESS TOO, SINCE #320 (rcbj, 2026-10-13).** #349 kept the
+// front whole because it owns the listeners and writes of its own, and left
+// moving it "a later decision". Nothing in the window is a worker's: the
+// front loads this file before `persistence.start()` exactly as a worker
+// does, so the bridge is attached before anything is restored, and its
+// writes are pinned until flushed like a worker's. What it costs the front is
+// what it costs a worker — a miss stops this process's event loop for one
+// round trip, and a whole walk pages through the store synchronously — paid
+// here on the thread that also holds every socket. What it buys is the
+// largest single thing a node held: the whole directory, plus the write
+// shadow's JSON copy of it, in the one process every deployment has (testidp
+// runs no worker at all).
 // ---------------------------------------------------------------------------
 const directoryWindow = (function () {
-  if (!process.env.STS_REQUEST_WORKER ||
-      String(config.value('ldap.workerDirectory')) !== 'postgres-lru' ||
+  if (!persistence.directoryWindowWanted() ||
       String(config.value('persistence.mode')) !== 'postgres') {
     return null;
   }
@@ -1204,8 +1215,10 @@ const directoryWindow = (function () {
     },
     registry: cacheRegistry
   });
-  log.info('ldap: this worker holds the people and devices as a window ' +
-           'onto the store (ldap.workerDirectory=postgres-lru), at most ' +
+  log.info('ldap: this ' + (process.env.STS_REQUEST_WORKER ? 'worker'
+             : 'front process') + ' holds the people and devices as a ' +
+           'window onto the store (ldap.workerDirectory=' +
+           config.value('ldap.workerDirectory') + '), at most ' +
            config.value('ldap.workerCacheEntries') + ' of them at once.');
   return made;
 })();
@@ -1563,6 +1576,147 @@ function windowedFind(name, args, predicate) {
   });
   log.debug("Leaving windowedFind(). " + found.length + ".");
   return found;
+}
+
+// AN LDAP SEARCH NARROWED BY THE STORE'S INDEX, IN A WINDOWED PROCESS (#320).
+//
+// A windowed process answers a search by paging every entry under the base
+// out of the store and filtering here, which is linear in the people: 0.8 s
+// for a `(uid=x)` lookup over 20,000 of them, measured, against 0.13 s from
+// a whole directory — and the front process now holds a window too, so on a
+// service with no workers that stopped every socket. The commonest searches
+// an LDAP client makes are equalities on `uid` and `mail`, and the store
+// indexes both, every value lower-cased (`persistence/directory_codec.js`).
+// The filter's equality is case-sensitive (@ldapjs/filter's `matches()`), so
+// the entries whose LOWER-CASED value equals the lower-cased assertion are a
+// SUPERSET of its matches; the filter is still applied to every candidate,
+// so the answer cannot change — only how much is read to reach it.
+//
+// Narrowed only where that holds: the filter is such an equality, an AND
+// with a narrowable term, or an OR whose every term is narrowable (the union
+// of their lookups, `indexedLookupsOf()`); the asserted
+// value has no surrounding space (the query trims it); and the store answered
+// fewer rows than its cap, since a capped answer may have cut a match. Every
+// other search walks as before. The resident entries under the base are
+// added from memory, and the window adds what this process changed and has
+// not written (`findWindowed()`).
+const EQUALITY_INDEXED = { uid: 'name', mail: 'mail' };
+const NARROWED_SEARCH_CAP = 1000;
+
+// The index lookups whose union holds every match of `filter`, or null when
+// none can be named (#320): an indexed equality is one lookup; an AND is the
+// lookups of any ONE of its terms (each match satisfies every term); an OR is
+// the lookups of EVERY term, or null if one term has none. Anything else —
+// a NOT, a presence, a substring, a non-indexed attribute — names nothing.
+// Bounded in depth and in lookups, so no filter turns one search into an
+// unbounded number of questions.
+const MAX_NARROWING_LOOKUPS = 16;
+
+/**
+ * The `{ kind, value }` index lookups whose union is a superset of a
+ * filter's matches, or null (#320).
+ *
+ * @param filter - a parsed filter
+ * @param depth - how deep in the filter this is
+ * @returns the lookups, or null
+ */
+function indexedLookupsOf(filter, depth) {
+  log.debug("Entering indexedLookupsOf().");
+  if (!filter || depth > 4) {
+    log.debug("Leaving indexedLookupsOf(). Nothing.");
+    return null;
+  }
+  if (filter.type === 'EqualityFilter') {
+    const kind = EQUALITY_INDEXED[String(filter.attribute || '')
+      .toLowerCase()];
+    const value = filter.value;
+    const usable = !!kind && typeof value === 'string' && value !== '' &&
+      value === value.trim();
+    log.debug("Leaving indexedLookupsOf(). " + (usable ? 'An equality.'
+      : 'Not indexed.'));
+    return usable ? [{ kind: kind, value: value }] : null;
+  }
+  if (filter.type === 'AndFilter') {
+    for (const term of filter.clauses || []) {
+      const found = indexedLookupsOf(term, depth + 1);
+      if (found) {
+        log.debug("Leaving indexedLookupsOf(). An AND's term.");
+        return found;
+      }
+    }
+    log.debug("Leaving indexedLookupsOf(). No AND term.");
+    return null;
+  }
+  if (filter.type === 'OrFilter') {
+    let all = [];
+    for (const term of filter.clauses || []) {
+      const found = indexedLookupsOf(term, depth + 1);
+      if (!found) {
+        log.debug("Leaving indexedLookupsOf(). An OR term names nothing.");
+        return null;
+      }
+      all = all.concat(found);
+      if (all.length > MAX_NARROWING_LOOKUPS) {
+        log.debug("Leaving indexedLookupsOf(). Too many lookups.");
+        return null;
+      }
+    }
+    log.debug("Leaving indexedLookupsOf(). An OR.");
+    return all.length ? all : null;
+  }
+  log.debug("Leaving indexedLookupsOf(). Not narrowable.");
+  return null;
+}
+
+/**
+ * The candidate entries for a search under `base`, narrowed through the
+ * store's `uid` or `mail` index, or null when the search must walk (no
+ * window, no indexed equality, or a capped answer) (#320).
+ *
+ * @param base - the search base, as the client sent it
+ * @param filter - the parsed filter
+ * @returns the candidates (a superset of the matches), or null
+ */
+function indexedSearchCandidates(base, filter) {
+  log.debug("Entering indexedSearchCandidates().");
+  if (!directoryWindow || !filter) {
+    log.debug("Leaving indexedSearchCandidates(). Nothing to narrow.");
+    return null;
+  }
+  const lookups = indexedLookupsOf(filter, 0);
+  if (!lookups || !lookups.length) {
+    log.debug("Leaving indexedSearchCandidates(). No indexed equality.");
+    return null;
+  }
+  const realmId = realms.currentId();
+  const baseKey = normalizeDn(base);
+  const out = [];
+  const seen = new Set();
+  for (const lookup of lookups) {
+    const info = {};
+    const found = directoryWindow.findWindowed(realmId, 'equalUnder',
+      [realmId, baseKey, lookup.kind, lookup.value, NARROWED_SEARCH_CAP],
+      function (entry) {
+        return isUnder(entry.dn, base);
+      }, info);
+    if (Number(info.rows) >= NARROWED_SEARCH_CAP) {
+      log.debug("Leaving indexedSearchCandidates(). Capped; walking.");
+      return null;
+    }
+    found.forEach(function (hit) {
+      if (!seen.has(hit.key)) {
+        seen.add(hit.key);
+        out.push(hit.entry);
+      }
+    });
+  }
+  directoryWindow.eachResident(realmId, function (stored) {
+    if (isUnder(stored.dn, base)) {
+      out.push(stored);
+    }
+  });
+  log.debug("Leaving indexedSearchCandidates(). " + out.length + ".");
+  return out;
 }
 
 // A walk whose callback acts only on entries holding one of `attributes`
@@ -16039,11 +16193,14 @@ server.search('', function (req, res, next) {
   // so it neither matches nor counts against the size limit, and counted here
   // for the audit row only.
   let withheldEntries = 0;
+  // AN INDEXED EQUALITY IS ANSWERED FROM THE STORE'S INDEX (#320,
+  // `indexedSearchCandidates()`), and otherwise
   // A WINDOWED WORKER WALKS ONLY WHAT THE BASE REACHES (#349): the resident
   // entries under it and the part of the people and devices it names, paged
   // from the store and handed out to nobody — a search edits nothing, so
   // nothing it read is held once it has been sent.
-  const candidates = directoryWindow
+  const narrowed = indexedSearchCandidates(base, req.filter);
+  const candidates = narrowed ? narrowed : directoryWindow
     ? (function* () {
       for (const pair of directoryWindow.walk(realms.currentId(),
                                               normalizeDn(base), true)) {
@@ -22351,6 +22508,9 @@ function prose() {
 }
 
 module.exports = {
+  // The search narrowing's filter analysis (#320), for
+  // tests/ldap_search_narrowing.js.
+  indexedLookupsOf: indexedLookupsOf,
   // THE CONSOLE'S PROSE (#543 phase 2b): the routes whose answers carry
   // this module's sentences, and the sentences by key.
   PROSE_ROUTES: PROSE_ROUTES,

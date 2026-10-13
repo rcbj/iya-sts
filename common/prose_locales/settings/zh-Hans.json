@@ -5984,12 +5984,12 @@
     "text": "目录最多可以增长到多大。这是上限而不是目标：任何通过此处任何协议进行身份验证的人都会出现条目。按此进程持有的所有领域计数；在 ldap.workerDirectory=postgres-lru 的请求工作线程中，则改为按存储中该领域的行计数。"
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "请求工作线程中的目录"
+    "en": "d0f2a4d1725d58e0",
+    "text": "目录保存在内存中，或作为窗口"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "请求或界面工作线程如何持有目录。memory（默认值）：每个条目，在每个进程中。postgres-lru：人员和设备以最多 ldap.workerCacheEntries 个条目的窗口保存，其余在需要时从 PostgreSQL 读取——工作线程的内存不再随目录增长，一次未命中需要一次数据库往返。需要 persistence.mode=postgres 和单个单元；前端进程始终持有整个目录。"
+    "en": "af2208b6228d6f59",
+    "text": "每个进程——前端进程以及每个请求或界面 worker——如何保存目录。auto（默认值，#320）：在能工作的地方使用 postgres-lru——persistence.mode=postgres 且只有一个单元——其他地方使用 memory。memory：每个条目，在每个进程中。postgres-lru：人员和设备作为每个进程最多 ldap.workerCacheEntries 个条目的窗口，其余在需要时从 PostgreSQL 读取——内存不再随人员数量增长，一次未命中需要一次数据库往返，期间该进程不做任何其他事情。需要 persistence.mode=postgres 且只有一个单元。"
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",

@@ -575,8 +575,20 @@ because `realms.map()` drops the whole store with the realm.
 **rcbj's decisions on #349**: with `ldap.workerDirectory=postgres-lru` a
 request or surface worker holds `ldap/directory_window.ts` as `entries` — the
 same Map shape, answering the ambient realm, with `realmMap(id)` — so not one
-reader or writer in this file changed. The front process always holds the
-whole directory.
+reader or writer in this file changed.
+
+**SINCE #320 (rcbj, 2026-10-13) THE FRONT PROCESS DOES TOO, AND IT IS THE
+DEFAULT.** `ldap.workerDirectory` gained `auto` — the window where it can work
+(a postgres store, one cell), the whole directory elsewhere — and the gate in
+`ldap_server.js` no longer asks whether this is a worker; the decision is
+`persistence.directoryWindowWanted()`. Nothing in the window was a worker's:
+the front loads this file before `persistence.start()` exactly as a worker
+does. Measured on one front process with no workers (testidp's shape), 20,000
+people, heap after a forced GC: 134.0 MB whole, 87.4 MB windowed. The cost is
+the front's: a miss stops its event loop — every socket — for one round
+trip, and a whole walk pages synchronously, which matters most where a
+scheduler job or a page answered in the front walks the people. A memory,
+ldif or multi-cell service is unchanged.
 
 * **Resident**: every entry NOT strictly under a realm's `ou=users` or
   `ou=devices` (`windowedContainersOf()`), held whole — groups stay resident,

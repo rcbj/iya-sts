@@ -5984,12 +5984,12 @@
     "text": "Gaano kalaki ang maaaring paglaki ng directory. Isang kisame sa halip na target: lumilitaw ang mga entry para sa sinumang nag-a-authenticate sa anumang protocol dito. Binibilang sa bawat realm na hawak ng process na ito; sa request worker na may ldap.workerDirectory=postgres-lru, sa mga row ng realm sa store sa halip."
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "Directory sa mga request worker"
+    "en": "d0f2a4d1725d58e0",
+    "text": "Direktoryo sa memorya, o bilang window"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "Paano hinahawakan ng request o surface worker ang directory. memory (ang default): bawat entry, sa bawat process. postgres-lru: ang mga tao at device bilang window ng hindi hihigit sa ldap.workerCacheEntries na entry, ang iba ay binabasa mula sa PostgreSQL kapag hiningi — hindi na lumalaki ang memory ng worker kasabay ng directory, at ang isang miss ay nagkakahalaga ng isang database round trip. Kailangan ang persistence.mode=postgres at iisang cell; laging hawak ng front process ang buong directory."
+    "en": "af2208b6228d6f59",
+    "text": "Kung paano hawak ng bawat proseso — ang front process at bawat request o surface worker — ang direktoryo. auto (ang default, #320): postgres-lru saanman ito gagana — persistence.mode=postgres at iisang cell — at memory sa lahat ng iba pa. memory: bawat entry, sa bawat proseso. postgres-lru: ang mga tao at device bilang window na hindi hihigit sa ldap.workerCacheEntries na entry bawat proseso, ang iba ay binabasa mula sa PostgreSQL kapag hiningi — hindi na lumalaki ang memorya kasabay ng dami ng tao, at ang isang miss ay nagkakahalaga ng isang round trip sa database kung saan walang ibang ginagawa ang prosesong iyon. Kailangan ang persistence.mode=postgres at iisang cell."
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",
