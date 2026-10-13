@@ -84,5 +84,9 @@
   "noButton": "<strong>Att ladda ner en keytab igen.</strong> En lagrad nyckel läses aldrig ut igen: en tjänsteprincipals keytab lämnas ut av den skapelse eller rotation som gjorde den, och en förlorad ersätts genom att rotera. En PERSONS keytab (#59) härleds från ett känt lösenord: <strong>Återställ lösenord och ladda ner keytab</strong> på personens sida under Katalog &rarr; Användare, eller personens eget lösenord på <code>/portal/kerberos</code>. <strong>Att sätta en persons nycklar.</strong> De kommer från personens lösenord och från inget annat; att rensa dem är den enda kontrollen, och nästa verifierade inloggning härleder dem igen.",
   "linkApi": "samma sak via hanterings-API:t",
   "linkSettings": "Kerberos-inställningarna",
-  "linkDb": "principaldatabasen"
+  "hDatabase": "Principaldatabasen",
+  "database": "Varje principal som denna KDC har, endast med sina offentliga fält: saltet och enctyperna som en klient får veta av KDC:ns egna svar, kvno och flaggorna. Utvecklingens testkonton och namnen som skapades vid första anblick finns här; ingen nyckel eller inget lösenord.",
+  "nounDatabase": "principaler",
+  "thSalt": "Salt",
+  "thFlags": "Flaggor"
 }

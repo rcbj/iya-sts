@@ -111,9 +111,6 @@ const { log, PORT, HOST, warmPqKeys,
         warmSignerGroups } = require('./common/helpers');
 const realms = require('./common/realms');
 const config = require('./common/config');
-// Which demonstrations this process names and binds (#585). A cache hit:
-// `helpers.js` above loaded it.
-const mode = require('./common/mode');
 // ---------------------------------------------------------------------------
 // THE REQUEST POOL. Its workers run THE SERVICE: each loads the same protocol
 // stack in the same order, binds no protocol port, and answers HTTP on a unix
@@ -199,7 +196,6 @@ const persistence = require('./persistence/persistence');
 // ---------------------------------------------------------------------------
 const stack = require('./common/protocol_stack');
 const krb5 = stack.krb5;
-const krb5Service = stack.krb5Service;
 const tlsServer = stack.tlsServer;
 const ldapServer = stack.ldapServer;
 const spiffeServer = stack.spiffeServer;
@@ -331,18 +327,9 @@ function announce() {
   log.info('OID4VCI issuer metadata at ' +
            '/.well-known/openid-credential-issuer; credential endpoint at ' +
            '/oid4vci/credential');
-  // THE DEMONSTRATIONS ARE NAMED ONLY WHERE THEY ARE SERVED (#585): a
-  // product process's default realm has none, so this banner must not send
-  // anybody to one. Asked in the default realm, which is where this banner's
-  // addresses are.
-  const servesDemos = realms.run(realms.get(realms.DEFAULT_ID), function () {
-    return mode.servesDemoEndpoints();
-  });
-  if (servesDemos) {
-    log.info('Issuer-initiated (OID4VCI H.1): the issuer web page is at ' +
-             '/issuer; it builds a Credential Offer and sends the browser ' +
-             'to the wallet.');
-  }
+  // THE DEMONSTRATIONS ARE NOT NAMED HERE ANY MORE: the OpenID4VC issuer
+  // page (#594) and the SPNEGO-protected page (#595) are the development
+  // companion's, and this banner names what this process serves.
   log.info('Authentication service at /authn/login (the sign-in screen every ' +
            'protocol here sends a person to) and /authn/webauthn (its second ' +
            'factor).');
@@ -355,12 +342,6 @@ function announce() {
            '/FederationMetadata/2007-06/FederationMetadata.xml.');
   log.info('Every endpoint call, and every token or assertion before and ' +
            'after it was signed, is written to this log at debug level.');
-  if (servesDemos) {
-    log.info('A SPNEGO-protected page (RFC 4559 over RFC 4178) is ' +
-             'advertised at /spnego and lives at /spnego/protected; ' +
-             '?mic=require, ?mech=none and ?mutual=off make the negotiation ' +
-             'fail in one specific way each.');
-  }
   log.info('Every protocol, every endpoint and every specification this ' +
            'service implements is listed at /admin/sts-metadata (add ' +
            '?format=json for the machine-readable form, or use the Download ' +
@@ -385,9 +366,10 @@ function announce() {
            'port on a public address.');
   // The KDC's sockets are started here rather than at require time so that a
   // failure to bind (port 88 is privileged) is reported by a running service
-  // instead of preventing it from starting at all. GET /krb5/principals says
-  // what this KDC knows; GET /admin/sts-metadata cannot see a raw socket, so
-  // the listener has its own entry there.
+  // instead of preventing it from starting at all. GET
+  // /admin-api/kerberos/principals says what this KDC holds (#595: the
+  // demonstration document /krb5/principals is gone); GET /admin/sts-metadata
+  // cannot see a raw socket, so the listener has its own entry there.
   const kdcListeners = krb5.listen();
   // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
   // `krb5_kdc.js`: a require there would put `common/proxy_protocol.ts` into
@@ -400,8 +382,7 @@ function announce() {
     label: 'the KDC (TCP ' + kdcListeners.port + ')', channel: 'kerberos' });
   kdcListeners.whenReady.then(function (ready) {
     log.info('krb5: the KDC is reachable on TCP and UDP ' + ready.port + '; ' +
-             'MS-KKDCP at /KdcProxy' + (servesDemos
-               ? '; GET /krb5/principals lists what it knows.' : '.'));
+             'MS-KKDCP at /KdcProxy.');
   }).catch(function (err) {
     // Reported rather than thrown: the rest of this service is still useful,
     // and a silent failure to bind would surface later as a KDC that never
@@ -409,17 +390,12 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0029') + 'krb5: the KDC could not ' +
                                                 'start: ' + err.message);
   });
-  // THE PROTECTED KERBEROS SERVICE IS A DEMONSTRATION (#585, rcbj
-  // 2026-10-12), and its socket is the PROCESS's: a product process does not
-  // bind it at all, so nothing answers on krb5.servicePort there. SPNEGO
-  // sign-in keeps the acceptor MODULE (`/authn/spnego`), which needs no
-  // socket.
-  if (servesDemos) {
-    krb5Service.listen();
-  } else {
-    log.info('krb5-service: not started — the protected Kerberos service ' +
-             'is a demonstration, and this process is in product mode.');
-  }
+  // THE PROTECTED KERBEROS SERVICE IS NOT HERE (#595). It was a
+  // demonstration with a socket of its own (`krb5.servicePort`), started
+  // here in a development process only (#585); it is the development
+  // companion's now (`companion/demo_kerberos.js`), with its own principal
+  // and keytab. SPNEGO sign-in keeps the acceptor MODULE (`/authn/spnego`),
+  // which needs no socket.
   // The LDAP directory's socket, started here for the same reason the KDC's is.
   // GET /admin/ldap/service says what it is and GET /admin/ldap/directory shows
   // every entry in it;

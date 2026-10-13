@@ -8679,8 +8679,8 @@ class AdminApi {
                      '`ldapmodify` of `oauthRedirectUri` changes which ' +
                      'redirect URI RFC 9700 mode accepts on the next ' +
                      'request.\n\nTwo attributes hold CREDENTIALS in the ' +
-                     'clear, for the reason `/krb5/principals` ' +
-                     'prints the Kerberos passwords. They are ' +
+                     'clear, for the reason the development Kerberos ' +
+                     'passwords are printed as settings. They are ' +
                      'never written to the audit log.',
         mirrors: 'GET /admin/ldap/applications',
         parameters: [
@@ -19497,8 +19497,9 @@ class AdminApi {
       { method: 'GET', path: BASE + '/kerberos/principals', tag: 'Kerberos',
         operationId: 'getKerberosPrincipals',
         summary: 'Who the KDC holds a stored long-term key for',
-        description: 'Two lists, paged separately with `?peoplePage=` and ' +
-                     '`?servicesPage=` and one `?per=`.\n\n`people` — the ' +
+        description: 'Three lists, paged separately with `?peoplePage=`, ' +
+                     '`?servicesPage=` and `?databasePage=` and one ' +
+                     '`?per=`.\n\n`people` — the ' +
                      'directory people whose Kerberos keys were derived from ' +
                      'their own password when it was set or verified ' +
                      '(PRODUCT MODE): the principal, the kvno, the enctypes, ' +
@@ -19515,7 +19516,15 @@ class AdminApi {
                      'its kvno and enctypes, when it was made and last ' +
                      'rotated, the versions kept and until when, and the ' +
                      'schedule — `scheduled`, `offReason`, `intervalDays`, ' +
-                     '`nextDueAt`.\n\n**NO KEY MATERIAL IS IN THIS ' +
+                     '`nextDueAt`.\n\n`database` (#595) — every principal ' +
+                     'the KDC holds, the development fixtures and the names ' +
+                     'created on first sight among them: the principal, ' +
+                     'its name type, salt, enctypes and kvno, and its ' +
+                     'flags, with `fixtureAccounts` and `realmsServed` ' +
+                     'beside it. What the demonstration document `GET ' +
+                     '/krb5/principals` listed until #595 deleted it, ' +
+                     'without its two development passwords.\n\n**NO KEY ' +
+                     'MATERIAL IS IN THIS ' +
                      'REPLY**, sealed or otherwise — both lists are built ' +
                      'from the public info attributes. A trust realm has a ' +
                      'KDC and a principal database of its own since ' +
@@ -19531,10 +19540,13 @@ class AdminApi {
             description: 'Directory people holding keys derived from their ' +
                          'own password.' },
           { name: 'services',
-            description: 'Service principals created with a random key.' }
+            description: 'Service principals created with a random key.' },
+          { name: 'database',
+            description: 'Every principal in the KDC\'s database, by its ' +
+                         'public fields.' }
         ])),
-        responseDescription: 'Both lists with their paging, whether this is ' +
-                             'a product KDC, whether ' +
+        responseDescription: 'The three lists with their paging, whether ' +
+                             'this is a product KDC, whether ' +
                              'krb5.personKeys is on, the ' +
                              'enctypes and starting kvno, and the ' +
                              'acceptor\'s SPN.',

@@ -4210,6 +4210,48 @@ module.exports = {
     log.debug("Leaving all().");
     return Array.from(principals.values());
   },
+  /**
+   * Every principal in the ambient realm's database, described by its PUBLIC
+   * fields only: the name, the name type, the salt, the enctypes and kvno,
+   * and the flags — what a client can learn from PA-ETYPE-INFO2 and the
+   * replies anyway, and never a key or a password. What the demonstration
+   * document `GET /krb5/principals` listed until #595; `GET
+   * /admin-api/kerberos/principals` lists it now, as `database`, behind the
+   * API's token. Sorted by name, so a page of it is stable.
+   *
+   * @returns the rows
+   */
+  describeAll: function () {
+    log.debug("Entering describeAll().");
+    const rows = module.exports.all().map(function (p) {
+      return {
+        principal: p.name.join('/') + '@' + p.realm,
+        nameType: p.type,
+        salt: p.salt,
+        etypes: supportedEtypes(p).map(function (id) {
+          return { etype: id, name: kcrypto.etypeName(id) };
+        }),
+        requiresPreAuth: !!p.requiresPreAuth,
+        revoked: !!p.revoked,
+        passwordExpired: !!p.passwordExpired,
+        okAsDelegate: !!p.okAsDelegate,
+        kvno: p.kvno,
+        // Created on first sight (development): somebody authenticated as a
+        // name nobody configured.
+        autoCreated: !!p.autoCreated,
+        // A person keyed from their own password: says only where the keys
+        // come from, which are never on the record.
+        directoryKeys: !!p.directoryKeys,
+        description: p.description || ''
+      };
+    });
+    rows.sort(function (a, b) {
+      return a.principal < b.principal ? -1 : a.principal > b.principal ? 1
+        : 0;
+    });
+    log.debug("Leaving describeAll(). " + rows.length);
+    return rows;
+  },
   // The RID an account made at runtime under this name would be given, and
   // the range it is drawn from — see autoRidFor(). Exported so a test can ask
   // two processes the same question without creating anything.

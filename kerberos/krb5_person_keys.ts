@@ -2917,8 +2917,8 @@ class Krb5PersonKeys {
   // which no directory person is). A keytab
   // from the password the caller typed would not open a single AS-REP there,
   // so a development keytab is derived from the password THAT KDC uses for
-  // the principal — which the service publishes on `/krb5/principals` anyway
-  // — and the answer says so. The typed password is then not what the keytab
+  // the principal — a development setting the service publishes anyway —
+  // and the answer says so. The typed password is then not what the keytab
   // is made from, and nothing pretends otherwise.
   // -------------------------------------------------------------------------
   /**

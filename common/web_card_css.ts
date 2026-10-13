@@ -154,12 +154,13 @@ class WebCardCss {
     't:1.5}.describe .row a{text-decoration:none}';
 
   /**
-   * The DIAGNOSTIC pages (#583): the TLS pages and the SPNEGO demonstration
-   * pages, which carried these in the `<style>` of their own server-drawn
-   * shells (`tls_server.js`'s `pageShell()`, `spnego.js`'s `page()`) until
-   * they became static surfaces — a verdict's band, the truststore's PEM
-   * box, a list's indent — scoped to `.diag`, the class their card carries,
-   * and the TLS page's wider card to `.tls`, so no other page changes.
+   * The DIAGNOSTIC pages (#583): the TLS pages, which carried these in the
+   * `<style>` of their own server-drawn shell (`tls_server.js`'s
+   * `pageShell()`) until they became static surfaces — a verdict's band,
+   * the truststore's PEM box, a list's indent — scoped to `.diag`, the
+   * class their card carries, and the TLS page's wider card to `.tls`, so
+   * no other page changes. The SPNEGO demonstration pages drew in it too
+   * until they left the runtime for the companion (#595).
    */
   static readonly DIAG_CSS =
     '.card.tls{max-width:60rem}.diag p.verdict{background:#f0f0f8;border-l' +

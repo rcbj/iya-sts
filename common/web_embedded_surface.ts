@@ -19,7 +19,9 @@
 // this, each with its own copy; this is that runtime with the federation
 // taken out, for the two surfaces of #583 — the TLS diagnostic pages
 // (deleted by #597, now a console page) and the SPNEGO demonstration pages
-// (`kerberos/web_spnego_surface.ts`). A surface built on it:
+// (moved to the development companion by #595). Neither stands on it now;
+// it is kept as the runtime the three older embedded ones may move onto
+// (`common/CLAUDE.md`). A surface built on it:
 //
 //   * HAS NO API TO FETCH A PAGE FROM: every row of its table is the
 //     shell's, drawn from the state and never fetched; a shell that carried

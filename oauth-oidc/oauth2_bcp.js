@@ -1319,7 +1319,7 @@ const REQUIREMENTS = [
           'token it issues, in memory and in full, and prints them on ' +
           '/admin/tokens: that is what makes the console able to show a ' +
           'person the JWT they just received, and it is the same decision ' +
-          '/krb5/principals makes about the Kerberos passwords. A real ' +
+          'the Kerberos password settings make. A real ' +
           'resource server must do the opposite. What IS true: nothing here ' +
           'writes a token to disk, the audit log redacts access_token and ' +
           'eight other query keys so a token never reaches a row, and the ' +

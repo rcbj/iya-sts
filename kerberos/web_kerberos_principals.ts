@@ -62,6 +62,18 @@ class KerberosPrincipalsPage {
                       noun: t.html('consoleKerberosPrincipals.nounServices'),
                       offset: 0 },
                     json.servicesPaging));
+    // THE KDC'S WHOLE DATABASE (#595), which the demonstration document
+    // `/krb5/principals` listed until it was deleted: every principal by its
+    // public fields, paged as the two lists above are.
+    const databaseNav = json.databasePaging
+      ? kit.pageNavPair('/admin/kerberos/principals',
+          kit.pageParamsOf(ctx.query),
+          Object.assign({ param: 'databasePage',
+                          noun: t.html('consoleKerberosPrincipals.' +
+                                       'nounDatabase'),
+                          offset: 0 },
+                        json.databasePaging))
+      : { head: '', foot: '' };
     const etypeList = function (etypes) {
       return (etypes || []).map(function (one) {
         return '<code>' + kit.esc(one.name) + '</code>';
@@ -335,6 +347,27 @@ class KerberosPrincipalsPage {
       peopleRows + '</table>' + peopleNav.foot +
       kit.perPageForm('/admin/kerberos/principals', 'peoplePage', '1',
                        json.peoplePaging.perPage) +
+      '<h2>' + t.html('consoleKerberosPrincipals.hDatabase') + '</h2>' +
+      kit.note(t.html('consoleKerberosPrincipals.database')) +
+      databaseNav.head +
+      '<table id="kerberos-database"><tr><th>' +
+      t.html('consoleKerberosPrincipals.thPrincipal') + '</th><th>kvno' +
+      '</th><th>' + t.html('consoleKerberosPrincipals.thEnctypes') +
+      '</th><th>' + t.html('consoleKerberosPrincipals.thSalt') +
+      '</th><th>' + t.html('consoleKerberosPrincipals.thFlags') +
+      '</th></tr>' + (json.database || []).map(function (row) {
+        const flags = ['requiresPreAuth', 'revoked', 'passwordExpired',
+                       'okAsDelegate', 'autoCreated', 'directoryKeys']
+          .filter(function (name) {
+            return !!row[name];
+          });
+        return '<tr><td><code>' + kit.esc(row.principal) + '</code></td>' +
+          '<td>' + kit.esc(String(row.kvno)) + '</td><td>' +
+          kit.esc((row.etypes || []).map(function (one) {
+            return one.name;
+          }).join(', ')) + '</td><td><code>' + kit.esc(row.salt || '') +
+          '</code></td><td>' + kit.esc(flags.join(', ')) + '</td></tr>';
+      }).join('') + '</table>' + databaseNav.foot +
       '<h2>' + t.html('consoleKerberosPrincipals.hNoButton') + '</h2>' +
       kit.note(t.html('consoleKerberosPrincipals.noButton')) +
       // No "this page as JSON" link: on the tab, /admin/kerberos?format=json
@@ -343,13 +376,7 @@ class KerberosPrincipalsPage {
       kit.note('<a href="/admin-api/kerberos/principals">' +
                 t.html('consoleKerberosPrincipals.linkApi') +
                 '</a> &middot; <a href="/admin/kerberos">' +
-                t.html('consoleKerberosPrincipals.linkSettings') + '</a>' +
-                // The KDC's document only where this realm is served it
-                // (#585).
-                (json.principalsDocument
-                  ? ' &middot; <a href="' + kit.esc(json.principalsDocument) +
-                    '">' + t.html('consoleKerberosPrincipals.linkDb') + '</a>'
-                  : ''));
+                t.html('consoleKerberosPrincipals.linkSettings') + '</a>');
 
     return inner;
   }

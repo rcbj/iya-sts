@@ -95,11 +95,8 @@ const LISTENERS = [
     what: 'The embedded protocol debugger, where one is embedded.' },
   { id: 'kdc', name: 'Kerberos KDC', setting: 'krb5.kdcPort', kind: null,
     what: 'TCP and UDP 88; Kerberos messages, not TLS.' },
-  // A DEMONSTRATION (#585): a product process does not bind it, so it is
-  // listed only where the process and the realm serve demonstrations.
-  { id: 'krb5-service', name: 'Kerberos test service',
-    setting: 'krb5.servicePort', kind: null, demo: true,
-    what: 'The SPNEGO-protected test service.' },
+  // The Kerberos test service (`krb5.servicePort`) was a demonstration
+  // socket here until #595 moved it to the development companion.
   { id: 'revocation', name: 'Revocation (plain HTTP)',
     setting: 'pki.httpPort', kind: null, http: 'revocation',
     group: 'Listener: Revocation (plain HTTP)',
