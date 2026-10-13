@@ -2626,9 +2626,10 @@ class SpiffeGrpc {
   // trust anchor whatever its shape, and OpenSSL needs
   // `X509_V_FLAG_PARTIAL_CHAIN` to treat a non-self-signed certificate in the
   // truststore as one. Node's `allowPartialTrustChain` sets it — and
-  // `tls.Server`'s `setSecureContext()`, which both `http2.createSecureServer()`
-  // and grpc-js's `updateSecureContextOptions()` go through, copies a fixed
-  // list of options into the context it builds and that one is not on it:
+  // `tls.Server`'s `setSecureContext()`, which both
+  // `http2.createSecureServer()` and grpc-js's `updateSecureContextOptions()`
+  // go through, copies a fixed list of options into the context it builds,
+  // and that one is not on it:
   // measured on node 22.13 and 24.16, a server given only an intermediate and
   // the flag answers `UNABLE_TO_GET_ISSUER_CERT` at construction and after
   // `setSecureContext()` alike. So an SVID under such an authority is
