@@ -52,6 +52,17 @@
 //      and a quota of -1 falling back to the ECS TASK's limits, said; no
 //      cgroup at all on ECS drawn from the agent's figures, labelled; and
 //      the cluster totals adding whichever each node reported.
+//  10. THE GARBAGE COLLECTION (#611): `collectGarbage()` asks the ready
+//      worker threads named — every one for `all`, none for `front` — and
+//      collects the front's own, a thread that does not answer listed as
+//      unanswered under STS-CORE-0159, a front that cannot collect a 500
+//      under STS-CORE-0158, an unknown action, a malformed target and a
+//      thread this node does not have refused under STS-CORE-0160 with
+//      nothing collected, one audit row per press; the page draws the
+//      buttons for a reader who may write and the answer in place
+//      (`WebAnswers.redraw()`). Section 7 holds the real channel: the stub
+//      worker thread collects its own isolate with `common/heap_collector.ts`
+//      and the real `request_worker.ts` answers the same way.
 //
 // Section 5 also holds the child's rows: the debugger's api child with its
 // own five figures when it answered, and a /proc row saying why when it did
@@ -84,6 +95,9 @@ const log = require('bunyan').createLogger({
 // The stub request worker, a THREAD as the real one is since #364: `begin`
 // in, `ready` out over `parentPort`; `{ poolStatus }` answered with its
 // memory and its threadId, as `request_worker.ts` answers it.
+// `{ collectGarbage }` (#611) is answered with a real collection of its
+// own isolate, by the module the real worker answers it with.
+const COLLECTOR = path.join(__dirname, '..', 'common', 'heap_collector');
 const STUB = [
   "'use strict';",
   "const http = require('http');",
@@ -93,6 +107,13 @@ const STUB = [
   "    wt.parentPort.postMessage({ poolStatus: true, id: m.id,",
   "      pid: wt.threadId, memory: process.memoryUsage(),",
   "      cpu: process.cpuUsage(), uptimeS: 1 });",
+  "    return;",
+  "  }",
+  "  if (m && m.collectGarbage) {",
+  "    const collector = require(" + JSON.stringify(COLLECTOR) + ");",
+  "    wt.parentPort.postMessage({ collectGarbage: true, id: m.id,",
+  "      pid: wt.threadId,",
+  "      collection: collector.collect({ debug: function () {} }) });",
   "    return;",
   "  }",
   "  if (m && m.stop) { process.exit(0); }",
@@ -702,6 +723,27 @@ async function checkTheChannelAndThePage(t) {
     }), 'the real page lists that worker as a thread of this process, with ' +
     'its heap and not the process\'s resident size again',
     JSON.stringify(view.processes.rows));
+    // THE GARBAGE COLLECTION OVER THE SAME CHANNEL (#611).
+    const collectedThere = await requestPool.collectWorkerGarbage(null, 5000);
+    const theirs = entry ? collectedThere.answers[entry.pid] : null;
+    t.check(!!entry && collectedThere.asked.length === 1 &&
+            collectedThere.asked[0] === entry.pid && !!theirs &&
+            theirs.ok === true && theirs.heapUsedBeforeBytes > 0 &&
+            typeof theirs.durationMs === 'number',
+            'collectWorkerGarbage() asks the worker thread, which collects ' +
+            'its own isolate and answers its heap before and after (#611)',
+            JSON.stringify(collectedThere));
+    const pressed = await nodeHealthAdmin.collectGarbage(
+      { action: 'collect-garbage', target: 'all' }, 'tester');
+    t.check(pressed.ok && pressed.status === 200 &&
+            pressed.rows.length === 2 && pressed.rows[0].kind === 'process' &&
+            pressed.rows[0].pid === process.pid && pressed.rows[0].ok &&
+            pressed.rows[1].kind === 'thread' &&
+            pressed.rows[1].threadId === (entry && entry.pid) &&
+            pressed.rows[1].ok && pressed.unanswered.length === 0,
+            'the real collectGarbage() collects the front process\'s main ' +
+            'thread and the worker thread, a row each',
+            JSON.stringify(pressed).slice(0, 600));
   } finally {
     await requestPool.stop(3000);
     requestPool.reset();
@@ -730,6 +772,15 @@ async function checkTheChannelAndThePage(t) {
           /pid:\s*WorkerChannel\.id\(\)/.test(body.slice(0, 3000)),
           'request_worker.ts answers { poolStatus } with its memoryUsage() ' +
           'and cpuUsage(), under its thread\'s id (#364)', '');
+  // And `{ collectGarbage }` (#611) with its own isolate's collection.
+  const gcAt = source.search(/collectGarbage\(message[^)]*\)[^{;]*\{/);
+  const gcBody = gcAt < 0 ? '' : source.slice(gcAt, gcAt + 2000);
+  t.check(/HeapCollector\.collect\(/.test(gcBody) &&
+          /collectGarbage:\s*true/.test(gcBody) &&
+          /pid:\s*WorkerChannel\.id\(\)/.test(gcBody) &&
+          /collection:\s*collection/.test(gcBody),
+          'request_worker.ts answers { collectGarbage } with a collection of ' +
+          'its own isolate, under its thread\'s id (#611)', '');
 
   const page = await draw({});
   t.check(!!page && page.status === 200 && /id="cpu"/.test(page.body) &&
@@ -755,9 +806,11 @@ async function checkTheChannelAndThePage(t) {
             requestPool.dispatched('/admin/node-health') === false &&
             requestPool.dispatched('/realm/acme/admin/node-health') ===
               false &&
-            requestPool.dispatched('/admin-api/node-health') === false,
-            'with workers.dispatch=* the page and its API are still ' +
-            'answered by the front process', '');
+            requestPool.dispatched('/admin-api/node-health') === false &&
+            requestPool.dispatched(
+              '/admin-api/node-health/collect-garbage') === false,
+            'with workers.dispatch=* the page, its API and its garbage ' +
+            'collection are still answered by the front process', '');
   } finally {
     if (had2 === undefined) {
       delete process.env.STS_WORKERS_DISPATCH;
@@ -951,6 +1004,205 @@ async function checkV1AndEcs(t) {
   log.debug("Leaving checkV1AndEcs().");
 }
 
+// ---------------------------------------------------------------------------
+// 10. THE GARBAGE COLLECTION (#611).
+// ---------------------------------------------------------------------------
+// A collection as `common/heap_collector.ts` answers one.
+function aCollection(freedMib, ok) {
+  log.debug("Entering aCollection().");
+  log.debug("Leaving aCollection().");
+  if (ok === false) {
+    return { ok: false, heapUsedBeforeBytes: null,
+             heapTotalBeforeBytes: null, heapUsedAfterBytes: null,
+             heapTotalAfterBytes: null, freedBytes: null, durationMs: null,
+             error: 'gc could not be obtained: no' };
+  }
+  return { ok: true, heapUsedBeforeBytes: (20 + freedMib) * MIB,
+           heapTotalBeforeBytes: 40 * MIB, heapUsedAfterBytes: 20 * MIB,
+           heapTotalAfterBytes: 38 * MIB, freedBytes: freedMib * MIB,
+           durationMs: freedMib, error: null };
+}
+
+// An instance whose pool has two ready worker threads (7, protocol; 9,
+// hosted-surface) and one that is not ready (11); worker 7 answers a
+// collection and worker 9 does not. Every question and audit row is kept.
+function aCollectingInstance(front) {
+  log.debug("Entering aCollectingInstance().");
+  const seen = { asked: [], fronts: 0, rows: [] };
+  const made = anInstance(tree({ 'nothing': '' }), {
+    requestPool: function () {
+      return {
+        stats: function () {
+          return { workers: [{ pid: 7, ready: true, pool: 'protocol' },
+                             { pid: 9, ready: true, pool: 'surfaces' },
+                             { pid: 11, ready: false, pool: 'protocol' }] };
+        },
+        askWorkerPoolStatus: function () {
+          return Promise.resolve({});
+        },
+        collectWorkerGarbage: function (ids, ms) {
+          seen.asked.push({ ids: ids.slice(), ms: ms });
+          const answers = {};
+          if (ids.indexOf('7') >= 0) {
+            answers['7'] = aCollection(5);
+          }
+          return Promise.resolve({ asked: ids.map(Number),
+                                   answers: answers });
+        }
+      };
+    },
+    collectHere: function () {
+      seen.fronts++;
+      return front || aCollection(3);
+    },
+    audit: function () {
+      return { record: function (row) {
+        seen.rows.push(row);
+      } };
+    }
+  });
+  log.debug("Leaving aCollectingInstance().");
+  return { instance: made.instance, seen: seen };
+}
+
+async function checkTheCollection(t) {
+  log.debug("Entering checkTheCollection().");
+  t.log.info('=== 10. a full garbage collection, on demand (#611) ===');
+  let made = aCollectingInstance();
+  let r = await made.instance.collectGarbage({ action: 'collect-garbage' },
+                                             'alice');
+  t.check(r.ok && r.status === 200 && r.target === 'all' &&
+          made.seen.asked.length === 1 &&
+          made.seen.asked[0].ids.join(',') === '7,9' &&
+          made.seen.asked[0].ms === 10000 && made.seen.fronts === 1,
+          'no target is all: every READY worker thread asked (not 11), ' +
+          'bounded at ten seconds, and the front collected',
+          JSON.stringify(made.seen.asked));
+  t.check(r.rows.length === 2 && r.rows[0].kind === 'process' &&
+          r.rows[0].role === 'front process' && r.rows[0].threadId === null &&
+          r.rows[1].kind === 'thread' && r.rows[1].threadId === 7 &&
+          r.rows[1].role === 'protocol worker thread 7' &&
+          r.rows[1].freedBytes === 5 * MIB,
+          'a row for the front process and one for the thread that answered',
+          JSON.stringify(r.rows));
+  t.check(r.unanswered.length === 1 && r.unanswered[0].threadId === 9 &&
+          r.unanswered[0].role === 'hosted-surface worker thread 9' &&
+          /did not answer within 10000ms/.test(r.unanswered[0].why),
+          'the silent thread is listed as unanswered, with its role',
+          JSON.stringify(r.unanswered));
+  t.check(r.totals.collected === 2 && r.totals.freedBytes === 8 * MIB &&
+          r.totals.longestPauseMs === 5 && r.totals.unanswered === 1,
+          'the totals add what was freed and keep the longest pause',
+          JSON.stringify(r.totals));
+  const row = made.seen.rows[0];
+  t.check(made.seen.rows.length === 1 && !!row &&
+          row.action === 'node-health.collect-garbage' &&
+          row.actor === 'alice' && row.errorCode === 'STS-CORE-0159' &&
+          row.outcome === 'error' && row.detail.unanswered === 1 &&
+          row.detail.freedBytes === 8 * MIB,
+          'ONE audit row for the press, its code STS-CORE-0159 for the ' +
+          'silent thread', JSON.stringify(row));
+  t.check(r.errorCode === 'STS-CORE-0159',
+          'and the answer carries the code for the API to mark', '');
+
+  made = aCollectingInstance();
+  r = await made.instance.collectGarbage({ action: 'collect-garbage',
+                                           target: 'front' }, 'alice');
+  t.check(r.ok && made.seen.asked.length === 0 && r.rows.length === 1 &&
+          r.rows[0].kind === 'process' && !made.seen.rows[0].errorCode &&
+          made.seen.rows[0].outcome === 'success',
+          'front: the front process alone, no worker asked, a clean row',
+          JSON.stringify(made.seen.rows[0]));
+
+  made = aCollectingInstance();
+  r = await made.instance.collectGarbage({ action: 'collect-garbage',
+                                           target: 7 }, 'alice');
+  t.check(r.ok && made.seen.fronts === 0 &&
+          made.seen.asked[0].ids.join(',') === '7' && r.rows.length === 1 &&
+          r.rows[0].threadId === 7,
+          'a threadId (as a number too): that thread alone, not the front',
+          JSON.stringify(r.rows));
+
+  const refusals = [
+    [{ action: 'collect-garbage', target: '11' }, 404,
+     /no ready worker thread 11; it has 7, 9\./, 'a thread that is not ready'],
+    [{ action: 'collect-garbage', target: '4242' }, 404,
+     /no ready worker thread 4242/, 'a thread this node does not have'],
+    [{ action: 'collect-garbage', target: 'everything' }, 400,
+     /none of all, front or a worker thread's threadId/, 'a malformed target'],
+    [{ action: 'nope' }, 400,
+     /^Unknown action "nope"\. There is one: collect-garbage\.$/,
+     'an unknown action']
+  ];
+  for (let i = 0; i < refusals.length; i++) {
+    made = aCollectingInstance();
+    r = await made.instance.collectGarbage(refusals[i][0], 'alice');
+    t.check(!r.ok && r.status === refusals[i][1] &&
+            r.errorCode === 'STS-CORE-0160' &&
+            refusals[i][2].test(r.errors[0]) && made.seen.fronts === 0 &&
+            made.seen.asked.length === 0 && made.seen.rows.length === 0,
+            refusals[i][3] + ' is refused ' + refusals[i][1] +
+            ' (STS-CORE-0160) with nothing collected', JSON.stringify(r));
+  }
+
+  made = aCollectingInstance(aCollection(0, false));
+  r = await made.instance.collectGarbage({ action: 'collect-garbage',
+                                           target: 'front' }, 'alice');
+  t.check(!r.ok && r.status === 500 && r.errorCode === 'STS-CORE-0158' &&
+          /gc could not be obtained/.test(r.errors[0]) &&
+          made.seen.rows[0].errorCode === 'STS-CORE-0158',
+          'a front process that cannot collect, alone: 500, STS-CORE-0158, ' +
+          'and the audit row says so', JSON.stringify(r).slice(0, 400));
+  made = aCollectingInstance(aCollection(0, false));
+  r = await made.instance.collectGarbage({ action: 'collect-garbage' },
+                                         'alice');
+  t.check(r.ok && r.status === 200 && !r.rows[0].ok &&
+          r.rows[1].ok && made.seen.rows[0].errorCode === 'STS-CORE-0158',
+          'with the workers asked too: 200, the front\'s row says why, the ' +
+          'row is STS-CORE-0158', JSON.stringify(r.rows));
+
+  // THE PAGE (#611): the buttons for a reader who may write, none
+  // otherwise, and the answer drawn in place by the runtime's redraw.
+  // The server's translator is the renderers' default once i18n is loaded,
+  // so the page is drawn in English here.
+  require('../common/i18n');
+  const Page = require('../admin-ui/web_node_health');
+  const WebAnswers = require('../admin-ui/web_answers');
+  const kit = require('../admin-ui/web_kit');
+  const view = JSON.parse(JSON.stringify(
+    await anInstance(aCgroup()).instance.nodeHealthView()));
+  const writer = Page.render(view, kit.context({}, true));
+  const reader = Page.render(view, kit.context({}, false));
+  t.check(/<form method="post" action="\/admin\/node-health"/.test(writer) &&
+          /name="action" value="collect-garbage"/.test(writer) &&
+          /id="gc-collect-all"/.test(writer) &&
+          /name="target" value="all"/.test(writer) &&
+          /id="gc-collect-front"/.test(writer) &&
+          /stops the thread it runs in/.test(writer),
+          'a reader who may write gets Collect all, the front process\'s ' +
+          'Collect, and the sentence saying what a collection stops', '');
+  t.check(!/collect-garbage/.test(reader) && !/gc-collect/.test(reader),
+          'a reader who may not write gets no button', '');
+  const answer = JSON.parse(JSON.stringify(Object.assign({}, r,
+    { ok: true })));
+  const again = WebAnswers.redraw('/admin/node-health', 'collect-garbage',
+                                  {}, answer, view);
+  const drawn = again ? Page.render(again.json, kit.context({}, true)) : '';
+  t.check(!!again && again.banner === '' &&
+          again.json.state.collected.rows.length === 2 &&
+          /id="gc-result"/.test(drawn) && /gc could not be obtained/.test(drawn),
+          'the runtime draws the answer in place: a row per isolate above ' +
+          'the table, a failed isolate\'s reason in it', drawn.slice(0, 200));
+  const refused = WebAnswers.redraw('/admin/node-health', 'collect-garbage',
+    {}, { ok: false, errors: ['This node has no ready worker thread 4.'] },
+    view);
+  t.check(!!refused && /no ready worker thread 4/.test(refused.banner) &&
+          !refused.json.state.collected,
+          'a refusal is drawn in the strip, in the server\'s words',
+          refused ? refused.banner : 'no redraw');
+  log.debug("Leaving checkTheCollection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await checkTheArithmetic(t);
@@ -960,6 +1212,7 @@ async function run(t) {
   await checkEveryProcess(t);
   await checkEcs(t);
   await checkV1AndEcs(t);
+  await checkTheCollection(t);
   try {
     await checkTheChannelAndThePage(t);
   } finally {
