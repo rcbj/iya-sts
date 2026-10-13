@@ -782,6 +782,33 @@ class AccountApi {
   // THE ROUTES.
   // -------------------------------------------------------------------------
   /**
+   * The fields a body carries that its operation's schema does not declare:
+   * none where the schema is not an object or admits any member.
+   *
+   * @param schema - the operation's zod body schema
+   * @param body - the parsed body
+   * @returns the unknown field names, sorted
+   */
+  static unknownFields(schema: Json, body: Json): string[] {
+    helpers.log.debug("Entering AccountApi.unknownFields().");
+    const shape = schema && schema.shape;
+    const def = schema && schema._zod && schema._zod.def;
+    if (!shape || typeof shape !== 'object' || (def && def.catchall &&
+        def.catchall._zod && def.catchall._zod.def &&
+        def.catchall._zod.def.type !== 'never')) {
+      helpers.log.debug("Leaving AccountApi.unknownFields(). Not a closed " +
+                        "object.");
+      return [];
+    }
+    const unknown = Object.keys(body && typeof body === 'object' ? body : {})
+      .filter(function (name) {
+        return !Object.prototype.hasOwnProperty.call(shape, name);
+      }).sort();
+    helpers.log.debug("Leaving AccountApi.unknownFields().");
+    return unknown;
+  }
+
+  /**
    * Runs one operation: the gate where it takes a token, the query and body
    * checked against its schemas, then its handler.
    *
@@ -812,9 +839,20 @@ class AccountApi {
       input.query = asked.value;
     }
     if (op.method !== 'GET') {
+      // THE MEDIA TYPE IS EXACT, AND ASKED OF EVERY BODY-CARRYING REQUEST
+      // (2026-10-12), `/authn-api`'s test: `application/json`, with or
+      // without parameters. It matched /json/i anywhere, and only where the
+      // operation declared a body that was non-empty, so a page on another
+      // site could reach an operation that takes no token (an activation, a
+      // reset, a forgotten password) with a CORS-safelisted
+      // `text/plain; x=json` and no preflight. A request with no body at
+      // all sends no type and is not refused for it.
       const type = String((req.headers && req.headers['content-type']) || '');
-      if (op.body && !/json/i.test(type) && req.body !== undefined &&
-          String(req.body || '').length) {
+      const sent = req.body !== undefined && req.body !== null &&
+        (typeof req.body === 'string' ? req.body.length > 0
+          : (Buffer.isBuffer(req.body) ? req.body.length > 0
+            : Object.keys(req.body).length > 0));
+      if ((type || sent) && !/^application\/json\s*(;|$)/i.test(type)) {
         log.debug("Leaving AccountApi.run(). Not JSON.");
         return this.refuse(res, 415, 'STS-ACCOUNT-0017',
           'This API takes a JSON request body (Content-Type: ' +
@@ -822,6 +860,22 @@ class AccountApi {
       }
       const parsed = parseBody(req) || {};
       if (op.body) {
+        // A FIELD THE OPERATION DOES NOT TAKE IS REFUSED, NOT DROPPED
+        // (2026-10-12), as `/authn-api`, `/gnap-api` and `/admin-api` refuse
+        // one: a caller that sends a field it believes does something must
+        // be told it does nothing. Asked of the operation's declared object
+        // shape; a schema that is not an object, or one that admits any
+        // member (`passthrough`), is left to itself.
+        const unknown = AccountApi.unknownFields(op.body, parsed);
+        if (unknown.length) {
+          log.debug("Leaving AccountApi.run(). An unknown field.");
+          return this.refuse(res, 400, 'STS-ACCOUNT-0018',
+            'body: ' + unknown.map(function (name) {
+              return '"' + name + '"';
+            }).join(', ') + (unknown.length === 1 ? ' is not a field'
+                                                  : ' are not fields') +
+            ' this operation takes.');
+        }
         const checked = validation.checkParsed(parsed, 'body', op.body);
         if (!checked.ok) {
           log.debug("Leaving AccountApi.run(). Body refused.");

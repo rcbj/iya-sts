@@ -70,6 +70,20 @@ class AccountApiSpec {
   }
 
   /**
+   * Whether a zod object schema admits members it does not declare.
+   *
+   * @param schema - a zod schema
+   * @returns true for a `passthrough` or `catchall` object
+   */
+  static admitsAny(schema: Json): boolean {
+    log.debug("Entering AccountApiSpec.admitsAny().");
+    const def = schema && schema._zod && schema._zod.def;
+    log.debug("Leaving AccountApiSpec.admitsAny().");
+    return !!(def && def.catchall && def.catchall._zod &&
+              def.catchall._zod.def && def.catchall._zod.def.type !== 'never');
+  }
+
+  /**
    * The OpenAPI path of an express route: `:id` becomes `{id}`.
    *
    * @param route - the express path
@@ -134,6 +148,13 @@ class AccountApiSpec {
       // A zod body is what the wrapper checks; `bodyDoc` documents one the
       // handler checks itself.
       const body = AccountApiSpec.jsonSchemaOf(op.body) || op.bodyDoc || null;
+      // A field the operation does not take is refused (`run()`), so an
+      // object body says so.
+      if (op.body && body && body.type === 'object' &&
+          body.additionalProperties === undefined &&
+          !AccountApiSpec.admitsAny(op.body)) {
+        body.additionalProperties = false;
+      }
       const responses: Json = {
         200: { description: 'The answer.',
                content: { 'application/json': {

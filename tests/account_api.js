@@ -28,6 +28,9 @@
 //   4. THE PERSON IS THE TOKEN'S: a passkey another person holds cannot be
 //      removed by naming its id.
 //   5. THE DOCUMENT is public and needs no token.
+//   6. THE BODY (2026-10-12): a field the operation does not take is
+//      refused, not dropped, and a body that is not `application/json` is
+//      refused 415 — at an operation that takes no token too.
 //
 // A child process for `admin_api_me.js`'s reason: the stack is built once,
 // with a composition root, and a test process that loaded half of it would
@@ -170,6 +173,71 @@ function childMain() {
          '2c. every form a page posts under /portal has the operation that ' +
          'mirrors it', formsWithoutOperation.join('; '));
 
+    // --- 2d. a form sends only what its operation takes -------------------
+    // The account API refuses a body field its operation does not declare
+    // (2026-10-12), so a form whose runtime sends a field the schema lacks
+    // would be refused by its own service. Every named control of every
+    // POST form a page draws, and the action's own query, is checked
+    // against the operation's documented body, for the person signed in.
+    const bodyFields = function (op) {
+      const p = String(op.path).replace(/:([A-Za-z_]+)/g, '{$1}');
+      const entry = doc.json && doc.json.paths && doc.json.paths[p] &&
+        doc.json.paths[p].post;
+      const schema = entry && entry.requestBody &&
+        entry.requestBody.content['application/json'].schema;
+      return schema && schema.type === 'object' ? schema : null;
+    };
+    const strays = [];
+    let formsChecked = 0;
+    const people = [[mallory, me.json]];
+    for (const pair of people) {
+      for (const page of table.PAGES) {
+        if ((page.access || 'person') !== 'person') {
+          continue;
+        }
+        const r = await pair[0].api('GET', page.operation);
+        let html = '';
+        try {
+          html = page.render(r.json, { t: t, query: {}, prefix: '',
+            origin: base, me: pair[1], locale: pair[1].locale,
+            version: pair[1].version, here: page.path });
+        } catch (e) {
+          html = '';
+        }
+        const forms = html.match(
+          /<form[^>]*method="post"[^>]*>[\s\S]*?<\/form>/g) || [];
+        forms.forEach(function (form) {
+          const head = /<form[^>]*>/.exec(form)[0];
+          const action = (/action="([^"]+)"/.exec(head) || [])[1] || '';
+          const op = mirrored['POST ' + action.split('?')[0]];
+          const schema = op ? bodyFields(op) : null;
+          if (!schema || schema.additionalProperties !== false) {
+            return;
+          }
+          formsChecked++;
+          const names = [];
+          (form.match(/<(input|select|textarea|button)\b[^>]*>/g) || [])
+            .forEach(function (tag) {
+              const n = /\sname="([^"]+)"/.exec(tag);
+              if (n && n[1] !== 'csrf_token') {
+                names.push(n[1]);
+              }
+            });
+          new URLSearchParams(action.split('?')[1] || '')
+            .forEach(function (v, n) { names.push(n); });
+          names.forEach(function (n) {
+            if (!Object.prototype.hasOwnProperty.call(
+                  schema.properties || {}, n)) {
+              strays.push(page.path + ' -> ' + action + ': ' + n);
+            }
+          });
+        });
+      }
+    }
+    note(formsChecked > 10 && !strays.length,
+         '2d. every field a portal form sends is one its operation takes ' +
+         '(' + formsChecked + ' forms)', strays.join('; '));
+
     // --- 3. the gate ---------------------------------------------------------
     const bare = await fetch(base + '/account-api/me');
     note(bare.status === 401 &&
@@ -200,6 +268,56 @@ function childMain() {
          '4. MALLORY CANNOT REMOVE ALICE\'S PASSKEY by naming its id: the ' +
          'account is the token\'s, and the id is looked up among his own',
          brief(stolen));
+
+    // --- 6. the body is what the operation takes, as JSON -----------------
+    // A field the operation does not declare is refused, not dropped
+    // (2026-10-12), with the body's code and nothing done.
+    let lastLocale = null;
+    const langOf = function () {
+      return lastLocale;
+    };
+    const readLocale = async function () {
+      const r = await mallory.api('GET', '/account-api/me');
+      lastLocale = r.json ? r.json.locale : null;
+    };
+    await readLocale();
+    const before = JSON.stringify(langOf() || null);
+    const extra = await mallory.api('POST', '/account-api/language',
+                                    { lang: 'fr', bogus: 'x' });
+    await readLocale();
+    note(extra.status === 400 &&
+         /bogus\W+is not a field/.test(JSON.stringify(extra.json)) &&
+         JSON.stringify(langOf() || null) === before,
+         '6a. a body field the operation does not take is refused 400, and ' +
+         'nothing is changed', brief(extra));
+    const plain = await mallory.api('POST', '/account-api/language',
+                                    { lang: 'fr' });
+    await readLocale();
+    note(plain.status === 200 &&
+         JSON.stringify(langOf() || null) !== before,
+         '6b. the same body without it is accepted, and changes the language',
+         brief(plain));
+    // A CORS-safelisted media type that merely contains "json" is not JSON,
+    // on an operation that takes no token: no preflight would stop it.
+    const notJson = await fetch(base + '/account-api/forgot-password', {
+      method: 'POST', headers: { 'content-type': 'text/plain; x=json' },
+      body: JSON.stringify({ account: MALLORY }) });
+    note(notJson.status === 415,
+         '6c. text/plain; x=json is refused 415 at an operation that takes ' +
+         'no token', notJson.status);
+    const asForm = await fetch(base + '/account-api/forgot-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'account=' + encodeURIComponent(MALLORY) });
+    note(asForm.status === 415,
+         '6d. a form-encoded body is refused 415', asForm.status);
+    const exact = await fetch(base + '/account-api/forgot-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ account: MALLORY }) });
+    note(exact.status !== 415,
+         '6e. application/json with a parameter is accepted as JSON',
+         exact.status);
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));

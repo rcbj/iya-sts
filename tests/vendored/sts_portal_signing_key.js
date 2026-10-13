@@ -552,15 +552,26 @@ async function test() {
   // 6. THE RULE THIS PORTAL IS BUILT ON: the identity is the session's.
   // -------------------------------------------------------------------------
   log.info("=== 6. a username in the body changes nothing ===");
+  // SINCE 2026-10-12 THE ACCOUNT API REFUSES A FIELD AN OPERATION DOES NOT
+  // TAKE, so the names are refused outright and nothing is issued; the same
+  // generate with only its own field then issues to the SIGNED-IN person.
   const smuggled = await act(b, "/portal/signing-key",
                              { action: "generate", username: OTHER,
                                user: OTHER, identifier: OTHER });
   check("a generate carrying somebody else's name in every parameter a " +
-        "future author might plausibly read still issues to the SIGNED-IN " +
-        "person", function () {
-          assert.strictEqual(smuggled.status, 200,
+        "future author might plausibly read is refused 400, naming them",
+        function () {
+          assert.strictEqual(smuggled.status, 400,
             "it answered " + smuggled.status);
-          assert.ok(privateKeyOn(smuggled.text), "no key came back");
+          assert.ok(!privateKeyOn(smuggled.text), "a key came back");
+        });
+  const generated = await act(b, "/portal/signing-key",
+                              { action: "generate" });
+  check("and the same generate with only its own field issues to the " +
+        "SIGNED-IN person", function () {
+          assert.strictEqual(generated.status, 200,
+            "it answered " + generated.status);
+          assert.ok(privateKeyOn(generated.text), "no key came back");
         });
   const theirs = await apiGet("/users?user=" + encodeURIComponent(OTHER));
   check("**and the other person's entry holds NOTHING** — which is the " +
@@ -584,7 +595,7 @@ async function test() {
           });
         });
 
-  const replacedKid = kidOn(smuggled.text);
+  const replacedKid = kidOn(generated.text);
   check("generating again REPLACED the pair rather than adding one — a " +
         "person holds one signing key, and two would mean a verifier trying " +
         "both",
@@ -606,7 +617,7 @@ async function test() {
   // 7. TAKING IT OFF.
   // -------------------------------------------------------------------------
   log.info("=== 7. taking it off ===");
-  const newPem = privateKeyOn(smuggled.text);
+  const newPem = privateKeyOn(generated.text);
   const removed = await act(b, "/portal/signing-key", { action: "remove" });
   check("the remove answers a MESSAGE and no view — there is nothing to hand " +
         "back, which is why this half carries no page and the generate does",
