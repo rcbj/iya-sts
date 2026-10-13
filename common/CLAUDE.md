@@ -11054,6 +11054,8 @@ SCIM client across cells*):
 | Operation | Asked by | Answers |
 |---|---|---|
 | `scim-client-group-share` | a group's OWNER cell before it deletes the group, or PUTs the merged membership to a provider without PATCH; and, with `recheck`, another cell telling the owner its share changed | this cell's share of the group at that client — the SERVICE PROVIDER'S opaque ids of its pushed, linked members, never an attribute; with `recheck` the owner queues the group |
+| `scim-client-summary` | the cell drawing Protocols → SCIM → Clients, `GET /admin-api/scim/clients` or `GET /admin-api/scim` (`acrossCells()`), each call bounded by the channel's timeout | every client's counts, pause and last reconciliation in this cell; for the one client named, its queued, retrying and dead deliveries ONLY where `releaseDecision()` (purpose `directory-list`) releases this cell's residents to the asking cell — they name residents. Unanswered: drawn unreachable (`STS-SCIMC-0034`) |
+| `scim-client-act` | `act()`, for `retry-delivery`, `retry-dead`, `purge-dead`, `reconcile` and `deliver-now` with a `cell` naming another cell, or without one (every cell) | the act done HERE (`local`, so it never fans out again), its error code spelt out as `code`, since a Symbol does not cross JSON |
 
 | Module | What it is |
 |---|---|

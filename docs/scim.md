@@ -791,6 +791,39 @@ resource whose `externalId` is a projection, or a person of another cell, is
 left to that cell. Each cell reconciles its share of every group in scope,
 and only the owner cell considers deleting a group it did not push itself.
 
+**Every cell on one page.** The **Clients** tab and each client's page show
+every cell's queues, gathered from the other cells when the page is drawn:
+each cell's counts (queued, retrying, dead, sent) and the pause, and on the
+client's page each other cell's retry queue and dead letters. A cell that
+cannot be reached is shown as **unreachable**, never left off
+(`STS-SCIMC-0034`). Another cell's queued deliveries name the people homed
+there, so they are shown only where the issuance policy releases that cell's
+residents to the cell you are signed in through (`release-attributes`,
+purpose `directory-list`, as for another cell's people on Directory); the
+counts are always shown. `GET /admin-api/scim/clients` and
+`GET /admin-api/scim` carry the same, as `byCell` on each client and on the
+client's page.
+
+**An act may name a cell.** `retry-delivery`, `retry-dead`, `purge-dead`,
+`reconcile` and `deliver-now` take a `cell` member and are done in that cell
+only. Without one they are done in every cell, and the answer lists each
+cell's result in `cells`, a cell that cannot be reached as such:
+
+```
+POST /admin-api/scim/clients/purge-dead
+{ "id": "partner-idp", "cell": "euc1" }
+```
+
+A `cell` the service does not have, a `cell` on an act about the client
+itself (`add-client`, `update-client`, `remove-client`,
+`issue-certificate`, `test-connection`), or any `cell` in a service that is
+one cell, is refused (`STS-SCIMC-0033`). An act sent to a cell that cannot be
+reached is refused too (`STS-SCIMC-0034`).
+
+**No cell is ever named to a service provider or a person.** No URL, header,
+body or error the service provider sees, and nothing an end user sees, names a
+cell. Only the console and `/admin-api` do.
+
 ### What it does not do
 
 * **Bulk** (RFC 7644 section 3.7). Every change is its own request.
@@ -835,6 +868,7 @@ a log line. The most common:
 | `STS-SCIMC-0030` | a required attribute missing |
 | `STS-SCIMC-0031` | in a service deployed as cells, the issuance policy kept a person's data out of the provider's jurisdiction; the person is out of scope |
 | `STS-SCIMC-0032` | in a service deployed as cells, another cell could not be asked for its share of a group; the group is not deleted or replaced, and the delivery is retried |
+| `STS-SCIMC-0033`, `0034` | an act named a cell it cannot go to; another cell did not answer the console's question or an act |
 
 [Error codes](error-codes.md) lists all of them.
 

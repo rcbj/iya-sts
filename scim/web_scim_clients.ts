@@ -24,6 +24,11 @@
 // posts nothing and an update keeps a member it was not given: a checkbox
 // could turn a client on and never off.
 //
+// IN A SERVICE DEPLOYED AS CELLS (#553) the view carries `byCell`: the tab
+// draws one line per cell (counts, pause, unreachable), and the page a row
+// per cell whose acts carry that cell, then each other cell's retry queue
+// and dead letters where they were released.
+//
 // ITS WORDS ARE THE `consoleScimClients` NAMESPACE (#539). What the VIEW says
 // — a problem sentence, a delivery's last error — is the server's and drawn
 // as it comes, in English.
@@ -172,14 +177,98 @@ class ScimClientsPage {
                 list(r.cells), 2, 'euc1');
   }
 
-  // A form carrying one act and the client's id.
+  // A form carrying one act and the client's id — and, in a service
+  // deployed as cells, the cell it is sent to (#553); none is every cell.
   static act(action: string, id: string, label: string,
-             danger?: boolean): string {
+             danger?: boolean, cell?: string): string {
     return '<form method="post" action="' + PAGE + '" class="inline">' +
       '<input type="hidden" name="action" value="' + action + '">' +
       '<input type="hidden" name="id" value="' + esc(id) + '">' +
+      (cell ? '<input type="hidden" name="cell" value="' + esc(cell) +
+              '">' : '') +
       '<button type="submit"' + (danger ? ' class="danger"' : '') + '>' +
       esc(label) + '</button></form>';
+  }
+
+  // One cell's state of a client, as a line (#553): its counts and pause,
+  // or that it does not push, or that it could not be reached.
+  static cellState(t: Json, one: Json): string {
+    if (!one.reachable) {
+      return '<span class="state-revoked">' +
+             t.html('consoleScimClients.cells.unreachable') + '</span>';
+    }
+    if (one.pushes === false) {
+      return '<span class="state-none">' +
+             t.html('consoleScimClients.cells.notPushing') + '</span>';
+    }
+    return this.counts(t, one.counts) +
+      (one.pausedUntil ? '<br><span class="state-revoked">' +
+        t.html('consoleScimClients.row.paused', { until: one.pausedUntil,
+                                                  failures: one.failures }) +
+        '</span>' : '');
+  }
+
+  // Every cell's state of a client on the tab's row (#553): one line each.
+  static cellLines(t: Json, c: Json): string {
+    return (c.byCell || []).map((one: Json) => {
+      return '<div class="sub">' + esc(one.cell) +
+        (one.here ? ' (' + t.html('consoleScimClients.cells.here') + ')'
+                  : '') + ': ' + this.cellState(t, one) + '</div>';
+    }).join('');
+  }
+
+  // A client's page in a service deployed as cells (#553): a row per cell
+  // with its acts, and each other cell's queues where they are released.
+  static cellsSection(t: Json, c: Json, ctx: Json): string {
+    const list: Json[] = c.byCell || [];
+    if (!list.length) {
+      return '';
+    }
+    const rows = list.map((one: Json) => {
+      return '<tr><td><code>' + esc(one.cell) + '</code>' +
+        (one.here ? '<br><span class="sub">' +
+                    t.html('consoleScimClients.cells.here') + '</span>'
+                  : '') + '</td><td>' + this.cellState(t, one) +
+        '</td><td class="act">' + (ctx.write && one.reachable
+          ? this.act('reconcile', c.identifier,
+                     t.text('consoleScimClients.acts.reconcile'), false,
+                     one.cell) + ' ' +
+            this.act('deliver-now', c.identifier,
+                     t.text('consoleScimClients.acts.deliverNow'), false,
+                     one.cell) +
+            (one.counts && one.counts.dead
+              ? ' ' + this.act('retry-dead', c.identifier,
+                               t.text('consoleScimClients.acts.retryDead'),
+                               false, one.cell) + ' ' +
+                this.act('purge-dead', c.identifier,
+                         t.text('consoleScimClients.acts.purgeDead'), true,
+                         one.cell)
+              : '')
+          : '') + '</td></tr>';
+    }).join('');
+    const queues = list.filter(function (one: Json) {
+      return !one.here && one.reachable && one.pushes !== false;
+    }).map((one: Json) => {
+      if (one.withheld || !one.dead) {
+        return one.withheld
+          ? '<p class="sub">' + esc(one.cell) + ': ' +
+            t.html('consoleScimClients.cells.withheld') + '</p>'
+          : '';
+      }
+      return '<h4>' + t.html('consoleScimClients.cells.retrying',
+                             { cell: one.cell }) + '</h4>' +
+        this.queue(t, (one.retrying || []).concat(one.queued || []), false,
+                   ctx, one.cell) +
+        '<h4>' + t.html('consoleScimClients.cells.dead', { cell: one.cell }) +
+        '</h4>' + this.queue(t, one.dead || [], true, ctx, one.cell);
+    }).join('');
+    return '<h3 id="scim-client-cells">' +
+      t.html('consoleScimClients.cells.heading') + '</h3>' +
+      kit.note(t.html('consoleScimClients.cells.note')) +
+      '<table><thead><tr><th>' + t.html('consoleScimClients.cells.thCell') +
+      '</th><th>' + t.html('consoleScimClients.thQueues') +
+      '</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>' +
+      queues;
   }
 
   // The queue counts of a client, as a cell.
@@ -211,7 +300,8 @@ class ScimClientsPage {
       (c.pausedUntil ? '<br><span class="state-revoked">' +
         t.html('consoleScimClients.row.paused', { until: c.pausedUntil,
                                                   failures: c.failures }) +
-        '</span>' : '') + '</td><td>' + this.counts(t, c.counts) +
+        '</span>' : '') + '</td><td>' +
+      (c.byCell ? this.cellLines(t, c) : this.counts(t, c.counts)) +
       (c.lastReconcileAt ? '<br><span class="sub">' +
         t.html('consoleScimClients.row.reconciled',
                { at: c.lastReconcileAt }) + '</span>' : '') + '</td>' +
@@ -263,8 +353,10 @@ class ScimClientsPage {
       '<p class="links"><code>GET /admin-api/scim/clients</code></p>';
   }
 
-  // One queue's table.
-  static queue(t: Json, rows: Json[], dead: boolean, ctx: Json): string {
+  // One queue's table; `cell`, in a service deployed as cells, is the cell
+  // the rows are in, which a retry is sent to (#553).
+  static queue(t: Json, rows: Json[], dead: boolean, ctx: Json,
+               cell?: string): string {
     if (!rows || !rows.length) {
       return '<p class="sub">' + t.html('consoleScimClients.detail.empty') +
              '</p>';
@@ -287,6 +379,8 @@ class ScimClientsPage {
             ? '<form method="post" action="' + PAGE + '" class="inline">' +
               '<input type="hidden" name="action" value="retry-delivery">' +
               '<input type="hidden" name="id" value="' + esc(r.id) + '">' +
+              (cell ? '<input type="hidden" name="cell" value="' +
+                      esc(cell) + '">' : '') +
               '<button type="submit">' +
               t.html('consoleScimClients.acts.retry') + '</button></form>'
             : '') + '</td></tr>';
@@ -345,6 +439,7 @@ class ScimClientsPage {
                    t.text('consoleScimClients.acts.issueCertificate')) +
           '</p>'
         : '') +
+      this.cellsSection(t, c, ctx) +
       '<h3 id="scim-client-discovery">' +
       t.html('consoleScimClients.detail.discovery') + '</h3>' +
       (d ? '<table><tr><th>PATCH</th><td>' + (d.patch ? '✓' : '—') +
@@ -366,10 +461,11 @@ class ScimClientsPage {
               ' · ' + esc(cert.notAfter || '') + '</span></p>' : '') +
       '<h3 id="scim-client-retrying">' +
       t.html('consoleScimClients.detail.retrying') + '</h3>' +
-      this.queue(t, (q.retrying || []).concat(q.queued || []), false, ctx) +
+      this.queue(t, (q.retrying || []).concat(q.queued || []), false, ctx,
+                 view.cellId || '') +
       '<h3 id="scim-client-dead">' +
       t.html('consoleScimClients.detail.dead') + '</h3>' +
-      this.queue(t, q.dead || [], true, ctx) +
+      this.queue(t, q.dead || [], true, ctx, view.cellId || '') +
       (ctx.write && q.counts && q.counts.dead
         ? '<p>' + this.act('retry-dead', c.identifier,
                            t.text('consoleScimClients.acts.retryDead')) + ' ' +

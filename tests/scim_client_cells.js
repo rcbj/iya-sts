@@ -44,6 +44,12 @@
 //      over only once the probing cell has been silent past the pause; the
 //      concurrency budget is scimClient.concurrency split across the cells
 //      that push, and the queue holds a cell to it.
+//   G. EVERY CELL ON ONE PAGE: the client list and page carry each cell's
+//      counts and pause over `scim-client-summary`, an unreachable cell
+//      listed as such; another cell's queues only where the policy releases
+//      them; an act with `cell` goes to that cell alone, without one to
+//      every cell; a cell the service lacks, or a cell on a client act, is
+//      refused (STS-SCIMC-0033); an unreachable cell, STS-SCIMC-0034.
 //   Z. NOTHING A SERVICE PROVIDER SEES NAMES A CELL, and a service that is
 //      one cell asks no transfer question.
 // ===========================================================================
@@ -56,6 +62,7 @@ const config = require('../common/config');
 const gate = require('../common/issuance_gate');
 const cellTransfer = require('../common/cell_transfer');
 const scimClient = require('../scim/scim_client');
+const errorCodes = require('../common/error_codes');
 
 const log = require('bunyan').createLogger({ name: 'scim_client_cells',
   level: process.env.LOG_LEVEL || 'info' });
@@ -1137,6 +1144,124 @@ async function sharedPause(t, a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// G. EVERY CELL ON ONE PAGE, AND ACTS SENT TO A CELL.
+// ---------------------------------------------------------------------------
+async function consoleAcrossCells(t, a, b) {
+  log.debug('Entering consoleAcrossCells().');
+  setClient();
+  const id = 'pusher-' + RUN;
+  a.dir.add('vic');
+  b.dir.add('uma');
+  sp.fail.push({ from: 'cella', method: 'POST', path: '/Users',
+                 status: 400 });
+  sp.fail.push({ from: 'cellb', method: 'POST', path: '/Users',
+                 status: 400 });
+  changed(a, 'vic');
+  changed(b, 'uma');
+  await drain([a, b]);
+  const list = await a.instance.viewAcrossCells({});
+  const row = list.clients[0];
+  t.check(row.byCell && row.byCell.length === 2 && row.byCell[0].here &&
+          row.byCell[0].cell === 'cella' && row.byCell[1].reachable &&
+          row.byCell[1].counts.dead === 1 && row.byCell[0].counts.dead === 1,
+          'G1. the client list shows each cell\'s queues (gathered over ' +
+          'scim-client-summary)', row.byCell);
+  world.unreachable.cellb = true;
+  const away = await a.instance.viewAcrossCells({});
+  t.check(away.clients[0].byCell.length === 2 &&
+          away.clients[0].byCell[1].reachable === false,
+          'G2. a cell that cannot be reached is shown unreachable, never ' +
+          'left off');
+  world.unreachable.cellb = false;
+  const page = await a.instance.viewAcrossCells({ client: id });
+  const theirs = page.client.byCell[1];
+  t.check(!!theirs.withheld && !theirs.dead,
+          'G3. another cell\'s queued deliveries (which name its residents) ' +
+          'are withheld where the policy does not release them');
+  world.permitted = world.permitted.concat(['ca>us']);
+  const released = await a.instance.viewAcrossCells({ client: id });
+  const shown = released.client.byCell[1];
+  t.check(!shown.withheld && shown.dead && shown.dead.length === 1 &&
+          shown.dead[0].uuid === uuidFor('uma'),
+          'G4. and shown on the client\'s page once the realm lists the ' +
+          'transfer', shown);
+  world.permitted = ['us>eu', 'ca>eu'];
+
+  const purged = await a.instance.act({ action: 'purge-dead', id: id,
+                                        cell: 'cellb' }, { actor: 'tester' });
+  t.check(purged.ok && rowsOf(b, 'dead').length === 0 &&
+          rowsOf(a, 'dead').length === 1,
+          'G5. an act with `cell` goes to that cell alone', purged);
+  b.dir.add('wes');
+  sp.fail.push({ from: 'cellb', method: 'POST', path: '/Users',
+                 status: 400 });
+  changed(b, 'wes');
+  await drain([b]);
+  const everywhere = await a.instance.act({ action: 'retry-dead', id: id },
+                                          { actor: 'tester' });
+  await drain([a, b]);
+  t.check(everywhere.ok && everywhere.cells.length === 2 &&
+          everywhere.cells.every(function (one) {
+            return one.reachable && one.ok;
+          }) && !!userThere('vic') && !!userThere('wes'),
+          'G6. without `cell` it is done in every cell, each cell\'s result ' +
+          'listed', everywhere.cells);
+  const nowhere = await a.instance.act({ action: 'reconcile', id: id,
+                                         cell: 'nowhere' },
+                                       { actor: 'tester' });
+  const onClient = await a.instance.act({ action: 'update-client', id: id,
+                                          cell: 'cellb' },
+                                        { actor: 'tester' });
+  t.check(!nowhere.ok && errorCodes.codeOf(nowhere) === 'STS-SCIMC-0033' &&
+          !onClient.ok && errorCodes.codeOf(onClient) === 'STS-SCIMC-0033',
+          'G7. a cell the service lacks, or a cell on an act about the ' +
+          'client itself, is refused (STS-SCIMC-0033)');
+  world.unreachable.cellb = true;
+  const lost = await a.instance.act({ action: 'deliver-now', id: id,
+                                      cell: 'cellb' }, { actor: 'tester' });
+  const partly = await a.instance.act({ action: 'deliver-now', id: id },
+                                      { actor: 'tester' });
+  world.unreachable.cellb = false;
+  t.check(!lost.ok && errorCodes.codeOf(lost) === 'STS-SCIMC-0034' &&
+          partly.ok && partly.cells.length === 2 &&
+          partly.cells[1].reachable === false,
+          'G8. a cell that cannot be reached: an act sent to it is refused ' +
+          '(STS-SCIMC-0034), and one sent everywhere lists it unreachable',
+          partly.cells);
+  // THE CONSOLE'S RENDERER draws what the view carries.
+  const page2 = require('../scim/web_scim_clients');
+  const tr = {
+    html: function (key, params) {
+      return key + (params ? JSON.stringify(params) : '');
+    },
+    text: function (key) {
+      return key;
+    }
+  };
+  world.unreachable.cellb = true;
+  const drawnAway = page2.tab({ t: tr, write: true },
+                              await a.instance.viewAcrossCells({}));
+  world.unreachable.cellb = false;
+  world.permitted = world.permitted.concat(['ca>us']);
+  b.dir.add('xan');
+  sp.fail.push({ from: 'cellb', method: 'POST', path: '/Users',
+                 status: 400 });
+  changed(b, 'xan');
+  await drain([b]);
+  const drawn = page2.detail({ t: tr, write: true },
+                             await a.instance.viewAcrossCells({
+                               client: id }));
+  world.permitted = ['us>eu', 'ca>eu'];
+  t.check(/consoleScimClients\.cells\.unreachable/.test(drawnAway) &&
+          /name="cell" value="cellb"/.test(drawn) &&
+          /consoleScimClients\.cells\.dead\{"cell":"cellb"\}/.test(drawn) &&
+          drawn.indexOf(uuidFor('xan')) >= 0,
+          'G9. the console draws each cell\'s row, its acts carrying the ' +
+          'cell, the other cell\'s dead letters, and an unreachable cell');
+  log.debug('Leaving consoleAcrossCells().');
+}
+
+// ---------------------------------------------------------------------------
 // Z. WHAT A SERVICE PROVIDER SEES, AND ONE CELL.
 // ---------------------------------------------------------------------------
 function noCellNamed(t) {
@@ -1167,6 +1292,17 @@ async function oneCell(t) {
                                  clientId: 'pusher-' + RUN }) === null &&
           !world.pauses.realmMap(realms.currentId()).has('solo'),
           'Z3. and has no lane of its own nor a shared pause');
+  const refused = await solo.instance.act({ action: 'reconcile',
+                                            id: 'pusher-' + RUN,
+                                            cell: 'cella' },
+                                          { actor: 'tester' });
+  const view = await solo.instance.viewAcrossCells({});
+  t.check(!refused.ok && errorCodes.codeOf(refused) === 'STS-SCIMC-0033' &&
+          view.clients.length === 1 && view.clients[0].byCell === undefined,
+          'Z4. one cell refuses an act naming a cell, and its view has no ' +
+          'cells', JSON.stringify({ refused: refused,
+                                    code: errorCodes.codeOf(refused),
+                                    clients: view.clients.length }));
   world.multi = true;
   world.permitted = ['us>eu', 'ca>eu'];
   log.debug('Leaving oneCell().');
@@ -1186,6 +1322,7 @@ async function run(t) {
       await groupsWithPatch(t, a, b);
       await groupsWithoutPatch(t, a, b);
       await sharedPause(t, a, b);
+      await consoleAcrossCells(t, a, b);
       noCellNamed(t);
       await oneCell(t);
     });
@@ -1202,6 +1339,7 @@ module.exports = {
             'index and the cell map stubbed: home-cell pushing, the ' +
             'scim-provision transfer decision, a move as a handover, and ' +
             'groups by per-cell PATCH, owner-cell deletion and the merged ' +
-            'PUT without PATCH',
+            'PUT without PATCH, the shared pause and concurrency budget, ' +
+            'and every cell\'s queues and cell-routed acts',
   run: run
 };

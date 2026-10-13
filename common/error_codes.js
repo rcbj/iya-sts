@@ -12885,7 +12885,7 @@ const CODES = [
     summary: 'A SCIM client definition was refused: an unknown choice, an unusable URL, a missing credential its method needs, an unreadable LDAP filter or certificate, or a write the application registry refused.',
     spec: 'HTTP 400 (console and API)' },
   { code: 'STS-SCIMC-0018',
-    summary: 'A SCIM client action failed unexpectedly.',
+    summary: 'A SCIM client action, or the view of the clients across cells, failed unexpectedly.',
     spec: 'HTTP 500 (console and API)' },
   { code: 'STS-SCIMC-0019',
     summary: 'A SCIM service provider\'s /ServiceProviderConfig or /ResourceTypes could not be read or was not a SCIM document (RFC 7644 section 4); the client assumes /Users and /Groups and no PATCH, filter or ETag support.',
@@ -12929,6 +12929,13 @@ const CODES = [
   { code: 'STS-SCIMC-0032',
     summary: 'In a service deployed as cells, another cell did not answer scim-client-group-share (#553): a group\'s owner cell could not learn every cell\'s share before deleting the group or replacing its members on a service provider without PATCH, or a cell could not tell the owner its share changed. Nothing is deleted or replaced; the delivery is retried, and the provider is not paused.',
     spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0033',
+    summary: 'An outbound SCIM client act named a `cell` it cannot go to (#553): the service is not deployed as cells, the service has no such cell, or the act is on the client itself (add, change, remove, issue a certificate, test the connection) rather than on a cell\'s queue. Nothing was done.',
+    spec: 'HTTP 400 (/admin-api)' },
+  { code: 'STS-SCIMC-0034',
+    summary: 'In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell\'s result as unreachable).',
+    spec: 'HTTP 400 (/admin-api) when the act named that cell; none ' +
+      'otherwise' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',

@@ -951,7 +951,10 @@ cannot, and the job's failure says so.
 **What has NO test yet**: the over-HTTP job has never run (written
 2026-10-13; the integrator's run is its first); a real third-party service
 provider (Entra ID, Okta, a SaaS) — the in-process provider is written to
-RFC 7644, and interop beyond it is unproven; the two-cell behaviour (#553);
+RFC 7644, and interop beyond it is unproven; the two-cell behaviour over a
+real channel and routing index (`tests/scim_client_cells.js` stubs both;
+`tests/vendored/sts_cells_scim_client.js` is the `--modes=cells` job, not
+yet run when written);
 `web_scim_clients.ts`'s rendering (no in-process renderer test, unlike the
 console's older pages); the deliveries store across a restart and across two
 nodes (the generation and tombstone fixes above are asserted in one process
@@ -1052,6 +1055,26 @@ own limit): `ceil(scimClient.concurrency / pushing cells)`, at least one,
 remembered five seconds per client. In one cell there is no lane, so the
 queue's own limit is the budget, exactly as before. The optional
 `scimClientMaxRequestsPerSecond` the issue mentions is NOT built.
+
+**EVERY CELL ON ONE PAGE, AND AN ACT NAMES ITS CELL** (section 7). The
+view stays synchronous and single-cell (`view()`, which `tests/scim_client.js`
+reads); `acrossCells()` lays every cell's state over it — `byCell`, NOT
+`cells`, which is already the client's `scimClientCells` list and would
+have drawn per-cell objects into the Edit form — from `scim-client-summary`,
+which `GET /admin-api/scim/clients` and `GET /admin-api/scim` (through
+`admin_views.scimJsonAcrossCells()`) await. A cell that does not answer is
+`reachable: false`, never dropped. Another cell's QUEUE ROWS carry its
+residents' names and UUIDs, so they cross only where the policy releases
+that cell's residents to the asking cell (purpose `directory-list`, the
+Directory page's question); the counts always cross. `act()` routes the five
+cell acts: `cell` to that cell over `scim-client-act`, none to every cell
+(`cells` in the answer, a refusal only when no cell did it); a `cell` on a
+client act, an unknown cell, or one cell's service, is `STS-SCIMC-0033`, an
+unreachable named cell `STS-SCIMC-0034`. The console's per-cell row carries
+`cell` on each act form, and a dead letter's Retry in another cell's list
+too — rule 7's parity, the API taking the same member. `deliver-now` in every
+cell lifts the one global pause, idempotently. Nothing the provider sees
+names a cell (`tests/scim_client_cells.js` Z1 reads every request).
 
 **RECONCILIATION IS PER CELL** (section 6). Each cell pushes its own
 pushable residents; of the remote resources, it deprovisions only what it

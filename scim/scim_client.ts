@@ -119,7 +119,10 @@
 //     PUTs every cell's share merged, and nothing while a cell is away;
 //   * the PAUSE is global (`scimClient.pause`) and one probe goes for the
 //     whole service; each cell's concurrency budget for a client is
-//     `scimClient.concurrency` split across the cells that push to it.
+//     `scimClient.concurrency` split across the cells that push to it;
+//   * the console and `/admin-api` show every cell's queues
+//     (`scim-client-summary`, `acrossCells()`), and the five acts on a
+//     cell's queue take a `cell` (`scim-client-act`), none being every cell.
 // In a service that is one cell none of it is asked.
 // ===========================================================================
 
@@ -506,8 +509,9 @@ class ScimClients {
 
   /**
    * Registers the inter-cell operations this client answers for other
-   * cells (#553): `scim-client-group-share`. Harmless in a service that is
-   * one cell, where nobody calls them.
+   * cells (#553): `scim-client-group-share`, `scim-client-summary` and
+   * `scim-client-act`. Harmless in a service that is one cell, where nobody
+   * calls them.
    */
   registerCellOps(): void {
     const { log, channel } = this.deps;
@@ -517,6 +521,13 @@ class ScimClients {
       const ch = channel();
       ch.registerOp(OP_GROUP_SHARE, function (body: Json): Promise<Json> {
         return self.answerGroupShare(body);
+      });
+      ch.registerOp(OP_SUMMARY, function (body: Json,
+                                          ctx: Json): Promise<Json> {
+        return self.answerSummary(body, ctx);
+      });
+      ch.registerOp(OP_ACT, function (body: Json, ctx: Json): Promise<Json> {
+        return self.answerAct(body, ctx);
       });
     } catch (e) {
       log.debug("Caught in ScimClients.registerCellOps(): " +
@@ -3849,6 +3860,203 @@ class ScimClients {
     return out;
   }
 
+  // =========================================================================
+  // EVERY CELL'S QUEUES ON ONE PAGE (#553 section 7): each cell answers
+  // `scim-client-summary` with its own counts, pause and — where the policy
+  // releases them to the asking cell — its queues; an act may name the cell
+  // it is for (`act()`). Only the console and `/admin-api` name a cell.
+  // =========================================================================
+
+  // One client's state in this cell, for another cell's page: counts, the
+  // pause, the last reconciliation, and with `rows` its retrying and dead
+  // deliveries.
+  private cellSummaryOf(c: Json, rows: boolean): Json {
+    const { log, realms, now } = this.deps;
+    log.debug("Entering ScimClients.cellSummaryOf().");
+    const realmId = realms.currentId();
+    const queues = this.queuesOf(c.identifier, rows ? 200 : 0);
+    const pause = this.pauseOf(realmId, c.identifier);
+    const state = this.stateOf(realmId, c.identifier);
+    const out: Json = {
+      identifier: c.identifier, pushes: this.pushesHere(c),
+      counts: queues.counts,
+      pausedUntil: Number(pause.pausedUntil) > now()
+        ? new Date(Number(pause.pausedUntil)).toISOString() : '',
+      failures: Number(pause.failures) || 0,
+      lastReconcileAt: state.lastReconcileAt
+        ? new Date(Number(state.lastReconcileAt)).toISOString() : ''
+    };
+    if (rows) {
+      out.queued = queues.queued;
+      out.retrying = queues.retrying;
+      out.dead = queues.dead;
+    }
+    log.debug("Leaving ScimClients.cellSummaryOf().");
+    return out;
+  }
+
+  /**
+   * Answers `scim-client-summary` for another cell's console: this cell's
+   * counts and pause for every client of the realm — and, for the one
+   * client named, its queued, retrying and dead deliveries, which name this
+   * cell's residents, so only where the issuance policy releases them to
+   * the asking cell (`release-attributes`, purpose `directory-list`).
+   *
+   * @param body - `{ realm, client }`
+   * @param ctx - `{ peer }`, the asking cell
+   * @returns a promise of `{ cell, clients, withheld }`
+   */
+  async answerSummary(body: Json, ctx: Json): Promise<Json> {
+    const { log, realms, transfer } = this.deps;
+    log.debug("Entering ScimClients.answerSummary().");
+    const given = body || {};
+    const realm = realms.get(String(given.realm || ''));
+    if (!realm) {
+      log.debug("Leaving ScimClients.answerSummary(). No realm.");
+      return { cell: this.here(), clients: [] };
+    }
+    const answer = realms.run(realm, () => {
+      const wanted = String(given.client || '').toLowerCase();
+      let released = false;
+      let why = '';
+      if (wanted) {
+        const decided = transfer().releaseDecision({
+          realm: realms.currentId(), homeCell: this.here(),
+          servingCell: String((ctx && ctx.peer) || ''),
+          purpose: 'directory-list' });
+        released = !!(decided && decided.allowed);
+        why = released ? '' : String((decided && decided.why) || '');
+      }
+      return {
+        cell: this.here(),
+        withheld: why,
+        clients: this.list().map((c: Json) => {
+          return this.cellSummaryOf(c, released &&
+            c.identifier.toLowerCase() === wanted);
+        })
+      };
+    });
+    log.debug("Leaving ScimClients.answerSummary().");
+    return answer;
+  }
+
+  /**
+   * Answers `scim-client-act` for another cell: one of the five acts on
+   * this cell's own queue and residents, done here and nowhere else.
+   *
+   * @param body - `{ realm, body, actor }`
+   * @param ctx - `{ peer }`, the asking cell
+   * @returns a promise of the act's answer, its code spelt out (`code`)
+   */
+  async answerAct(body: Json, ctx: Json): Promise<Json> {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.answerAct().");
+    const given = body || {};
+    const act = Object.assign({}, given.body || {});
+    const realm = realms.get(String(given.realm || ''));
+    if (!realm || CELL_ACTIONS.indexOf(String(act.action || '')) < 0) {
+      log.debug("Leaving ScimClients.answerAct(). Refused.");
+      return { ok: false, code: 'STS-SCIMC-0016',
+               errors: ['Not an act another cell may send.'] };
+    }
+    const answer: Json = await realms.run(realm, () => {
+      return this.act(act, { actor: String(given.actor || ''), via: 'cell',
+                             local: true,
+                             fromCell: String((ctx && ctx.peer) || '') });
+    });
+    log.debug("Leaving ScimClients.answerAct(). ok=" + !!answer.ok);
+    return Object.assign({ code: errorCodes.codeOf(answer) || '' }, answer);
+  }
+
+  /**
+   * Lays every cell's state of each client over a view of this cell's
+   * (#553 section 7): `byCell` on each client row — this cell first, then
+   * each other cell's answer to `scim-client-summary`, a cell that cannot
+   * be reached as `reachable: false`, never left off — and on the client's
+   * page each cell's queues. The view as it is in a service that is one
+   * cell.
+   *
+   * @param view - `view()`'s answer
+   * @param query - the page's query (`client`)
+   * @returns a promise of the view
+   */
+  async acrossCells(view: Json, query?: Json): Promise<Json> {
+    const { log, realms, cells, channel } = this.deps;
+    log.debug("Entering ScimClients.acrossCells().");
+    if (!view || !this.multi()) {
+      log.debug("Leaving ScimClients.acrossCells(). One cell.");
+      return view;
+    }
+    const here = this.here();
+    const wanted = query && query.client ? String(query.client) : '';
+    const others = (cells().all() || []).map(function (one: Json) {
+      return String(one.id);
+    }).filter(function (one: string) {
+      return one && one !== here;
+    });
+    const answers: Json = {};
+    await Promise.all(others.map(function (cell: string) {
+      return Promise.resolve().then(function () {
+        return channel().call(cell, OP_SUMMARY, {
+          realm: realms.currentId(), client: wanted });
+      }).then(function (got: Json) {
+        answers[cell] = { reachable: true, answer: got || {} };
+      }, function (e: Json) {
+        log.warn(errorCodes.tag('STS-SCIMC-0034') + 'scim client: cell "' +
+                 cell + '" did not answer ' + OP_SUMMARY + ': ' +
+                 ((e && e.message) || e));
+        answers[cell] = { reachable: false,
+                          error: String((e && e.message) || e) };
+      });
+    }));
+    const rowFor = (identifier: string, rows: boolean): Json[] => {
+      const mine = this.get(identifier);
+      const first: Json = mine
+        ? Object.assign({ cell: here, here: true, reachable: true },
+                        this.cellSummaryOf(mine, rows))
+        : { cell: here, here: true, reachable: true };
+      return [first].concat(others.map(function (cell: string) {
+        const got = answers[cell];
+        if (!got || !got.reachable) {
+          return { cell: cell, here: false, reachable: false,
+                   error: got ? got.error : '' };
+        }
+        const one = ((got.answer.clients || []) as Json[])
+          .filter(function (x: Json) {
+            return String(x.identifier).toLowerCase() ===
+                   identifier.toLowerCase();
+          })[0] || {};
+        return Object.assign({ cell: cell, here: false, reachable: true,
+                               withheld: rows ? got.answer.withheld || ''
+                                              : '' }, one);
+      }));
+    };
+    (view.clients || []).forEach(function (c: Json) {
+      c.byCell = rowFor(c.identifier, false);
+    });
+    if (view.client) {
+      view.client.byCell = rowFor(view.client.identifier, true);
+    }
+    view.cellId = here;
+    log.debug("Leaving ScimClients.acrossCells(). " + others.length +
+              " other cell(s).");
+    return view;
+  }
+
+  /**
+   * `view()` with every cell's state laid over it — what the console's
+   * Clients tab and `GET /admin-api/scim/clients` answer.
+   *
+   * @param query - the page's query
+   * @returns a promise of the view
+   */
+  viewAcrossCells(query?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.viewAcrossCells().");
+    log.debug("Leaving ScimClients.viewAcrossCells().");
+    return this.acrossCells(this.view(query), query);
+  }
+
   // A coded refusal.
   private refusal(code: string, errors: string[]): Json {
     const { log, errorCodes } = this.deps;
@@ -4022,33 +4230,150 @@ class ScimClients {
    * update-client, remove-client, issue-certificate, test-connection,
    * reconcile, retry-delivery, retry-dead, purge-dead and deliver-now.
    *
-   * @param body - `action` and its members
+   * IN A SERVICE DEPLOYED AS CELLS (#553 section 7) the five acts on a
+   * cell's own queue and residents — retry-delivery, retry-dead,
+   * purge-dead, reconcile and deliver-now — take a `cell` member and are
+   * sent to that cell over `scim-client-act`; without one they are done in
+   * every cell, and the answer lists each cell's result, a cell that cannot
+   * be reached as such. A `cell` is refused in a service that is one cell,
+   * and for a cell the service does not have (STS-SCIMC-0033).
+   *
+   * @param body - `action` and its members, and `cell`
    * @param context - `actor` and `via`
    * @returns a promise of `{ ok, message, ... }` or a coded refusal
    */
   async act(body: Json, context?: Json): Promise<Json> {
+    const { log, realms, cells, channel } = this.deps;
+    const given = Object.assign({}, body || {});
+    const ctx = context || {};
+    const action = String(given.action || '');
+    log.debug("Entering ScimClients.act(). " + action);
+    const named = given.cell === undefined || given.cell === null ? ''
+      : String(given.cell).trim();
+    delete given.cell;
+    if (CELL_ACTIONS.indexOf(action) < 0 || ctx.local) {
+      if (named) {
+        log.debug("Leaving ScimClients.act(). A cell on a client act.");
+        return this.refusal('STS-SCIMC-0033', ['"' + action + '" is an act ' +
+          'on the client itself and names no cell.']);
+      }
+      const plain = await this.actHere(given, ctx);
+      log.debug("Leaving ScimClients.act(). Here.");
+      return plain;
+    }
+    if (!this.multi()) {
+      if (named) {
+        log.debug("Leaving ScimClients.act(). One cell.");
+        return this.refusal('STS-SCIMC-0033', ['This service is not ' +
+          'deployed as cells, so an act names no cell.']);
+      }
+      const one = await this.actHere(given, ctx);
+      log.debug("Leaving ScimClients.act(). One cell.");
+      return one;
+    }
+    if (named && !cells().get(named)) {
+      log.debug("Leaving ScimClients.act(). No such cell.");
+      return this.refusal('STS-SCIMC-0033', ['This service has no cell "' +
+                                             named + '".']);
+    }
+    const here = this.here();
+    const targets = named ? [named]
+      : [here].concat((cells().all() || []).map(function (one: Json) {
+          return String(one.id);
+        }).filter(function (one: string) {
+          return one && one !== here;
+        }));
+    const actor = String(ctx.actor || '');
+    const results: Json[] = [];
+    for (const cell of targets) {
+      if (cell === here) {
+        const mine = await this.actHere(given, ctx);
+        results.push(Object.assign({ cell: cell, reachable: true }, mine));
+        continue;
+      }
+      try {
+        const theirs = await channel().call(cell, OP_ACT, {
+          realm: realms.currentId(), body: given, actor: actor });
+        results.push(Object.assign({ cell: cell, reachable: true },
+                                   theirs || {}));
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-SCIMC-0034') + 'scim client: cell "' +
+                 cell + '" did not answer ' + OP_ACT + ' (' + action + '): ' +
+                 ((e && e.message) || e));
+        results.push({ cell: cell, reachable: false, ok: false,
+                       message: 'Cell ' + cell + ' could not be reached.' });
+      }
+    }
+    if (named) {
+      const only = results[0];
+      log.debug("Leaving ScimClients.act(). In cell " + named + ".");
+      return only.reachable ? only
+        : this.refusal('STS-SCIMC-0034', [only.message]);
+    }
+    const ok = results.some(function (one) {
+      return one.ok;
+    });
+    const out: Json = {
+      ok: ok,
+      cells: results.map(function (one) {
+        return { cell: one.cell, reachable: one.reachable, ok: !!one.ok,
+                 message: String(one.message ||
+                                 (one.errors || []).join(' ') || ''),
+                 count: one.count };
+      }),
+      message: results.map(function (one) {
+        return one.cell + ': ' + String(one.message ||
+                                        (one.errors || []).join(' ') || '');
+      }).join(' ')
+    };
+    if (!ok) {
+      log.debug("Leaving ScimClients.act(). Refused in every cell.");
+      const first = results.filter(function (one) {
+        return one.reachable;
+      })[0];
+      return this.refusal(first ? (first.code || errorCodes.codeOf(first) ||
+                                   'STS-SCIMC-0016')
+                                : 'STS-SCIMC-0034',
+                          [out.message]);
+    }
+    log.debug("Leaving ScimClients.act(). In " + results.length +
+              " cell(s).");
+    return out;
+  }
+
+  /**
+   * Performs one act IN THIS CELL: add-client, update-client,
+   * remove-client, issue-certificate, test-connection, reconcile,
+   * retry-delivery, retry-dead, purge-dead and deliver-now. `act()` decides
+   * which cells an act goes to.
+   *
+   * @param body - `action` and its members
+   * @param context - `actor` and `via`
+   * @returns a promise of `{ ok, message, ... }` or a coded refusal
+   */
+  async actHere(body: Json, context?: Json): Promise<Json> {
     const { log, applications, errorCodes, realms, audit } = this.deps;
     const given = body || {};
     const ctx = context || {};
     const actor = String(ctx.actor || '');
     const action = String(given.action || '');
-    log.debug("Entering ScimClients.act(). " + action);
+    log.debug("Entering ScimClients.actHere(). " + action);
     if (ACTIONS.indexOf(action) < 0) {
-      log.debug("Leaving ScimClients.act(). Unknown action.");
+      log.debug("Leaving ScimClients.actHere(). Unknown action.");
       return this.refusal('STS-SCIMC-0016', ['Unknown action "' + action +
         '". The acts are: ' + ACTIONS.join(', ') + '.']);
     }
     if (action === 'add-client') {
       const identifier = String(given.identifier || '').trim();
       if (!identifier) {
-        log.debug("Leaving ScimClients.act(). No identifier.");
+        log.debug("Leaving ScimClients.actHere(). No identifier.");
         return this.refusal('STS-SCIMC-0017', ['A client needs an ' +
                                                'identifier.']);
       }
       const d = this.definitionFrom(given, null);
       const problems = this.writeProblems(d, given);
       if (problems.length) {
-        log.debug("Leaving ScimClients.act(). Refused.");
+        log.debug("Leaving ScimClients.actHere(). Refused.");
         return this.refusal('STS-SCIMC-0017', problems);
       }
       const created = applications().createApplication({
@@ -4056,19 +4381,19 @@ class ScimClients {
         name: String(given.name || '').trim() || identifier,
         protocols: [FAMILY], fields: {}, actor: actor });
       if (!created.ok) {
-        log.debug("Leaving ScimClients.act(). Not created.");
+        log.debug("Leaving ScimClients.actHere(). Not created.");
         return this.refusal(errorCodes.codeOf(created) || 'STS-SCIMC-0017',
                             created.errors || []);
       }
       const errors = this.writeDefinition(identifier, d, null, given, actor);
       if (errors.length) {
         applications().deleteApplication(identifier, { actor: actor });
-        log.debug("Leaving ScimClients.act(). A write was refused.");
+        log.debug("Leaving ScimClients.actHere(). A write was refused.");
         return this.refusal('STS-SCIMC-0017', errors);
       }
       this.changed(identifier, 'was added', actor);
       const row = this.get(identifier);
-      log.debug("Leaving ScimClients.act(). Added.");
+      log.debug("Leaving ScimClients.actHere(). Added.");
       return { ok: true, client: row,
                message: 'SCIM client ' + identifier + ' is added' +
                         (row && !row.usable ? ', and is not usable yet: ' +
@@ -4084,7 +4409,7 @@ class ScimClients {
                                            id });
         this.deliverSoon();
       }
-      log.debug("Leaving ScimClients.act(). Retried: " + result.ok);
+      log.debug("Leaving ScimClients.actHere(). Retried: " + result.ok);
       return result.ok ? { ok: true, message: 'The dead letter is queued ' +
                                               'again.' }
                        : this.refusal(errorCodes.codeOf(result) ||
@@ -4093,7 +4418,7 @@ class ScimClients {
     const id = String(given.id || given.client || '').trim();
     const before = id ? this.get(id) : null;
     if (!before) {
-      log.debug("Leaving ScimClients.act(). No such client.");
+      log.debug("Leaving ScimClients.actHere(). No such client.");
       return this.refusal('STS-SCIMC-0016', ['There is no SCIM client "' +
                                              id + '" in this realm.']);
     }
@@ -4101,13 +4426,13 @@ class ScimClients {
       const d = this.definitionFrom(given, before);
       const problems = this.writeProblems(d, given);
       if (problems.length) {
-        log.debug("Leaving ScimClients.act(). Refused.");
+        log.debug("Leaving ScimClients.actHere(). Refused.");
         return this.refusal('STS-SCIMC-0017', problems);
       }
       const errors = this.writeDefinition(before.identifier, d, before, given,
                                           actor);
       if (errors.length) {
-        log.debug("Leaving ScimClients.act(). A write was refused.");
+        log.debug("Leaving ScimClients.actHere(). A write was refused.");
         return this.refusal('STS-SCIMC-0017', errors);
       }
       if (given.name !== undefined && String(given.name).trim() &&
@@ -4119,7 +4444,7 @@ class ScimClients {
       this.forget(before);
       this.changed(before.identifier, 'was changed', actor);
       const row = this.get(before.identifier);
-      log.debug("Leaving ScimClients.act(). Changed.");
+      log.debug("Leaving ScimClients.actHere(). Changed.");
       return { ok: true, client: row,
                message: 'SCIM client ' + before.name + ' is changed' +
                         (row && !row.usable ? '. It is not usable: ' +
@@ -4129,14 +4454,14 @@ class ScimClients {
       const gone = applications().deleteApplication(before.identifier,
                                                     { actor: actor });
       if (!gone.ok) {
-        log.debug("Leaving ScimClients.act(). Not removed.");
+        log.debug("Leaving ScimClients.actHere(). Not removed.");
         return this.refusal(errorCodes.codeOf(gone) || 'STS-SCIMC-0017',
                             gone.errors || []);
       }
       this.purgeClient(before.identifier);
       this.forget(before);
       this.changed(before.identifier, 'was removed', actor);
-      log.debug("Leaving ScimClients.act(). Removed.");
+      log.debug("Leaving ScimClients.actHere(). Removed.");
       return { ok: true, message: 'SCIM client ' + before.name + ' is ' +
                'removed, with its credentials, queues and links. Nothing at ' +
                'the service provider changed.' };
@@ -4147,7 +4472,7 @@ class ScimClients {
                               application: before.identifier,
                               label: 'SCIM client ' + before.identifier });
       if (!issued.ok) {
-        log.debug("Leaving ScimClients.act(). Not issued.");
+        log.debug("Leaving ScimClients.actHere(). Not issued.");
         return this.refusal('STS-SCIMC-0024', issued.errors ||
                             ['The certificate could not be issued.']);
       }
@@ -4158,13 +4483,13 @@ class ScimClients {
                       { tlsSource: 'issued', tlsCertificate: pem }),
         before, { tlsPrivateKey: issued.issued.privateKeyPem }, actor);
       if (errors.length) {
-        log.debug("Leaving ScimClients.act(). Not written.");
+        log.debug("Leaving ScimClients.actHere(). Not written.");
         return this.refusal('STS-SCIMC-0024', errors);
       }
       this.forget(before);
       this.changed(before.identifier, 'was issued a TLS client certificate ' +
                    '(serial ' + issued.issued.serialHex + ')', actor);
-      log.debug("Leaving ScimClients.act(). Issued.");
+      log.debug("Leaving ScimClients.actHere(). Issued.");
       return { ok: true, certificate: { subject: issued.issued.subject,
                                         serial: issued.issued.serialHex,
                                         notAfter: issued.issued.notAfter,
@@ -4177,7 +4502,7 @@ class ScimClients {
       const disc = await this.discovery(before, true);
       const probe = await this.request(before, 'GET',
         disc.endpoints.User + '?startIndex=1&count=1&attributes=id', null);
-      log.debug("Leaving ScimClients.act(). Tested.");
+      log.debug("Leaving ScimClients.actHere(). Tested.");
       if (!probe.ok) {
         return this.refusal(this.codeFor(probe), ['The service provider ' +
           'refused or did not answer: ' + probe.why]);
@@ -4195,18 +4520,18 @@ class ScimClients {
     }
     if (action === 'reconcile') {
       if (!before.usable) {
-        log.debug("Leaving ScimClients.act(). Not usable.");
+        log.debug("Leaving ScimClients.actHere(). Not usable.");
         return this.refusal('STS-SCIMC-0017', before.problems);
       }
       if (!before.enabled) {
         // Every row it queued would be dead-lettered at the send
         // (STS-SCIMC-0001): a disabled client sends nothing.
-        log.debug("Leaving ScimClients.act(). Disabled.");
+        log.debug("Leaving ScimClients.actHere(). Disabled.");
         return this.refusal('STS-SCIMC-0017', ['SCIM client ' +
           before.identifier + ' is disabled; enable it to reconcile.']);
       }
       const result = await this.reconcile(before, actor || 'administrator');
-      log.debug("Leaving ScimClients.act(). Reconciled.");
+      log.debug("Leaving ScimClients.actHere(). Reconciled.");
       return Object.assign({ message: 'Reconciled: ' + result.users +
         ' user(s) and ' + result.groups + ' group(s) queued, ' +
         result.deprovisioned + ' to deprovision' +
@@ -4236,7 +4561,7 @@ class ScimClients {
       if (action === 'retry-dead') {
         this.deliverSoon();
       }
-      log.debug("Leaving ScimClients.act(). " + action);
+      log.debug("Leaving ScimClients.actHere(). " + action);
       return { ok: true, count: dead.length,
                message: dead.length + ' dead letter(s) ' +
                         (action === 'retry-dead' ? 'queued again.'
@@ -4247,7 +4572,7 @@ class ScimClients {
                     { failures: 0, pausedUntil: 0, probe: '' });
     this.dueNow(before.identifier, realms.currentId());
     this.deliverSoon();
-    log.debug("Leaving ScimClients.act(). Delivering now.");
+    log.debug("Leaving ScimClients.actHere(). Delivering now.");
     return { ok: true, message: 'The pause is lifted and ' + before.name +
              '\'s queue is being sent now.' };
   }
@@ -4345,6 +4670,8 @@ export = {
   list: slot.forward('list'),
   get: slot.forward('get'),
   view: slot.forward('view'),
+  viewAcrossCells: slot.forward('viewAcrossCells'),
+  acrossCells: slot.forward('acrossCells'),
   act: slot.forward('act'),
   reconcile: slot.forward('reconcile'),
   reconcileDue: slot.forward('reconcileDue'),

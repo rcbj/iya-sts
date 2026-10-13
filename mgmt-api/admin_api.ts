@@ -17904,8 +17904,20 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/Scim' },
         handler: function (req, res) {
           log.debug("Entering the management API SCIM endpoint.");
-          self.sendJson(res, 200, adminViews.scimJson(req));
-          log.debug("Leaving the management API SCIM endpoint.");
+          // Every cell's outbound SCIM clients (#553): asked of the other
+          // cells, bounded; never rejects.
+          adminViews.scimJsonAcrossCells(req).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API SCIM endpoint.");
+          }, function (e) {
+            log.error(errorCodes.tag('STS-SCIMC-0018') + 'the SCIM view ' +
+                      'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-SCIMC-0018');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: ['The view could not be ' +
+                                               'drawn.'] });
+            log.debug("Leaving the management API SCIM endpoint. Threw.");
+          });
         } },
 
       // WHAT THAT SURFACE IS ACTUALLY DOING, as opposed to what it is. The
