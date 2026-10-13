@@ -947,6 +947,18 @@
     "en": "943c5e80b61d7656",
     "text": "ALÉATOIRE — random-to-key de RFC 3961 pour chaque enctype de krb5.enctypes —, créée une fois par domaine, scellée sur l’entrée d’annuaire krbtgt/<REALM>@<REALM> et jamais affichée ; krb5.krbtgtPassword est ignoré. La tâche krb5.krbtgt-rotate la remplace tous les krb5.krbtgtRotationIntervalDays, en conservant la version remplacée pendant la plus longue durée de vie possible d’un TGT émis sous celle-ci (renouvellements compris), et n’effectue jamais de rotation tant que cette fenêtre est encore ouverte. « Rotation et invalidation » correspond à la double réinitialisation d’Active Directory en une seule action : rien n’est conservé et chaque TGT du domaine est refusé avec KRB_AP_ERR_BADKEYVER."
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "La clé avec laquelle l’accepteur Kerberos déchiffre les tickets lorsque krb5.servicePassword est vide ou vaut la valeur par défaut publiée"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "DÉRIVÉE du krb5.servicePassword publié, si bien qu’un lecteur peut la dériver ; un mot de passe vide ne crée aucun compte et l’accepteur n’accepte aucun ticket."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "ALÉATOIRE — une clé par enctype de krb5.enctypes pour le SPN que nomme krb5.servicePrincipal, créée une fois par royaume au démarrage (ou lorsque l’accepteur la demande pour la première fois), scellée sur l’entrée d’application <spn>@<REALM> et jamais affichée. Faites-la tourner sur /admin/kerberos/principals pour obtenir un keytab. Un krb5.servicePassword propre à l’opérateur l’emporte sur elle."
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "Une clé d’appareil présentée sans attestation vérifiable est refusée"

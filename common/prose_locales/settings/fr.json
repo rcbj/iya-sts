@@ -5564,8 +5564,8 @@
     "text": "Mot de passe du principal de service"
   },
   "krb5.servicePassword|description": {
-    "en": "c38ac123f6e326ba",
-    "text": "Le mot de passe du compte que nomme krb5.servicePrincipal — l’équivalent d’un keytab. En MODE PRODUIT, la valeur par défaut livrée est refusée : cette valeur est imprimée dans ce dépôt, et une clé de service dérivée d’elle est une clé pour laquelle n’importe qui peut forger un ticket. S’il n’est pas défini, le compte de service n’est pas créé, l’accepteur sur krb5.servicePort et /authn/spnego n’acceptent aucun ticket, et GET /krb5/service en indique la raison. Définissez-le avec le mot de passe du compte du SPN dans le KDC qui émet ses tickets."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "Le mot de passe du compte que nomme krb5.servicePrincipal — l’équivalent d’un keytab. En MODE PRODUIT, la valeur par défaut livrée est refusée : cette valeur est imprimée dans ce dépôt, si bien qu’une clé de service qui en est dérivée est une clé avec laquelle n’importe qui peut forger un ticket. Le mode produit attribue alors au SPN une clé aléatoire, une seule fois, scellée sur son entrée d’application (Rotate sur /admin/kerberos/principals remet un keytab), et fait de même pour un mot de passe vide. Réglez-le sur le mot de passe du compte du SPN dans le KDC qui émet ses tickets, et il l’emporte sur cette clé. En développement, un mot de passe vide ne crée aucun compte et l’accepteur n’accepte aucun ticket."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
