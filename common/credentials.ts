@@ -961,6 +961,11 @@ class Credentials {
   //   * `applicationMatcher()` — a function that says whether a key names an
   //     application registered in this realm, built from one listing, for the
   //     people list's *an application is not a person* rule.
+  //   * `personCount()` and `personNamesUpTo(limit)` (#610) — how many people
+  //     the realm defines, COUNTED (the store's `count(*)` in a windowed
+  //     process), and the first `limit` names with whether there were more,
+  //     so the roster neither lists everybody to cap the list nor reports
+  //     the length of a capped list as the size of the directory.
   //
   // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
   // installs a stub directory with `setDirectory()` and no census must not be
@@ -974,7 +979,8 @@ class Credentials {
   /**
    * Adds the population hooks to the directory slot already filled.
    *
-   * @param hooks - `credentialCensus` and `applicationMatcher`
+   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`
+   *   and `personNamesUpTo`
    * @returns true when added, false when no directory is installed
    */
   addDirectoryHooks(hooks) {
@@ -4814,6 +4820,7 @@ class Credentials {
               ' person/people.');
     return { rows: rows, scanned: population.scanned,
              capped: population.capped, limit: population.limit,
+             directoryPeople: population.directoryPeople,
              store: population.store };
   }
 
@@ -4854,7 +4861,7 @@ class Credentials {
    * @param alsoKnown - names the caller has seen
    * @param opts - `limit`; `credentials.factorScanLimit` when omitted
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
-   *   limit, store, isApplication }`
+   *   limit, directoryPeople, store, isApplication }`
    */
   secondFactorPopulation(alsoKnown, opts?) {
     const { log, errorCodes } = this.deps;
@@ -4877,23 +4884,51 @@ class Credentials {
       seen.get(key)[source] = true;
       log.debug("Leaving add().");
     };
+    // `scanned` is how many of the directory's names the list read, and
+    // `capped` whether the directory held more than that (#610: it used to
+    // be the length of a listing of everybody, which was also the only
+    // count of the people there was). `directoryPeople` is that count now,
+    // asked of the directory rather than read off a list; null where the
+    // directory offers no count, and the caller then has only the list.
     let scanned = 0;
     let capped = false;
-    if (directory && typeof directory.persons === 'function') {
+    let directoryPeople = null;
+    const upTo = this.directoryHook('personNamesUpTo');
+    const counter = this.directoryHook('personCount');
+    if (directory && (upTo || typeof directory.persons === 'function')) {
       let people = [];
       try {
-        people = directory.persons() || [];
+        if (upTo) {
+          // The first `limit` names and whether there were more, without
+          // listing the rest.
+          const first = upTo(limit) || { names: [], more: false };
+          people = first.names || [];
+          capped = !!first.more;
+        } else {
+          people = directory.persons() || [];
+          directoryPeople = people.length;
+          if (people.length > limit) {
+            capped = true;
+            people = people.slice(0, limit);
+          }
+        }
       } catch (e) {
         log.error(errorCodes.tag('STS-AUTHN-0079') +
                   'credentials: listing this realm\'s people threw: ' +
                   e.message);
       }
       scanned = people.length;
-      if (people.length > limit) {
-        capped = true;
-        people = people.slice(0, limit);
-      }
       people.forEach((name) => { add(name, 'inDirectory'); });
+    }
+    if (counter) {
+      try {
+        directoryPeople = Number(counter()) || 0;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0334') +
+                  'credentials: counting this realm\'s people threw: ' +
+                  ((e && e.message) || e));
+        directoryPeople = null;
+      }
     }
     (alsoKnown || []).forEach((name) => { add(name, 'known'); });
 
@@ -4923,7 +4958,7 @@ class Credentials {
     log.debug('Leaving Credentials.secondFactorPopulation(). ' + rows.length +
               ' name(s).');
     return { rows: rows, scanned: scanned, capped: capped, limit: limit,
-             store: !!directory,
+             directoryPeople: directoryPeople, store: !!directory,
              isApplication: typeof isApplication === 'function'
                ? isApplication : null };
   }

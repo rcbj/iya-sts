@@ -11898,6 +11898,13 @@ class AdminViews {
           // it the credential columns are absent rather than false.
           store: population.store, scanned: population.scanned,
           capped: population.capped, scanLimit: population.limit,
+          // HOW MANY PEOPLE THE DIRECTORY DEFINES (#610), counted by the
+          // directory — the store's `count(*)` in a windowed process — and
+          // never the length of this list, which is capped at `scanLimit`
+          // of them (`scanned` read, `capped` when there were more) and
+          // united with everybody the register has seen. Null where the
+          // directory offers no count.
+          directoryPeople: population.directoryPeople,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
                     factor: wantedFactor || null, kind: wantedKind || null },
@@ -12105,6 +12112,7 @@ class AdminViews {
               holders.scanned + " scanned in the directory.");
     return { rows: rows, store: holders.store, scanned: holders.scanned,
              capped: holders.capped, limit: holders.limit,
+             directoryPeople: holders.directoryPeople,
              registryCap: stats.MAX_USERS, spellings: spellings };
   }
 
@@ -13448,6 +13456,7 @@ class AdminViews {
       counts: Object.assign({ people: list.json.known }, list.json.factors),
       store: list.json.store, scanned: list.json.scanned,
       capped: list.json.capped, scanLimit: list.json.scanLimit,
+      directoryPeople: list.json.directoryPeople,
       filter: list.json.filter,
       page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
       firstRow: list.json.firstRow, lastRow: list.json.lastRow,

@@ -5975,7 +5975,16 @@ class AdminApi {
                      'remembers. OpenAPI cannot spell a parameter whose name ' +
                      'is built at runtime, and a `session-{id}Page` in the ' +
                      'list would generate a client that sends a literal ' +
-                     '`{id}` — so it is here in words instead.',
+                     '`{id}` — so it is here in words instead.\n\nTHE ' +
+                     'LIST IS CAPPED AND THE COUNT IS NOT (#610). ' +
+                     '`directoryPeople` is how many people the realm\'s ' +
+                     'directory defines, counted by the directory without ' +
+                     'listing them (null where it offers no count). The ' +
+                     'rows are at most `scanLimit` of those people — ' +
+                     '`scanned` of them read, `capped` true when the ' +
+                     'directory held more — united with everybody this ' +
+                     'service has seen, so `known` is the length of that ' +
+                     'list and never the size of the directory.',
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'user', in: 'query', required: false,

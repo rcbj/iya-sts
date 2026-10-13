@@ -226,8 +226,20 @@ class UsersPage {
     // question nobody asked. Since #352 they come from `peopleCensus()`, one
     // pass over the directory, and only the rows drawn below are decorated —
     // `admin-core/CLAUDE.md`, *The users list pages before it decorates*.
+    //
+    // THE FIRST TILE IS THE DIRECTORY'S COUNT AND THE SECOND THE LIST'S
+    // (#610). They were one tile, the list's length, and on a bulk-loaded
+    // realm that read 7,014 while the directory held 25,000: the list is
+    // capped at `scanLimit` of the directory's people. `directoryPeople` is
+    // counted by the directory without listing anybody; it is null where
+    // the directory offers no count, and the tile is then left out rather
+    // than drawn from the list.
     const inner = '<div class="tiles">' +
-        kit.tile(json.known, t.text('consoleUsers.body.tilePeople')) +
+        (json.directoryPeople === null || json.directoryPeople === undefined
+          ? ''
+          : kit.tile(json.directoryPeople,
+                     t.text('consoleUsers.body.tileInDirectory'))) +
+        kit.tile(json.known, t.text('consoleUsers.body.tileListed')) +
         kit.tile(json.authenticatedHere,
                  t.text('consoleUsers.body.tileAuthenticated')) +
         kit.tile(json.known - json.authenticatedHere,
@@ -256,8 +268,11 @@ class UsersPage {
         ? ''
         : kit.warn(t.html('consoleUsers.body.noDirectory'))) +
       (json.capped
-        ? kit.warn(t.html('consoleUsers.body.capped',
-                          { scanned: String(json.scanned),
+        ? kit.warn(t.html('consoleUsers.body.cappedList',
+                          { people: json.directoryPeople === null ||
+                                    json.directoryPeople === undefined
+                              ? '> ' + String(json.scanLimit)
+                              : String(json.directoryPeople),
                             limit: String(json.scanLimit) }))
         : '') +
       // The "Show them" link carries an href, so it is code between two

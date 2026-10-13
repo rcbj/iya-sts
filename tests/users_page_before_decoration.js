@@ -35,6 +35,10 @@
 //      `knownUserKeys()` the keys, without building the rows;
 //   6. `stats.issuedArtifactsOfKind()` answers the Kerberos tickets
 //      `issuedList()` would have, in the same order.
+//   7. (#610) `directoryPeople` is the number of people the directory
+//      DEFINES — more than the scan cap here — counted without the
+//      directory's `persons()` being asked, `scanned` is how many names the
+//      capped list read, and a person created moves the count at once.
 //
 // The timings printed are information only; nothing here asserts a clock.
 //
@@ -72,7 +76,7 @@ const PER = 50;
 // texts only (anything else goes to the real one), so the enrolments need no
 // key-encryption key and the count is exact.
 // ---------------------------------------------------------------------------
-const counts = { mechanisms: 0, opens: 0 };
+const counts = { mechanisms: 0, opens: 0, persons: 0 };
 const SEALED = 'test-sealed:' + STAMP + ':';
 const BROKEN = 'test-broken:' + STAMP + ':';
 
@@ -84,6 +88,26 @@ function installSpies() {
   proto.mechanismsFor = function () {
     counts.mechanisms += 1;
     return realMechanisms.apply(this, arguments);
+  };
+  // The directory's `persons()` — every name in the realm — counted for
+  // section 7: the users view must count and cap its people without it.
+  const realPopulation = proto.secondFactorPopulation;
+  proto.secondFactorPopulation = function () {
+    const directory = this.directory;
+    const realPersons = directory && directory.persons;
+    if (realPersons) {
+      directory.persons = function () {
+        counts.persons += 1;
+        return realPersons.apply(this, arguments);
+      };
+    }
+    try {
+      return realPopulation.apply(this, arguments);
+    } finally {
+      if (realPersons) {
+        directory.persons = realPersons;
+      }
+    }
   };
   keystore.open = function (ciphertext, label) {
     const text = String(ciphertext);
@@ -101,6 +125,7 @@ function installSpies() {
   return function restore() {
     log.debug("Entering restore().");
     proto.mechanismsFor = realMechanisms;
+    proto.secondFactorPopulation = realPopulation;
     keystore.open = realOpen;
     log.debug("Leaving restore().");
   };
@@ -110,6 +135,7 @@ function reset() {
   log.debug("Entering reset().");
   counts.mechanisms = 0;
   counts.opens = 0;
+  counts.persons = 0;
   log.debug("Leaving reset().");
 }
 
@@ -252,7 +278,9 @@ function oldHolders(known) {
   let people = ldap.allPersons().map(function (entry) {
     return ldap.usernameOfEntry(entry);
   }).filter(function (name) { return !!name; });
-  const scanned = people.length;
+  // How many names the capped list READ (#610), no longer how many there
+  // were: that is `directoryPeople`, asserted in section 7.
+  const scanned = Math.min(people.length, SCAN_LIMIT);
   const capped = people.length > SCAN_LIMIT;
   people = people.slice(0, SCAN_LIMIT);
   people.forEach(function (name) { add(name, 'inDirectory'); });
@@ -545,6 +573,34 @@ function body(t, tally) {
           })),
           '6. issuedArtifactsOfKind() answers the tickets issuedList() ' +
           'would, in its order', String(tickets.length));
+
+  // --- 7. the directory's count (#610) ----------------------------------
+  const defined = ldap.allPersons().length;
+  reset();
+  const counted = view({});
+  t.check(defined > SCAN_LIMIT && counted.directoryPeople === defined,
+          '7a. directoryPeople is the number of people the directory ' +
+          'defines, past the scan cap', counted.directoryPeople + ' / ' +
+          defined + ' (cap ' + SCAN_LIMIT + ')');
+  t.equal(counts.persons, 0,
+          '7b. and neither it nor the capped list asked persons() for ' +
+          'every name');
+  t.check(counted.capped === true && counted.scanned === SCAN_LIMIT &&
+          counted.scanLimit === SCAN_LIMIT,
+          '7c. the list says it is capped and read scanLimit names',
+          'capped=' + counted.capped + ' scanned=' + counted.scanned);
+  t.equal(ldap.personCount(), defined,
+          '7d. ldap.personCount() is the same count');
+  const extra = 'upbd-' + STAMP + '-extra';
+  const madeExtra = ldap.createUser(extra, { invent: false, origin: 'test' });
+  const after = view({});
+  t.check(!!(madeExtra && madeExtra.ok) &&
+          after.directoryPeople === defined + 1,
+          '7e. a person created is counted at once',
+          String(after.directoryPeople));
+  const roster7 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
+  t.equal(roster7.directoryPeople, defined + 1,
+          '7f. /admin-api/mfa carries the same count');
   log.debug("Leaving body().");
 }
 

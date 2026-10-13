@@ -20,7 +20,7 @@
   "body.tipQ": "只顯示用戶名稱包含此文字的人員，不分大小寫。",
   "body.tipCreate": "要建立之人員的用戶名稱。您將在下一頁選擇其屬性以及首次登入的方式。",
   "body.everybody": "<strong>本領域知道的每個人</strong>，來自兩個地方，「Known from」欄會說明是哪一個。<strong>SEEN</strong> 是本服務在成功的互動中收到的每個用戶 ID——在任一登入畫面輸入的名稱、密碼授權中的名稱、WS-Security <code>UsernameToken</code> 的主體、Kerberos AS-REQ 或被接受之 AP-REQ 中的客戶端主體，以及交換權杖的主體；被拒絕的請求不會記錄任何內容。<strong>DIRECTORY</strong> 是 <code>ou=users</code> 下的項目，無論它是如何來的。大多數人兩者皆是。點選名稱可查看其工作階段、簽發給它的所有內容，以及它持有的第二因素。",
-  "body.capped": "本領域有 {scanned} 位人員，認證欄只讀取了前 {limit} 位。為每個人讀取認證是在回應本服務所有通訊端的同一個線程上進行的，因此掃描會停止，而不是讓服務停頓。",
+  "body.cappedList": "<strong>目錄中有 {people} 位人員，本列表只列出其中前 {limit} 位</strong>，以及本服務見過的所有人。列表為每個人讀取認證，這是在回應本服務所有通訊端的同一個線程上進行的，因此它會停止，而不是讓服務停頓；第一個之後的統計格與篩選條件統計的是列表，而不是目錄。",
   "body.createAUser": "建立用戶",
   "body.usernameHint": "用戶名稱",
   "body.tipGo": "前往「新增用戶」並填入此名稱。在您於該處按下「建立」之前，不會建立任何內容。",

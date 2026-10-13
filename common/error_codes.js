@@ -6166,6 +6166,10 @@ const CODES = [
       '(requireUsernameless, #608): the application signs in with a ' +
       'passkey alone, and the screen asks for no username.',
     spec: 'none — the sign-in screen is drawn again' },
+  { code: 'STS-AUTHN-0334',
+    summary: 'Counting this realm\'s people for the users list\'s headline ' +
+      '(#610) threw; the list is drawn without the directory\'s count.',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
