@@ -30,10 +30,24 @@
 //      search asks the Users list and a group search the Groups list, five
 //      to a page; a refused Save keeps the draft; and the hidden rows are
 //      sent as `owners`, an empty table as an empty list.
-//   E. THE SECTION: the owners table with a Remove per row and the hidden
-//      rows, one form posting to its route; the search's results, five, with
-//      Add, or why not (already an owner, the account itself); the pager;
-//      and no form without Admin Write.
+//   E. THE SECTION: on a service account the owners table is the
+//      account's, each Remove a form of its own that writes, and a result's
+//      Add writes at once (#602); the search's results, five, with Add, or
+//      why not (already an owner, the account itself); the pager; no form
+//      without Admin Write; and an ordinary person's one staged form.
+//   F. ONE OWNER OR THE DESTINATION AT ONCE (#602): `addOwner()`,
+//      `removeOwner()` and `setDestination()` keep everything else; an
+//      owner listed twice is not; the last owner stays while the policy
+//      requires one; a destination is both-or-neither; and the three console
+//      acts answer the account as it now stands.
+//   G. THE DESTINATION'S HELPERS (#602): its search asks the Secret
+//      destinations list and reads its answer; a Use chooses it with the
+//      search's name; an immediate act draws the page again in place with
+//      the account the answer holds and the search kept.
+//   H. THE DESTINATION BLOCK (#602): Use writes at once on a service account
+//      with the secret name in the box, the destination in use is marked,
+//      Save the secret name and Clear only where one is set; an ordinary
+//      person's Use only chooses.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -46,6 +60,7 @@ const serviceAccounts = require('../common/service_accounts');
 const policy = require('../common/service_account_policy');
 const ldap = require('../ldap/ldap_server');
 const adminViews = require('../admin-core/admin_views');
+const adminActions = require('../admin-core/admin_actions');
 const directoryMerge = require('../persistence/directory_merge');
 const WebAnswers = require('../admin-ui/web_answers');
 const ConsoleRuntime = require('../admin-ui/web_runtime');
@@ -374,18 +389,19 @@ function theSection(t) {
                   dn: 'uid=svc,ou=users,dc=x' };
   const html = UsersPage.serviceAccountSection(tr, 'svc', account,
     { write: true }, '/admin/users', rules, {});
-  t.check(html.indexOf('action="/admin/users/service-account#' +
-                       'service-account"') >= 0 &&
+  const removes = html.match(/name="action" value="remove-service-account-owner"/g) ||
+                  [];
+  t.check(removes.length === 2 &&
           html.indexOf('name="owner" value="uid=ann,ou=users,dc=x"') >= 0 &&
           html.indexOf('name="owner" value="cn=ops,ou=groups,dc=x"') >= 0 &&
-          html.indexOf('name="drop" value="owner.1"') >= 0 &&
-          html.indexOf('name="owners" value=""') >= 0 &&
+          html.indexOf('name="drop"') < 0 &&
+          html.indexOf('name="owners" value=""') < 0 &&
+          html.indexOf('name="serviceAccount" value="true"') < 0 &&
           html.indexOf('name="fgfind.owners"') >= 0 &&
-          html.indexOf('data-fg-find="owners"') >= 0 &&
-          html.indexOf('class="default-submit"') <
-            html.indexOf('name="drop"'),
-          'E1. the owners table: a hidden row and a Remove each, one form ' +
-          'on its route, the search box, and Save first for Enter');
+          html.indexOf('data-fg-find="owners"') >= 0,
+          'E1. a service account\'s owners: the account\'s table, each ' +
+          'Remove a form of its own that writes, the search box, and no ' +
+          'staged Save');
   const find = { which: 'people', query: 'a', page: 1, pages: 2, matched: 7,
     rows: [{ kind: 'person', value: 'uid=ann,ou=users,dc=x', label: 'ann' },
            { kind: 'person', value: 'uid=svc,ou=users,dc=x', label: 'svc' },
@@ -393,11 +409,13 @@ function theSection(t) {
            { kind: 'person', value: '', label: 'ghost' }] };
   const searched = UsersPage.serviceAccountSection(tr, 'svc', account,
     { write: true }, '/admin/users', rules,
-    { serviceAccount: { owners: ['uid=ann,ou=users,dc=x'], labels: {},
-                        destination: '', secretName: '', find: find } });
-  const adds = searched.match(/name="fgadd"/g) || [];
+    { serviceAccount: { owners: [], labels: {}, destination: '',
+                        secretName: '', find: find } });
+  const adds = searched.match(/name="owner" value="uid=cy[^"]*"[^>]*formaction="[^"]*action=add-service-account-owner/g) || [];
   t.check(adds.length === 1 &&
-          searched.indexOf('value="owners|uid=cy,ou=users,dc=x"') >= 0 &&
+          (searched.match(/action=add-service-account-owner/g) || [])
+            .length === 1 &&
+          searched.indexOf('name="fgadd"') < 0 &&
           searched.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
                                    'isOwner')) >= 0 &&
           searched.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
@@ -405,22 +423,256 @@ function theSection(t) {
           searched.indexOf('value="owners|2"') >= 0 &&
           /name="fgsearch" value="owners\|0"[^>]*disabled/.test(searched) &&
           searched.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
-                                   'unsaved')) >= 0,
-          'E2. the results: Add only for a new owner, "an owner" and "this ' +
-          'account" otherwise, the pager, and the table marked unsaved');
+                                   'unsaved')) < 0,
+          'E2. the results: an Add that writes only for a new owner, "an ' +
+          'owner" and "this account" otherwise, the pager, nothing unsaved');
   const readOnly = UsersPage.serviceAccountSection(tr, 'svc', account,
     { write: false }, '/admin/users', rules, {});
   t.check(readOnly.indexOf('<form') < 0 && readOnly.indexOf('ops') >= 0,
           'E3. without Admin Write the owners are listed and nothing more');
   const ordinary = UsersPage.serviceAccountSection(tr, 'svc', null,
     { write: true }, '/admin/users', rules, {});
+  const staged = UsersPage.serviceAccountSection(tr, 'svc', null,
+    { write: true }, '/admin/users', rules,
+    { serviceAccount: { owners: ['uid=ann,ou=users,dc=x'], labels: {},
+                        destination: '', secretName: '', find: find } });
   t.check(ordinary.indexOf('name="owner"') < 0 &&
           ordinary.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
                                    'noOwners')) >= 0 &&
           ordinary.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
-                                   'make')) >= 0,
-          'E4. an ordinary person gets the same form, empty, to make one');
+                                   'make')) >= 0 &&
+          ordinary.indexOf('value="set-service-account">') >= 0 &&
+          ordinary.indexOf('name="owners" value=""') >= 0 &&
+          staged.indexOf('name="drop" value="owner.0"') >= 0 &&
+          staged.indexOf('value="owners|uid=cy,ou=users,dc=x"') >= 0 &&
+          staged.indexOf('action=add-service-account-owner') < 0 &&
+          staged.indexOf('class="default-submit"') <
+            staged.indexOf('name="drop"') &&
+          staged.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
+                                 'unsaved')) >= 0,
+          'E4. an ordinary person gets one staged form: a hidden row and a ' +
+          'Remove each, an Add that only fills the table, Make first for ' +
+          'Enter');
   log.debug('Leaving theSection().');
+}
+
+async function oneAtATime(t) {
+  log.debug('Entering oneAtATime().');
+  await withRealm(t, 'svc-owners-once', function () {
+    person('svc-f');
+    person('svc-f-ann');
+    person('svc-f-bo');
+    person('svc-f-plain');
+    serviceAccounts.set('svc-f', { serviceAccount: true,
+                                   owners: ['svc-f-ann'] });
+    const ann = stored('svc-f-ann').dn;
+    const bo = stored('svc-f-bo').dn;
+    const added = serviceAccounts.addOwner('svc-f', bo);
+    t.check(added.ok && added.changed === true &&
+            added.account.owners.length === 2 && ownerValues('svc-f')
+              .length === 2,
+            'F1. addOwner() writes the new owner beside the old at once',
+            JSON.stringify(added));
+    const twice = serviceAccounts.addOwner('svc-f', 'svc-f-bo');
+    t.check(twice.ok && twice.changed === false &&
+            twice.account.owners.length === 2,
+            'F2. an owner already listed, by another name, is not listed ' +
+            'twice', JSON.stringify(twice));
+    const stranger = serviceAccounts.removeOwner('svc-f',
+      stored('svc-f-plain').dn);
+    t.check(stranger.ok === false &&
+            errorCodes.codeOf(stranger) === 'STS-SVCACCT-0032' &&
+            ownerValues('svc-f').length === 2,
+            'F3. taking off somebody who is not an owner is refused ' +
+            '(STS-SVCACCT-0032)', JSON.stringify(stranger));
+    const gone = serviceAccounts.removeOwner('svc-f', bo.toUpperCase());
+    t.check(gone.ok && gone.account.owners.length === 1 &&
+            gone.account.owners[0].dn.toLowerCase() === ann.toLowerCase(),
+            'F4. removeOwner() takes one off, whatever its case',
+            JSON.stringify(gone));
+    const last = serviceAccounts.removeOwner('svc-f', ann);
+    t.check(last.ok === false && ownerValues('svc-f').length === 1,
+            'F5. the last owner stays while the policy requires one',
+            JSON.stringify(last));
+    const half = serviceAccounts.setDestination('svc-f', '', 'only-a-name');
+    const cleared = serviceAccounts.setDestination('svc-f', '', '');
+    t.check(half.ok === false && cleared.ok &&
+            cleared.account.owners.length === 1 &&
+            !cleared.account.destination,
+            'F6. a destination is both or neither, and setting it keeps ' +
+            'the owners', JSON.stringify({ half: half, cleared: cleared }));
+    const plain = serviceAccounts.addOwner('svc-f-plain', ann);
+    t.check(plain.ok === false &&
+            errorCodes.codeOf(plain) === 'STS-SVCACCT-0033' &&
+            !serviceAccounts.of('svc-f-plain'),
+            'F7. an ordinary person has no owners to add to ' +
+            '(STS-SVCACCT-0033), and is not made a service account by it',
+            JSON.stringify(plain));
+    const ctx = { via: 'api', actor: 'an-operator' };
+    const acted = adminActions.usersAction(
+      { action: 'add-service-account-owner', user: 'svc-f', owner: bo }, ctx);
+    const off = adminActions.usersAction(
+      { action: 'remove-service-account-owner', user: 'svc-f', owner: bo },
+      ctx);
+    const dest = adminActions.usersAction(
+      { action: 'set-service-account-destination', user: 'svc-f',
+        destination: 'cn=nowhere,ou=applications,dc=x', secretName: 's' },
+      ctx);
+    t.check(acted && acted.ok && acted.changed === true &&
+            acted.account.owners.length === 2 &&
+            /is now an owner of svc-f/.test(acted.message) &&
+            off && off.ok && off.account.owners.length === 1 &&
+            dest && dest.ok === false && ownerValues('svc-f').length === 1,
+            'F8. the three console acts write at once and answer the ' +
+            'account; a destination that is no secret destination is refused',
+            JSON.stringify({ acted: acted, off: off, dest: dest })
+              .slice(0, 600));
+  });
+  log.debug('Leaving oneAtATime().');
+}
+
+function destinationHelpers(t) {
+  log.debug('Entering destinationHelpers().');
+  const fields = { 'fgfind.destinations': ' Vault ',
+                   'fgpage.destinations': '1',
+                   fgsearch: 'destinations|2', secretName: 'iya/x' };
+  const asked = WebAnswers.fieldSearchOf(fields);
+  const path = WebAnswers.fieldSearchPath('destinations', asked, ['a']);
+  t.check(asked.attribute === 'destinations' && asked.page === 2 &&
+          /^\/admin-api\/secret-destinations\?/.test(path) &&
+          /q=Vault/.test(path) && /per=5/.test(path) &&
+          /destinationsPage=2/.test(path) && !/exclude=/.test(path),
+          'G1. a destination search asks the Secret destinations list, ' +
+          'five to a page', path);
+  const found = WebAnswers.fieldSearchFound('destinations', asked,
+    { destinations: [{ id: 'cn=vault,ou=applications,dc=x',
+                       name: 'Vault prod', provider: 'vault', usable: true,
+                       problems: [] },
+                     { id: 'cn=aws,ou=applications,dc=x', name: 'AWS',
+                       provider: 'aws', usable: false,
+                       problems: ['No credential.'] }],
+      destinationsPaging: { page: 2, pages: 3, total: 11 }, matched: 11 });
+  const failed = WebAnswers.fieldSearchFound('destinations', asked, null);
+  t.check(found.kind === 'destinations' && found.page === 2 &&
+          found.pages === 3 && found.matched === 11 &&
+          found.rows[0].value === 'cn=vault,ou=applications,dc=x' &&
+          found.rows[0].label === 'Vault prod' &&
+          found.rows[1].usable === false &&
+          found.rows[1].problems[0] === 'No credential.' &&
+          failed.failed === true && failed.rows.length === 0,
+          'G2. its answer is read into rows with their provider and ' +
+          'whether they can be used', JSON.stringify(found));
+  const draft = WebAnswers.withDestinationUsed(
+    Object.assign(WebAnswers.serviceAccountDraftOf(fields),
+                  { destFind: found }), 'cn=vault,ou=applications,dc=x');
+  t.check(draft.destination === 'cn=vault,ou=applications,dc=x' &&
+          draft.destinationLabel === 'Vault prod' &&
+          draft.secretName === 'iya/x',
+          'G3. a Use chooses the destination with the search\'s name and ' +
+          'keeps the secret name typed', JSON.stringify(draft));
+  const page = { serviceAccount: {
+                   owners: [{ dn: 'uid=a,ou=users,dc=x', kind: 'person',
+                              name: 'a' }],
+                   destination: null, secretName: null,
+                   rotation: { enabled: true, rotates: false } },
+                 state: { serviceAccount: { find: { rows: [] },
+                                            destFind: found } } };
+  const saved = WebAnswers.redraw(PAGE, 'set-service-account-destination',
+    { destination: 'cn=vault,ou=applications,dc=x', secretName: 'iya/x' },
+    { ok: true, message: 'Pushed there now.',
+      account: { owners: page.serviceAccount.owners,
+                 destination: 'cn=vault,ou=applications,dc=x',
+                 secretName: 'iya/x' } }, page);
+  const sa = saved && saved.json.serviceAccount;
+  const st = saved && saved.json.state.serviceAccount;
+  t.check(sa && sa.destination === 'cn=vault,ou=applications,dc=x' &&
+          sa.secretName === 'iya/x' && sa.rotation.rotates === true &&
+          st.notice === 'Pushed there now.' && st.at === 'destination' &&
+          st.destFind && st.destFind.matched === 11 && st.find && saved.banner === '' &&
+          page.serviceAccount.destination === null,
+          'G4. a destination saved at once draws the page again in place: ' +
+          'the account as answered, rotation on, the searches kept',
+          JSON.stringify(saved && saved.json).slice(0, 400));
+  const refused = WebAnswers.redraw(PAGE, 'add-service-account-owner',
+    { owner: 'uid=b,ou=users,dc=x' }, { ok: false, errors: ['Too many.'] },
+    page);
+  const rs = refused && refused.json.state.serviceAccount;
+  t.check(rs && rs.error[0] === 'Too many.' && rs.at === 'owners' &&
+          rs.notice === '' &&
+          refused.json.serviceAccount.owners.length === 1,
+          'G5. a refused Add says why beside the owners and changes nothing',
+          JSON.stringify(rs));
+  log.debug('Leaving destinationHelpers().');
+}
+
+function destinationBlock(t) {
+  log.debug('Entering destinationBlock().');
+  const tr = kit.context().t;
+  const account = {
+    owners: [{ dn: 'uid=ann,ou=users,dc=x', kind: 'person', name: 'ann' }],
+    destination: 'cn=vault,ou=applications,dc=x', secretName: 'iya/svc',
+    rotatedAt: null,
+    rotation: { rotates: true, enabled: true, failures: 0 },
+    policy: { exemptFromSecondFactor: false, allowBrowserSignIn: false,
+              doors: ['ldap'], requiresOwner: true }
+  };
+  const rules = { requiresOwner: true, maxOwners: 25,
+                  dn: 'uid=svc,ou=users,dc=x' };
+  const destFind = { kind: 'destinations', query: '', page: 1, pages: 1,
+    matched: 2,
+    rows: [{ value: 'cn=vault,ou=applications,dc=x', label: 'Vault',
+             provider: 'vault', usable: true, problems: [] },
+           { value: 'cn=aws,ou=applications,dc=x', label: 'AWS',
+             provider: 'aws', usable: false, problems: ['No key.'] }] };
+  const html = UsersPage.serviceAccountSection(tr, 'svc', account,
+    { write: true }, '/admin/users', rules,
+    { serviceAccount: { owners: [], labels: {}, destination: '',
+                        secretName: '', destFind: destFind } });
+  t.check(/name="destination" value="cn=aws,ou=applications,dc=x"[^>]*formaction="[^"]*action=set-service-account-destination/
+            .test(html) &&
+          html.indexOf('name="destination" value="cn=vault,ou=' +
+                       'applications,dc=x" formaction') < 0 &&
+          html.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
+                               'destInUse')) >= 0 &&
+          html.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
+                               'destUnusable')) >= 0 &&
+          html.indexOf('name="secretName" size="60" value="iya/svc"') >= 0 &&
+          html.indexOf('data-fg-find="destinations"') >= 0 &&
+          html.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
+                               'saveSecretName')) >= 0 &&
+          html.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
+                               'clearDestination')) >= 0 &&
+          html.indexOf('Vault</strong>') >= 0,
+          'H1. on a service account a result\'s Use writes at once, the ' +
+          'one in use is marked, and the name can be saved or the ' +
+          'destination cleared');
+  const none = UsersPage.serviceAccountSection(tr, 'svc',
+    Object.assign({}, account, { destination: null, secretName: null }),
+    { write: true }, '/admin/users', rules, {});
+  t.check(none.indexOf(tr.html('consoleUsers.serviceAccountSection.' +
+                               'clearDestination')) < 0 &&
+          none.indexOf('>' + tr.html('consoleUsers.serviceAccountSection.' +
+                                     'saveSecretName') + '</button></div>') <
+            0 &&
+          /class="default-submit"[^>]*name="fgsearch" value="destinations"/
+            .test(none),
+          'H2. with no destination there is nothing to clear and no name ' +
+          'to save alone; Enter in the box is a Find');
+  const ordinary = UsersPage.serviceAccountSection(tr, 'svc', null,
+    { write: true }, '/admin/users', rules,
+    { serviceAccount: { owners: [], labels: {},
+                        destination: 'cn=aws,ou=applications,dc=x',
+                        destinationLabel: 'AWS', secretName: 'n',
+                        destFind: destFind } });
+  t.check(ordinary.indexOf('value="destinations|cn=vault,ou=applications,' +
+                           'dc=x"') >= 0 &&
+          ordinary.indexOf('action=set-service-account-destination') < 0 &&
+          ordinary.indexOf('name="destination" value="cn=aws,ou=' +
+                           'applications,dc=x"') >= 0 &&
+          ordinary.indexOf('AWS</strong>') >= 0,
+          'H3. on an ordinary person a Use only chooses, carried to the ' +
+          'Make by a hidden field');
+  log.debug('Leaving destinationBlock().');
 }
 
 module.exports = {
@@ -428,7 +680,8 @@ module.exports = {
   describe: 'A service account\'s owners (#600): a list of people and ' +
             'groups, at least one where the policy requires it and at most ' +
             'MAX_OWNERS; an LDAP modify held to the same rules; the view; ' +
-            'and the console\'s owner table and five-at-a-time search',
+            'and the console\'s owner table and five-at-a-time search, ' +
+            'each Add, Remove and Use written at once (#602)',
   run: async function (t) {
     log.debug('Entering run().');
     await theList(t);
@@ -436,6 +689,9 @@ module.exports = {
     await theView(t);
     theHelpers(t);
     theSection(t);
+    await oneAtATime(t);
+    destinationHelpers(t);
+    destinationBlock(t);
     log.debug('Leaving run().');
   }
 };

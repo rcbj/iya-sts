@@ -967,6 +967,18 @@
     "en": "b2581e6ddce1f837",
     "text": "管理员将服务账户恢复为普通人员"
   },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "管理员为服务账户添加了所有者"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "管理员从服务账户移除了所有者"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "管理员设置或清除了服务账户的推送目标"
+  },
   "audit.actions.admin.service-account.rotate.label": {
     "en": "9eab836b051b0346",
     "text": "管理员请求轮换服务账户的密码"

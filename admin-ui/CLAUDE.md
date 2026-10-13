@@ -7755,3 +7755,34 @@ this console's:
 The new-user screen has no person page to search from, so it takes the owners
 one per line (`owners`, a textarea). `tests/service_account_owners.js` holds
 the helpers and the section.
+
+**On a service account every Add, Remove and Use now WRITES AT ONCE (#602,
+2026-10-12)** — rcbj: "The owners table should be automatically saved after
+the user clicks add. It would be extremely unintuitive that this isn't
+permanent at that point", and the push destination picked from a search of
+secret destinations only, "automatically set and saved". So the tab has two
+modes, and `serviceAccountSection()` tells them apart by whether the person
+is one:
+
+* **A service account**: the table is the ACCOUNT's (`json.serviceAccount`),
+  not a draft. Each Remove is a small form of its own
+  (`remove-service-account-owner`); the owner search is a form whose
+  results' Add is a button named `owner` with a `formaction` naming
+  `?action=add-service-account-owner` (the pressed button's value and the
+  `formaction`'s query win over the form's fields). The destination block is
+  a third form: the secret-name box, a search of
+  `GET /admin-api/secret-destinations?q=` (`fgfind.destinations`, paged on
+  `destinationsPage`), and a result's Use (`set-service-account-destination`
+  with the name in the box: both or neither). Save the secret name and Clear
+  are drawn only where a destination is set. `WebAnswers.redraw()` answers
+  the three acts IN PLACE: the account's owners and destination from the
+  answer's `account`, the searches kept (`state.serviceAccount.find`,
+  `destFind`), the sentence beside the block it changed (`at`).
+* **An ordinary person**: #600's one staged form, unchanged but for the
+  destination, which is the same search with a Use that only chooses
+  (`fgadd=destinations|<dn>`, `WebAnswers.withDestinationUsed()`), carried to
+  the Make by a hidden `destination`.
+
+`ownerSearch()` in the runtime serves both searches and both modes; on a
+service account what a groups search leaves out is what the account holds,
+since the form carries no `owner` rows.

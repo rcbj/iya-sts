@@ -967,6 +967,18 @@
     "en": "b2581e6ddce1f837",
     "text": "May administrator na ibinalik ang isang service account bilang ordinaryong tao"
   },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "Nagdagdag ang isang administrator ng may-ari sa isang service account"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "Nag-alis ang isang administrator ng may-ari sa isang service account"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "Nagtakda o nag-alis ang isang administrator ng push destination ng isang service account"
+  },
   "audit.actions.admin.service-account.rotate.label": {
     "en": "9eab836b051b0346",
     "text": "May administrator na humiling na i-rotate ang password ng isang service account"

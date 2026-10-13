@@ -132,13 +132,40 @@ class WebAnswers {
    */
   static serviceAccountDraftOf(fields: Json, before?: Json): Json {
     const labels = Object.assign({}, (before && before.labels) || {});
+    // A press in one of the tab's forms keeps what the OTHER form showed:
+    // its search results, and a field it alone holds (#602).
+    const kept = function (name) {
+      return WebAnswers.has(fields, name) ? WebAnswers.one(fields, name)
+        : String((before && before[name]) || '');
+    };
     return {
       owners: WebAnswers.all(fields, 'owner'),
       labels: labels,
-      destination: WebAnswers.one(fields, 'destination'),
-      secretName: WebAnswers.one(fields, 'secretName'),
-      find: (before && before.find) || null
+      destination: kept('destination'),
+      destinationLabel: String((before && before.destinationLabel) || ''),
+      secretName: kept('secretName'),
+      find: (before && before.find) || null,
+      destFind: (before && before.destFind) || null
     };
+  }
+
+  /**
+   * A draft with its push destination set to one the search offered (#602),
+   * named as the search named it.
+   *
+   * @param draft - `serviceAccountDraftOf()`'s answer
+   * @param id - the destination's DN
+   * @returns the draft
+   */
+  static withDestinationUsed(draft: Json, id: string): Json {
+    const offered = ((draft.destFind && draft.destFind.rows) || [])
+      .filter(function (one) {
+        return one.value === id;
+      })[0];
+    return Object.assign({}, draft, {
+      destination: String(id || ''),
+      destinationLabel: offered ? offered.label : ''
+    });
   }
 
   /**
@@ -431,6 +458,17 @@ class WebAnswers {
    * @returns the `/admin-api` path and query
    */
   static fieldSearchPath(kind: string, asked: Json, exclude: string[]): string {
+    // A SERVICE ACCOUNT'S PUSH DESTINATION (#602) is found among the realm's
+    // secret destinations and nothing else, paged on `destinationsPage`.
+    if (kind === 'destinations') {
+      const found = new URLSearchParams();
+      if (asked.query) {
+        found.append('q', asked.query);
+      }
+      found.append('per', String(kit.FIND_PER_PAGE));
+      found.append('destinationsPage', String(asked.page || 1));
+      return '/admin-api/secret-destinations?' + found.toString();
+    }
     // `parties` (#461) asks one of two lists, as the toggle says: the
     // Users page's or the Applications page's. The users list takes no
     // `exclude`, and needs none: the one value is replaced, not added to.
@@ -468,6 +506,9 @@ class WebAnswers {
   static fieldSearchFound(kind: string, asked: Json, answer: Json): Json {
     if (kind === 'owners') {
       return WebAnswers.ownerSearchFound(asked, answer);
+    }
+    if (kind === 'destinations') {
+      return WebAnswers.destinationSearchFound(asked, answer);
     }
     const parties = kind === 'parties';
     const people = parties && asked.which !== 'applications';
@@ -537,6 +578,34 @@ class WebAnswers {
              rows: rows, failed: !ok };
   }
 
+  // A PUSH DESTINATION SEARCH (#602), from the Secret destinations list's
+  // answer: each row a destination's DN (`value`), its name and provider,
+  // and whether it can be pushed to now.
+  /**
+   * A push destination search's results, from the list's answer.
+   *
+   * @param asked - `fieldSearchOf()`'s answer
+   * @param answer - the list operation's JSON, or null when it failed
+   * @returns `{ kind, query, page, pages, matched, rows, failed }`
+   */
+  static destinationSearchFound(asked: Json, answer: Json): Json {
+    const ok = !!answer && Array.isArray(answer.destinations);
+    const paging = (ok && answer.destinationsPaging) || {};
+    return { kind: 'destinations', query: asked.query,
+             page: Number(paging.page) || 1,
+             pages: Number(paging.pages) || 1,
+             matched: ok ? Number(answer.matched !== undefined
+               ? answer.matched : paging.total) || 0 : 0,
+             rows: !ok ? [] : answer.destinations.map(function (one) {
+               return { kind: 'destination', value: String(one.id || ''),
+                        label: String(one.name || one.identifier || ''),
+                        provider: String(one.provider || ''),
+                        usable: one.usable !== false,
+                        problems: (one.problems || []).map(String) };
+             }),
+             failed: !ok };
+  }
+
   // ---------------------------------------------------------------------------
   // 3. THE REDRAWS
   // ---------------------------------------------------------------------------
@@ -569,6 +638,37 @@ class WebAnswers {
       out.state = { draft: fields, error: errors };
       return { json: out, banner: '' };
     }
+    // AN OWNER OR THE DESTINATION SAVED AT ONCE (#602): the page drawn
+    // again in place — the search results kept, so a second owner is one
+    // more press — with the account as the answer now holds it and the
+    // sentence beside the block it changed.
+    const immediate = ['add-service-account-owner',
+                       'remove-service-account-owner',
+                       'set-service-account-destination'];
+    if (page === SERVICE_ACCOUNT_PAGE && immediate.indexOf(action) >= 0) {
+      const out = WebAnswers.copy(json);
+      const before = out.state || {};
+      const draft = WebAnswers.serviceAccountDraftOf(fields,
+                                                      before.serviceAccount);
+      const where = action === 'set-service-account-destination'
+        ? 'destination' : 'owners';
+      if (ok && answer.account && out.serviceAccount) {
+        const now = answer.account;
+        out.serviceAccount.owners = now.owners || [];
+        out.serviceAccount.destination = now.destination || null;
+        out.serviceAccount.secretName = now.secretName || null;
+        if (out.serviceAccount.rotation) {
+          out.serviceAccount.rotation.rotates =
+            !!out.serviceAccount.rotation.enabled && !!now.destination;
+        }
+        draft.secretName = now.secretName || '';
+      }
+      draft.notice = ok ? String(answer.message || '') : '';
+      draft.error = ok ? [] : (errors.length ? errors : ['Refused.']);
+      draft.at = where;
+      out.state = Object.assign({}, before, { serviceAccount: draft });
+      return { json: out, banner: '' };
+    }
     // A REFUSED SERVICE ACCOUNT SAVE (#600) keeps the table, the search and
     // the destination as they were, with the refusal above the table.
     if (page === SERVICE_ACCOUNT_PAGE && !ok) {
@@ -577,6 +677,7 @@ class WebAnswers {
       const draft = WebAnswers.serviceAccountDraftOf(fields,
                                                       before.serviceAccount);
       draft.error = errors.length ? errors : ['Refused.'];
+      draft.at = 'owners';
       out.state = Object.assign({}, before, { serviceAccount: draft });
       return { json: out, banner: '' };
     }

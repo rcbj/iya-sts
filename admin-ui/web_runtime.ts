@@ -1990,21 +1990,43 @@ class ConsoleRuntime extends SpaClient {
   async ownerSearch(fields: Json): Promise<void> {
     const asked = WebAnswers.fieldSearchOf(fields);
     const before = (this.view.json && this.view.json.state) || {};
+    // THE PUSH DESTINATION'S SEARCH (#602) is the same press on the other
+    // list; each keeps the other's results.
+    const kind = asked.attribute === 'destinations' ? 'destinations'
+                                                     : 'owners';
     let draft = WebAnswers.serviceAccountDraftOf(fields,
                                                  before.serviceAccount);
-    if (asked.add) {
+    if (asked.add && kind === 'owners') {
       draft = WebAnswers.withOwnerAdded(draft, asked.add);
     }
+    if (asked.add && kind === 'destinations') {
+      draft = WebAnswers.withDestinationUsed(draft, asked.add);
+    }
+    // ON A SERVICE ACCOUNT the table is the account's, written at once
+    // (#602), and the form carries no `owner` rows: what to leave out of a
+    // groups search is what the account holds.
+    const account = this.view.json && this.view.json.serviceAccount;
+    const held = account
+      ? (account.owners || []).map(function (one: Json) {
+        return String(one.dn);
+      })
+      : draft.owners;
     const answer = await this.apiJson('GET',
-      WebAnswers.fieldSearchPath('owners', asked, draft.owners));
-    draft.find = WebAnswers.fieldSearchFound('owners', asked,
+      WebAnswers.fieldSearchPath(kind, asked, held));
+    const found = WebAnswers.fieldSearchFound(kind, asked,
       answer && answer.status === 200 ? answer.json : null);
+    if (kind === 'destinations') {
+      draft.destFind = found;
+    } else {
+      draft.find = found;
+    }
+    draft.at = kind === 'destinations' ? 'destination' : 'owners';
     this.view.json = Object.assign({}, this.view.json, {
       state: Object.assign({}, before, { serviceAccount: draft }) });
     this.drawView(null, '');
     const doc = this.env.document;
     const refocus = function () {
-      const box = doc.getElementById('fgq-owners');
+      const box = doc.getElementById('fgq-' + kind);
       if (box && box.focus) {
         box.focus({ preventScroll: true });
       }

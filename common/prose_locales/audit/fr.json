@@ -967,6 +967,18 @@
     "en": "b2581e6ddce1f837",
     "text": "Un administrateur a refait d’un compte de service une personne ordinaire"
   },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "Un administrateur a ajouté un propriétaire à un compte de service"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "Un administrateur a retiré un propriétaire d'un compte de service"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "Un administrateur a défini ou retiré la destination d'envoi d'un compte de service"
+  },
   "audit.actions.admin.service-account.rotate.label": {
     "en": "9eab836b051b0346",
     "text": "Un administrateur a demandé le renouvellement du mot de passe d’un compte de service"

@@ -3879,14 +3879,21 @@ class UsersPage {
       return heading + lead + state +
         kit.note(t.html('consoleUsers.serviceAccountSection.needsWrite'));
     }
-    // THE FORM AS DRAWN LAST, after a Remove, a Find or an Add — or what the
-    // account holds, on a fresh page.
+    // THE TAB AS DRAWN LAST, after a press — or what the account holds, on a
+    // fresh page. TWO MODES (#602, rcbj: "The owners table should be
+    // automatically saved after the user clicks add"; a destination picked
+    // from the search is "automatically set and saved"): for a service
+    // account every Add, Remove and Use WRITES at once, through its own
+    // operation, and the table drawn is the account's; for an ordinary
+    // person nothing exists to write to yet, so the table and the
+    // destination are a draft the Make button writes in one act (#600).
     const draft = (pageState && pageState.serviceAccount) || null;
-    const owners: string[] = draft
-      ? (draft.owners || []).slice()
-      : savedOwners.map(function (one) {
+    const immediate = !!account;
+    const owners: string[] = immediate || !draft
+      ? savedOwners.map(function (one) {
         return one.dn;
-      });
+      })
+      : (draft.owners || []).slice();
     const labels = (draft && draft.labels) || {};
     const lower = function (dn) {
       return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
@@ -3910,17 +3917,47 @@ class UsersPage {
       const eq = rdn.indexOf('=');
       return { kind: '', name: eq > 0 ? rdn.slice(eq + 1) : rdn };
     };
-    const changed = !!draft && (owners.length !== savedOwners.length ||
-      owners.some(function (dn, i) {
-        return lower(dn) !== lower(savedOwners[i] && savedOwners[i].dn);
-      }));
     const route = '/admin/users/service-account';
-    const action = kit.esc(route + '#service-account-owners');
-    const button = function (name, value, label, tipText, cls?, off?) {
+    const button = function (name, value, label, tipText, cls?, off?,
+                             goes?) {
       return '<button type="submit" class="secondary ' + (cls || '') +
         '" name="' + name + '" value="' + kit.esc(value) +
-        '" formaction="' + action + '" formnovalidate' + kit.tip(tipText) +
+        '" formaction="' + kit.esc(goes || route + '#service-account-owners') +
+        '" formnovalidate' + kit.tip(tipText) +
         (off ? ' disabled' : '') + '>' + kit.esc(label) + '</button>';
+    };
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+        kit.esc(value) + '">';
+    };
+    const who = hidden('user', key) + hidden('from', 'user') +
+      hidden('back', back);
+    // What the last press said, beside the block it changed.
+    const said = function (where) {
+      if (!draft || (draft.at || 'owners') !== where) {
+        return '';
+      }
+      return (draft.error && draft.error.length
+        ? kit.warn(kit.esc(draft.error.join(' '))) : '') +
+        (draft.notice ? kit.note(kit.esc(draft.notice)) : '');
+    };
+    // A REMOVE: on a service account its own small form, written at once;
+    // on the draft a round trip (`drop`) that writes nothing.
+    const removeOf = function (dn, i, name) {
+      const label = t.text('consoleUsers.serviceAccountSection.remove');
+      if (!immediate) {
+        return button('drop', 'owner.' + i, label,
+                      t.text('consoleUsers.serviceAccountSection.removeTip',
+                             { name: name }), 'danger');
+      }
+      return '<form method="post" class="inline" action="' +
+        kit.esc(route + '#service-account-owners') + '">' +
+        hidden('action', 'remove-service-account-owner') + who +
+        hidden('owner', dn) +
+        '<button type="submit" class="secondary danger"' +
+        kit.tip(t.text('consoleUsers.serviceAccountSection.removeNowTip',
+                       { name: name })) + '>' + kit.esc(label) +
+        '</button></form>';
     };
     const table = owners.length
       ? '<table class="key sa-owners"><tr><th>' +
@@ -3933,34 +3970,59 @@ class UsersPage {
             : kit.tip(t.text('consoleUsers.serviceAccountSection.notFoundTip'))
             ) + '>' + kit.esc(ownerKind(one.kind)) + '</td><td>' +
             kit.esc(one.name) + '</td><td>' + kit.shortened(dn, 60) +
-            '<input type="hidden" name="owner" value="' + kit.esc(dn) +
-            '"></td><td>' +
-            button('drop', 'owner.' + i,
-                   t.text('consoleUsers.serviceAccountSection.remove'),
-                   t.text('consoleUsers.serviceAccountSection.removeTip',
-                          { name: one.name || dn }), 'danger') +
-            '</td></tr>';
+            (immediate ? '' : hidden('owner', dn)) + '</td><td>' +
+            removeOf(dn, i, one.name || dn) + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="state-none">' +
         t.html('consoleUsers.serviceAccountSection.noOwners') + '</p>';
+    const changed = !immediate && !!draft &&
+      (owners.length !== savedOwners.length ||
+       owners.some(function (dn, i) {
+         return lower(dn) !== lower(savedOwners[i] && savedOwners[i].dn);
+       }));
+    const ownersLead = kit.note(
+      (immediate
+        ? t.html('consoleUsers.serviceAccountSection.ownersLeadImmediate')
+        : t.html('consoleUsers.serviceAccountSection.ownersLead')) +
+      (held.requiresOwner
+        ? ' ' + t.html('consoleUsers.serviceAccountSection.ownersRequired')
+        : '') + ' ' +
+      t.html('consoleUsers.serviceAccountSection.ownersMax',
+             { max: String(held.maxOwners || 25) }));
     const ownersBlock = '<h3 id="service-account-owners">' +
       t.html('consoleUsers.serviceAccountSection.ownersHeading') + '</h3>' +
-      kit.note(t.html('consoleUsers.serviceAccountSection.ownersLead') +
-        (held.requiresOwner
-          ? ' ' + t.html('consoleUsers.serviceAccountSection.ownersRequired')
-          : '') + ' ' +
-        t.html('consoleUsers.serviceAccountSection.ownersMax',
-               { max: String(held.maxOwners || 25) })) +
-      (draft && draft.error && draft.error.length
-        ? kit.warn(kit.esc(draft.error.join(' '))) : '') +
-      table +
+      ownersLead + said('owners') + table +
       (changed
         ? '<p class="sub"><strong>' +
           t.html('consoleUsers.serviceAccountSection.unsaved') +
           '</strong></p>' : '');
-    // THE SEARCH (#600): people or groups, FIND_PER_PAGE to a page, each
-    // result with an Add — or why it has none: already an owner, this account
-    // itself, or an identity with no entry to name.
+    // THE PAGER under a search's results, Previous and Next round trips.
+    const pager = function (attribute, found, goes) {
+      return found.failed || (found.pages || 1) <= 1 ? ''
+        : '<div class="fg-pager">' +
+          button('fgsearch', attribute + '|' + (found.page - 1),
+                 t.text('consoleKit.find.previous'),
+                 t.text('consoleKit.find.previous.tip',
+                        { n: kit.FIND_PER_PAGE }),
+                 'fg-prev', found.page <= 1, goes) +
+          '<span class="fg-pageof">' + t.html('consoleKit.find.pageOf', {
+            page: found.page, pages: found.pages,
+            matched: found.matched }) + '</span>' +
+          button('fgsearch', attribute + '|' + (found.page + 1),
+                 t.text('consoleKit.find.next'),
+                 t.text('consoleKit.find.next.tip',
+                        { n: kit.FIND_PER_PAGE }),
+                 'fg-next', found.page >= found.pages, goes) + '</div>';
+    };
+    // A FAILED SEARCH, and failures stay English (#539).
+    const failedSearch = '<span class="state-none">The search could not ' +
+      'be run: /admin-api did not answer it.</span>';
+    // THE OWNER SEARCH (#600): people or groups, FIND_PER_PAGE to a page,
+    // each result with an Add — or why it has none: already an owner, this
+    // account itself, or an identity with no entry to name. On a service
+    // account the Add is `add-service-account-owner`, written at once (its
+    // `formaction` names the action and the pressed button's value is the
+    // `owner`); on the draft it is `fgadd`, which only fills the table.
     const found = (draft && draft.find) || null;
     const which = found && found.which === 'groups' ? 'groups' : 'people';
     const kindRadio = function (value, label, tipText) {
@@ -3994,19 +4056,21 @@ class UsersPage {
           '>' + t.html('consoleUsers.serviceAccountSection.itself') +
           '</span>';
       }
-      return button('fgadd', 'owners|' + one.value,
-                    t.text('consoleKit.find.add'),
-                    t.text('consoleUsers.serviceAccountSection.addTip',
-                           { value: one.value }), 'fg-add', full);
+      return immediate
+        ? button('owner', one.value, t.text('consoleKit.find.add'),
+                 t.text('consoleUsers.serviceAccountSection.addNowTip',
+                        { value: one.value }), 'fg-add', full,
+                 route + '?action=add-service-account-owner' +
+                 '#service-account-owners')
+        : button('fgadd', 'owners|' + one.value,
+                 t.text('consoleKit.find.add'),
+                 t.text('consoleUsers.serviceAccountSection.addTip',
+                        { value: one.value }), 'fg-add', full);
     };
     const results = !found ? ''
       : '<div class="fg-found" aria-live="polite">' +
-        '<input type="hidden" name="fgpage.owners" value="' +
-        kit.esc(String(found.page || 1)) + '">' +
-        (found.failed
-          // A FAILURE, and failures stay English (#539).
-          ? '<span class="state-none">The search could not be run: ' +
-            '/admin-api did not answer it.</span>'
+        hidden('fgpage.owners', String(found.page || 1)) +
+        (found.failed ? failedSearch
           : !found.rows.length
             ? '<span class="state-none fg-none">' + (found.query
               ? t.html('consoleKit.find.noMatches', { query: found.query })
@@ -4020,22 +4084,7 @@ class UsersPage {
                 (one.value ? ' ' + kit.shortened(one.value, 60) : '') +
                 '</span>' + pick(one) + '</div>';
             }).join('')) +
-        (found.failed || (found.pages || 1) <= 1 ? ''
-          : '<div class="fg-pager">' +
-            button('fgsearch', 'owners|' + (found.page - 1),
-                   t.text('consoleKit.find.previous'),
-                   t.text('consoleKit.find.previous.tip',
-                          { n: kit.FIND_PER_PAGE }),
-                   'fg-prev', found.page <= 1) +
-            '<span class="fg-pageof">' + t.html('consoleKit.find.pageOf', {
-              page: found.page, pages: found.pages,
-              matched: found.matched }) + '</span>' +
-            button('fgsearch', 'owners|' + (found.page + 1),
-                   t.text('consoleKit.find.next'),
-                   t.text('consoleKit.find.next.tip',
-                          { n: kit.FIND_PER_PAGE }),
-                   'fg-next', found.page >= found.pages) + '</div>') +
-        '</div>';
+        pager('owners', found, '') + '</div>';
     const search = '<h3 id="service-account-find">' +
       t.html('consoleUsers.serviceAccountSection.findHeading') + '</h3>' +
       '<div class="sa-find">' +
@@ -4055,63 +4104,194 @@ class UsersPage {
              t.text('consoleUsers.serviceAccountSection.findTip',
                     { n: kit.FIND_PER_PAGE }), 'fg-findbtn') +
       '</div>' + results + '</div>';
-    const field = function (name, label, value, placeholder, tip) {
-      return '<div class="formrow"><label' + kit.tip(tip) + '>' + label +
-        ' <input type="text" ' +
-        'name="' + name + '" size="60" value="' + kit.esc(value || '') +
-        '" placeholder="' + kit.esc(placeholder) + '"></label></div>';
+    // THE PUSH DESTINATION (#602): found among the realm's secret
+    // destinations and nothing else (GET /admin-api/secret-destinations),
+    // FIND_PER_PAGE to a page. On a service account a result's Use is
+    // `set-service-account-destination` with the secret name in the box,
+    // written at once; on the draft it is `fgadd`, which only chooses it.
+    const destination = immediate
+      ? (account.destination || '')
+      : String((draft && draft.destination) || '');
+    const secretName = immediate
+      ? (draft && draft.at === 'destination' && draft.error &&
+         draft.error.length ? draft.secretName : account.secretName) || ''
+      : String((draft && draft.secretName) || '');
+    const destGoes = route + '#service-account-destination';
+    const destFound = (draft && draft.destFind) || null;
+    const destName = function (dn) {
+      const shown = destFound && (destFound.rows || []).filter(function (one) {
+        return lower(one.value) === lower(dn);
+      })[0];
+      if (shown) {
+        return shown.label;
+      }
+      if (draft && draft.destinationLabel &&
+          lower(draft.destination) === lower(dn)) {
+        return draft.destinationLabel;
+      }
+      const rdn = String(dn).split(',')[0];
+      const eq = rdn.indexOf('=');
+      return eq > 0 ? rdn.slice(eq + 1) : rdn;
     };
+    const destUse = function (one) {
+      if (destination && lower(one.value) === lower(destination)) {
+        return '<span class="state-none"' +
+          kit.tip(t.text('consoleUsers.serviceAccountSection.destInUseTip')) +
+          '>' + t.html('consoleUsers.serviceAccountSection.destInUse') +
+          '</span>';
+      }
+      const label = t.text('consoleUsers.serviceAccountSection.destUse');
+      return immediate
+        ? button('destination', one.value, label,
+                 t.text('consoleUsers.serviceAccountSection.destUseNowTip',
+                        { name: one.label }), 'fg-add', !one.value,
+                 route + '?action=set-service-account-destination' +
+                 '#service-account-destination')
+        : button('fgadd', 'destinations|' + one.value, label,
+                 t.text('consoleUsers.serviceAccountSection.destUseTip',
+                        { name: one.label }), 'fg-add', !one.value,
+                 destGoes);
+    };
+    const destResults = !destFound ? ''
+      : '<div class="fg-found" aria-live="polite">' +
+        hidden('fgpage.destinations', String(destFound.page || 1)) +
+        (destFound.failed ? failedSearch
+          : !destFound.rows.length
+            ? '<span class="state-none fg-none">' + (destFound.query
+              ? t.html('consoleKit.find.noMatches',
+                       { query: destFound.query })
+              : t.html('consoleUsers.serviceAccountSection.destNone')) +
+              '</span>'
+            : destFound.rows.map(function (one) {
+              return '<div class="fg-hit"><span class="fg-hit-name">' +
+                '<span class="fg-hit-kind">' + kit.esc(one.provider) +
+                '</span> ' + kit.esc(one.label) + ' ' +
+                kit.shortened(one.value, 60) +
+                (one.usable ? '' : ' <span class="state-expired"' +
+                  kit.tip(one.problems.join(' ')) + '>' +
+                  t.html('consoleUsers.serviceAccountSection.destUnusable') +
+                  '</span>') +
+                '</span>' + destUse(one) + '</div>';
+            }).join('')) +
+        pager('destinations', destFound, destGoes) + '</div>';
+    const destPlaceholder = t.text(
+      'consoleUsers.serviceAccountSection.destFindPlaceholder');
+    const destSearch = '<div class="sa-find">' +
+      '<div class="fg-item fg-findrow"><input type="search" ' +
+      'id="fgq-destinations" name="fgfind.destinations" ' +
+      'data-fg-find="destinations" value="' +
+      kit.esc(destFound ? destFound.query : '') + '" placeholder="' +
+      kit.esc(destPlaceholder) + '" aria-label="' + kit.esc(destPlaceholder) +
+      '"' + kit.tip(t.text('consoleUsers.serviceAccountSection.destFindTip',
+                           { n: kit.FIND_PER_PAGE })) + '>' +
+      button('fgsearch', 'destinations', t.text('consoleKit.find.find'),
+             t.text('consoleUsers.serviceAccountSection.destFindTip',
+                    { n: kit.FIND_PER_PAGE }), 'fg-findbtn', false,
+             destGoes) +
+      '</div>' + destResults + '</div>';
+    const current = '<div class="formrow">' +
+      t.html('consoleUsers.serviceAccountSection.destCurrent') + ' ' +
+      (destination
+        ? '<strong>' + kit.esc(destName(destination)) + '</strong> ' +
+          kit.shortened(destination, 60)
+        : '<span class="state-none">' +
+          t.html('consoleUsers.serviceAccountSection.neverRotated') +
+          '</span>') + '</div>';
+    const secretBox = '<div class="formrow"><label' +
+      kit.tip(t.text('consoleUsers.serviceAccountSection.secretTip')) + '>' +
+      t.html('consoleUsers.serviceAccountSection.secretName') +
+      ' <input type="text" name="secretName" size="60" value="' +
+      kit.esc(secretName) + '" placeholder="iya/svc-backup"></label></div>';
+    const destHeading = '<h3 id="service-account-destination">' +
+      t.html('consoleUsers.serviceAccountSection.destinationHeading') +
+      '</h3>';
+    // ON A SERVICE ACCOUNT, ITS OWN FORM: Enter in the secret box saves the
+    // name against the destination in force (the hidden default button
+    // first), Enter in the search box is a Find, and a result's Use saves
+    // that destination with the name in the box — both or neither.
+    const destForm = !immediate ? ''
+      : destHeading +
+        kit.note(t.html('consoleUsers.serviceAccountSection.destLead')) +
+        said('destination') +
+        '<form method="post" action="' + kit.esc(destGoes) +
+        '" class="sa-form">' +
+        hidden('action', 'set-service-account-destination') + who +
+        hidden('destination', destination) +
+        (destination
+          ? '<button type="submit" class="default-submit" tabindex="-1" ' +
+            'aria-hidden="true">' +
+            t.html('consoleUsers.serviceAccountSection.saveSecretName') +
+            '</button>'
+          : '<button type="submit" class="default-submit" tabindex="-1" ' +
+            'aria-hidden="true" name="fgsearch" value="destinations" ' +
+            'formaction="' + kit.esc(destGoes) + '">' +
+            kit.esc(t.text('consoleKit.find.find')) + '</button>') +
+        current + secretBox +
+        (destination
+          ? '<div class="formrow"><button type="submit"' +
+            kit.tip(t.text(
+              'consoleUsers.serviceAccountSection.saveSecretNameTip')) +
+            '>' + t.html('consoleUsers.serviceAccountSection.saveSecretName') +
+            '</button></div>'
+          : '') +
+        destSearch + '</form>' +
+        (destination
+          ? '<form method="post" action="' + kit.esc(destGoes) + '">' +
+            hidden('action', 'set-service-account-destination') + who +
+            hidden('destination', '') + hidden('secretName', '') +
+            '<div class="formrow"><button type="submit" ' +
+            'class="secondary danger"' +
+            kit.tip(t.text(
+              'consoleUsers.serviceAccountSection.clearDestinationTip')) +
+            '>' +
+            t.html('consoleUsers.serviceAccountSection.clearDestination') +
+            '</button></div></form>'
+          : '');
+    // ON AN ORDINARY PERSON, ONE FORM (#600): the owners, the searches and
+    // the destination, and the button at its foot that writes them. Its own
+    // route (`route`) is what the runtime answers a Remove, a search or a
+    // Use on; the Make resolves through that route's `mirrors` to
+    // `set-service-account`, which takes the hidden `owner` rows as
+    // `owners` — the empty `owners` first is what makes an empty table a
+    // list of none rather than an absent member.
+    const makeLabel = t.html('consoleUsers.serviceAccountSection.make');
+    const make = immediate ? ''
+      : '<form method="post" action="' +
+        kit.esc(route + '#service-account') + '" class="sa-form">' +
+        hidden('action', 'set-service-account') + who +
+        hidden('serviceAccount', 'true') + hidden('owners', '') +
+        // THE DEFAULT BUTTON, first in the form: Enter in a box presses the
+        // first submit button, which would otherwise be a Remove. Enter in
+        // a search box is a Find (the runtime reads `data-fg-find`).
+        '<button type="submit" class="default-submit" tabindex="-1" ' +
+        'aria-hidden="true">' + makeLabel + '</button>' +
+        ownersBlock + search + destHeading +
+        kit.note(t.html('consoleUsers.serviceAccountSection.destLeadDraft')) +
+        hidden('destination', destination) + current + secretBox +
+        destSearch +
+        '<div class="formrow"><button title="' +
+        kit.esc(t.text('consoleUsers.serviceAccountSection.saveTitle')) +
+        '">' + makeLabel + '</button></div></form>' +
+        kit.note(t.html('consoleUsers.serviceAccountSection.endsSessions'));
+    // ON A SERVICE ACCOUNT the owner search is a form of its own: an Add
+    // writes, and nothing else in it does.
+    const ownersForm = !immediate ? ''
+      : ownersBlock +
+        '<form method="post" action="' +
+        kit.esc(route + '#service-account-owners') + '" class="sa-form">' +
+        hidden('action', 'add-service-account-owner') + who +
+        '<button type="submit" class="default-submit" tabindex="-1" ' +
+        'aria-hidden="true" name="fgsearch" value="owners" formaction="' +
+        kit.esc(route + '#service-account-owners') + '">' +
+        kit.esc(t.text('consoleKit.find.find')) + '</button>' +
+        search + '</form>';
+    const set = immediate ? ownersForm + destForm : make;
     const form = function (action, label, title, extra, danger?) {
       return '<form method="post" action="/admin/users">' +
-        '<input type="hidden" name="action" value="' + kit.esc(action) + '">' +
-        '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
-        '<input type="hidden" name="from" value="user">' +
-        '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-        extra +
+        hidden('action', action) + who + extra +
         '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
         ' title="' + kit.esc(title) + '">' + label + '</button></div></form>';
     };
-    const destination = draft ? draft.destination
-      : account && account.destination;
-    const secretName = draft ? draft.secretName
-      : account && account.secretName;
-    const saveLabel = account
-      ? t.html('consoleUsers.serviceAccountSection.save')
-      : t.html('consoleUsers.serviceAccountSection.make');
-    // ONE FORM: the owners, the search and the destination, and the button
-    // at its foot that writes them. Its own route (`route`) is what the
-    // runtime answers a Remove or a search on; the Save resolves through
-    // that route's `mirrors` to `set-service-account`, which takes the
-    // hidden `owner` rows as `owners` — the empty `owners` first is what
-    // makes an empty table a list of none rather than an absent member.
-    const set = '<form method="post" action="' +
-      kit.esc(route + '#service-account') + '" class="sa-form">' +
-      '<input type="hidden" name="action" value="set-service-account">' +
-      '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
-      '<input type="hidden" name="from" value="user">' +
-      '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
-      '<input type="hidden" name="serviceAccount" value="true">' +
-      '<input type="hidden" name="owners" value="">' +
-      // THE DEFAULT BUTTON, first in the form: Enter in a box presses the
-      // first submit button, which would otherwise be a Remove. Enter in the
-      // search box is a Find (the runtime reads `data-fg-find`).
-      '<button type="submit" class="default-submit" tabindex="-1" ' +
-      'aria-hidden="true">' + saveLabel + '</button>' +
-      ownersBlock + search +
-      '<h3>' + t.html('consoleUsers.serviceAccountSection.destinationHeading') +
-      '</h3>' +
-      field('destination', t.html('consoleUsers.newUserBody.destination'),
-            destination, 'cn=vault-prod,ou=applications,...',
-            t.text('consoleUsers.serviceAccountSection.destinationTip')) +
-      field('secretName',
-            t.html('consoleUsers.serviceAccountSection.secretName'),
-            secretName, 'iya/svc-backup',
-            t.text('consoleUsers.serviceAccountSection.secretTip')) +
-      '<div class="formrow"><button title="' +
-      kit.esc(t.text('consoleUsers.serviceAccountSection.saveTitle')) + '">' +
-      saveLabel + '</button></div></form>' +
-      (account ? ''
-        : kit.note(t.html('consoleUsers.serviceAccountSection.endsSessions')));
     const rotate = account && account.destination
       ? '<h3>' + t.html('consoleUsers.serviceAccountSection.rotateHeading') +
         '</h3>' +

@@ -374,6 +374,20 @@ async function registerAndHide(t, base) {
           sent.indexOf(AWS_SECRET_KEY) < 0,
           'B4. GET /admin-api/secret-destinations answers the register ' +
           'without the credential');
+  // THE SEARCH a service account's push destination is picked from (#602):
+  // `q` narrows the register and `matched` counts what it found.
+  get.handler({ query: { q: 'AWS-' + RUN.toUpperCase() } }, res);
+  const narrowed = JSON.parse(sent);
+  get.handler({ query: { q: 'no-such-destination-' + RUN } }, res);
+  const none = JSON.parse(sent);
+  t.check(narrowed.matched >= 1 && narrowed.destinations.every(function (r) {
+    return [r.name, r.identifier, r.id, r.provider].some(function (one) {
+      return String(one || '').toLowerCase().indexOf('aws-' + RUN) >= 0;
+    });
+  }) && none.matched === 0 && none.destinations.length === 0,
+          'B4b. `q` finds secret destinations by name, case-insensitively, ' +
+          'and counts them', JSON.stringify({ narrowed: narrowed.matched,
+                                             none: none.matched }));
   const post = routes.filter(function (r) {
     return r.method === 'POST';
   })[0];

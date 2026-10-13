@@ -17949,6 +17949,14 @@ const CODES = [
     summary: 'A service account was given more owners than it may name ' +
       '(MAX_OWNERS, #600); a group stands for many.',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0032',
+    summary: 'An owner was asked to be taken off a service account that ' +
+      'does not list it (#602).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0033',
+    summary: 'An owner or a push destination was changed on an entry that ' +
+      'is not a service account in this realm (#602).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-SVCACCT-0040',
     summary: 'A rotation was asked of an entry that is not a service account ' +
       'in this realm.',
