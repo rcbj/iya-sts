@@ -2123,6 +2123,26 @@ still answers where the username is typed (its handle must then be the
 name's bytes), and never where it is not (`STS-AUTHN-0304`, rcbj's decision:
 no migration — the person registers it again).
 
+**Required, for one kind of application** (#608, rcbj 2026-10-13): the
+passkey policy's `requireUsernameless` takes the username field and Sign In
+off the screen (`screenView()`'s `usernameless`) and refuses a POST naming a
+person (`STS-AUTHN-0333`, in `screenAct()` after the passkey branch). One
+method decides, `usernamelessRequired()`, and it asks four things: the
+record is passwordless by the APPLICATION's own declaration of `webauthn`
+alone (a relationship's `webauthn`, or a demand for two factors that
+overrode it, is not this case); a usernameless passkey is offered at all
+(`passkeyOffered()`); the profile that selects the APPLICATION — chosen by
+the application alone and read by name, never the ambient selection — has
+the row on; and the application is not a hosted surface
+(`applications.HOSTED_SURFACE_CLIENT_IDS`) under the `default` profile. That
+last is rcbj's: a realm-wide switch must not change how an administrator
+gets into the console, the debugger or the portal; a named profile that
+selects one of them does.
+
+**A disabled box is drawn greyed** (#608): `web_authn_login.ts` gives its
+label `off` beside `chk`, and `/web/card.css` greys it. A box checked AND
+disabled by a demand is in force, not unavailable, and is not greyed.
+
 **The usernameless sign-in** (the passkey policy's `allowUsernameless`, ON
 by default since 2026-10-10, off before — `webauthn.usernameless` until #527; `common/CLAUDE.md` 3ch) is
 `passkeySignIn()`, reached from `POST /authn/login` with `action=passkey`

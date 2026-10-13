@@ -11432,6 +11432,13 @@ second followed `webauthn.residentKey`, which defaulted to `discouraged`.
     The row's default is the same (answer 2), so both buttons make a
     discoverable credential unless a realm lowers it.
   - Per realm only (answer 3); named policies are #535.
+  - `requireUsernameless` (#608, rcbj 2026-10-13), off: the screen asks for
+    no username and refuses one (`STS-AUTHN-0333`). `requiresUsernameless()`
+    answers the ROWS (it needs `allowUsernameless`, and `validate()` refuses
+    the one without the other); whether a sign-in is held to it is
+    `authn.ts`'s `usernamelessRequired()`, because the application's
+    mechanisms and the hosted surfaces are not this leaf's to know — see
+    `authn/CLAUDE.md`.
 * **What it replaced.** `webauthn.usernameless` and `webauthn.residentKey`
   are retired with no shim. `REPLACED_SETTINGS` refuses a start that names
   either, and its message now names a policy row where a replacement is not

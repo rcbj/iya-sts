@@ -13951,6 +13951,8 @@ export = {
   screenView: slot.forward('screenView'),
   screenProblem: slot.forward('screenProblem'),
   screenAct: slot.forward('screenAct'),
+  // Whether a sign-in must be a passkey with no username (#608).
+  usernamelessRequired: slot.forward('usernamelessRequired'),
   passkeyOptions: slot.forward('passkeyOptions'),
   selectIdpView: slot.forward('selectIdpView'),
   refreshPartners: slot.forward('refreshPartners'),

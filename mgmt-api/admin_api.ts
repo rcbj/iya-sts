@@ -1312,7 +1312,13 @@ class AdminApi {
         save: 'Writes `cn=default,ou=passkeyPolicies` in this realm\'s ' +
               'directory, REPLACING what is there; a realm with no entry of ' +
               'its own follows the default realm\'s. `allowUsernameless` ' +
-              '(off by default) offers a passkey sign-in with no username. ' +
+              '(on by default) offers a passkey sign-in with no username. ' +
+              '`requireUsernameless` (off, #608) makes it the only way in ' +
+              'for an application whose `appAuthnMechanism` is `webauthn` ' +
+              'alone: no username field, and a sign-in naming a person ' +
+              'refused; it needs `allowUsernameless`, and the `default` ' +
+              'profile never applies it to the admin console, the debugger ' +
+              'or the user portal. ' +
               'While it is off, "Use a security key" asks the authenticator ' +
               'for a discoverable credential (`residentKey: required`), as ' +
               '"Create a passkey" always does; while it is on, it asks ' +
@@ -1335,7 +1341,7 @@ class AdminApi {
               'are the names a passkey prompt and a new key show. ' +
               '`aggregateDevices` (on) offers a person\'s passkeys as one ' +
               'sign-in choice; off, one per passkey.',
-        example: { allowUsernameless: false,
+        example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
                    enforcePinLength: false, minPinLength: 4,
