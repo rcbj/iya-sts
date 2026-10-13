@@ -821,7 +821,12 @@ const SURVEY = `
     links: Array.from(document.querySelectorAll('a[href]')).map(function (a) {
       return a.href;
     }),
-    nav: document.querySelectorAll('nav a, .nav a, aside a').length,
+    // THE NAVIGATION COLUMN, NOT A PAGE'S TAB BAR (2026-10-13): a tabbed
+    // page draws its tabs as <nav class="tabbar">, and the signed-out
+    // page has two since 342d8ee4 — counted here they read as a console
+    // navigation column beside a session that has ended.
+    nav: document.querySelectorAll('nav:not(.tabbar) a, .nav a, aside a')
+      .length,
     crumb: (function () {
       const c = document.querySelector('p.crumb');
       return c ? { html: c.innerHTML, leaves:
