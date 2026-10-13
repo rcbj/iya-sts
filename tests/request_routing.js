@@ -263,7 +263,7 @@ function checkDispatchEverything(t) {
   withSettings('*', '/scim,/xacml,/admin-api', function () {
     ['/oauth2/authorize', '/saml2/sso', '/saml11/sso', '/wsfed', '/wstrust',
      '/scim/v2/Users', '/admin', '/admin-api/config', '/portal', '/xacml/pdp',
-     '/krb5/principals', '/spiffe/bundle', '/ssf/streams', '/federation/acs/x',
+     '/KdcProxy', '/spiffe/bundle', '/ssf/streams', '/federation/acs/x',
      '/logout', '/'].forEach(function (url) {
       t.check(pool.dispatched(url) === true,
               '"*" dispatches ' + url, String(pool.dispatched(url)));

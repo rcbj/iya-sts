@@ -181,8 +181,8 @@ function childMain() {
         const named = pki.algorithmsFrom({ keyAlg: 'rsa-2048',
                                            signatureAlg: 'sha1-rsa' });
         // The KDC's own reading of its clock, from the module: the
-        // document that publishes it, /krb5/principals, is a demonstration
-        // a product realm is not served (#585).
+        // document that published it, /krb5/principals, was a demonstration
+        // (#585) and is gone (#595).
         const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
         const spiffe = await getJson('/spiffe?format=json');
         return {

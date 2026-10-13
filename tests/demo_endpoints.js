@@ -30,6 +30,13 @@
 //      the hosted-applications catalogue offers no demo prefix or
 //      application; and the four checks hold in development too.
 //
+// **THE INVENTORY IS EMPTY SINCE #595**, which took the last
+// demonstrations — the Kerberos and SPNEGO ones — out of the runtime and into
+// the development companion. So A holds that nothing is marked, and the
+// mechanism the mark still is (until #591's P8 removes it) is exercised in
+// B, C and D on ONE PROBE ROUTE this file registers on the app after A's
+// checks, `/demo-endpoints-probe`, marked `demoOnly` and described nowhere.
+//
 // IN A CHILD, `protocol_endpoints.js`'s arrangement: it loads the whole
 // stack, and one loaded into the runner would be shared with every later
 // file.
@@ -72,18 +79,18 @@ function childMain() {
     // /xacml/protected to the remote PEP (#596). The OpenID4VC
     // demonstration (its pages, `/issuer/demo.js`, `/vc-demo-api`,
     // `/oid4vp/result/:state`), the issuer's two readbacks and
-    // `/did/generate` left with #594.
-    '/spnego', '/spnego/protected',
-    '/krb5/service', '/krb5/principals',
+    // `/did/generate` left with #594. `/spnego`, `/spnego/protected`,
+    // `/spnego/pages.js` (#583's script) and `/krb5/service` left for the
+    // development companion with #595, which deleted `/krb5/principals`.
     // The W3C VC API left this list with #598: a product surface, off by
     // default behind vcApi.enabled; its status-list publish hook is
     // `POST /admin-api/vc-status/publish` now.
     // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
     // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
     // (Monitoring → TLS connection) left with #597.
-    // The SPNEGO diagnostic surface's script (#583), a demonstration like
-    // the pages it draws.
-    '/spnego/pages.js'];
+  ];
+  // The probe B, C and D ask about, registered after A (#595).
+  const PROBE = '/demo-endpoints-probe';
   // A concrete path for a pattern.
   function concrete(p) {
     return p.replace(/:([A-Za-z_]+)/g, 'probe');
@@ -192,6 +199,14 @@ function childMain() {
            undocumented: developmentReport.undocumented,
            stale: developmentReport.stale }));
 
+    // THE PROBE: a demonstration route as a phase of #591 left one, so the
+    // mark's behaviour is still held now that the inventory above is empty.
+    app.get(PROBE, app.demoOnly, function (req, res) {
+      res.status(200).json({ probe: true });
+    });
+    marks[PROBE] = 'realm';
+    methods[PROBE] = ['GET'];
+
     const server = http.createServer(app);
     await new Promise(function (resolve) {
       server.listen(0, '127.0.0.1', resolve);
@@ -225,10 +240,10 @@ function childMain() {
          'default realm every demonstration reaches its handler',
          missingInDevelopment.join(', ') || 'all served');
     const unregistered = await ask(port, 'GET',
-                                   '/realm/' + PRODUCT + '/spnego');
+                                   '/realm/' + PRODUCT + PROBE);
     const nothing = await ask(port, 'GET', '/realm/' + PRODUCT +
                               '/no-such-path-anywhere');
-    note(unregistered.body.replace(/\/spnego/, '/X') ===
+    note(unregistered.body.replace(PROBE, '/X') ===
          nothing.body.replace(/\/no-such-path-anywhere/, '/X'),
          'B3. and the 404 is the unrouted one, body for body',
          unregistered.body.slice(0, 80));
@@ -240,8 +255,8 @@ function childMain() {
     config.setOverride('global.mode', 'product');
     try {
       const realmDemo = await ask(port, 'GET', '/realm/' + DEVELOPMENT +
-                                  '/spnego');
-      const defaultRealm = await ask(port, 'GET', '/spnego');
+                                  PROBE);
+      const defaultRealm = await ask(port, 'GET', PROBE);
       note(!unrouted(realmDemo, 'GET') && unrouted(defaultRealm, 'GET'),
            'C1. with the process in product, a development realm keeps ' +
            'demoOnly\'s routes and the default realm does not (no route ' +
@@ -263,6 +278,8 @@ function childMain() {
       }).map(function (row) {
         return row.path;
       });
+      // The probe is marked and described nowhere: in a product realm the
+      // page must not see it at all, so it is NOT excused from the drift.
       note(listed.length === 0 && report.undocumented.length === 0 &&
            report.stale.length === 0 &&
            (report.demoMismatch || []).length === 0 &&
@@ -326,7 +343,7 @@ function childMain() {
       const offered = [];
       catalogue.forEach(function (one) {
         one.prefixes.forEach(function (prefix) {
-          if (['/issuer', '/did', '/spnego', '/vc-demo-api']
+          if (['/issuer', '/did', '/spnego', '/vc-demo-api', '/krb5']
               .indexOf(prefix) >= 0) {
             offered.push(prefix);
           }
@@ -335,16 +352,21 @@ function childMain() {
       note(offered.length === 0, 'D4. the hosted-applications catalogue ' +
            'offers no demonstration prefix or application in a product realm',
            offered.join(', ') || 'none');
-      note(app.demoPathHidden('/spnego') &&
+      note(app.demoPathHidden(PROBE) &&
            !app.demoPathHidden('/saml2/sso') &&
            !app.demoPathHidden('/no-such-path'),
            'D5. a link to a demonstration is hidden, and to anything else ' +
            'not');
     });
+    // No application in the catalogue holds a demonstration prefix since
+    // #595 (the Kerberos one held `/spnego`), so development offers the
+    // same prefixes a product realm does.
     note(hosted.list().reduce(function (n, one) {
       return n + one.prefixes.length;
-    }, 0) > productPrefixes && !app.demoPathHidden('/spnego'),
-         'D6. and in development the catalogue and the links keep them');
+    }, 0) === productPrefixes && !app.demoPathHidden(PROBE),
+         'D6. and in development the probe\'s link is kept, and the ' +
+         'catalogue offers what a product realm is offered: no ' +
+         'demonstration prefix is left');
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));

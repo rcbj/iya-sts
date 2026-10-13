@@ -32,8 +32,10 @@
 //      one (403);
 //   6. the console: the Verifier request tab draws the Start form and the
 //      open list, and its form resolves to the operation through `mirrors`;
-//   7. `GET /admin-api/kerberos/principals` answers `accountPolicy` as
-//      `/krb5/principals` does, without either shared password.
+//   7. `GET /admin-api/kerberos/principals` answers `accountPolicy`, and
+//      since #595 the KDC's whole database (`database`) that
+//      `/krb5/principals` listed before it was deleted — by public fields,
+//      with neither shared password anywhere in the answer.
 // ===========================================================================
 
 const fs = require('fs');
@@ -325,23 +327,39 @@ function childMain() {
          String(resolved));
 
     // --- 7. the Kerberos account policy -----------------------------------
-    r = await call(port, 'GET', '/admin-api/kerberos/principals', reader);
-    const kdc = await call(port, 'GET', '/krb5/principals', '');
+    r = await call(port, 'GET', '/admin-api/kerberos/principals?per=500',
+                   reader);
+    const gone = await call(port, 'GET', '/krb5/principals', '');
     j = r.json || {};
     const policy = j.accountPolicy || {};
-    const published = (kdc.json && kdc.json.accountPolicy) || {};
-    note(r.status === 200 &&
-         policy.anyUsernameAuthenticates ===
-           published.anyUsernameAuthenticates &&
-         JSON.stringify(policy.neverCreated) ===
-           JSON.stringify(published.neverCreated) &&
-         JSON.stringify(policy.serviceHosts) ===
-           JSON.stringify(published.serviceHosts) &&
+    const config = require(ROOT_DIR + '/common/config');
+    const principals = require(ROOT_DIR + '/kerberos/krb5_principals');
+    const krbtgt = (j.database || []).filter(function (row) {
+      return row.principal === 'krbtgt/' + principals.REALM + '@' +
+        principals.REALM;
+    })[0];
+    const text = JSON.stringify(j);
+    note(r.status === 200 && policy.anyUsernameAuthenticates === true &&
+         Array.isArray(policy.neverCreated) &&
+         Array.isArray(policy.serviceHosts) &&
+         policy.serviceHosts.length > 0 &&
          !('userPassword' in policy) &&
          !('autoServicePassword' in policy),
-         '7. GET /admin-api/kerberos/principals answers /krb5/principals\' ' +
-         'account policy, without either password', JSON.stringify(policy) +
-         ' | ' + JSON.stringify(published).slice(0, 300));
+         '7a. GET /admin-api/kerberos/principals answers the account ' +
+         'policy, without either password', JSON.stringify(policy));
+    note(!!krbtgt && typeof krbtgt.salt === 'string' &&
+         krbtgt.salt.length > 0 && Array.isArray(krbtgt.etypes) &&
+         krbtgt.etypes.length > 0 && j.databaseTotal >= j.database.length &&
+         j.fixtureAccounts === true &&
+         (j.realmsServed || []).indexOf(principals.REALM) >= 0 &&
+         !('password' in krbtgt) &&
+         text.indexOf(String(config.value('krb5.userPassword'))) < 0 &&
+         text.indexOf(String(config.value('krb5.autoServicePassword'))) < 0,
+         '7b. and the KDC\'s database by its public fields — the krbtgt ' +
+         'with its salt and enctypes — and no password anywhere in it',
+         JSON.stringify(krbtgt) + ' total=' + j.databaseTotal);
+    note(gone.status === 404,
+         '7c. /krb5/principals itself is gone (#595)', gone.status);
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
