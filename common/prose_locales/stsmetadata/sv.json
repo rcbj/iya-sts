@@ -1559,6 +1559,14 @@
     "en": "764048d53b74b4a3",
     "text": "ICKE-SPEC (#221). GET /admin/service-accounts som JSON: varje tjänstekonto (en personpost som bär stsServiceAccount) med dess push-destination, när dess lösenord senast roterades och nästa gång det ska roteras, och hur många rotationer i rad som misslyckats; sfärens rotationsinställningar och summorna. Inget hemligt värde."
   },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "ICKE-STANDARD (#607). En roll, grupp, ett tjänstekonto eller en applikation: dess ägare, om det är stängt för dem — så att de inte kan läsa eller ändra det med owner:read och owner:write — och varför, administratörens markering bland skälen. Fakta som ägarregeln i policyn access-control beslutar om."
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "ICKE-STANDARD (#607). set-protected: administratörens markering, stsOwnerProtected på objektets egen post — kryssrutan Stängt för sina ägare på varje Ägare-flik i konsolen."
+  },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",
     "text": "ICKE-SPEC (#218). GET /admin/devices/monitor som JSON: antalen och tidslinjen dag för dag över registreringar, borttagningar och utkastningar (?days=)."

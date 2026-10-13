@@ -1559,6 +1559,14 @@
     "en": "764048d53b74b4a3",
     "text": "NON-SPEC (#221). GET /admin/service-accounts sa JSON: bawat service account (isang person entry na may dalang stsServiceAccount) kasama ang push destination nito, kailan huling na-rotate ang password nito at kailan ang susunod, at ilang sunud-sunod na rotation ang nabigo; ang mga rotation setting ng realm at ang mga total. Walang secret value."
   },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "HINDI-SPEC (#607). Isang role, grupo, service account o application: ang mga may-ari nito, kung nakasara ito sa kanila — kaya hindi nila ito mababasa o mababago gamit ang owner:read at owner:write — at kung bakit, kasama ang marka ng administrator sa mga dahilan. Ang mga katotohanang pinagpapasyahan ng owner rule ng access-control policy."
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "HINDI-SPEC (#607). set-protected: ang marka ng administrator, stsOwnerProtected sa sariling entry ng object — ang checkbox na Nakasara sa mga may-ari nito sa bawat tab na Mga may-ari ng console."
+  },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",
     "text": "NON-SPEC (#218). GET /admin/devices/monitor sa JSON: ang mga bilang at ang araw-araw na timeline ng mga registration, pag-aalis at eviction (?days=)."

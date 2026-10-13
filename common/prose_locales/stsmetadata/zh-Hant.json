@@ -1559,6 +1559,14 @@
     "en": "764048d53b74b4a3",
     "text": "非規格端點（#221）。以 JSON 提供的 GET /admin/service-accounts：每個服務帳戶（帶有 stsServiceAccount 的人員項目）及其推送目的地、其密碼上次輪替的時間與下次到期的時間，以及連續失敗的輪替次數；此領域的輪替設定與總計。不含任何機密值。"
   },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "非規範（#607）。一個角色、群組、服務帳號或應用程式：其擁有者、是否對他們關閉——即他們不能使用 owner:read 與 owner:write 讀取或變更它——以及原因，管理員的標記也在其中。access-control 原則的擁有者規則據以決定的事實。"
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "非規範（#607）。set-protected：管理員的標記，即物件自身項目上的 stsOwnerProtected——主控台每個「擁有者」索引標籤上的「對擁有者關閉」核取方塊。"
+  },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",
     "text": "非規格端點（#218）。以 JSON 提供的 GET /admin/devices/monitor：註冊、移除與逐出的計數及逐日時間軸（?days=）。"

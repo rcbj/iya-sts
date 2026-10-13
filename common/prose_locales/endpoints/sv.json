@@ -731,6 +731,14 @@
     "en": "330b2e1630d653b8",
     "text": "Tjänstekonton och deras rotation"
   },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Vem som äger ett objekt, och om dess ägare får administrera det"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Stäng ett objekt för sina ägare, eller öppna det igen"
+  },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",
     "text": "Enhetsregistret, räknat"
