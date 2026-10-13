@@ -32,6 +32,10 @@
 //      windowed key.
 //   G. THE REFUSAL: postgres-lru with a memory store does not start
 //      (STS-LDAP-0133).
+//   L. collect(named) LOOKS THE JOURNAL'S KEYS UP (#612): no walk of the
+//      LRU or the ghosts, probes independent of how many ghosts there are,
+//      a dead ghost pruned when met, and the old walk's answer on a seeded
+//      random mix over two realms.
 //
 // WHAT NEEDS AN HTTP RUN (on #349): the whole service in a windowed worker —
 // every protocol family's reads and writes through the window, the change
@@ -580,6 +584,282 @@ function otherProcesses(t) {
           'E6. attach() asks the store again for what read as absent, and ' +
           'keeps what was written before it');
   log.debug("Leaving otherProcesses().");
+}
+
+// --- L. collect(named) looks keys up (#612) ---------------------------------
+//
+// `collect(named)` used to find the journal's few keys by walking every LRU
+// key and every ghost; under a bulk load the ghosts grew with uptime and the
+// walk was half a worker's time. These count, never time: the LRU's `keys()`
+// and every way of iterating the ghost map are wrapped, and the probes are
+// counted, with thousands of ghosts present. Then a seeded random mix over
+// two realms is checked against the OLD algorithm, computed here from the
+// window's own state just before each call.
+
+// Wraps the window's LRU and ghost map so their walks and probes are counted.
+function countWalks(w) {
+  log.debug("Entering countWalks().");
+  const n = { lruKeys: 0, ghostWalks: 0, ghostGets: 0 };
+  const lru = w.lru;
+  const keys = lru.keys;
+  lru.keys = function () {
+    n.lruKeys += 1;
+    return keys.apply(lru, arguments);
+  };
+  const ghosts = w.ghosts;
+  ['forEach', 'keys', 'values', 'entries', Symbol.iterator].forEach(
+    function (name) {
+      const original = ghosts[name];
+      ghosts[name] = function () {
+        n.ghostWalks += 1;
+        return original.apply(ghosts, arguments);
+      };
+    });
+  const get = ghosts.get;
+  ghosts.get = function (ck) {
+    n.ghostGets += 1;
+    return get.call(ghosts, ck);
+  };
+  log.debug("Leaving countWalks().");
+  return n;
+}
+
+// The window with `ghostCount` evicted entries still held by a caller (the
+// returned `held`), across two realms, and three people edited in place.
+function haunted(ghostCount) {
+  log.debug("Entering haunted().");
+  const o = windowOver(table(), 16);
+  const held = [];
+  for (let i = 0; i < ghostCount; i++) {
+    const realm = i % 2 ? 'acme' : 'default';
+    const key = 'uid=g' + i + ',' + USERS;
+    const entry = { dn: key, attributes: person('g' + i) };
+    held.push(entry);
+    o.w.adopt(realm, key, entry);
+  }
+  log.debug("Leaving haunted().");
+  return { o: o, held: held };
+}
+
+function lookedUp(t) {
+  log.debug("Entering lookedUp().");
+  t.log.info('=== L. collect(named) looks the journal\'s keys up ===');
+  const probes = [];
+  [400, 4000].forEach(function (ghostCount) {
+    const h = haunted(ghostCount);
+    // g0 (default) and g1 (acme) were evicted first: ghosts by now.
+    h.held[0].attributes.mail = ['g0@example.com'];
+    h.held[1].attributes.mail = ['g1@example.com'];
+    const ghostsBefore = h.o.w.stats().ghosts;
+    const n = countWalks(h.o.w);
+    const c = h.o.w.collect(new Set(['uid=g0,' + USERS, 'uid=g1,' + USERS,
+                                     'uid=nobody,' + USERS]));
+    t.check(ghostsBefore >= ghostCount - 16,
+            'L1. (' + ghostCount + ' people adopted over a bound of 16: ' +
+            ghostsBefore + ' ghosts)');
+    t.check(n.lruKeys === 0 && n.ghostWalks === 0,
+            'L2. with ' + ghostsBefore + ' ghosts, collect(named) walks ' +
+            'neither the LRU nor the ghosts', JSON.stringify(n));
+    t.check(n.ghostGets <= 3 * 2,
+            'L3. it probes the ghost map at most once per named key per ' +
+            'realm held (3 x 2)', JSON.stringify(n));
+    probes.push(n.ghostGets);
+    const keys = c.upserts.map(function (u) {
+      return u.realm + '\n' + u.key;
+    }).sort();
+    t.equal(keys.join('|'), 'acme\nuid=g1,' + USERS + '|default\nuid=g0,' +
+            USERS,
+            'L4. and finds both edited ghosts, one in each realm');
+  });
+  t.equal(probes[0], probes[1],
+          'L5. the probes are the same with 400 ghosts as with 4000');
+  // A ghost whose entry is gone is dropped when met, not left to the
+  // FinalizationRegistry.
+  const h = haunted(40);
+  h.o.w.ghosts.set('default\nuid=dead,' + USERS,
+                   { ref: { deref: function () { return undefined; } },
+                     base: null });
+  h.o.w.realmsHeld.add('default');
+  h.o.w.collect(new Set(['uid=dead,' + USERS]));
+  t.check(!h.o.w.ghosts.has('default\nuid=dead,' + USERS),
+          'L6. a ghost whose WeakRef no longer derefs is pruned when a ' +
+          'journal names it');
+  h.o.w.ghosts.set('acme\nuid=dead2,' + USERS,
+                   { ref: { deref: function () { return undefined; } },
+                     base: null });
+  h.o.w.collect(null);
+  t.check(!h.o.w.ghosts.has('acme\nuid=dead2,' + USERS),
+          'L7. and when a write named nothing walks them all');
+  sameAsTheWalk(t);
+  log.debug("Leaving lookedUp().");
+}
+
+// A small seeded generator, so a failure can be run again.
+function seeded(seed) {
+  log.debug("Entering seeded().");
+  let s = seed >>> 0;
+  log.debug("Leaving seeded().");
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+// THE OLD ALGORITHM, written out again from the window's state: dirty, then
+// handed out, then every LRU key the journal names (replacing), then every
+// live ghost it names that is not yet a candidate; then the tail that is
+// unchanged — skip in flight, delete with a base, upsert when the JSON moved.
+function oldAnswer(w, named) {
+  log.debug("Entering oldAnswer().");
+  const candidates = new Map();
+  w.dirty.forEach(function (ck) {
+    candidates.set(ck, w.lru.peek(ck));
+  });
+  w.touched.forEach(function (slot, ck) {
+    candidates.set(ck, slot);
+  });
+  const keyOf = function (ck) {
+    return ck.slice(ck.indexOf('\n') + 1);
+  };
+  w.lru.keys().forEach(function (ck) {
+    if (named.has(keyOf(ck))) {
+      candidates.set(ck, w.lru.peek(ck));
+    }
+  });
+  w.ghosts.forEach(function (ghost, ck) {
+    const alive = ghost.ref.deref();
+    if (alive && !candidates.has(ck) && named.has(keyOf(ck))) {
+      candidates.set(ck, { entry: alive, base: ghost.base });
+    }
+  });
+  const out = [];
+  candidates.forEach(function (slot, ck) {
+    if (!slot || w.inFlight.has(ck)) {
+      return;
+    }
+    if (!slot.entry) {
+      if (slot.base !== null) {
+        out.push('D ' + ck + ' ' + slot.base);
+      }
+      return;
+    }
+    const json = JSON.stringify(slot.entry);
+    if (json !== slot.base) {
+      out.push('U ' + ck + ' ' + json + ' ' + slot.base);
+    }
+  });
+  log.debug("Leaving oldAnswer().");
+  return out.sort();
+}
+
+function answerOf(c) {
+  log.debug("Entering answerOf().");
+  const out = c.deletes.map(function (d) {
+    return 'D ' + d.realm + '\n' + d.key + ' ' + d.base;
+  }).concat(c.upserts.map(function (u) {
+    return 'U ' + u.realm + '\n' + u.key + ' ' + u.json + ' ' + u.base;
+  }));
+  log.debug("Leaving answerOf().");
+  return out.sort();
+}
+
+function sameAsTheWalk(t) {
+  log.debug("Entering sameAsTheWalk().");
+  const random = seeded(612);
+  const realms = ['default', 'acme'];
+  const keys = [];
+  for (let i = 0; i < 40; i++) {
+    keys.push('uid=r' + i + ',' + USERS);
+  }
+  const rows = table();
+  realms.forEach(function (realm) {
+    keys.forEach(function (key, i) {
+      if (i % 4 !== 3) {
+        rows.set(realm + '\n' + key, row(realm, key, person('r' + i)));
+      }
+    });
+  });
+  const o = windowOver(rows, 8);
+  const held = [];
+  const pick = function (list) {
+    return list[Math.floor(random() * list.length)];
+  };
+  let rounds = 0;
+  let differ = 0;
+  let nonEmpty = 0;
+  let first = '';
+  let pending = null;
+  for (let round = 0; round < 300; round++) {
+    const ops = 1 + Math.floor(random() * 12);
+    for (let i = 0; i < ops; i++) {
+      const realm = pick(realms);
+      const key = pick(keys);
+      const which = random();
+      if (which < 0.3) {
+        const entry = o.w.getIn(realm, key);
+        if (entry) {
+          held.push(entry);
+        }
+      } else if (which < 0.45) {
+        o.w.setIn(realm, key, { dn: key, attributes: person('w' + round) });
+      } else if (which < 0.55) {
+        o.w.deleteIn(realm, key);
+      } else if (which < 0.7) {
+        o.w.adopt(realm, key, { dn: key,
+                                attributes: person('a' + round) });
+      } else if (which < 0.9 && held.length) {
+        // An edit in place, of an entry held, evicted or not.
+        pick(held).attributes.title = ['t' + round + '-' + i];
+      } else if (held.length > 30) {
+        held.splice(0, 10);
+      }
+    }
+    if (random() < 0.2) {
+      // A dead ghost under a key the journal may name.
+      o.w.ghosts.set(pick(realms) + '\n' + pick(keys),
+                     { ref: { deref: function () { return undefined; } },
+                       base: null });
+    }
+    const named = new Set();
+    const many = Math.floor(random() * 6);
+    for (let i = 0; i < many; i++) {
+      named.add(pick(keys));
+    }
+    if (random() < 0.1) {
+      named.add('uid=nobody,' + USERS);
+    }
+    const expected = oldAnswer(o.w, named);
+    const c = o.w.collect(named);
+    const got = answerOf(c);
+    rounds += 1;
+    nonEmpty += got.length ? 1 : 0;
+    if (expected.join('\n') !== got.join('\n')) {
+      differ += 1;
+      if (!first) {
+        first = 'round ' + round + ': expected ' + JSON.stringify(expected) +
+          ' got ' + JSON.stringify(got);
+      }
+    }
+    // Most flushes commit; some are left in flight a round, some fail.
+    if (pending) {
+      o.w.committed(pending, []);
+      pending = null;
+    }
+    const fate = random();
+    if (fate < 0.15) {
+      pending = c;
+    } else if (fate < 0.25) {
+      o.w.failed(c);
+    } else {
+      o.w.committed(c, []);
+    }
+  }
+  t.check(differ === 0 && nonEmpty > 50,
+          'L8. over ' + rounds + ' seeded rounds of reads, writes, deletes, ' +
+          'adoptions and in-place edits in two realms (' + nonEmpty +
+          ' with something to write), collect(named) answers exactly what ' +
+          'the old walk did', first);
+  log.debug("Leaving sameAsTheWalk().");
 }
 
 // --- F and G run in a child: persistence.js over a `pg` double ------------
@@ -1196,6 +1476,7 @@ function run(t) {
   scans(t);
   lookups(t);
   otherProcesses(t);
+  lookedUp(t);
   t.log.info('=== F. through persistence.js ===');
   inChild(t, 'persistence', 8);
   t.log.info('=== G. the refusal ===');
@@ -1216,6 +1497,6 @@ module.exports = {
   describe: 'the directory as a bounded window onto the store (#349): ' +
             'routing, writes and in-place edits, the flush\'s answers, ' +
             'scans and size, other processes, persistence.js over a pg ' +
-            'double, and the refusal',
+            'double, the refusal, and collect(named) looking keys up',
   run: run
 };
