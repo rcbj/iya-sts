@@ -608,6 +608,19 @@ ldif or multi-cell service is unchanged.
   everything held plus every EVICTED entry a caller still holds (a WeakRef).
   A digest could say "changed" and could not be that base, which is why #343's
   digest is not used here.
+* **The journal's keys are LOOKED UP, never scanned for (#612, 2026-10-13).**
+  `collect(named)` — every flush — probes `realm\nkey` in the LRU and the
+  ghost map for each named key and each realm in `realmsHeld` (every
+  insertion goes through `put()`), O(|named| x realms). It used to walk
+  every LRU key and every ghost; a ghost is made on each eviction and left
+  only when the `FinalizationRegistry` ran, so a 200K bulk load's flush grew
+  with uptime — 7.4 s of a 15.6 s profile, the add rate halved in 33K adds.
+  A ghost whose `WeakRef` is empty is dropped wherever it is met. Only
+  `collect(null)` (a write naming nothing, a realm change, a failed
+  whole-walk flush) still walks both, by definition; the other per-write
+  walks are of `dirty`, bounded by one flush's changes. The answer is the
+  walk's except in ORDER, which nothing reads (the postgres driver sorts by
+  key). Section L of the test counts the walks and compares with the old.
 * **A row another process wrote** is `forgetEntry()`-ed (read again next
   time) unless the key is busy here, in which case this process's own flush
   goes first and the store merges.
