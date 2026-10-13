@@ -5,8 +5,6 @@ nav_order: 2
 
 # Getting started
 
-> **Development mode only (#585):** `/krb5/principals` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 ## Clone it with `--recursive`
 
 ```bash
@@ -71,7 +69,6 @@ will not bind on an ordinary user account.
 |---|---|---|---|
 | 8081 | The main service — every protocol endpoint, the console, the API. **HTTPS**, since every appconfig file here sets `global.https`; `STS_HTTPS=false` makes it plain HTTP. It asks every connection for a client certificate and requires none, so it is also where mutual TLS happens | `global.port` | `STS_PORT` |
 | 88 (TCP+UDP) | The Kerberos KDC | `krb5.kdcPort` | `KRB5_KDC_PORT` |
-| 8888 | The Kerberos-protected test service | `krb5.servicePort` | `KRB5_SERVICE_PORT` |
 | 389 | The LDAP directory | `ldap.port` | `LDAP_PORT` |
 | 636 | The same directory over TLS (LDAPS) | `ldap.tlsPort` | `LDAPS_PORT` |
 | 8092 | The SPIFFE Workload API over gRPC (product mode: only where `spiffe.workloadTcpSourceAuthenticated` is on) | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
@@ -88,7 +85,8 @@ is not" is the ordinary outcome and one flag could only report one of them:
   (an admin console page, so it needs a session; `GET
   /admin-api/ldap/service` is the same object and is not gated)
 - `GET /spiffe` — all four SPIFFE sockets, separately
-- `GET /krb5/principals` — the KDC
+- the KDC — its startup log line (`krb5: the KDC is reachable on TCP and UDP …`,
+  or `STS-CORE-0029` naming why it could not bind)
 
 So a page answering 200 is not evidence that the listener behind it came up. Read
 the flag.
@@ -114,7 +112,7 @@ second process — but every default port collides. Give the second one its own:
 docker run --rm -p 8091:8091 \
   -e CONFIG_FILE=./env/local.js \
   -e STS_PORT=8091 -e LDAP_PORT=3891 -e LDAPS_PORT=6391 \
-  -e KRB5_KDC_PORT=8891 -e KRB5_SERVICE_PORT=8891 \
+  -e KRB5_KDC_PORT=8891 \
   -e STS_SPIFFE_WORKLOAD_PORT=8093 -e STS_SPIFFE_SERVER_PORT=8182 \
   -e STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
   iya-sts

@@ -1,8 +1,9 @@
 # kerberos/
 
-Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, a Kerberos-protected
-service, the same acceptor over HTTP as SPNEGO (RFC 4559/4178), and **a way of
-signing in with it**. Twenty-one files, and they divide into three groups — the
+Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, an acceptor over
+HTTP as SPNEGO (RFC 4559/4178), and **a way of signing in with it**. (The
+Kerberos-protected demonstration service and pages left for the development
+companion on #595 — *The demonstration left the runtime*, at the foot.) Twenty-one files, and they divide into three groups — the
 two stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22, the
 krbtgt rotation of 2026-09-23 and the two PKINIT modules of 2026-10-05 belong
 to the service group and are described at the foot.
@@ -34,8 +35,9 @@ log lines and agree perfectly on the wire, right up until the day the difference
 stops being cosmetic.
 
 **The service**: `krb5_principals.js` (the principal database and every long-term
-key in it), `krb5_kdc.js` (AS and TGS, plus `/KdcProxy` and `/krb5/principals`),
-`krb5_service.js` (the acceptor).
+key in it), `krb5_kdc.js` (AS and TGS, plus `/KdcProxy`; `/krb5/principals` until #595),
+`krb5_service.js` (the acceptor; its TCP socket and `/krb5/service` until
+#595).
 
 **`krb5_spnego.js` is VENDORED too**, and is called out separately only because
 it is the one that reads as this service's own: `spnego.js` sits beside it and IS
@@ -62,11 +64,11 @@ place its own") was reworded the same day; the designs it explained stand,
 and are now argued from the closure. The eight codec files above are the
 ones that may not be edited.
 
-**`spnego.js` must stay after `krb5_service.js` in the require order**, and that is a
-dependency rather than a preference: it calls that module's `accept()` for every
-Kerberos check and adds none of its own. It is also the one Kerberos module that
-starts NOTHING — it is HTTP all the way down, so requiring it is the whole of its
-installation. Note the naming: `krb5_spnego.js` beside it is the VENDORED RFC 4178
+**`spnego.js` stays after `krb5_service.js` in the require order.** Until
+#595 that was a dependency — it called that module's `accept()` for every
+Kerberos check — and since #595 it registers nothing and calls nothing: it is
+the sign-in's page shell (`page()`, `checksTable()`), and
+`spnego_exchange.js` is what calls the acceptor. Note the naming: `krb5_spnego.js` beside it is the VENDORED RFC 4178
 codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js`,
 kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
 Do not merge the two — one of them is somebody else's file.
@@ -79,18 +81,21 @@ KDC's routes ahead of `oauth2.js` and close a cycle.
 
 ---
 
-## SPNEGO IS THREE FILES SINCE 2026-08-26, BECAUSE THERE ARE TWO DOORS
+## SPNEGO IS THREE FILES SINCE 2026-08-26, BECAUSE THERE WERE TWO DOORS
 
 `spnego.js` used to be the whole of it: the negotiation, the HTML and the one
-endpoint. It is now the last of four layers, and each adds exactly one thing.
+endpoint. It became the last of four layers, each adding exactly one thing —
+and since #595 (the demonstration door gone to the companion) the layers are:
 
 | File | What it adds | Registers |
 |---|---|---|
-| `krb5_service.js` | the AP-REQ. Every Kerberos check, over any transport. | `/krb5/service` |
+| `krb5_service.js` | the AP-REQ. Every Kerberos check, over any transport. | nothing since #595 (`/krb5/service` and the TCP socket until then) |
 | `spnego_exchange.js` | RFC 4178 and the RFC 4559 header. No Kerberos code, no HTML, no session. **A LIBRARY** — rule 3, so its position is not a position. | nothing |
-| `spnego.js` | a page that explains what happened. | `/spnego`, `/spnego/protected` |
-| `spnego_pages.ts` | since #583, the shell those two pages answer in this service, and their script — reached lazily by `spnego.js` (below). | `/spnego/pages.js` |
+| `spnego.js` | the sign-in's page shell and check table. | nothing since #595 (`/spnego`, `/spnego/protected` until then; `spnego_pages.ts` and `/spnego/pages.js`, #583, went with them) |
 | `spnego_authn.ts` | **a session, and the identity that goes in it.** | `/authn/spnego` |
+
+What follows argues the split with both doors in it, as it was made; the
+argument stands for the one left, which is the sign-in.
 
 **The split was forced by the second door and it is not tidiness.**
 `/spnego/protected` documents a handshake; `/authn/spnego` performs the same
@@ -137,9 +142,9 @@ Five things about it are load-bearing:
   here is a ticket accepted AND a session minted, `startSession()` is the funnel
   that records exactly that with the `sessionId` on it, and two records would
   make `/admin/users` count one sign-in twice — the defect federation shipped
-  with and fixed the same way. Everything else (the raw socket,
-  `/spnego/protected`, the parent project's real-DC jobs) still records in the
-  acceptor.
+  with and fixed the same way. Everything else (the parent project's real-DC
+  jobs; the raw socket and `/spnego/protected` until #595) still records in
+  the acceptor.
 * **THE REALM IS STRIPPED FROM THE PRINCIPAL, AND ONLY THE LOCAL ONE.**
   `alice@EXAMPLE.COM` becomes a session for `alice`, because the session's
   username is the name the directory entry — and so the `sub`
@@ -198,8 +203,8 @@ origin there and comes back to a different endpoint. This one never leaves.)
 by remote address.** That stand-in for connection identity was only ever a
 diagnostic while one door used it; with a sign-in door on the same map, a
 continuation arriving at `/authn/spnego` could otherwise be matched against a
-half-finished exchange begun at `/spnego/protected` by anybody sharing the
-address — a NAT, a proxy, a container network — and the accepted client on that
+half-finished exchange begun at `/spnego/protected` (until #595) by anybody
+sharing the address — a NAT, a proxy, a container network — and the accepted client on that
 entry is what the session would be minted for.
 
 **SINCE 2026-09-14 (#46 section 5) IT IS KEYED BY A NEGOTIATION ID, NOT THE
@@ -251,7 +256,7 @@ response:
 | Response | `kind` | What the state carries |
 |---|---|---|
 | the first 401 (no `Authorization`) | `challenge` | the pending sign-in (`id`, `protocol`, `application`) or null, the SPN, the realm, the hosts |
-| the 403 when `krb5.spnegoAuthentication` is false | `off` | the setting, `/spnego/protected` only where the realm is served it (#585), the pending sign-in |
+| the 403 when `krb5.spnegoAuthentication` is false | `off` | the setting and the pending sign-in (and `/spnego/protected` where the realm was served it, #585, until #595) |
 | the 200 when nothing was interrupted | `signed-in` | who (the username and the principal), the session id and subject, the flags, the indicators, `amr`, `acr`, the mechanism, bare or not, the mechListMIC, the acceptor's checks |
 
 `kerberos/web_authn_spnego.ts` draws them, as the sign-in surface's
@@ -283,67 +288,19 @@ jobs (`sts_kerberos_spnego.js`, `sts_kerberos_heimdal.js`,
 
 ---
 
-## The diagnostic pages `/spnego` and `/spnego/protected` (#583, 2026-10-12)
+## The diagnostic pages `/spnego` and `/spnego/protected` (#583, 2026-10-12) — GONE (#595)
 
-#575 converted the bodies of the SPNEGO SIGN-IN (`/authn/spnego`). #583 is
-the other two, the demonstration pages `spnego.js` draws (development realms
-only, #585), and its first step was this inventory:
-
-| Response | Kind | Converted |
-|---|---|---|
-| `GET /spnego` (HTML) — what is protected, the SPN, the realm, the mechanisms, the knobs, the sign-in door beside it | a page a person reads | **yes** |
-| `GET /spnego?format=json` | its JSON form, which the parent project's debugger api reads | no — unchanged |
-| `GET /spnego/protected` — STATUS, `WWW-Authenticate: Negotiate` (the bare challenge, `request-mic`'s token, a reject's, the final AP-REP), the `sts_spnego_negotiation` cookie | **the RFC 4559 exchange** | **no** — byte for byte |
-| `GET /spnego/protected` — the BODY of each of those answers (the 401 pages, the reject pages, the 200 "you are in") | a page a person reads, over the verdict | **yes** — the body only |
-| `GET /spnego/protected`'s 500 (`STS-KRB-0096`) | a failure of this service, not a verdict | no — server-drawn, as #575 kept the sign-in's |
-
-`/authn/spnego` is #575's and is not touched here; `/krb5/service` and
-`/krb5/principals` are not in #583.
-
-**Each page is the SPNEGO pages' shell** (`spnego_pages.ts`), carrying its
-view in `data-sts-state`: the advertisement (`?format=json`'s object without
-the last exchange, which the page never drew, and with the realm, which it
-did), or the negotiation's verdict — `verdictView()` names what
-`acceptedPage()`, `refusalPage()` and `detailFor()` read off it and nothing
-else, so no key, token or pending id reaches the page. `/spnego/pages.js`
-(`web_spnego_surface.ts` over `common/web_embedded_surface.ts`, the renderers
-`web_spnego_views.ts` — those three functions moved, case for case — and the
-`spnegoPages` catalogs in seven languages) draws it; a verdict's reason, the
-section 5 requirement and the checks table are English, a diagnostic as the
-sign-in's is (#575). NOT `web_authn_spnego.ts`, which is the sign-in's.
-
-**THE EXCHANGE IS NOT TOUCHED** (#569's rule): `applyVerdict()` sets the
-status, `WWW-Authenticate`, the negotiation cookie and `no-store` before the
-body, and `SpnegoPages.send()` sets only the content type (the `text/html` it
-always was) and the policy (`script-src 'self'`, `style-src 'self'`, through
-`app.contentSecurityPolicy()`). `/spnego`'s 200 gained `no-store`, as every
-shell has. The 500 (`STS-KRB-0096`) stays server-drawn, as #575 kept the
-sign-in's.
-
-**`spnego.js` REACHES `spnego_pages.ts` LAZILY, AND THAT IS WHY THE PARENT IS
-OWED NOTHING.** `spnego.js` is in the parent's COPY closure (*The parent
-project loads these modules in-process*, below), and the shell module reaches
-the shell writer, the locale negotiation and the listener map. So
-`pagesModule()` asks for it when a page is drawn, inside a `try` —
-`krb5_kdc.js`'s way of reaching `ssf/account_signals.ts` — and **a copy
-without it, the parent's, draws the server-drawn page it always drew, byte
-for byte**: the parent's `krb5_spnego_http.js` reads that body ("protected
-content", the client's name, "verified"). In this service the module is
-always there: `common/protocol_stack.ts` registers its script route at
-17-pages, just after `spnego.js`. A module that is present and fails to load
-is logged under `STS-KRB-0209` and the page is drawn server-side. **So the
-old renderers in `spnego.js` are now the parent's**: a change to what a
-verdict's page says is made in `web_spnego_views.ts`, and in `spnego.js` only
-for the parent's sake.
-
-`tests/diagnostic_pages.js` uses exactly that to snapshot the exchange: every
-`/spnego/protected` answer — the bare challenge, a wrong scheme, a token that
-is not SPNEGO, the accepted 200 with its final token, `request-mic` with its
-cookie — is asked with the shell module and with it taken away (the pre-#583
-page), and the status and headers must be equal while only the body differs.
-`tests/web_surfaces.js` holds the bundle to this process's drawing for every
-outcome. No `tests/vendored/` job reads either page's body: the Kerberos jobs
-use `/authn/spnego`.
+#583 made the two demonstration pages a static surface's shells
+(`spnego_pages.ts`, `web_spnego_*.ts`, the `spnegoPages` catalogs, the
+`/spnego/pages.js` bundle) while leaving the RFC 4559 exchange byte for byte.
+**#595 removed all of it from the runtime**: the pages are the development
+companion's (`companion/demo_kerberos.js`, *The demonstration left the
+runtime*, at the foot), drawn on its server with no script, and
+`tests/diagnostic_pages.js` now holds that the paths answer as unrouted. The
+`DIAG_CSS` block of `common/web_card_css.ts` and
+`common/web_embedded_surface.ts` stay, the first for the TLS pages' styles the
+console still draws, the second as the runtime the older embedded surfaces may
+move onto.
 
 ---
 
@@ -713,10 +670,16 @@ nothing and says so at debug.
 the continuation and terminal-refusal 401s with `page()` and `checksTable()`
 as before.
 
-**#583 (2026-10-12) ADDED A LAZY ONE, AND OWES NOTHING**: `spnego.js` asks
-for `./spnego_pages` inside a `try` when it draws `/spnego` or
-`/spnego/protected`, and a copy without the file draws the page it always
-drew — see *The diagnostic pages `/spnego` and `/spnego/protected`*, above.
+**#583 (2026-10-12) ADDED A LAZY ONE, AND OWED NOTHING**: `spnego.js` asked
+for `./spnego_pages` inside a `try` when it drew `/spnego` or
+`/spnego/protected`. **#595 REMOVED IT WITH THE PAGES**, and removed requires
+from the closure besides (`krb5_service.js` no longer requires `net`,
+`common/app` or `common/audit`, and `spnego.js` no longer `common/app`,
+`config`, `krb5_spnego.js`, `krb5_principals.js`, `spnego_exchange.js` or
+`error_codes` — each still in the closure through another file). Removing code
+owes the parent no COPY line. What it DOES owe the parent is a re-point of the
+jobs that drove the removed routes — *The demonstration left the runtime*, at
+the foot.
 
 `MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
 unchanged; below it there is now a sibling-checkout candidate that resolves and
@@ -882,9 +845,8 @@ job needs `krb5-user` in the parent's `tests/Dockerfile` and a per-run
 is not where the only coverage of this door lives.
 
 Still untested at this door: that a ticket for another ACCOUNT's SPN is refused
-while one for a host this service answers for is not; that a half-finished
-`request-mic` exchange begun at `/spnego/protected` cannot be spent here; and
-that exactly ONE authentication is recorded per sign-in rather than a ticket
+while one for a host this service answers for is not; and that exactly ONE
+authentication is recorded per sign-in rather than a ticket
 acceptance beside a session start.
 
 
@@ -956,7 +918,8 @@ and a rename or clear while it is on (`STS-KRB-0125`, because every key in that
 realm's database is salted with the name).
 
 **What is still the PROCESS's**, and each for a reason that has not changed: the
-two sockets (`krb5.kdcPort`, `krb5.servicePort`), and the development-mode second
+KDC's socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until #595),
+and the development-mode second
 realm and its trust (`krb5.trustedRealm` and its three settings). **Trust realms
 do not trust each other's Kerberos** — rcbj's decision — so a realm's KDC holds
 no `krbtgt/<other realm>` and a service in another realm's domain is unknown
@@ -990,7 +953,8 @@ realm list is then one realm, so `PARTNER.COM` is `KDC_ERR_WRONG_REALM`.
 value the settings table publishes (`publishedDefault()` reads the row's `dflt`, so the
 literal is written once) — a service key from `service-account-password` is a silver
 ticket; refused, the reason is carried by `serviceAccount()`, the acceptor puts it in its
-refusal, and `GET /krb5/service` and `GET /krb5/principals` publish it. **The krbtgt
+refusal, and `GET /admin-api/kerberos/principals` (`acceptor`) publishes it (as
+`GET /krb5/service` and `GET /krb5/principals` did until #595). **The krbtgt
 refusal (`STS-KRB-0062`) is RETIRED since #169**: product reads no password for krbtgt at
 all — it is registered with no password and keyed at random from the directory (THE
 KRBTGT KEY, at the foot), and `krbtgtUnavailableReason()` says why a realm has none yet.
@@ -1027,7 +991,7 @@ for that field the way there is for PasswordMustChange — and `logonCount` beco
 `passwordMustChange: 2020-01-01` is on the `expired` fixture, which product mode does
 not create.
 
-**`GET /krb5/principals` WITHHOLDS BOTH PASSWORDS unless the database was built with
+**`GET /krb5/principals` WITHHELD BOTH PASSWORDS (until #595 deleted it) unless the database was built with
 fixtures AND the ambient realm opens test controls** — both, because a development realm
 inside a product process must not publish the process's passwords. They are replaced by
 a sentence rather than omitted. `notImplementedYet` said PAC, cross-realm referrals,
@@ -1173,7 +1137,8 @@ half). Six things about it are decisions:
   it.
 * **THE PRINCIPAL IS A RECORD AND THE KEYS ARE NOT.** A person the KDC resolves from the
   directory is registered in `principals` (so a sign-out stamps it, the TGS handler finds it
-  and `/krb5/principals` lists it with `directoryKeys: true`) with NO PASSWORD — the shared
+  and `GET /admin-api/kerberos/principals`'s `database` lists it with
+  `directoryKeys: true`) with NO PASSWORD — the shared
   development password left on the record would be a second key for every person — and the
   keys go into the non-enumerable cache, refilled from the source on every AS lookup. A
   stored SERVICE key is not registered: it is built over the configured account, if any, per
@@ -1660,7 +1625,7 @@ parent project's `krb5_as_exchange.js`); the setting row marks the ELEMENT
   caches — so `principals.etypePermitted(etype)` asks the SAME marker about one
   number, and every place a key is chosen, derived or used asks it:
   `supportedEtypes()` (hence negotiation, ETYPE-INFO2, the FAST cookie key and
-  `/krb5/principals`), the `KDC_ETYPES` getter (hence a person's derived keys,
+  `/admin-api/kerberos/principals`' `database`), the `KDC_ETYPES` getter (hence a person's derived keys,
   a new service key and the keytabs), `longTermKey()` BEFORE its cache (throws,
   so a ticket or a timestamp sealed with RC4 does not open) and
   `retainedKeyFor()`. A person whose sealed record still holds an RC4 key from
@@ -2209,6 +2174,72 @@ stub worker thread, the two fallbacks, a dying worker, the table, a whole AS
 exchange through the table function with the address on the authentication
 row, and no catch-up in a worker); seven mutants, all caught.
 
-## Development only: this family's demonstrations (#585, 2026-10-12)
+## The demonstration left the runtime (#595, 2026-10-12)
 
-`/krb5/principals` (product reads `GET /admin-api/kerberos/principals`, #587; the KDC exports `clockOffsetSeconds()` for an in-process reader), `/krb5/service`, `/spnego` and `/spnego/protected`. **The protected service's TCP socket (`krb5.servicePort`) is the PROCESS's**: `server.js` does not bind it when the default realm is product, and the Listeners and Kerberos pages do not list it there. SPNEGO sign-in keeps the acceptor module (`/authn/spnego`). The mark is a member of `common/app.js`, which these three files already require, and `app.js` reaches `mode.js` through a cache hit, so **the parent's COPY closure gained no file**. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+rcbj's decision 1 on #591: the click-through demonstrations move to the
+development-only companion, and the runtime ships none of them. For this
+family that was `/spnego`, `/spnego/protected` (#583's pages with them),
+`/krb5/service` and the protected service's TCP socket on `krb5.servicePort`
+— all development only since #585 — and `/krb5/principals`, deleted rather
+than moved.
+
+* **WHAT STAYS.** `krb5_service.js` is the acceptor `/authn/spnego` uses
+  (through `spnego_exchange.js`), with its replay cache and every `STS-KRB`
+  code `accept()` names; it lost its route, `startTcp()`, `listen()`,
+  `SERVICE_PORT` and the `lastExchange` view (`acceptRaw` is now the same
+  function as `accept`, kept for its in-process callers). `spnego.js` keeps
+  the sign-in's `page()` and `checksTable()` and registers nothing.
+  `spnego_exchange.js` keeps the options only the page passed (`supported`,
+  `wantMic`, `mutualOff`) for the in-process tests.
+* **WHAT WENT.** `krb5.servicePort` (the row, the env files, `SETTING_HOMES`
+  needed nothing), its listener row, the `tcp://` row on the Kerberos page,
+  the `/krb5` and `/spnego` placements and hosted prefixes, `server.js`'s
+  `krb5Service.listen()` and banner lines, the `krb5Service` socket handle in
+  `protocol_stack.ts`, and the retired codes `STS-KRB-0078`–`0081` (the TCP
+  socket), `0096` (the page's 500) and `0209` (the pages' module).
+* **`/krb5/principals` IS `GET /admin-api/kerberos/principals`.** The rows it
+  listed are `database` there (`principals.describeAll()`: name, name type,
+  salt, enctypes, kvno, flags — never a password), paged by `databasePage`,
+  with `fixtureAccounts` and `realmsServed` beside it, and Directory →
+  Kerberos principals draws them. The two development passwords are not in
+  it: they are the settings `krb5.userPassword` and
+  `krb5.autoServicePassword`, which `sts_kerberos_samba.js` already read.
+* **THE COMPANION'S DEMONSTRATION** (`companion/demo_kerberos.js`,
+  `companion/CLAUDE.md` argues it) is a Kerberos service of its own: a
+  principal `HTTP/<its host>` made by `create-service` (or `rotate-service`
+  after a restart), its keytab in a file only it reads, and MIT Kerberos's
+  `gss_accept_sec_context()` as the acceptor — so this KDC is exercised by an
+  acceptor it did not write. It serves `/spnego`, `/spnego/protected`,
+  `/krb5/service` and the TCP service on 8888, without the knobs and the
+  per-check table, which were properties of this service's acceptor.
+
+**WHAT THE PARENT PROJECT OWES, WITH ITS `sts/` PIN BUMP.** No COPY line:
+nothing was added to the closure. But it loads `krb5_kdc.js`,
+`krb5_service.js` and `spnego.js` in process and drove the removed routes:
+
+* `tests/krb5_spnego_http.js` — in process: requires `spnego.js` and asks
+  `/spnego/protected`, which is gone (404). It drives
+  `spnego_exchange.negotiate()` itself over an express app of its own (the
+  `door` and the three options stay), or moves to `/authn/spnego`; the
+  `KRB5_SERVICE_PORT` it sets is ignored.
+* `tests/krb5_tgs_ap.js` — in process: `serviceModule.listen(0)` and
+  `KRB5_SERVICE_PORT`. `listen()` is gone and the require succeeds, so the
+  job dies at that call; it drives `accept()` / `acceptRaw()` directly (both
+  remain), or the companion's TCP 8888.
+* `tests/krb5_mit_client.js` — `/krb5/principals` (the reachability probe and
+  the account policy) → `GET /admin-api/kerberos/principals`; its
+  `curl --negotiate` against `/spnego/protected` (and the "door closed" case)
+  → the companion's `/spnego/protected`, with the companion's own SPN.
+* `tests/kerberos_spnego_page.js` and `tests/kerberos_tgs_ap_page.js` — the
+  debugger's SPNEGO and AP panes: `/krb5/principals`, `/spnego?format=json`,
+  `/spnego/protected`, `/krb5/service` and `KRB5_SERVICE_PORT` 8888 → the
+  companion's `/spnego`, `/spnego/protected`, `/krb5/service` and TCP 8888.
+* `tests/api_krb5_relay.js` and the debugger api's `krb5ServicePorts`
+  (127.0.0.1:8888) — the relay's target is the companion's host.
+* `local-run-tests.sh`'s `KRB5_SPNEGO_URL`, `tests/embedded_deployment.js`'s
+  `krb5SpnegoUrlDefault`, and the debugger client's Kerberos AP pane
+  (`client/public/kerberos_ap.html`, port 8888) and SPNEGO prefill
+  (`client/src/spnego.js`) — the companion's `/spnego/protected` and TCP 8888.
+* `tests/random_username.js` (vendored here, not `local`) parses
+  `/krb5/principals`; it must read `GET /admin-api/kerberos/principals`
+  (`accountPolicy`, `database`).

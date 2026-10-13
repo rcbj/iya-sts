@@ -2785,7 +2785,7 @@ is created with `krb5.enabled` off and builds its principal database when it is
 turned on, rebuilding it when one of those ten changes. So for a realm nothing
 was consumed at any startup, which is the same argument SPIFFE's ten made on
 2026-09-12. What is still consumed for the PROCESS is still a no: `krb5.kdcPort`
-and `krb5.servicePort` are bound sockets, and `krb5.trustedRealm` and its three
+is a bound socket (and `krb5.servicePort` was, until #595), and `krb5.trustedRealm` and its three
 build the development-mode second realm at startup.
 
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE

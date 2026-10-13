@@ -5,8 +5,6 @@ nav_order: 4
 
 # Endpoints
 
-> **Development mode only (#585):** `/krb5/service`, `/krb5/principals` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 **There is no list of endpoints in this documentation, and that is deliberate.**
 There are 264 of them, they change, and a list written here would be wrong within
 a month with nothing to say so — this number was 144 when the sentence was
@@ -101,8 +99,8 @@ things here are exactly that:
   API and the SPIRE Server API
 
 Those are described by hand in the page's own table — the Kerberos sockets in
-the text of the three HTTP rows the walk can see (`/KdcProxy`,
-`/krb5/principals`, `/krb5/service`), since a described entry with no route
+the text of the HTTP row the walk can see (`/KdcProxy`, and the Kerberos card),
+since a described entry with no route
 behind it would trip the stale-path check. If you add one, describe it there or
 it goes unlisted with nothing failing.
 
@@ -186,8 +184,7 @@ them can drift from what the service does:
 | `GET /admin/tls-connection` | Monitoring → TLS connection: the TLS version and cipher of the console's own request, the client certificate its connection presented (verified or not, the identity gate's answer, revocation), and every forwarding header with what was believed of it. Admin Read in both modes; `GET /admin-api/tls-connection` is its management-API twin (#597) |
 | `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. An anchor added at runtime is persisted in the default realm's `ou=trustAnchors`; one from the file comes back at every start |
 | `GET /scim` | The SCIM authentication schemes that are switched on |
-| `GET /krb5/principals` | The principal database, passwords included in development mode for the reason that page gives; in product mode the passwords are withheld and the page says why. A directory person keyed from their own password is listed with `directoryKeys: true` and never with a key |
-| `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. And the realm's `krbtgt` key (#169) — where it comes from, its kvno, its last and next rotation, the versions kept — with Rotate the krbtgt key and Rotate and invalidate, both queued on the scheduler and neither showing a key. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys,reset-person-keytab,rotate-krbtgt,rotate-krbtgt-invalidate}` are its twins, and only the create and rotate replies and a person's keytab carry key material |
+| `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. And the KDC's whole database (#595: every principal by its public fields — the salts, enctypes, kvno and flags `/krb5/principals` listed before it was deleted, never a password). And the realm's `krbtgt` key (#169) — where it comes from, its kvno, its last and next rotation, the versions kept — with Rotate the krbtgt key and Rotate and invalidate, both queued on the scheduler and neither showing a key. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys,reset-person-keytab,rotate-krbtgt,rotate-krbtgt-invalidate}` are its twins, and only the create and rotate replies and a person's keytab carry key material |
 | `OPTIONS /gnap` and `GET /.well-known/gnap-as-rs` | GNAP's two discovery documents — the client's (RFC 9635 section 9) and the resource server's (RFC 9767 section 3.1), both read off the `gnap.*` settings and the authorization server profile. See [GNAP](gnap.md) |
 | `GET /gnap/keys` | The public keys that verify GNAP's self-contained token formats without introspection |
 | `GET /.well-known/openid-federation` | The realm's OpenID Federation Entity Configuration: its Federation Entity Keys, its federation, OpenID Provider, authorization server and verifier metadata, its superiors, and the Trust Marks it carries. The rest of the federation's endpoints are `/oidfed/*`. See [OpenID Federation](oidfed.md) |

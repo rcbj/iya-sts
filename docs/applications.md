@@ -4,8 +4,6 @@ title: Applications
 
 # Applications
 
-> **Development mode only (#585):** `/krb5/principals` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 A person who authenticates here has a directory entry and a row on
 `/admin/users`. The **application** on the other side of that authentication
 has one too: an entry under `ou=applications` in the embedded directory. It
@@ -281,7 +279,7 @@ grants nothing.
 
 **The client secret is stored on the entry.** `oauthClientSecret` and
 `appRegistrationAccessToken` hold credentials this service minted. That is the
-same decision `/krb5/principals` makes about the Kerberos fixture passwords: a
+same decision the development Kerberos password settings make: a
 test service whose accounts are unusable without reading the source is worse
 than one that says what they are. Be precise about the cost: wherever the
 secret is checked, anyone who can read it can authenticate as that client. In

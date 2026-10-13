@@ -384,8 +384,8 @@ worked out.
 
 **`fedClientSecret` is never returned by this API** — `(set — not returned)` or
 empty. That is deliberately NOT claimed as a security boundary, because an
-`ldapsearch` of `ou=federations` shows it, exactly as `GET /krb5/principals`
-prints every Kerberos password. What it avoids is this API being a SECOND way to
+`ldapsearch` of `ou=federations` shows it, exactly as the settings print every
+development Kerberos password (and `GET /krb5/principals` did, until #595). What it avoids is this API being a SECOND way to
 read a credential that belongs to somebody else's service out of this process.
 
 ### The narrow door: `/admin-api/token-lifetimes`
@@ -2378,8 +2378,9 @@ here with a token. `vcIssuer.lastCredentialRequest()` and
 
 `GET /admin-api/kerberos/principals` gained `accountPolicy` in the same change
 (`anyUsernameAuthenticates`, `neverCreated`, `serviceHosts` — the facts
-`/krb5/principals` publishes, from the same places, without either shared
+`/krb5/principals` published, from the same places, without either shared
 password), so `random_username.js`'s `requireKnownOrCreatable()` has an
-administrator's door to ask. No job in this repository asks it in a product
-realm today: `sts_kerberos_samba.js` reads `/krb5/principals` in a development
-realm of its own, which keeps the page.
+administrator's door to ask. **Since #595 it is the only door**: that
+demonstration document was deleted, and its principal rows are this
+operation's `database` (`?databasePage=`), which `sts_kerberos_samba.js` reads
+for the salts and kvnos it hands Samba.
