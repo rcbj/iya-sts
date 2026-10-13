@@ -22508,6 +22508,9 @@ function prose() {
 }
 
 module.exports = {
+  // The search narrowing's filter analysis (#320), for
+  // tests/ldap_search_narrowing.js.
+  indexedLookupsOf: indexedLookupsOf,
   // THE CONSOLE'S PROSE (#543 phase 2b): the routes whose answers carry
   // this module's sentences, and the sentences by key.
   PROSE_ROUTES: PROSE_ROUTES,
