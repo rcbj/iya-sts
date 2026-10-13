@@ -755,16 +755,23 @@ class DirectoryWindow {
    * @param name - one of `persistence/directory_queries.js`'s queries
    * @param args - its arguments
    * @param predicate - the service's own rule, asked of each candidate
+   * @param info - optional; `rows` is set to how many rows the store
+   *   answered, before any was dropped, so a caller that asked with a limit
+   *   can tell a capped answer (#320)
    * @returns `[{ key, entry }]`, in key order, local additions last
    */
   findWindowed(realmId: string, name: string, args: unknown[],
-               predicate: (entry: Entry, key: string) => boolean):
+               predicate: (entry: Entry, key: string) => boolean,
+               info?: { rows?: number }):
       Array<{ key: string; entry: Entry }> {
     log.debug("Entering DirectoryWindow.findWindowed(). " + name);
     const out: Array<{ key: string; entry: Entry }> = [];
     const seen = new Set<string>();
     const rows = this.bridge
       ? (this.bridge.query(name, args) as Row[]) || [] : [];
+    if (info) {
+      info.rows = rows.length;
+    }
     rows.forEach((row) => {
       if (seen.has(row.key) || !this.isWindowed(realmId, row.key)) {
         return;

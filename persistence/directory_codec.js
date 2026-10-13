@@ -260,6 +260,8 @@ function keyArgs(name, args) {
     a[1] = { key: lookupOf('uuid', lower(a[1])) };
   } else if (name === 'byMail') {
     a[1] = { key: lookupOf('mail', lower(a[1])) };
+  } else if (name === 'equalUnder') {
+    a[3] = { key: lookupOf(String(a[2]), lower(a[3])) };
   } else if (name === 'byAttribute') {
     a[2] = { key: lookupOf('attr:' + lower(a[1]), String(a[2])) };
   } else if (name === 'classesUnder') {

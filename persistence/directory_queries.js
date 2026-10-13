@@ -213,6 +213,45 @@ function byAttribute(realm, attribute, value, limit) {
                     pageSize(limit)] };
 }
 
+// THE COLUMN EACH `equalUnder()` KIND READS (#320): only the two whose index
+// holds every value, lower-cased, so an equality on the attribute can be
+// answered from it as a superset.
+const EQUAL_UNDER_COLUMNS = { name: 'name_keys', mail: 'mail_keys' };
+
+/**
+ * The entries at or under a base holding a `uid` (kind `name`) or `mail`
+ * (kind `mail`) value equal to `value`, compared lower-cased — a SUPERSET of
+ * an LDAP equality filter's matches, which the caller then applies (#320).
+ * At most `limit` rows: a caller that gets `limit` back must not assume it
+ * has them all.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the search base's normalised DN
+ * @param kind - `name` or `mail`
+ * @param value - the asserted value
+ * @param limit - at most this many rows (at most 1,000)
+ * @returns the statement
+ * @throws an Error naming a kind with no column
+ */
+function equalUnder(realm, baseKey, kind, value, limit) {
+  log.debug("Entering equalUnder(). " + kind);
+  const column = Object.prototype.hasOwnProperty.call(EQUAL_UNDER_COLUMNS,
+                                                      kind)
+    ? EQUAL_UNDER_COLUMNS[kind] : '';
+  if (!column) {
+    log.debug("Leaving equalUnder(). Unknown kind.");
+    throw new Error('directory_queries: equalUnder has no kind ' +
+                    String(kind));
+  }
+  log.debug("Leaving equalUnder().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 5, true) + ' AND ' +
+                 column + ' @> $3::jsonb ORDER BY dn_key LIMIT $4',
+           values: [String(realm), String(baseKey),
+                    JSON.stringify([keyed(value, kind, true)]),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
 /**
  * One page of the entries under a base, in key order after `afterKey`.
  *
@@ -443,6 +482,7 @@ const QUERIES = {
   byUuid: byUuid,
   byMail: byMail,
   byAttribute: byAttribute,
+  equalUnder: equalUnder,
   page: page,
   count: count,
   hasChild: hasChild,
@@ -485,6 +525,7 @@ module.exports = {
   byUuid: byUuid,
   byMail: byMail,
   byAttribute: byAttribute,
+  equalUnder: equalUnder,
   page: page,
   count: count,
   hasChild: hasChild,
