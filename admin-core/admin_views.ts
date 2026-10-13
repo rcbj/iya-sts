@@ -6868,6 +6868,16 @@ class AdminViews {
         "person(s), " +
               services.length + " service principal(s).");
     const kerberos = krb5Principals.kerberosRealmOf();
+    // THE KDC'S WHOLE DATABASE (#595): every principal by its public fields,
+    // which `GET /krb5/principals` listed until that demonstration document
+    // was deleted — the fixtures and the names created on first sight among
+    // them, which the two lists above do not hold. Paged as they
+    // are; empty in a realm with no KDC.
+    const database = kerberos.enabled ? krb5Principals.describeAll()
+                                     : [];
+    const databasePage = this.pagedRows(query, database,
+                                        { name: 'database',
+                                          noun: 'principals' });
     // Why an enabled realm's KDC cannot be used, '' when it can: an
     // inactive context's own reason, else `krbtgtUnavailableReason()` (in
     // product, no random krbtgt key stored yet). See `KERBEROS_NOTES`.
@@ -6880,10 +6890,6 @@ class AdminViews {
                  krb5Principals.krbtgtUnavailableReason() || '')
         : String(krb5Principals.krbtgtUnavailableReason() || '');
     return {
-      // The KDC's own demonstration document, where this realm is served it
-      // (#585): the tab links it only then.
-      principalsDocument: mode.servesDemoEndpoints() ? '/krb5/principals'
-                                                      : null,
       installed: krb5PersonKeys.installed(),
       realm: krb5Principals.REALM,
       trustRealm: realms.currentId(),
@@ -6906,14 +6912,14 @@ class AdminViews {
       acceptor: { spn: account.spn, available: account.available,
                   storedKey: !!account.storedKey },
       // WHICH NAMES THIS KDC WILL ANSWER FOR THAT IT DOES NOT HOLD (#587):
-      // the facts `/krb5/principals` publishes as `accountPolicy`, read from
-      // the same three places, so a job that asks "can this KDC produce an
-      // account under this name" (`random_username.js`'s
-      // requireKnownOrCreatable()) has an administrator's door to ask in a
-      // product realm, where the demonstration page is going (#585). THE TWO
-      // SHARED PASSWORDS ARE NOT HERE, in either mode: nothing in this answer
-      // is key material (`notes.keys`), and an administrator who needs a
-      // keytab makes one.
+      // the facts `/krb5/principals` published as `accountPolicy` until #595
+      // deleted it, so a job that asks "can this KDC produce an account under
+      // this name" (`random_username.js`'s requireKnownOrCreatable()) has an
+      // administrator's door to ask. THE TWO SHARED PASSWORDS ARE NOT HERE,
+      // in either mode: nothing in this answer is key material
+      // (`notes.keys`); the development ones are settings
+      // (`krb5.userPassword`, `krb5.autoServicePassword`), read through
+      // `/admin-api/settings` by whoever may read settings.
       accountPolicy: {
         anyUsernameAuthenticates: mode.autoCreates(),
         neverCreated: krb5Principals.reservedUnknown(),
@@ -6931,6 +6937,14 @@ class AdminViews {
       services: servicesPage.shown,
       servicesTotal: services.length,
       servicesPaging: this.pagingJson(servicesPage.paging),
+      // Whether the development fixtures were seeded, and the Kerberos realm
+      // names this KDC answers for — the two facts of the deleted document's
+      // header a reader of `database` needs beside it.
+      fixtureAccounts: !!krb5Principals.seedsDemoPrincipals,
+      realmsServed: kerberos.enabled ? krb5Principals.realmsServed() : [],
+      database: databasePage.shown,
+      databaseTotal: database.length,
+      databasePaging: this.pagingJson(databasePage.paging),
       // THE NOTES ARE `KERBEROS_NOTES` (#543), the realm's two filled.
       notes: {
         keys: KERBEROS_NOTES.keys,

@@ -174,10 +174,12 @@ const APPLICATIONS = [
     what: 'CRLs, OCSP, the CA certificates and chains, and the ' +
           'cryptographic metadata documents.',
     prefixes: ['/pki', '/crypto'], exact: [] },
+  // MS-KKDCP alone since #595: `/krb5/principals` was deleted and
+  // `/krb5/service`, `/spnego` and `/spnego/protected` are the development
+  // companion's.
   { id: 'kerberos', label: 'Kerberos',
-    what: 'MS-KKDCP and the Kerberos HTTP views.',
-    prefixes: ['/KdcProxy', '/krb5', '/spnego'], demoPrefixes: ['/spnego'],
-    exact: [] },
+    what: 'MS-KKDCP, the Kerberos KDC over HTTPS.',
+    prefixes: ['/KdcProxy'], exact: [] },
   { id: 'spiffe', label: 'SPIFFE',
     what: 'The SPIFFE bundle endpoint.',
     prefixes: ['/spiffe'], exact: [] },

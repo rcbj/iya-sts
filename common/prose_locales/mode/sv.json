@@ -724,12 +724,12 @@
     "text": "Demonstrations- och testkontrollslutpunkterna finns"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "3984f2e4ba94f429",
-    "text": "Serveras och listas: VC-API:s testslutpunkter, den skyddade Kerberos-tjänsten (/krb5/service och dess TCP-socket), /krb5/principals, /spnego och /spnego/protected."
+    "en": "e91d15ca7620fc31",
+    "text": "Serveras och listas: VC-API:s testslutpunkter."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "b82d8439b897527e",
-    "text": "Ingen av dem serveras eller listas. Var och en svarar exakt som en sökväg där ingenting är registrerat — Express egen 404, \"Cannot GET\" — och ingen metadatasida, konsolsida, dokumentation eller loggrad namnger någon av dem. En utvecklingsrealm i en produktprocess behåller dem, utom truststore-dörren och den skyddade tjänstens uttag, som tillhör processen. De administrativa dörrarna finns kvar: /admin-api startar en verifiering, läser principalerna och ändrar truststore, och användarportalen gör ett erbjudande om en legitimation."
+    "en": "65526c68ee1acd20",
+    "text": "Ingen av dem serveras eller listas. Var och en svarar exakt som en sökväg där ingenting är registrerat — Express egen 404, \"Cannot GET\" — och ingen metadatasida, konsolsida, dokumentation eller loggrad namnger någon av dem. En utvecklingsrealm i en produktprocess behåller dem. De administrativa dörrarna finns kvar: /admin-api startar en verifiering, läser principalerna och ändrar truststore, och användarportalen gör ett erbjudande om en legitimation."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

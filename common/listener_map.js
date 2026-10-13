@@ -105,15 +105,15 @@ const COOKIE_SETTING = 'authn.cookieDomain';
 // Ids a listener may not take: the built-in one, the fixed sockets' names on
 // Server configuration -> Listeners, and the mapping's wildcard.
 const RESERVED_IDS = ['main', 'ldap', 'ldaps', 'debugger', 'kdc',
-                      'krb5-service', 'revocation', 'spiffe-workload',
-                      'spiffe-server', 'spiffe-broker', 'cell', 'default'];
+                      'revocation', 'spiffe-workload', 'spiffe-server',
+                      'spiffe-broker', 'cell', 'default'];
 
 // The process's own sockets, by the setting that names each port: a custom
 // listener may be on none of them (#99's list, moved here from realms.js).
 const PROCESS_PORT_SETTINGS = [
   'global.port', 'pki.httpPort', 'debugger.port', 'krb5.kdcPort',
-  'krb5.servicePort', 'ldap.port', 'ldap.tlsPort', 'spiffe.workloadPort',
-  'spiffe.serverPort', 'spiffe.brokerPort', 'cells.port'
+  'ldap.port', 'ldap.tlsPort', 'spiffe.workloadPort', 'spiffe.serverPort',
+  'spiffe.brokerPort', 'cells.port'
 ];
 
 // THE TLS BLOCK: every per-listener setting the main port has (#429), by its

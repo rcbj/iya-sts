@@ -84,5 +84,9 @@
   "noButton": "<strong>Volver a descargar un keytab.</strong> Una clave almacenada nunca se vuelve a leer: el keytab de un principal de servicio se entrega en la creación o rotación que lo produjo, y uno perdido se reemplaza rotando. El keytab de una PERSONA (#59) se deriva de una contraseña conocida: <strong>Restablecer la contraseña y descargar el keytab</strong> en su página, en Directorio &rarr; Usuarios, o su propia contraseña en <code>/portal/kerberos</code>. <strong>Establecer las claves de una persona.</strong> Salen de la contraseña de la persona y de nada más; borrarlas es el único control, y el siguiente inicio de sesión verificado las vuelve a derivar.",
   "linkApi": "lo mismo por la API de administración",
   "linkSettings": "los ajustes de Kerberos",
-  "linkDb": "la base de datos de principales"
+  "hDatabase": "La base de datos de principales",
+  "database": "Cada principal que tiene este KDC, solo por sus campos públicos: la sal y los enctypes que un cliente aprende de las propias respuestas del KDC, el kvno y los indicadores. Aquí están las cuentas de prueba de desarrollo y los nombres creados al verlos por primera vez; ninguna clave ni contraseña.",
+  "nounDatabase": "principales",
+  "thSalt": "Sal",
+  "thFlags": "Indicadores"
 }

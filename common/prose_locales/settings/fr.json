@@ -1812,8 +1812,8 @@
     "text": "Casser le nonce de l’ID Token (développement uniquement)"
   },
   "oauth2.breakIdTokenNonce|description": {
-    "en": "05625a5855ffd20c",
-    "text": "MODE DÉVELOPPEMENT UNIQUEMENT. En mode produit, il est ignoré là où il est lu (journalisé une fois, STS-CORE-0106) et son activation est refusée (STS-CORE-0103). Placer un nonce DÉLIBÉRÉMENT ERRONÉ dans chaque ID Token qui devrait en porter un. RFC 9700 sections 2.1.1 et 4.5.3.2 font de sa validation la tâche du CLIENT et ce serveur ne peut pas voir si elle a lieu — c’est donc le moyen de le savoir : un client qui accepte le résultat ne vérifie pas, et un client qui le refuse vérifie. Le même dispositif que les trois réglages de /spnego et le mot de passe réservé « invalid ». DÉSACTIVÉ par défaut, signalé sur GET /oauth2/rfc9700 quel que soit le mode en vigueur, et chaque jeton altéré est journalisé comme tel — un ID Token erroné d’une manière que personne ne se souvient avoir activée, c’est un après-midi coûteux."
+    "en": "6aa61a678ff29707",
+    "text": "MODE DÉVELOPPEMENT UNIQUEMENT. En mode produit, il est ignoré là où il est lu (journalisé une fois, STS-CORE-0106) et son activation est refusée (STS-CORE-0103). Placer un nonce DÉLIBÉRÉMENT ERRONÉ dans chaque ID Token qui devrait en porter un. RFC 9700 sections 2.1.1 et 4.5.3.2 font de sa validation la tâche du CLIENT et ce serveur ne peut pas voir si elle a lieu — c’est donc le moyen de le savoir : un client qui accepte le résultat ne vérifie pas, et un client qui le refuse vérifie. Le même dispositif que le mot de passe réservé « invalid ». DÉSACTIVÉ par défaut, signalé sur GET /oauth2/rfc9700 quel que soit le mode en vigueur, et chaque jeton altéré est journalisé comme tel — un ID Token erroné d’une manière que personne ne se souvient avoir activée, c’est un après-midi coûteux."
   },
   "oauth2.refreshIdleSeconds|label": {
     "en": "2342e96eee91f547",
@@ -5528,32 +5528,20 @@
     "text": "Port du KDC"
   },
   "krb5.kdcPort|description": {
-    "en": "603655a67c05bdd2",
-    "text": "Le KDC écoute aussi bien en TCP qu’en UDP. 88 est un port privilégié : une exécution sur l’hôte qui n’est pas root ne parvient pas à s’y lier — ce qui est enregistré plutôt que levé, et signalé par GET /krb5/principals. 0 demande n’importe quel port libre."
+    "en": "e9d5103459853c9e",
+    "text": "Le KDC écoute aussi bien en TCP qu’en UDP. 88 est un port privilégié : une exécution sur l’hôte qui n’est pas root ne parvient pas à s’y lier — ce qui est enregistré plutôt que levé, et journalisé. 0 demande n’importe quel port libre."
   },
   "krb5.kdcPort|restartReason": {
     "en": "72484c04fc9a787a",
     "text": "les sockets TCP et UDP sont liés au démarrage du processus"
-  },
-  "krb5.servicePort|label": {
-    "en": "3a89a3154901e25c",
-    "text": "Port du service de test"
-  },
-  "krb5.servicePort|description": {
-    "en": "f520a63e9c191a86",
-    "text": "Le service de test kerbérisé qui accepte un AP-REQ. Une démonstration : un processus en mode produit ne le démarre pas (#585)."
-  },
-  "krb5.servicePort|restartReason": {
-    "en": "e92026b5264f72ad",
-    "text": "le socket est lié au démarrage du processus"
   },
   "krb5.servicePrincipal|label": {
     "en": "1238b790587a7e38",
     "text": "Principal de service"
   },
   "krb5.servicePrincipal|description": {
-    "en": "b3400d19bf033fa0",
-    "text": "Le SPN que détient ce service de test, sous la forme habituelle service/nom d’hôte. Le compte avec lequel l’accepteur déchiffre est créé À PARTIR de ce nom, avec krb5.servicePassword et krb5.serviceSalt — jusqu’au 2026-09-12, il était toujours HTTP/web.<domaine du royaume> quelle que soit cette valeur. **Un DOMAINE DE CONFIANCE qui n’en définit aucun dérive HTTP/web.<son propre domaine>** lorsque cette valeur est encore celle livrée ici, si bien qu’un domaine porte partout son propre nom ; définissez-le sur le domaine pour nommer explicitement l’accepteur de ce domaine."
+    "en": "2143ab10c02f7141",
+    "text": "Le SPN que détient l’accepteur de la connexion SPNEGO, sous la forme habituelle service/nom d’hôte. Le compte avec lequel l’accepteur déchiffre est créé À PARTIR de ce nom, avec krb5.servicePassword et krb5.serviceSalt — jusqu’au 2026-09-12, il était toujours HTTP/web.<domaine du royaume> quelle que soit cette valeur. **Un DOMAINE DE CONFIANCE qui n’en définit aucun dérive HTTP/web.<son propre domaine>** lorsque cette valeur est encore celle livrée ici, si bien qu’un domaine porte partout son propre nom ; définissez-le sur le domaine pour nommer explicitement l’accepteur de ce domaine."
   },
   "krb5.servicePrincipal|restartReason": {
     "en": "c04a88a95bd6f9b0",
@@ -5564,8 +5552,8 @@
     "text": "Mot de passe du principal de service"
   },
   "krb5.servicePassword|description": {
-    "en": "c38ac123f6e326ba",
-    "text": "Le mot de passe du compte que nomme krb5.servicePrincipal — l’équivalent d’un keytab. En MODE PRODUIT, la valeur par défaut livrée est refusée : cette valeur est imprimée dans ce dépôt, et une clé de service dérivée d’elle est une clé pour laquelle n’importe qui peut forger un ticket. S’il n’est pas défini, le compte de service n’est pas créé, l’accepteur sur krb5.servicePort et /authn/spnego n’acceptent aucun ticket, et GET /krb5/service en indique la raison. Définissez-le avec le mot de passe du compte du SPN dans le KDC qui émet ses tickets."
+    "en": "cb9ee66eb558159b",
+    "text": "Le mot de passe du compte que nomme krb5.servicePrincipal — l’équivalent d’un keytab. En MODE PRODUIT, la valeur par défaut livrée est refusée : cette valeur est imprimée dans ce dépôt, et une clé de service dérivée d’elle est une clé pour laquelle n’importe qui peut forger un ticket. S’il n’est pas défini, le compte de service n’est pas créé, /authn/spnego n’accepte aucun ticket, et GET /admin-api/kerberos/principals en indique la raison. Définissez-le avec le mot de passe du compte du SPN dans le KDC qui émet ses tickets."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -5660,8 +5648,8 @@
     "text": "AP-REQ le plus grand lu par l’accepteur (octets)"
   },
   "krb5.serviceMaxTokenBytes|description": {
-    "en": "4a1900f646321bef",
-    "text": "L’accepteur sur krb5.servicePort, ainsi que SPNEGO sur HTTP, refusent un jeton plus grand que cette taille."
+    "en": "f5880e7b76f635b7",
+    "text": "L’accepteur de la connexion SPNEGO refuse un jeton plus grand que cette taille."
   },
   "krb5.replayCacheMaxEntries|label": {
     "en": "907b89cfdd599162",
@@ -5708,8 +5696,8 @@
     "text": "Mot de passe des utilisateurs"
   },
   "krb5.userPassword|description": {
-    "en": "838f581b1ba65d90",
-    "text": "Le mot de passe de chaque compte utilisateur ici. Il est PUBLIÉ délibérément par GET /krb5/principals : un débogueur dont les comptes sont inutilisables sans lire le code source est pire qu’un débogueur qui dit ce qu’ils sont."
+    "en": "d2f560802bb55976",
+    "text": "Le mot de passe de chaque compte utilisateur ici. Il est PUBLIÉ délibérément sous la forme de ce paramètre : un débogueur dont les comptes sont inutilisables sans lire le code source est pire qu’un débogueur qui dit ce qu’ils sont."
   },
   "krb5.userPassword|restartReason": {
     "en": "51deddf8f1d90149",
@@ -5824,8 +5812,8 @@
     "text": "Connexion avec un ticket Kerberos"
   },
   "krb5.spnegoAuthentication|description": {
-    "en": "be06d364ace2ff42",
-    "text": "Indique si /authn/spnego transforme un ticket Kerberos en session de navigateur — l’authentification intégrée, disponible pour chaque application et pour aucune en particulier. Désactivé, cet endpoint répond 403 en indiquant de quel paramètre il s’agit, et /spnego/protected effectue toujours la poignée de main complète et vous en montre les deux moitiés ; ce qu’il ne fera pas, c’est vous donner une session. Une application ou une relation de fédération qui nomme le mécanisme `spnego` alors que ce paramètre est désactivé est SIGNALÉE sur l’écran de connexion plutôt que de rencontrer un 403 au milieu d’un flux."
+    "en": "78a74a328a889e90",
+    "text": "Indique si /authn/spnego transforme un ticket Kerberos en session de navigateur — l’authentification intégrée, disponible pour chaque application et pour aucune en particulier. Désactivé, cet endpoint répond 403 en indiquant de quel paramètre il s’agit. Une application ou une relation de fédération qui nomme le mécanisme `spnego` alors que ce paramètre est désactivé est SIGNALÉE sur l’écran de connexion plutôt que de rencontrer un 403 au milieu d’un flux."
   },
   "krb5.personKeys|label": {
     "en": "130db32cf78d7adf",

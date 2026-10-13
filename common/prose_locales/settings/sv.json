@@ -1812,8 +1812,8 @@
     "text": "Förstör ID Tokens nonce (endast utveckling)"
   },
   "oauth2.breakIdTokenNonce|description": {
-    "en": "05625a5855ffd20c",
-    "text": "ENDAST UTVECKLINGSLÄGE. I produktionsläge ignoreras den där den läses (loggas en gång, STS-CORE-0106) och att slå på den vägras (STS-CORE-0103). Lägg en AVSIKTLIGT FELAKTIG nonce i varje ID Token som borde bära en. RFC 9700 avsnitt 2.1.1 och 4.5.3.2 gör valideringen till KLIENTENS uppgift och servern kan inte se om den sker — så det här är sättet att ta reda på det: en klient som godtar resultatet kontrollerar inte, och en som vägrar det gör det. Samma grepp som /spnego:s tre reglage och det reserverade lösenordet \"invalid\". AV som standard, rapporteras på GET /oauth2/rfc9700 oavsett vilket läge som gäller, och varje förstörd token loggas som förstörd — en ID Token som är fel på ett sätt som ingen minns att ha slagit på är en dyr eftermiddag."
+    "en": "6aa61a678ff29707",
+    "text": "ENDAST UTVECKLINGSLÄGE. I produktionsläge ignoreras den där den läses (loggas en gång, STS-CORE-0106) och att slå på den vägras (STS-CORE-0103). Lägg en AVSIKTLIGT FELAKTIG nonce i varje ID Token som borde bära en. RFC 9700 avsnitt 2.1.1 och 4.5.3.2 gör valideringen till KLIENTENS uppgift och servern kan inte se om den sker — så det här är sättet att ta reda på det: en klient som godtar resultatet kontrollerar inte, och en som vägrar det gör det. Samma grepp som det reserverade lösenordet \"invalid\". AV som standard, rapporteras på GET /oauth2/rfc9700 oavsett vilket läge som gäller, och varje förstörd token loggas som förstörd — en ID Token som är fel på ett sätt som ingen minns att ha slagit på är en dyr eftermiddag."
   },
   "oauth2.refreshIdleSeconds|label": {
     "en": "2342e96eee91f547",
@@ -5528,32 +5528,20 @@
     "text": "KDC-port"
   },
   "krb5.kdcPort|description": {
-    "en": "603655a67c05bdd2",
-    "text": "KDC:n lyssnar på både TCP och UDP. 88 är privilegierad, så en körning på värden som inte är root misslyckas med att binda den — vilket registreras i stället för att kastas, och rapporteras av GET /krb5/principals. 0 begär valfri ledig port."
+    "en": "e9d5103459853c9e",
+    "text": "KDC:n lyssnar på både TCP och UDP. 88 är privilegierad, så en körning på värden som inte är root misslyckas med att binda den — vilket registreras i stället för att kastas, och loggas. 0 begär valfri ledig port."
   },
   "krb5.kdcPort|restartReason": {
     "en": "72484c04fc9a787a",
     "text": "TCP- och UDP-socketarna binds när processen startar"
-  },
-  "krb5.servicePort|label": {
-    "en": "3a89a3154901e25c",
-    "text": "Port för testtjänsten"
-  },
-  "krb5.servicePort|description": {
-    "en": "f520a63e9c191a86",
-    "text": "Den Kerberos-aktiverade testtjänsten som tar emot en AP-REQ. En demonstration: en produktprocess startar den inte (#585)."
-  },
-  "krb5.servicePort|restartReason": {
-    "en": "e92026b5264f72ad",
-    "text": "socketen binds när processen startar"
   },
   "krb5.servicePrincipal|label": {
     "en": "1238b790587a7e38",
     "text": "Tjänsteprincipal"
   },
   "krb5.servicePrincipal|description": {
-    "en": "b3400d19bf033fa0",
-    "text": "Det SPN som testtjänsten har, i den vanliga formen tjänst/värdnamn. Kontot som mottagaren dekrypterar med skapas UTIFRÅN detta namn, med krb5.servicePassword och krb5.serviceSalt — fram till 2026-09-12 var det alltid HTTP/web.<realm domain> oavsett vad detta sa. **En FÖRTROENDESFÄR som inte ställer in något härleder HTTP/web.<its own domain>** där detta fortfarande är värdet som levereras här, så att en sfär är uppkallad efter sig själv genomgående; ställ in det på sfären för att uttryckligen namnge sfärens mottagare."
+    "en": "2143ab10c02f7141",
+    "text": "Det SPN som SPNEGO-inloggningens mottagare har, i den vanliga formen tjänst/värdnamn. Kontot som mottagaren dekrypterar med skapas UTIFRÅN detta namn, med krb5.servicePassword och krb5.serviceSalt — fram till 2026-09-12 var det alltid HTTP/web.<realm domain> oavsett vad detta sa. **En FÖRTROENDESFÄR som inte ställer in något härleder HTTP/web.<its own domain>** där detta fortfarande är värdet som levereras här, så att en sfär är uppkallad efter sig själv genomgående; ställ in det på sfären för att uttryckligen namnge sfärens mottagare."
   },
   "krb5.servicePrincipal|restartReason": {
     "en": "c04a88a95bd6f9b0",
@@ -5564,8 +5552,8 @@
     "text": "Lösenord för tjänsteprincipalen"
   },
   "krb5.servicePassword|description": {
-    "en": "c38ac123f6e326ba",
-    "text": "Lösenordet för det konto som krb5.servicePrincipal anger — motsvarigheten till en keytab. I PRODUKTLÄGE vägras det levererade standardvärdet: det värdet står tryckt i det här repositoryt, så en tjänstenyckel som härleds från det är en nyckel som vem som helst kan förfalska en biljett till. När det inte är inställt skapas inget tjänstekonto, mottagaren på krb5.servicePort och /authn/spnego tar inte emot någon biljett, och GET /krb5/service säger varför. Ställ in det till lösenordet för SPN:ens konto i den KDC som utfärdar dess biljetter."
+    "en": "cb9ee66eb558159b",
+    "text": "Lösenordet för det konto som krb5.servicePrincipal anger — motsvarigheten till en keytab. I PRODUKTLÄGE vägras det levererade standardvärdet: det värdet står tryckt i det här repositoryt, så en tjänstenyckel som härleds från det är en nyckel som vem som helst kan förfalska en biljett till. När det inte är inställt skapas inget tjänstekonto, /authn/spnego tar inte emot någon biljett, och GET /admin-api/kerberos/principals säger varför. Ställ in det till lösenordet för SPN:ens konto i den KDC som utfärdar dess biljetter."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -5660,8 +5648,8 @@
     "text": "Största AP-REQ som mottagaren läser (byte)"
   },
   "krb5.serviceMaxTokenBytes|description": {
-    "en": "4a1900f646321bef",
-    "text": "Mottagaren på krb5.servicePort, och SPNEGO över HTTP, avvisar en token som är större än detta."
+    "en": "f5880e7b76f635b7",
+    "text": "SPNEGO-inloggningens mottagare avvisar en token som är större än detta."
   },
   "krb5.replayCacheMaxEntries|label": {
     "en": "907b89cfdd599162",
@@ -5708,8 +5696,8 @@
     "text": "Användarlösenord"
   },
   "krb5.userPassword|description": {
-    "en": "838f581b1ba65d90",
-    "text": "Lösenordet som varje användarkonto här har. Det PUBLICERAS av GET /krb5/principals med avsikt: en debugger vars konton är oanvändbara utan att läsa källkoden är sämre än en som säger vad de är."
+    "en": "d2f560802bb55976",
+    "text": "Lösenordet som varje användarkonto här har. Det PUBLICERAS som den här inställningen med avsikt: en debugger vars konton är oanvändbara utan att läsa källkoden är sämre än en som säger vad de är."
   },
   "krb5.userPassword|restartReason": {
     "en": "51deddf8f1d90149",
@@ -5824,8 +5812,8 @@
     "text": "Logga in med en Kerberos-biljett"
   },
   "krb5.spnegoAuthentication|description": {
-    "en": "be06d364ace2ff42",
-    "text": "Om /authn/spnego gör om en Kerberos-biljett till en webbläsarsession — integrerad autentisering, tillgänglig för varje applikation och för ingen i synnerhet. När den är av svarar slutpunkten 403 och säger vilken inställning det var, och /spnego/protected utför fortfarande hela handskakningen och visar dig båda halvorna av den; det den inte gör är att ge dig en session. En applikation eller en federationsrelation som anger mekanismen `spnego` medan detta är av RAPPORTERAS på inloggningsskärmen i stället för att möta en 403 mitt i ett flöde."
+    "en": "78a74a328a889e90",
+    "text": "Om /authn/spnego gör om en Kerberos-biljett till en webbläsarsession — integrerad autentisering, tillgänglig för varje applikation och för ingen i synnerhet. När den är av svarar slutpunkten 403 och säger vilken inställning det var. En applikation eller en federationsrelation som anger mekanismen `spnego` medan detta är av RAPPORTERAS på inloggningsskärmen i stället för att möta en 403 mitt i ett flöde."
   },
   "krb5.personKeys|label": {
     "en": "130db32cf78d7adf",

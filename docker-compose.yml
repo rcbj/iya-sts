@@ -240,6 +240,7 @@ services:
       context: ./companion
     ports:
       - "${COMPANION_HOST_PORT:-9700}:9700"
+      - "${COMPANION_KRB5_HOST_PORT:-8888}:8888"
     depends_on:
       sts:
         condition: service_healthy
@@ -254,6 +255,8 @@ services:
       - COMPANION_CLIENT_SECRET=${COMPANION_CLIENT_SECRET:-}
       - COMPANION_BOOTSTRAP_SECRET=${ADMIN_API_CLIENT_SECRET:-}
       - COMPANION_WALLET_URL=${COMPANION_WALLET_URL:-}
+      - COMPANION_KRB5_SPN=${COMPANION_KRB5_SPN:-}
+      - COMPANION_KRB5_SERVICE_PORT=8888
       - COMPANION_LOG_LEVEL=${COMPANION_LOG_LEVEL:-info}
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9700,path:'/healthz'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]

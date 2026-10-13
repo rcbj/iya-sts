@@ -1812,8 +1812,8 @@
     "text": "Sirain ang ID Token nonce (development lang)"
   },
   "oauth2.breakIdTokenNonce|description": {
-    "en": "05625a5855ffd20c",
-    "text": "PARA SA DEVELOPMENT MODE LANG. Sa product mode, binabalewala ito kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pag-on dito (STS-CORE-0103). Maglagay ng SINADYANG MALING nonce sa bawat ID Token na dapat may dala nito. Ginagawang trabaho ng CLIENT ng RFC 9700 sections 2.1.1 at 4.5.3.2 ang pag-validate dito at hindi makikita ng server na ito kung nangyayari ito — kaya ito ang paraan para malaman: ang client na tumatanggap sa resulta ay hindi nagche-check, at ang tumatanggi rito ay nagche-check. Ang parehong kasangkapan gaya ng tatlong knob ng /spnego at ng reserved password na \"invalid\". NAKA-OFF bilang default, iniuulat sa GET /oauth2/rfc9700 anumang mode ang umiiral, at nilo-log bilang sinira ang bawat sinirang token — ang ID Token na mali sa paraang walang nakakaalalang nag-on ay isang mahal na hapon."
+    "en": "6aa61a678ff29707",
+    "text": "PARA SA DEVELOPMENT MODE LANG. Sa product mode, binabalewala ito kung saan ito binabasa (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pag-on dito (STS-CORE-0103). Maglagay ng SINADYANG MALING nonce sa bawat ID Token na dapat may dala nito. Ginagawang trabaho ng CLIENT ng RFC 9700 sections 2.1.1 at 4.5.3.2 ang pag-validate dito at hindi makikita ng server na ito kung nangyayari ito — kaya ito ang paraan para malaman: ang client na tumatanggap sa resulta ay hindi nagche-check, at ang tumatanggi rito ay nagche-check. Ang parehong kasangkapan gaya ng reserved password na \"invalid\". NAKA-OFF bilang default, iniuulat sa GET /oauth2/rfc9700 anumang mode ang umiiral, at nilo-log bilang sinira ang bawat sinirang token — ang ID Token na mali sa paraang walang nakakaalalang nag-on ay isang mahal na hapon."
   },
   "oauth2.refreshIdleSeconds|label": {
     "en": "2342e96eee91f547",
@@ -5528,32 +5528,20 @@
     "text": "Port ng KDC"
   },
   "krb5.kdcPort|description": {
-    "en": "603655a67c05bdd2",
-    "text": "Nakikinig ang KDC sa TCP at UDP. Privileged ang 88, kaya nabibigong i-bind ito ng host run na hindi root — na nire-record sa halip na i-throw, at iniuulat ng GET /krb5/principals. Humihingi ang 0 ng anumang bakanteng port."
+    "en": "e9d5103459853c9e",
+    "text": "Nakikinig ang KDC sa TCP at UDP. Privileged ang 88, kaya nabibigong i-bind ito ng host run na hindi root — na nire-record sa halip na i-throw, at itinatala sa log. Humihingi ang 0 ng anumang bakanteng port."
   },
   "krb5.kdcPort|restartReason": {
     "en": "72484c04fc9a787a",
     "text": "bina-bind ang mga TCP at UDP socket kapag nagsisimula ang process"
-  },
-  "krb5.servicePort|label": {
-    "en": "3a89a3154901e25c",
-    "text": "Port ng test service"
-  },
-  "krb5.servicePort|description": {
-    "en": "f520a63e9c191a86",
-    "text": "Ang Kerberized na test service na tumatanggap ng AP-REQ. Isang demonstration: hindi ito sinisimulan ng isang product process (#585)."
-  },
-  "krb5.servicePort|restartReason": {
-    "en": "e92026b5264f72ad",
-    "text": "bina-bind ang socket kapag nagsisimula ang process"
   },
   "krb5.servicePrincipal|label": {
     "en": "1238b790587a7e38",
     "text": "Service principal"
   },
   "krb5.servicePrincipal|description": {
-    "en": "b3400d19bf033fa0",
-    "text": "Ang SPN na hawak ng test service na iyon, sa karaniwang anyong service/hostname. Ang account na ginagamit ng acceptor sa pag-decrypt ay ginagawa MULA sa pangalang ito, kasama ang krb5.servicePassword at krb5.serviceSalt — hanggang 2026-09-12, palagi itong HTTP/web.<realm domain> anuman ang sinasabi nito. **Ang TRUST REALM na walang itinatakda ay humahango ng HTTP/web.<sarili nitong domain>** kung saan ito pa rin ang value na kasama rito, kaya ipinapangalan ang realm sa sarili nito sa kabuuan; itakda ito sa realm para tahasang pangalanan ang acceptor ng realm na iyon."
+    "en": "2143ab10c02f7141",
+    "text": "Ang SPN na hawak ng acceptor ng SPNEGO sign-in, sa karaniwang anyong service/hostname. Ang account na ginagamit ng acceptor sa pag-decrypt ay ginagawa MULA sa pangalang ito, kasama ang krb5.servicePassword at krb5.serviceSalt — hanggang 2026-09-12, palagi itong HTTP/web.<realm domain> anuman ang sinasabi nito. **Ang TRUST REALM na walang itinatakda ay humahango ng HTTP/web.<sarili nitong domain>** kung saan ito pa rin ang value na kasama rito, kaya ipinapangalan ang realm sa sarili nito sa kabuuan; itakda ito sa realm para tahasang pangalanan ang acceptor ng realm na iyon."
   },
   "krb5.servicePrincipal|restartReason": {
     "en": "c04a88a95bd6f9b0",
@@ -5564,8 +5552,8 @@
     "text": "Password ng service principal"
   },
   "krb5.servicePassword|description": {
-    "en": "c38ac123f6e326ba",
-    "text": "Ang password ng account na pinapangalanan ng krb5.servicePrincipal — katumbas ng isang keytab. SA PRODUCT MODE, tinatanggihan ang kasamang default: naka-print ang value na iyon sa repository na ito, kaya ang service key na hinango mula rito ay key na mapapag-forge-an ng ticket ng kahit sino. Kapag hindi ito nakatakda, hindi ginagawa ang service account, walang tinatanggap na ticket ang acceptor sa krb5.servicePort at ang /authn/spnego, at sinasabi ng GET /krb5/service kung bakit. Itakda ito sa password ng account ng SPN sa KDC na nag-i-issue ng mga ticket nito."
+    "en": "cb9ee66eb558159b",
+    "text": "Ang password ng account na pinapangalanan ng krb5.servicePrincipal — katumbas ng isang keytab. SA PRODUCT MODE, tinatanggihan ang kasamang default: naka-print ang value na iyon sa repository na ito, kaya ang service key na hinango mula rito ay key na mapapag-forge-an ng ticket ng kahit sino. Kapag hindi ito nakatakda, hindi ginagawa ang service account, walang tinatanggap na ticket ang /authn/spnego, at sinasabi ng GET /admin-api/kerberos/principals kung bakit. Itakda ito sa password ng account ng SPN sa KDC na nag-i-issue ng mga ticket nito."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -5660,8 +5648,8 @@
     "text": "Pinakamalaking AP-REQ na binabasa ng acceptor (bytes)"
   },
   "krb5.serviceMaxTokenBytes|description": {
-    "en": "4a1900f646321bef",
-    "text": "Tinatanggihan ng acceptor sa krb5.servicePort, at ng SPNEGO sa HTTP, ang token na mas malaki rito."
+    "en": "f5880e7b76f635b7",
+    "text": "Tinatanggihan ng acceptor ng SPNEGO sign-in ang token na mas malaki rito."
   },
   "krb5.replayCacheMaxEntries|label": {
     "en": "907b89cfdd599162",
@@ -5708,8 +5696,8 @@
     "text": "Password ng user"
   },
   "krb5.userPassword|description": {
-    "en": "838f581b1ba65d90",
-    "text": "Ang password na mayroon ang bawat user account dito. Sinasadyang INILALATHALA ito ng GET /krb5/principals: mas masama ang debugger na hindi magagamit ang mga account nang hindi binabasa ang source kaysa sa isa na nagsasabi kung ano ang mga iyon."
+    "en": "d2f560802bb55976",
+    "text": "Ang password na mayroon ang bawat user account dito. Sinasadyang INILALATHALA ito bilang setting na ito: mas masama ang debugger na hindi magagamit ang mga account nang hindi binabasa ang source kaysa sa isa na nagsasabi kung ano ang mga iyon."
   },
   "krb5.userPassword|restartReason": {
     "en": "51deddf8f1d90149",
@@ -5824,8 +5812,8 @@
     "text": "Mag-sign in gamit ang Kerberos ticket"
   },
   "krb5.spnegoAuthentication|description": {
-    "en": "be06d364ace2ff42",
-    "text": "Kung ginagawang browser session ng /authn/spnego ang isang Kerberos ticket — integrated authentication, available sa bawat application at hindi sa partikular na isa. Kapag naka-off ito, sumasagot ang endpoint na iyon ng 403 at sinasabi kung aling setting iyon, at ginagawa pa rin ng /spnego/protected ang buong handshake at ipinapakita sa iyo ang dalawang kalahati nito; ang hindi nito gagawin ay bigyan ka ng session. Ang application o federation relationship na nagpapangalan ng `spnego` na mekanismo habang naka-off ito ay INIUULAT sa sign-in screen sa halip na makatagpo ng 403 sa kalagitnaan ng isang flow."
+    "en": "78a74a328a889e90",
+    "text": "Kung ginagawang browser session ng /authn/spnego ang isang Kerberos ticket — integrated authentication, available sa bawat application at hindi sa partikular na isa. Kapag naka-off ito, sumasagot ang endpoint na iyon ng 403 at sinasabi kung aling setting iyon. Ang application o federation relationship na nagpapangalan ng `spnego` na mekanismo habang naka-off ito ay INIUULAT sa sign-in screen sa halip na makatagpo ng 403 sa kalagitnaan ng isang flow."
   },
   "krb5.personKeys|label": {
     "en": "130db32cf78d7adf",

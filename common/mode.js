@@ -756,7 +756,8 @@ function acceptsUnregisteredAddresses() {
 }
 
 // Are the TEST CONTROLS open to anybody who can reach the port? Reading the
-// Kerberos fixture passwords off /krb5/principals, signing somebody ELSE out with
+// Kerberos fixture passwords off /krb5/principals (until #595 deleted it),
+// signing somebody ELSE out with
 // ?username=, registering an OAuth client with no initial credential, asking a
 // SAML 1.1 attribute authority about any named person. Each exists so a test
 // can drive a state; in product each is either refused or behind the credential
@@ -3058,16 +3059,12 @@ const REQUIREMENTS = [
   // endpoint.
   { id: 'demo-endpoints',
     what: 'The demonstration and test-control endpoints exist',
-    development: 'Served and listed: the VC-API test endpoints, the ' +
-                 'protected Kerberos service (/krb5/service ' +
-                 'and its TCP socket), /krb5/principals, /spnego and ' +
-                 '/spnego/protected.',
+    development: 'Served and listed: the VC-API test endpoints.',
     product: 'None of them is served or listed. Each answers exactly as a ' +
              'path nothing is registered on does — Express\'s own 404 ' +
              '"Cannot GET" — and no metadata page, console page, document ' +
              'or log line names one. A development realm in a product ' +
-             'process keeps them, except the protected service\'s socket, ' +
-             'which belongs to the process. The ' +
+             'process keeps them. The ' +
              'administrative doors stay: /admin-api starts a verification, ' +
              'reads the principals and changes the truststore, and the ' +
              'user portal makes a credential offer.',

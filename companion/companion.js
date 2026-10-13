@@ -24,9 +24,11 @@
 //
 // **A DEMONSTRATION IS A MODULE WITH `describe()` AND `mount(router)`.** The
 // OpenID4VC issuer and verifier are the first (`demo_oid4vc.js`); the
-// Kerberos and SPNEGO demonstration (#595, P4) is meant to be the second, a
-// module beside it and a line in `DEMOS`, with whatever socket it needs
-// started from `listen()` here as the service starts its own.
+// Kerberos and SPNEGO demonstration (#595, `demo_kerberos.js`) is the
+// second, and the one with a socket of its own — the protected TCP service —
+// which a demonstration's optional `listen()` starts, called from `listen()`
+// here once the pages listen, as the service starts its own sockets: a bind
+// can fail, and a require must not.
 //
 // **SESSIONS.** A browser gets one cookie, `companion_sid` (HttpOnly,
 // SameSite=Lax), naming a session in memory: its CSRF token and what it
@@ -43,6 +45,7 @@ const nodeCrypto = require("crypto");
 const util = require("./companion_util.js");
 const { StsClient } = require("./sts_client.js");
 const { Oid4vcDemo } = require("./demo_oid4vc.js");
+const { KerberosDemo } = require("./demo_kerberos.js");
 
 const log = util.logger("iya-sts-companion");
 
@@ -73,7 +76,14 @@ function settingsFrom(env) {
     clientId: String(env.COMPANION_CLIENT_ID || ""),
     clientSecret: String(env.COMPANION_CLIENT_SECRET || ""),
     bootstrapSecret: String(env.COMPANION_BOOTSTRAP_SECRET || ""),
-    walletUrl: String(env.COMPANION_WALLET_URL || "")
+    walletUrl: String(env.COMPANION_WALLET_URL || ""),
+    // #595: the Kerberos demonstration's principal ('' is HTTP/<the public
+    // URL's host>), its TCP socket ('off' for none) and where its keytab is
+    // written ('' is a fresh directory under the system's temporary one).
+    krb5Spn: String(env.COMPANION_KRB5_SPN || ""),
+    krb5ServicePort: String(env.COMPANION_KRB5_SERVICE_PORT || "") === "off"
+      ? null : Number(env.COMPANION_KRB5_SERVICE_PORT || 8888),
+    krb5KeytabDir: String(env.COMPANION_KRB5_KEYTAB_DIR || "")
   };
   log.debug("Leaving settingsFrom().");
   return out;
@@ -125,7 +135,8 @@ class Sessions {
 class Companion {
   /**
    * @param {object} settings - `settingsFrom()`'s answer
-   * @param {object} [deps] - `sts`, a stand-in for the service's client
+   * @param {object} [deps] - `sts`, a stand-in for the service's client;
+   *   `gss`, a stand-in for the Kerberos acceptor
    */
   constructor(settings, deps) {
     log.debug("Entering Companion.constructor().");
@@ -143,9 +154,13 @@ class Companion {
       bootstrapSecret: settings.bootstrapSecret,
       redirectUris: [oid4vc.completionUrl()] });
     oid4vc.sts = this.sts;
-    // THE DEMONSTRATIONS. #595's Kerberos and SPNEGO demonstration is the
-    // next line.
-    this.demos = [oid4vc];
+    const kerberos = new KerberosDemo({
+      sts: this.sts, publicUrl: settings.publicUrl, spn: settings.krb5Spn,
+      servicePort: settings.krb5ServicePort === undefined
+        ? null : settings.krb5ServicePort,
+      keytabDir: settings.krb5KeytabDir, gss: deps && deps.gss });
+    // THE DEMONSTRATIONS.
+    this.demos = [oid4vc, kerberos];
     const router = {
       get: (path, handler) => {
         this.routes.GET.set(path, handler);
@@ -269,9 +284,10 @@ class Companion {
   }
 
   /**
-   * Starts the listener.
+   * Starts the listener, then every demonstration's own sockets.
    *
-   * @returns {Promise<object>} the http server, listening
+   * @returns {Promise<object>} the http server, listening; `sockets` on it
+   *   holds what the demonstrations started
    */
   listen() {
     log.debug("Entering Companion.listen().");
@@ -286,6 +302,20 @@ class Companion {
                  " as " + this.settings.publicUrl + ", in front of " +
                  this.sts.publicBase);
         resolve(server);
+      });
+    }).then((server) => {
+      // A demonstration's socket: a failed bind is the demonstration's to
+      // record and show, never the companion's to die of.
+      return Promise.all(this.demos.map(function (demo) {
+        return typeof demo.listen === "function" ? demo.listen() : null;
+      })).then(function (sockets) {
+        server.sockets = sockets.filter(Boolean);
+        server.on("close", function () {
+          server.sockets.forEach(function (one) {
+            one.close();
+          });
+        });
+        return server;
       });
     });
   }

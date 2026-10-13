@@ -768,7 +768,7 @@ import credentialGraph = require('../common/credential_graph');
 //
 // A plain require in the ordinary direction, and both tests that would force a
 // slot pass: `krb5_principals.js` registers no route (the KDC's own `/KdcProxy`
-// and `/krb5/principals` are in `krb5_kdc.js`), and `common/protocol_stack.ts`
+// is in `krb5_kdc.js`), and `common/protocol_stack.ts`
 // requires the Kerberos modules BEFORE this one, so nothing here can be the
 // reason a route moved. It is the same argument the two SPIFFE libraries above
 // are required under.
@@ -10183,13 +10183,12 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>/wsfed</code>, <code>/saml2/sso</code> and this console ' +
            'read — which makes Kerberos an authentication mechanism for ' +
            'every application here. With it off that endpoint answers 403 ' +
-           'naming this setting, and <code>/spnego/protected</code> still ' +
-           'performs the whole handshake and gives no session.'],
+           'naming this setting.'],
     status: slot.forward('kerberosPreauthStatusBlock'),
-    links: [['/krb5/principals', 'the principal database'],
-            ['/krb5/service', 'the protected service'],
-            ['/spnego', 'what SPNEGO is, for a person'],
-            ['/authn/spnego', 'sign in with a ticket'],
+    // The principal database is the Principals tab (`GET
+    // /admin-api/kerberos/principals`); `/krb5/principals`, `/krb5/service`
+    // and `/spnego` were linked here until #595.
+    links: [['/authn/spnego', 'sign in with a ticket'],
             ['/admin/delegation', 'what S4U and a forwarded TGT did here']] },
 
   // -------------------------------------------------------------------------

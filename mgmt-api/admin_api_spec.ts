@@ -2079,10 +2079,10 @@ const SCHEMAS = {
     'do.\n\n`fedClientSecret` is NEVER returned by this API — it is reported ' +
     'as `(set — not returned)` or empty. That is not a security boundary and ' +
     'is not claimed as one: an `ldapsearch` of this directory shows it, ' +
-    'deliberately and loudly, exactly as `GET /krb5/principals` prints every ' +
-    'Kerberos password. What it avoids is this API being a SECOND way to ' +
-    'read a credential that belongs to somebody else\'s service out of this ' +
-    'process.',
+    'deliberately and loudly, exactly as the settings print every ' +
+    'development Kerberos password. What it avoids is this API being a ' +
+    'SECOND way to read a credential that belongs to somebody else\'s ' +
+    'service out of this process.',
     Object.assign({
       relationships: {
         type: 'array',

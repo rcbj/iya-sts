@@ -229,8 +229,6 @@ var config = {
     realm: "EXAMPLE.COM",
     kdcPort:
       88,                                                   // restart to apply
-    servicePort:
-      8888,                                             // restart to apply
     servicePrincipal:
       "HTTP/web.example.com",                      // restart to apply
     clockSkew: 300,

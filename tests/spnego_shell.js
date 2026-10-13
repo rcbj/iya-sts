@@ -273,13 +273,14 @@ function childMain() {
          '6a. the signed-in state draws the page that names the person',
          html.slice(0, 300));
     const off = draw.render({ door: 'spnego', kind: 'off',
-      setting: 'krb5.spnegoAuthentication', demoPath: '',
+      setting: 'krb5.spnegoAuthentication',
       pending: { id: 'abc', protocol: 'p', application: '' } }, { t: t });
     note(/<code>krb5\.spnegoAuthentication<\/code>/.test(off) &&
          off.indexOf('href="/authn/login?authn=abc"') > 0 &&
          off.indexOf('/spnego/protected') < 0,
          '6b. the off state names the setting and the way back, and no ' +
-         'demonstration a realm is not served', off.slice(0, 300));
+         'demonstration page (the companion\'s since #595)',
+         off.slice(0, 300));
 
     // --- 7. the runtime draws the embedded page, fetching no view ------------
     at = begin();

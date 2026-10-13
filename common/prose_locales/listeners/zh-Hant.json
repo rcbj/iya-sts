@@ -39,14 +39,6 @@
     "en": "3f7729c5149376d6",
     "text": "TCP 與 UDP 88；Kerberos 訊息，而非 TLS。"
   },
-  "listeners.builtin.krb5-service.name": {
-    "en": "7e652746e02ec2bc",
-    "text": "Kerberos 測試服務"
-  },
-  "listeners.builtin.krb5-service.what": {
-    "en": "eae5de4d9754b836",
-    "text": "受 SPNEGO 保護的測試服務。"
-  },
   "listeners.builtin.revocation.name": {
     "en": "384cb54062bffd4b",
     "text": "撤銷（純 HTTP）"
@@ -304,8 +296,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "49ef797d2558967c",
-    "text": "MS-KKDCP 以及 Kerberos HTTP 檢視。"
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP，即透過 HTTPS 的 Kerberos KDC。"
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",

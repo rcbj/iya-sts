@@ -383,13 +383,13 @@ const SPECS: Spec[] = [
               'their own rows (RFC 6113, RFC 6560), and so is PKINIT (RFC ' +
               '4556); no request signatures, no kpasswd (S4U is [MS-SFU], ' +
               'its own row). The AP ' +
-              'exchange belongs to the protected service, not here. ' +
+              'exchange belongs to the acceptor (SPNEGO), not here. ' +
               // The rule for these notes is that they say what would mislead
               // somebody who believed the row. "Pre-authentication is
               // implemented" is true and, on its own, implies an account
               // database with per-account secrets in it.
               'ANY username authenticates and every user account shares ONE ' +
-              'password, which GET /krb5/principals publishes: ' +
+              'password, which the setting krb5.userPassword publishes: ' +
               'pre-authentication is verified for real (the password is the ' +
               'key, so it has to be), but it is the same password for ' +
               'everybody and an unknown username is created on the spot ' +
@@ -3364,78 +3364,34 @@ const ENDPOINTS: EndpointEntry[] = [
   // --- Kerberos ---
   //
   // Note what is NOT on this page and cannot be: the KDC's own listeners are
-  // RAW SOCKETS on TCP and UDP port 88, and the protected service is a raw TCP
-  // socket of its own. This page is built by walking the live Express router,
-  // which is exactly why it cannot go stale — and a protocol that registers no
-  // route is the one blind spot that design has. The three HTTP endpoints below
-  // are the only Kerberos surfaces the walk can see; the sockets are described
-  // in their rows' text so a reader is not left thinking port 88 does not
-  // exist.
+  // RAW SOCKETS on TCP and UDP port 88. This page is built by walking the
+  // live Express router, which is exactly why it cannot go stale — and a
+  // protocol that registers no route is the one blind spot that design has.
+  // The HTTP endpoint below (and the SPNEGO sign-in, in the Authentication
+  // group) are the only Kerberos surfaces the walk can see; the sockets are
+  // described in their rows' text so a reader is not left thinking port 88
+  // does not exist.
   { path: '/KdcProxy', group: 'Kerberos', name: 'KDC Proxy (MS-KKDCP)',
     // rfc3961 belongs here because every message this relays has enc-parts
     // encrypted under that framework by the KDC behind it — and because a
     // specification nothing links to is an IDLE CLAIM, which
     // tests/vendored/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
-    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'rfc6113', 'rfc6560',
-            'rfc8129', 'rfc4556', 'rfc8070', 'rfc8636', 'rfc5349',
+    // ms-pac since #595: every ticket the KDC behind it issues carries a
+    // PAC, and the rows that linked it (`/krb5/principals`,
+    // `/spnego/protected`) are gone.
+    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'ms-pac', 'rfc6113',
+            'rfc6560', 'rfc8129', 'rfc4556', 'rfc8070', 'rfc8636', 'rfc5349',
             'rfc8062'],
     what: 'Relays a KDC-PROXY-MESSAGE to the KDC listening on TCP and UDP ' +
           'port 88 in this process. A browser cannot open a raw socket, so ' +
           'this is how the in-browser client reaches a KDC without the api ' +
           'relay.' },
-  { path: '/krb5/principals', group: 'Kerberos', name: 'What the KDC knows',
-    // The salts and the offered etypes ARE the RFC 3961/3962 surface:
-    // string-to-key takes the salt, and etype negotiation is what the list
-    // decides.
-    specs: ['rfc4120', 'ms-pac', 'rfc3961'],
-    what: 'The principal database of both realms: names, salts (which are ' +
-          'NOT derivable from the principal name, which is why ' +
-          'PA-ETYPE-INFO2 exists), offered etypes, the deliberate ' +
-          'misconfigurations, and the PAC identity each account carries. ' +
-          'Also the account policy — any username authenticates, every user ' +
-          'shares one password, and this is where that password is written ' +
-          'down. Not a real Kerberos endpoint — a KDC publishes none of ' +
-          'this.',
-    demo: true },
-  { path: '/krb5/service', group: 'Kerberos', name: 'The protected service',
-    specs: ['rfc4120'],
-    what: 'What the AP-REQ acceptor is, where its raw TCP socket is ' +
-          'listening, and the ordered checks it applies to a ticket. Not a ' +
-          'real Kerberos endpoint either.',
-    demo: true },
-  { path: '/spnego', group: 'Kerberos', name: 'A SPNEGO-protected page is ' +
-                                              'advertised here',
-    specs: ['rfc4559', 'rfc4178', 'rfc4120'],
-    what: 'Says that /spnego/protected exists, which service principal name ' +
-          'is behind it, which mechanisms are accepted, and which query ' +
-          'knobs make the negotiation fail in one specific way. None of that ' +
-          'is in the protocol exchange itself — a client has to derive the ' +
-          'SPN from the URL and find the KDC from its own configuration, ' +
-          'which is why so many SPNEGO failures leave no evidence on the ' +
-          'wire. Add ?format=json.',
-    demo: true },
-  { path: '/spnego/pages.js', group: 'Kerberos',
-    name: 'The SPNEGO pages\' script', specs: [],
-    what: 'NON-SPEC (#583). The runtime and renderers of the two SPNEGO ' +
-          'demonstration pages, in one file built by build-typescript.sh ' +
-          '(kerberos/spnego-pages-spa.js) and served precompressed: it ' +
-          'draws /spnego, and the body of every answer /spnego/protected ' +
-          'gives, from the state each shell carries. The negotiation\'s ' +
-          'status and WWW-Authenticate header are not among what it draws.',
-    demo: true },
-  { path: '/spnego/protected', group: 'Kerberos',
-    name: 'The protected resource',
-    // rfc3961 is linked because the AP-REQ inside the mechToken, its
-    // Authenticator and the AP-REP returned for mutual authentication are all
-    // encrypted under that framework.
-    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'ms-pac'],
-    what: 'Answers 401 with a bare "WWW-Authenticate: Negotiate" to an ' +
-          'unauthenticated request, and 200 with an AP-REP in that header to ' +
-          'a valid one. The Kerberos checks are krb5_service.js\'s, ' +
-          'unchanged — this endpoint adds the negotiation and the HTTP that ' +
-          'carries it and no protocol code of its own.',
-    demo: true },
+  // `/krb5/principals`, `/krb5/service`, `/spnego`, `/spnego/pages.js` and
+  // `/spnego/protected` had rows here until #595: the first was deleted
+  // (`GET /admin-api/kerberos/principals` lists the database), the rest —
+  // and the protected service's TCP socket — are the development
+  // companion's (`companion/demo_kerberos.js`).
 
   // --- LDAP ---
   //
@@ -7589,8 +7545,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'A CREDENTIAL THIS SERVICE GENUINELY VERIFIED. Everywhere else the ' +
           'username typed IS the identity; Kerberos cannot work that way, ' +
           'because the password there is the key — so this door checks a ' +
-          'real service ticket against a real long-term key, through the ' +
-          'same acceptor /spnego/protected uses and with no protocol code of ' +
+          'real service ticket against a real long-term key, through this ' +
+          'service\'s own acceptor and with no protocol code of ' +
           'its own. The KDC behind it is still as permissive as the protocol ' +
           'allows (any username, one shared password, an account created on ' +
           'first sight), which is what keeps development mode permissive — ' +
@@ -9353,12 +9309,7 @@ const PROTOCOLS: Protocol[] = [
           'optionally encrypted to the requestor\'s certificate.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
-    what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four encryption ' +
-          'types, a Microsoft PAC in the ticket, cross-realm referrals and ' +
-          'constrained delegation. The rows on this page are its HTTP views ' +
-          'and its MS-KKDCP proxy, which exists because a browser cannot ' +
-          'open a socket.',
-    whatWithoutDemos: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +
+    what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +
           'encryption types, a Microsoft PAC in the ticket, cross-realm ' +
           'referrals and constrained delegation. The row on this page is ' +
           'its MS-KKDCP proxy, which exists because a browser cannot open a ' +
@@ -9366,11 +9317,7 @@ const PROTOCOLS: Protocol[] = [
     sockets: 'The KDC itself is TCP and UDP port 88, which this page cannot ' +
              'see.' },
   { name: 'SPNEGO', groups: ['Kerberos'], specs: ['rfc4178', 'rfc4559'],
-    what: 'Kerberos over HTTP: /spnego/protected answers 401 ' +
-          'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser or ' +
-          'a client sends back, and accepts the AP-REQ inside it against the ' +
-          'service principal\'s key.',
-    whatWithoutDemos: 'Kerberos over HTTP: /authn/spnego answers 401 ' +
+    what: 'Kerberos over HTTP: /authn/spnego answers 401 ' +
           'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser ' +
           'sends back, accepts the AP-REQ inside it against the service ' +
           'principal\'s key, and signs its client in (the Authentication ' +

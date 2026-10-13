@@ -22,7 +22,9 @@
 //   2. A bare `?page=` moves neither, which is what tells this fix from one
 //      that made both lists follow one parameter.
 //   3. The page draws the second page's principals when its own link is
-//      followed, and every link it draws names a parameter the view reads.
+//      followed, and every link it draws names a parameter the view reads —
+//      `databasePage` among them since #595, for the KDC's whole database
+//      (`/krb5/principals` until then), which moves on its own too.
 //
 // In process because it needs more than one page of each list, and a real
 // service principal is a random key sealed on a directory entry: the two list
@@ -124,10 +126,19 @@ async function runBody(t) {
   const links = first.match(
     /href="\/admin\/kerberos\?[^"#]*#kerberos-tab-principals"/g) || [];
   t.check(links.length > 0 && links.every(function (href) {
-    return /(peoplePage|servicesPage)=\d+/.test(href) &&
+    return /(peoplePage|servicesPage|databasePage)=\d+/.test(href) &&
            href.indexOf('#kerberos-tab-principals') >= 0;
-  }), 'every paging link names `peoplePage` or `servicesPage`, which the ' +
-      'view reads', links.slice(0, 3).join(' '));
+  }), 'every paging link names `peoplePage`, `servicesPage` or ' +
+      '`databasePage` (#595), which the view reads', links.slice(0, 3)
+        .join(' '));
+  const database = adminViews.kerberosPrincipalsJson({
+    query: { per: '3', databasePage: '2' } });
+  t.check(database.databasePaging.page === 2 &&
+          database.database.length > 0 &&
+          database.peoplePaging.page === 1 &&
+          database.servicesPaging.page === 1,
+          '`databasePage=2` moves the database list (#595) and neither of ' +
+          'the others', JSON.stringify(database.databasePaging));
   t.check(first.indexOf('HTTP/kpp-service-0') >= 0 &&
           first.indexOf('HTTP/kpp-service-3') < 0,
           'page 1 draws the first services and not the fourth');

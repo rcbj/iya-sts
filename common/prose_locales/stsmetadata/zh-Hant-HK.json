@@ -12,8 +12,8 @@
     "text": "partial，缺口在於 TCP 呼叫端的證明。七個方法中實作了五個——FetchX509SVID、FetchX509Bundles、FetchJWTSVID、FetchJWTBundles、ValidateJWTSVID——透過 Unix socket 與 TCP 提供，串流保持開啟並在 SVID 存留期過半時重新傳送，讓客戶端的輪替路徑得以執行。必要的 `workload.spiffe.io: true` 標頭「確實」會強制執行——在產品模式下一律如此，在開發模式下除非 spiffe.requireSecurityHeader 為關閉（#181）。FetchWITSVID 與 FetchWITBundles 回應 Unimplemented，因為 Workload Identity Token 的格式尚未在本服務可據以實作的文件中定案，而自行發明一種就等於發明一種認證格式。「不會要求任何認證資料，而且也絕不能有」——Workload Endpoint 規格規定端點「不得」要求直接驗證其客戶端，且「不得」要求 TLS——因此所需要的是「證明」。Unix socket 上的呼叫端由 unix、docker、k8s 與 systemd 工作負載證明器依據核心對連線程序的描述加以證明（#40、#170）——docker 證明器除了 Docker Engine 也會詢問 Podman，且在 spiffe.dockerSigstoreEnabled 開啟時，要求一個能以其 Rekor 套件組驗證的 cosign 映像簽章，並加入 SPIRE 的映像簽章選擇器（線上 Rekor 查詢與新的 sigstore 套件組格式尚未完成）。透過 TCP 的呼叫端沒有可詢問的程序，只能以其傳輸、端點與來源地址（`transport:`、`endpoint:`、`peer:`）識別，因此第 3 節僅在網絡會驗證來源地址的情況下才允許 TCP：「產品」模式除非 spiffe.workloadTcpSourceAuthenticated 如此宣告，否則不會繫結 TCP 連接埠，也不會繫結在萬用地址上，並拒絕只選擇傳輸與端點的註冊項目（#166）。開發模式則對任何能到達它的人提供 TCP。"
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "df72e1139e447029",
-    "text": "partial：透過 TCP、UDP 與 MS-KKDCP 的 AS 與 TGS 交換，具備預先驗證（PA-ENC-TIMESTAMP）、攜帶 salt 的 PA-ETYPE-INFO2、票證旗標、時鐘偏差強制執行與錯誤目錄。兩個彼此信任的領域，因此跨領域轉介可以運作。FAST 與 OTP 預先驗證各有其專屬列（RFC 6113、RFC 6560），PKINIT（RFC 4556）亦然；沒有請求簽章，沒有 kpasswd（S4U 屬於 [MS-SFU]，有其專屬列）。AP 交換屬於受保護的服務，而不在此處。「任何」用戶名稱都能通過驗證，且每個用戶帳戶共用「同一個」密碼，由 GET /krb5/principals 公布：預先驗證是真正驗證的（密碼即金鑰，所以必須如此），但每個人的密碼都相同，而且未知的用戶名稱會當場建立而不是被拒絕。「那是開發模式」。在產品模式下，測試用帳戶、第二個領域與每條委派規則都不存在，不會依需求建立任何東西，不會公布任何密碼，已設定的服務帳戶只有在 krb5.servicePassword 設為其公布預設值以外的值時才存在，而每個領域的 krbtgt 金鑰是「隨機」的，密封存放於目錄中，並由 krb5.krbtgt-rotate 工作（krb5.krbtgtRotationIntervalDays）輪替，被取代的版本會保留到其下 TGT 可存活的最長時間；「輪替並使失效」則不保留任何版本。目前沒有標準化的後量子 Kerberos enctype，因此輪替使用 AES enctype。產品模式的 KDC 以衍生自目錄中「人員」自己密碼的金鑰驗證他們（在他們登入一次之後），並以營運者建立的隨機金鑰驗證服務主體；持有或必須持有第二因素的人，僅憑密碼「得不到」票證（在密碼驗證通過後回應 KDC_ERR_POLICY）——只能透過搭配 OTP 預先驗證的 FAST，或透過 PKINIT 使用證書。"
+    "en": "f830c0cae35e4109",
+    "text": "partial：透過 TCP、UDP 與 MS-KKDCP 的 AS 與 TGS 交換，具備預先驗證（PA-ENC-TIMESTAMP）、攜帶 salt 的 PA-ETYPE-INFO2、票證旗標、時鐘偏差強制執行與錯誤目錄。兩個彼此信任的領域，因此跨領域轉介可以運作。FAST 與 OTP 預先驗證各有其專屬列（RFC 6113、RFC 6560），PKINIT（RFC 4556）亦然；沒有請求簽章，沒有 kpasswd（S4U 屬於 [MS-SFU]，有其專屬列）。AP 交換屬於接受端（SPNEGO），而不在此處。「任何」用戶名稱都能通過驗證，且每個用戶帳戶共用「同一個」密碼，由設定 krb5.userPassword 公布：預先驗證是真正驗證的（密碼即金鑰，所以必須如此），但每個人的密碼都相同，而且未知的用戶名稱會當場建立而不是被拒絕。「那是開發模式」。在產品模式下，測試用帳戶、第二個領域與每條委派規則都不存在，不會依需求建立任何東西，不會公布任何密碼，已設定的服務帳戶只有在 krb5.servicePassword 設為其公布預設值以外的值時才存在，而每個領域的 krbtgt 金鑰是「隨機」的，密封存放於目錄中，並由 krb5.krbtgt-rotate 工作（krb5.krbtgtRotationIntervalDays）輪替，被取代的版本會保留到其下 TGT 可存活的最長時間；「輪替並使失效」則不保留任何版本。目前沒有標準化的後量子 Kerberos enctype，因此輪替使用 AES enctype。產品模式的 KDC 以衍生自目錄中「人員」自己密碼的金鑰驗證他們（在他們登入一次之後），並以營運者建立的隨機金鑰驗證服務主體；持有或必須持有第二因素的人，僅憑密碼「得不到」票證（在密碼驗證通過後回應 KDC_ERR_POLICY）——只能透過搭配 OTP 預先驗證的 FAST，或透過 PKINIT 使用證書。"
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -418,14 +418,6 @@
   "stsmetadata.endpoints./KdcProxy.what": {
     "en": "39d7480d625c43d6",
     "text": "將 KDC-PROXY-MESSAGE 轉送給此程序中接聽 TCP 與 UDP 連接埠 88 的 KDC。瀏覽器無法開啟原始通訊端，因此這是瀏覽器內客戶端不經 api 轉送即可連上 KDC 的方式。"
-  },
-  "stsmetadata.endpoints./krb5/principals.what": {
-    "en": "e857357e62157f67",
-    "text": "兩個領域的主體數據庫：名稱、salt（無法由主體名稱推導，這正是 PA-ETYPE-INFO2 存在的原因）、提供的 etype、刻意的錯誤設定，以及每個帳戶攜帶的 PAC 身分。還有帳戶原則——任何用戶名稱都能通過驗證、所有用戶共用同一個密碼，而這裡就是寫下該密碼的地方。這不是真正的 Kerberos 端點——KDC 不會公開任何這些資訊。"
-  },
-  "stsmetadata.endpoints./spnego.what": {
-    "en": "fcacaf13e1689e84",
-    "text": "說明 /spnego/protected 存在、其背後是哪個服務主體名稱、接受哪些機制，以及哪些查詢參數會讓協商以某種特定方式失敗。這些都不在協定交換本身之中——客戶端必須從 URL 推導出 SPN，並從自己的設定找到 KDC，這就是為何許多 SPNEGO 失敗在線路上不留任何證據。加上 ?format=json。"
   },
   "stsmetadata.endpoints./xacml.what": {
     "en": "c6327138add686ae",
@@ -1116,8 +1108,8 @@
     "text": "主領域探索，縮限至單一應用程式。ou=applications 下的項目可以在 appFederationRelationship 中指名多個聯盟關係——SAML 2.0 合作夥伴與 OpenID Connect 合作夥伴是常見的一對——當其中不只一個可用時，會繪製此頁面而非登入畫面。每個合作夥伴一個按鈕，沒有密碼欄位，也完全沒有表單：按鈕是連結，因為這裡的表單控制項會張貼至登入處理常式，而它會依輸入的名稱讓人登入——這正是將驗證聯盟化的應用程式已表明不想要的。恰好指名一個關係時仍會直接重新導向至該關係，此頁面永遠不會出現，這正是 appFederationAutoRedirect 一直以來的作用；該設定的意思是「不經登入畫面」，而絕不是「不經任何頁面」，因為沒有任何布林值能說明某人的雇主是哪個身分識別提供者。指名本服務無法使用之關係的值——已停用、只設定一半、身分識別提供者端，或不在此領域中——會在這裡打印出來而非略去：三個中有一個停用的清單會繪製兩個按鈕，而兩個按鈕正是一份正確的兩項清單所繪製的。此清單在繪製此頁面時重新讀取，而不是取自產生它的重新導向；若剩下的合作夥伴少於兩個，則改為繪製登入畫面。自 #571 起為靜態頁面，依據 /authn-api/pending/{id}/partners 繪製。"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "827e8510ccf17768",
-    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的用戶名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過 /spnego/protected 使用的同一個接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何用戶名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的用戶直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回地址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的客戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
+    "en": "23818b4a272ea292",
+    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的用戶名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過本服務自己的接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何用戶名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的用戶直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回地址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的客戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
   },
   "stsmetadata.endpoints./authn/password-factor.what": {
     "en": "9dc6755b8f15d19f",
@@ -1448,8 +1440,8 @@
     "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言，判斷提示已簽署，並可選擇加密給請求者的證書。"
   },
   "stsmetadata.protocols.SPNEGO.what": {
-    "en": "17e95091fc9d97ee",
-    "text": "透過 HTTP 的 Kerberos：/spnego/protected 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器或客戶端送回的 NegTokenInit，並依服務主體的金鑰接受其中的 AP-REQ。"
+    "en": "dcf9bfda53ee9570",
+    "text": "透過 HTTP 的 Kerberos：/authn/spnego 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器傳回的 NegTokenInit，以服務主體的金鑰接受其中的 AP-REQ，並讓其客戶端登入（Authentication 群組）。"
   },
   "stsmetadata.protocols.PKI.what": {
     "en": "f0be1c408d1ea8bc",

@@ -1,24 +1,4 @@
 {
-  "endpoints.route./krb5/principals.name": {
-    "en": "533f66256ae25c27",
-    "text": "Ce que connaît le KDC"
-  },
-  "endpoints.route./krb5/service.name": {
-    "en": "591e0168bdd0f251",
-    "text": "Le service protégé"
-  },
-  "endpoints.route./spnego.name": {
-    "en": "23bfd6168fa5fd44",
-    "text": "Une page protégée par SPNEGO est annoncée ici"
-  },
-  "endpoints.route./spnego/pages.js.name": {
-    "en": "f32f6a1508ae1e7b",
-    "text": "Le script des pages SPNEGO"
-  },
-  "endpoints.route./spnego/protected.name": {
-    "en": "8c763f4b490426dd",
-    "text": "La ressource protégée"
-  },
   "endpoints.route./xacml.name": {
     "en": "1184e17250970dab",
     "text": "Ce qu’est la surface XACML"
@@ -2054,10 +2034,6 @@
   "endpoints.socket.kdcRealm": {
     "en": "bf03c3bc314da5cf",
     "text": "Centre de distribution de clés (royaume {{realm}})"
-  },
-  "endpoints.socket.krb5Service": {
-    "en": "a510f49fab5cf00e",
-    "text": "Le service Kerberos protégé (AP-REQ)"
   },
   "endpoints.socket.mainPort": {
     "en": "6b11a59c1fd5cd82",

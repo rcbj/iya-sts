@@ -5,8 +5,6 @@ nav_order: 16
 
 # Token samples
 
-> **Development mode only (#585):** `/spnego/protected` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
-
 One real example of every kind of token, assertion and certificate this
 service issues, decoded. They were captured from a running
 development-mode container reached at `https://127.0.0.1:38081`, so
@@ -3524,7 +3522,8 @@ keytab carries an RC4 key there
 
 *From the second start of the service (see the note at the top), so its keys differ from the samples above.*
 
-`curl --negotiate` against `/spnego/protected`, with a
+`curl --negotiate` against the SPNEGO-protected page (`/spnego/protected`,
+the development companion's since #595), with a
 TGT from `kinit` as above. The request's `Authorization: Negotiate` carries
 a **NegTokenInit** (RFC 4178) wrapping the Kerberos AP-REQ:
 

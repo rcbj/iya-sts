@@ -9,11 +9,12 @@
 // SPNEGO AS A WAY OF SIGNING IN — Kerberos, over HTTP, producing the SESSION
 // that every protocol family in this service reads.
 //
-// `/spnego/protected` next door has authenticated people since the day it was
-// written, and then thrown the identity away: it prints a table saying who the
-// ticket named and stops. This module is the same handshake with the last step
-// added. Past it, a person who holds a Kerberos ticket has a browser session
-// here, and `/oauth2/authorize`, `/wsfed`, `/saml2/sso`, `/saml11/sso`,
+// `/spnego/protected` next door authenticated people from the day it was
+// written (until #595 moved it to the development companion), and then threw
+// the identity away: it printed a table saying who the ticket named and
+// stopped. This module is the same handshake with the last step added.
+// Past it, a person who holds a Kerberos ticket has a browser session here,
+// and `/oauth2/authorize`, `/wsfed`, `/saml2/sso`, `/saml11/sso`,
 // `/federation` and `/admin` all see it — because they all read the one session
 // `authn.js` owns and none of them is told how it was established.
 //
@@ -647,9 +648,8 @@ class SpnegoAuthn {
       this.sendShell(req, res, record, {
         door: 'spnego', kind: 'off',
         setting: 'krb5.spnegoAuthentication',
-        // The demonstration page only where this realm is served it (#585).
-        demoPath: app.demoPathHidden('/spnego/protected') ? ''
-                                                        : '/spnego/protected',
+        // No `demoPath` since #595: the demonstration page it named,
+        // `/spnego/protected`, is the development companion's.
         pending: this.pendingView(record)
       });
       log.debug('Leaving SpnegoAuthn.handleSignIn(). The door is closed.');

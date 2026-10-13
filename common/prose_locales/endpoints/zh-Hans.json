@@ -1,24 +1,4 @@
 {
-  "endpoints.route./krb5/principals.name": {
-    "en": "533f66256ae25c27",
-    "text": "KDC 所知道的内容"
-  },
-  "endpoints.route./krb5/service.name": {
-    "en": "591e0168bdd0f251",
-    "text": "受保护的服务"
-  },
-  "endpoints.route./spnego.name": {
-    "en": "23bfd6168fa5fd44",
-    "text": "此处公布一个受 SPNEGO 保护的页面"
-  },
-  "endpoints.route./spnego/pages.js.name": {
-    "en": "f32f6a1508ae1e7b",
-    "text": "SPNEGO 页面的脚本"
-  },
-  "endpoints.route./spnego/protected.name": {
-    "en": "8c763f4b490426dd",
-    "text": "受保护的资源"
-  },
   "endpoints.route./xacml.name": {
     "en": "1184e17250970dab",
     "text": "XACML 接口是什么"
@@ -2054,10 +2034,6 @@
   "endpoints.socket.kdcRealm": {
     "en": "bf03c3bc314da5cf",
     "text": "密钥分发中心（领域 {{realm}}）"
-  },
-  "endpoints.socket.krb5Service": {
-    "en": "a510f49fab5cf00e",
-    "text": "受保护的 Kerberos 服务（AP-REQ）"
   },
   "endpoints.socket.mainPort": {
     "en": "6b11a59c1fd5cd82",

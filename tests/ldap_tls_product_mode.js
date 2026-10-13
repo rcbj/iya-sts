@@ -28,7 +28,8 @@
 // builds from the same `tlsServer.protocolOptions()`. The argument is beside
 // the assertion. Nothing else here was about those two sockets: `POST
 // /tls/trust` was a route on the main port (deleted by #597), and the
-// bind-address section now asks the four raw sockets that are left.
+// bind-address section now asks the raw sockets that are left (the
+// Kerberos acceptor's went to the development companion with #595).
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, and why most of it in a CHILD process.
@@ -296,27 +297,23 @@ function listenersHonourTheBindAddress(t) {
   log.debug("Entering listenersHonourTheBindAddress().");
   t.log.info('=== every listener binds global.host ===');
   const run = inAChild({ STS_HOST: '127.0.0.1', LDAP_PORT: '0', LDAPS_PORT: '0',
-                         KRB5_KDC_PORT: '0',
-                         KRB5_SERVICE_PORT: '0' },
+                         KRB5_KDC_PORT: '0' },
     // tls_server.js had two listeners of its own here until 2026-09-16. They
     // were deleted; the main port is `server.js`'s and binds global.host with
-    // every other HTTP route on it, so the four raw sockets below are what is
-    // left to ask.
-    'const kdc = require(R + "/kerberos/krb5_kdc.js");const svc = require(R ' +
-    '+ "/kerberos/krb5_service.js");const ldap = require(R + ' +
-    '"/ldap/ldap_server.js");const k = kdc.listen(0); const kr = await ' +
-    'k.whenReady;const s = svc.listen(0); await new Promise(function (ok) { ' +
-    's.listening ? ok() : s.once("listening", ok); });const l = ' +
-    'ldap.listen(); await l.whenReady;' +
+    // every other HTTP route on it, so the raw sockets below are what is
+    // left to ask. The Kerberos acceptor's own socket (krb5.servicePort) was
+    // one of them until #595 moved it to the development companion.
+    'const kdc = require(R + "/kerberos/krb5_kdc.js");const ldap = ' +
+    'require(R + "/ldap/ldap_server.js");const k = kdc.listen(0); const kr ' +
+    '= await k.whenReady;const l = ldap.listen(); await l.whenReady;' +
     'return { kdcTcp: kr.tcp.address().address, kdcUdp: ' +
-    'kr.udp.address().address, service: s.address().address, ldap: ' +
+    'kr.udp.address().address, ldap: ' +
     'l.server.address().address, ldaps: l.secureServer && ' +
     'l.secureServer.address().address };');
   const r = run.report || {};
   t.check(r.kdcTcp === '127.0.0.1' && r.kdcUdp === '127.0.0.1',
           'the KDC binds global.host on TCP and UDP',
           JSON.stringify(r) + run.output.slice(-300));
-  t.equal(r.service, '127.0.0.1', 'the Kerberos acceptor binds global.host');
   t.check(r.ldap === '127.0.0.1' && r.ldaps === '127.0.0.1',
           'LDAP and LDAPS bind global.host', JSON.stringify(r));
 

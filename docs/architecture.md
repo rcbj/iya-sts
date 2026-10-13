@@ -22,7 +22,6 @@ stays in the leader, including when worker pools are turned on.
 | 88 TCP / UDP | The Kerberos KDC |
 | 389, 636 | The embedded directory, over plain LDAP and over LDAPS |
 | 8081 HTTPS | The main port: every path-based protocol, `/admin`, `/portal` and `/admin-api`. It asks every connection for a client certificate and requires none; `GET /tls/sign-in` signs the holder of a verified one in (there are no separate 8443 and 9443 TLS endpoints) |
-| 8888 TCP | The Kerberized test service that accepts an AP-REQ |
 | 8092, 8181 gRPC | The SPIFFE Workload API, and the SPIRE Server API (always mutual TLS) |
 | Domain sockets | The Workload API at `/tmp/spire-agent/public/api.sock` (on), and the SPIRE Server API's private socket at `/tmp/spire-server/private/api.sock` (off by default) |
 
@@ -110,7 +109,7 @@ routes, in one order, and that order is the order in which routes match; see
 | OAuth2, OIDC | The authorization server and OpenID provider: `/oauth2/*`. [JWT assertions](jwt-assertions.md), [GNAP](gnap.md) |
 | SAML profiles | SAML 2.0 and SAML 1.1, each with its own identity provider. [SAML assertions](saml-assertions.md) |
 | WS-Trust, WS-Federation | `/wstrust`, `/wsfed` |
-| Kerberos, SPNEGO | A KDC per trust realm on the shared port 88, told apart by the Kerberos realm name in each request, plus the protected service and MS-KKDCP. SPNEGO also signs a person in with a Kerberos ticket. [Trust realms](trust-realms.md) |
+| Kerberos, SPNEGO | A KDC per trust realm on the shared port 88, told apart by the Kerberos realm name in each request, plus MS-KKDCP. SPNEGO signs a person in with a Kerberos ticket (the Kerberos-protected test service is the development companion's). [Trust realms](trust-realms.md) |
 | LDAP protocol | The directory's socket view of the embedded LDAP store below |
 | SCIM | `/scim/v2`, provisioning into the same directory with no store of its own |
 | SPIFFE | A trust domain per realm: the bundle endpoint, the Workload API and the SPIRE Server API |

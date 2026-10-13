@@ -1,24 +1,4 @@
 {
-  "endpoints.route./krb5/principals.name": {
-    "en": "533f66256ae25c27",
-    "text": "Ang alam ng KDC"
-  },
-  "endpoints.route./krb5/service.name": {
-    "en": "591e0168bdd0f251",
-    "text": "Ang protektadong serbisyo"
-  },
-  "endpoints.route./spnego.name": {
-    "en": "23bfd6168fa5fd44",
-    "text": "Dito ina-advertise ang isang pahinang protektado ng SPNEGO"
-  },
-  "endpoints.route./spnego/pages.js.name": {
-    "en": "f32f6a1508ae1e7b",
-    "text": "Ang script ng mga pahina ng SPNEGO"
-  },
-  "endpoints.route./spnego/protected.name": {
-    "en": "8c763f4b490426dd",
-    "text": "Ang protektadong resource"
-  },
   "endpoints.route./xacml.name": {
     "en": "1184e17250970dab",
     "text": "Kung ano ang XACML surface"
@@ -2054,10 +2034,6 @@
   "endpoints.socket.kdcRealm": {
     "en": "bf03c3bc314da5cf",
     "text": "Key Distribution Center (realm {{realm}})"
-  },
-  "endpoints.socket.krb5Service": {
-    "en": "a510f49fab5cf00e",
-    "text": "Ang protektadong Kerberos service (AP-REQ)"
   },
   "endpoints.socket.mainPort": {
     "en": "6b11a59c1fd5cd82",
