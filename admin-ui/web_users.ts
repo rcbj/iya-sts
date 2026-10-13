@@ -3791,12 +3791,13 @@ class UsersPage {
    * @param back - the list to return to after an action
    * @param rules - the page data's `serviceAccountRules`: `requiresOwner`,
    *   `maxOwners` and the person's own `dn`
-   * @param state - the page's state: `serviceAccount`, the form as drawn
+   * @param pageState - the page's state: `serviceAccount`, the form as drawn
    *   last (`owners`, `labels`, `destination`, `secretName`, `find`,
    *   `error`), after a round trip
    * @returns the section as HTML
    */
-  static serviceAccountSection(t, key, account, gate, back, rules?, state?) {
+  static serviceAccountSection(t, key, account, gate, back, rules?,
+                               pageState?) {
     const heading = '<h2 id="service-account">' +
       t.html('consoleUsers.detail.tabService') + '</h2>';
     const lead = kit.note(
@@ -3880,7 +3881,7 @@ class UsersPage {
     }
     // THE FORM AS DRAWN LAST, after a Remove, a Find or an Add — or what the
     // account holds, on a fresh page.
-    const draft = (state && state.serviceAccount) || null;
+    const draft = (pageState && pageState.serviceAccount) || null;
     const owners: string[] = draft
       ? (draft.owners || []).slice()
       : savedOwners.map(function (one) {

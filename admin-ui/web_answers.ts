@@ -158,11 +158,12 @@ class WebAnswers {
       return String(one || '').toLowerCase().replace(/\s*,\s*/g, ',');
     };
     const value = String(dn || '').trim();
-    if (value && !out.owners.some(function (one) {
+    if (!value || out.owners.some(function (one) {
       return comparable(one) === comparable(value);
     })) {
-      out.owners.push(value);
+      return out;
     }
+    out.owners.push(value);
     const offered = ((draft.find && draft.find.rows) || [])
       .filter(function (one) {
         return comparable(one.value) === comparable(value);

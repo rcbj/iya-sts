@@ -7722,3 +7722,35 @@ the settings block are done. **A page that draws a settings block has it as
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
 From the console's side: `POST /devices/test/compliance` (its 403 `STS-DEVICE-0035` retired; deleted outright by #597 — the device registration page lists the MDM feed and a partner's CAEP as the doors), and **every protocol settings page's `links`** go through `app.demoPathHidden()`, so a link to a demonstration a realm is not served is not drawn. The view members the renderers read for this are `mockServiceProvider`, `mockRelyingParty`, `verifierPage`, `principalsDocument`, `standInResource` and `testControl` (null in a product realm). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+
+## A SERVICE ACCOUNT'S OWNERS ARE A TABLE AND A SEARCH (#600, 2026-10-12)
+
+rcbj: the owner on a person's Credentials → Service account sub-tab was a
+text box wanting the owner's whole DN. It is a table of the owners, each with
+a Remove, and a search of people or groups, `FIND_PER_PAGE` (five) to a page,
+each result with an Add — and an account may name several owners (at most
+`ServiceAccounts.MAX_OWNERS`, `common/service_accounts.ts`). Four things are
+this console's:
+
+* **It is the field search's model (#459) in a plain form.** The table is the
+  list: one hidden `owner` per row. Remove (`drop=owner.<n>`), Find, Previous,
+  Next and Add (`fgsearch`, `fgadd`, `fgkind.owners`, `fgfind.owners`,
+  `fgpage.owners`) are answered in the browser and never sent; the form's
+  button at the foot is the only write, `set-service-account` with the whole
+  list. A people search asks `GET /admin-api/users`, a group search
+  `GET /admin-api/groups` (rule 7: no console-only data path).
+* **The form posts to a route of its own, `/admin/users/service-account`**
+  (`WebAnswers.SERVICE_ACCOUNT_PAGE`), so its presses are told apart from
+  every other form on the person's page; it is in `ROUND_TRIP_PAGES`,
+  `isFieldSearch()` knows it, and the users action resource's `mirrors` names
+  it, which is how its Save resolves.
+* **Its draft is `state.serviceAccount`, never `state.draft`**, which the
+  person's Attributes grid draws from: a Remove in one form must not redraw
+  the other. A refused Save keeps the draft and says why above the table.
+* **An empty table is an empty list, not an absent member**: the form sends
+  an empty `owners` first, so `shapeFields()` keeps the member (its type is
+  `['array', 'string']`) and folds the `owner` rows into it.
+
+The new-user screen has no person page to search from, so it takes the owners
+one per line (`owners`, a textarea). `tests/service_account_owners.js` holds
+the helpers and the section.

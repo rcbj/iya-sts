@@ -311,7 +311,8 @@ function theHelpers(t) {
     'cn=dev,ou=groups,dc=x');
   const again = WebAnswers.withOwnerAdded(added, 'CN=dev, ou=groups,dc=x');
   t.check(again.owners.length === 3 &&
-          again.labels['cn=dev,ou=groups,dc=x'].label === 'dev',
+          again.labels['cn=dev,ou=groups,dc=x'].label === 'dev' &&
+          Object.keys(again.labels).length === 1,
           'D4. an Add is kept once, with the label the search gave it',
           JSON.stringify(again));
   const groupsPath = WebAnswers.fieldSearchPath('owners',
