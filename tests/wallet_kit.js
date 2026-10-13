@@ -323,6 +323,20 @@ async function boot() {
              } };
   }
 
+  // THE CLIENT IDENTIFIER A SIGN-IN'S REQUEST IS SIGNED UNDER, and so the
+  // audience a holder proves for (2026-10-12): `oid4vp.signInClientIdPrefix`,
+  // x509_hash by default — the SHA-256 of the Verifier's certificate, made
+  // here first if no sign-in has made it yet, exactly as a start does.
+  async function signInAudience(opts) {
+    const o = opts || {};
+    return m.realms.run(o.realm || DEFAULT, async function () {
+      const req = fakeReq(o.prefix || '');
+      const prefix = m.verifier.signInClientIdPrefix();
+      await m.verifier.prepareSignedClientId(req, prefix);
+      return m.verifier.signedClientId(req, prefix).clientId;
+    });
+  }
+
   // ---------------------------------------------------------------------
   // THE ISSUANCE, as a wallet does it. `opts.format` picks the
   // configuration; `opts.token` overrides the access token; `opts.attestation`
@@ -664,11 +678,46 @@ async function boot() {
                               [presentation] });
   }
 
+  // THE WALLET'S `direct_post`, or — where the request asked for
+  // `direct_post.jwt`, as a sign-in does by default since 2026-10-12
+  // (`oid4vp.signInResponseMode`) — the same answer ENCRYPTED to the
+  // request's ECDH-ES key, as a HAIP wallet sends it. `o.plain` sends it in
+  // the clear whatever was asked, which the Response URI refuses.
   async function respond(s, presentation, opts) {
     const o = opts || {};
+    const vp = o.raw || vpToken(o.format, presentation);
     return request('POST', (o.prefix || '') + '/oid4vp/response', {
-      form: { state: s.requestObject.state,
-              vp_token: o.raw || vpToken(o.format, presentation) } });
+      form: encryptedForm(s.requestObject, { state: s.requestObject.state,
+                                             vp_token: vp }, o) });
+  }
+
+  // What a wallet posts for `fields` under the request's response mode:
+  // the fields themselves for `direct_post`, `{ response }` — a JWE to the
+  // request's key, `o.keyAlg` (ECDH-ES by default), with `vp_token` parsed
+  // back into the object it is — for `direct_post.jwt`.
+  function encryptedForm(requestObject, fields, opts) {
+    const o = opts || {};
+    const ro = requestObject || {};
+    if (ro.response_mode !== 'direct_post.jwt' || o.plain) {
+      return fields;
+    }
+    const payload = Object.assign({}, fields);
+    delete payload.state;
+    if (typeof payload.vp_token === 'string') {
+      try {
+        payload.vp_token = JSON.parse(payload.vp_token);
+      } catch (e) {
+        // A malformed vp_token a test sends on purpose travels as it is.
+        payload.vp_token = String(payload.vp_token);
+      }
+    }
+    const keyAlg = o.keyAlg || 'ECDH-ES';
+    const key = ((ro.client_metadata || {}).jwks || { keys: [] }).keys
+      .filter(function (k) {
+        return k.alg === keyAlg;
+      })[0];
+    return { response: m.stsCrypto.encryptJweCompact(JSON.stringify(payload),
+      { alg: keyAlg, enc: 'A128GCM', jwk: key }) };
   }
 
   // The Digital Credentials API answer, as the page's script posts it.
@@ -739,13 +788,14 @@ async function boot() {
     decode: decode, browser: browser, request: request, pathOf: pathOf,
     unescapeHtml: unescapeHtml, provision: provision, holderKey: holderKey,
     jws: jws, accessTokenFor: accessTokenFor, fakeReq: fakeReq,
+    signInAudience: signInAudience,
     issue: issue, presentSdJwt: presentSdJwt, presentJwtVc: presentJwtVc,
     presentLdp: presentLdp, present: present, pendingSignIn: pendingSignIn,
     start: start, collect: collect, act: act, formLike: formLike,
     verificationStart: verificationStart,
     refreshCsrf: refreshCsrf,
     responseCodeOf: responseCodeOf, idsOf: idsOf,
-    vpToken: vpToken, respond: respond,
+    vpToken: vpToken, respond: respond, encryptedForm: encryptedForm,
     answerDcApi: answerDcApi, sessionCookie: sessionCookie,
     sessionOf: sessionOf, inRealm: inRealm, finish: finish,
     QUERY_IDS: QUERY_IDS, CONFIG_FOR: CONFIG_FOR, client: client

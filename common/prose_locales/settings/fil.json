@@ -4784,12 +4784,20 @@
     "text": "binubuo ang certificate kapag nagsisimula ang process"
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "Wallet URL"
+    "en": "3108901753a760b2",
+    "text": "URL ng web wallet"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "Kung nasaan ang wallet, bilang URL na magagamit ng BROWSER. Dito ipinapadala ng mga Credential Offer page ang End-User, kaya ito ang sariling address ng debugger sa halip na anumang ibinibigay ng serbisyong ito."
+    "en": "9f7225ecd5713d87",
+    "text": "Ang address ng isang WEB wallet, bilang URL na magagamit ng BROWSER, para sa deployment na may ganito. Kapag nakatakda, iniaalok din ang Credential Offer bilang link dito (kasama ang oid4vci.walletIssuancePath at ang offer sa query nito), katabi ng oid4vci.walletInvocation link na binubuksan ng wallet app. WALANG LAMAN, ang default: walang iniaalok na web wallet."
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "Paano ibinibigay ang offer sa isang wallet app"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "Ang custom URL scheme ng link at QR code kung saan ibinibigay ang Credential Offer sa isang wallet app. openid-credential-offer, ang default: openid-credential-offer://, ang scheme na itinatakda ng seksyon 4.1 ng OpenID4VCI 1.0 at nire-register ng karamihan ng wallet. haip-vci: haip-vci://, na pinapayagan ng seksyon 4.2 ng OpenID4VC HAIP 1.0 na i-register ng isang HAIP wallet sa halip. Pareho ang offer alinman ang gamitin."
   },
   "oid4vci.authorizationServer|label": {
     "en": "1be6cf596d0873b7",
@@ -4864,12 +4872,12 @@
     "text": "Gaano katagal nananatiling magagamit ang isang Credential Offer, ang issuer_state nito, ang pre-authorized code nito at ang isang notification_id."
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "Issuance page ng wallet"
+    "en": "ce4ba0d38dfd924e",
+    "text": "Page ng pag-isyu ng web wallet"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "Ang pahina sa ilalim ng wallet URL na pinagbibigyan ng Credential Offer. Ang default ay ang sariling wallet page ng debugger."
+    "en": "067dc49ffc4982e7",
+    "text": "Ang page sa ilalim ng oid4vci.walletUrl na pinagbibigyan ng Credential Offer, para sa web wallet na ang page ng offer ay hindi ang root nito. Walang laman bilang default. (Tumatanggap ng mga offer ang web wallet ng naka-embed na debugger sa /vc-issuance-1.html.)"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -5012,8 +5020,16 @@
     "text": "URL ng wallet"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "Kung saan ipinapadala ng Verifier ang holder para mag-present. Bumabalik sa OID4VCI wallet URL, dahil iisang wallet ito sa bawat ayos kung saan ginagamit ang serbisyong ito."
+    "en": "273ca3cecab6bf43",
+    "text": "Ang address ng isang WEB wallet, para sa deployment na may ganito: kapag nakatakda, iniaalok din ang presentation request bilang link dito (kasama ang oid4vp.walletPresentationPath at ang request sa query nito), katabi ng oid4vp.walletInvocation link na binubuksan ng wallet app. Bumabalik sa web wallet ng OID4VCI, na walang laman bilang default: walang iniaalok na web wallet."
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "Paano ibinibigay ang request sa isang wallet app"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "Ang custom URL scheme ng link na “Buksan ang iyong wallet” sa page ng pag-sign in gamit ang wallet, ng QR code kung iniaalok ito, at ng requestUri ng sinimulang verification: ang request by reference (client_id at request_uri) sa ilalim nito. openid4vp, ang default: openid4vp://, ang scheme na itinatakda ng OpenID4VP 1.0 para sa Verifier na hindi kilala ang wallet. haip-vp: haip-vp://, na pinapayagan ng seksyon 5.1 ng OpenID4VC HAIP 1.0 na i-register ng isang HAIP wallet sa halip. Ang self-issued ID Token lamang ay laging siopv2://."
   },
   "oid4vp.requestObjectCertificateHeader|label": {
     "en": "0b6d0b0867dca890",
@@ -5336,12 +5352,12 @@
     "text": "Ilang row ang iniingatan ng wallet sign-in register kada trust realm — isa kada credential na na-issue para sa isang tao sa isang na-verify na access token (kada holder key para sa ldp_vc). Kapag lumampas, tinatanggal ang row na UNANG NA-ISSUE. Nabibigo ito nang SARADO: ang credential na walang row ay walang sina-sign in, gaya rin ng ginagawa ng disowned na row. Ang kapalit ng default: kapag nakapag-issue na ang isang realm ng ganito karaming sign-in credential, ang bawat bago ay pumipigil sa pinakalumang valid pa na mag-sign in ng holder nito, at kailangang bigyan ang holder ng panibago. Taasan ito para sa realm na nag-i-issue ng higit pa; hawak ng bawat process ng bawat node ang buong register."
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "Presentation page ng wallet"
+    "en": "b6fa773dcddd6d01",
+    "text": "Page ng presentation ng web wallet"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "Ang page sa ilalim ng wallet URL kung saan ibinibigay ang presentation request. Ang default ay ang sariling wallet page ng debugger."
+    "en": "629d354cdfa52216",
+    "text": "Ang page sa ilalim ng oid4vp.walletUrl na pinagbibigyan ng presentation request, para sa web wallet na ang page ng request ay hindi ang root nito. Walang laman bilang default. (Tumatanggap ng mga request ang web wallet ng naka-embed na debugger sa /vc-presentation-1.html.)"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -5382,6 +5398,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "Mag-alok ng \"Sign in with a wallet\" sa /authn/login at sagutin ang /authn/wallet: isang OpenID4VP request — sa pamamagitan ng Digital Credentials API, o sa pamamagitan ng link sa parehong device — para sa credential na na-issue ng realm na ito, sa anumang format na pinapangalanan ng oid4vp.signInFormats, na ang na-verify na presentation — kasama ang sariwang holder proof — ay nagsisimula ng session para sa directory entry na pinag-issue-han ng credential, at nagpapatuloy sa anumang flow na naghihintay sa sign-in screen. Maaari ring maging second factor ang wallet pagkatapos ng password, at humihingi ng second factor pagkatapos ng wallet kapag dalawa ang hinihingi ng request. Ang credential mula sa ibang issuer, o na-issue sa access token na hindi ini-issue ng serbisyong ito, ay nagve-verify pa rin at walang sina-sign in. Ang Off ay nag-aalis ng button at nagsasara ng pinto; hindi apektado ang beripikasyong sinisimulan ng administrator."
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "Pag-sign in gamit ang wallet: prefix ng Client Identifier"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "Kung paano ina-authenticate ng wallet ang signed request na ipinapadala ng pag-sign in gamit ang wallet (seksyon 5.9 ng OpenID4VP 1.0), sa link, sa QR code at sa Digital Credentials API. x509_hash, ang default at ang hinihingi ng OpenID4VC HAIP 1.0: ang SHA-256 ng certificate ng Verifier, na dala ng request ang chain; dapat pagkatiwalaan ng wallet ang Root ng serbisyong ito (ipinapakita ito ng /oid4vp/verifier-certificate). x509_san_dns: ang DNS name ng certificate (oid4vp.x509DnsName). Ang iba ay sa oid4vp.clientIdPrefix, na namamahala sa verification na sinisimulan ng administrator at hindi rito; gumagana lamang ang pre-registered sa wallet na may key ng Verifier na ito out of band."
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "Pag-sign in gamit ang wallet: response mode"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "Kung paano sumasagot sa pag-sign in gamit ang wallet ang isang wallet sa parehong device, o isang nag-scan ng QR code. direct_post.jwt, ang default at ang hinihingi ng seksyon 5.1 ng OpenID4VC HAIP 1.0: naka-encrypt ang sagot sa key na tanging ang pag-sign in na ito ang may hawak (oid4vp.responseEncryptionKeyAlgs), at tinatanggihan ang hindi naka-encrypt. direct_post: walang encryption, para sa wallet na hindi kayang mag-encrypt. Ang Digital Credentials API ay sakop ng oid4vp.signInDcApiResponseMode."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

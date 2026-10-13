@@ -128,6 +128,23 @@ means the whole configured set.
     and by reference (`credential_offer_uri`), the configured web wallet's
     link where `oid4vci.walletUrl` is set, `expiresAt`, and `txCode`.
 
+  **The offer is handed to a wallet APP** under `openid-credential-offer://`
+  (OpenID4VCI 1.0 section 4.1), or HAIP's `haip-vci://` where
+  `oid4vci.walletInvocation` says so: the QR code carries it by reference, and
+  **Open in a wallet on this device** by value. No web wallet is offered
+  unless `oid4vci.walletUrl` names one. If nothing opens, the page says to
+  scan the QR code with the wallet on a phone, or to install a wallet that
+  supports OpenID4VCI. With a third-party wallet: sign in to the portal, open
+  **Add to your wallet**, choose a credential (*Identity Credential*, `dc+sd-jwt`,
+  is the one most wallets hold), scan the QR code with the wallet, and type
+  the Transaction Code it asks for. The wallet redeems the pre-authorized code
+  at the token endpoint without naming a client — the authorization server's
+  metadata says `pre-authorized_grant_anonymous_access_supported: true`
+  (section 12.3) — fetches a nonce from `/oid4vci/nonce`, and asks for the
+  credential with a `jwt` key proof. A wallet that names a client of its own
+  is judged as that client, which product mode refuses unless it is
+  registered.
+
   The offer is made on the sign-on session the portal's token was issued on,
   and is reported over CAEP as `session-presented` naming OpenID4VCI. A token
   whose session is no longer known, or a session that continued without
@@ -317,8 +334,9 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | `http://localhost:3000` | yes | Where the wallet lives, as a URL the browser can use; a portal offer's wallet link goes there. |
-| `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | `/vc-issuance-1.html` | yes | The page under the wallet URL an offer is handed to. |
+| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | *(empty)* | yes | A web wallet offered beside the wallet app link, where one is configured. |
+| `oid4vci.walletInvocation` | `OID4VCI_WALLET_INVOCATION` | `openid-credential-offer` | yes | The scheme an offer is handed to a wallet app under: `openid-credential-offer` or `haip-vci`. |
+| `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | *(empty)* | yes | The page under the web wallet's URL an offer is handed to (`/vc-issuance-1.html` for the embedded debugger's). |
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | A separate authorization server to advertise; empty means this service. |
 | `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whom a pre-authorized offer is for when none is named (development). |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long an offer, its `issuer_state`, its pre-authorized code and a `notification_id` stay usable. |

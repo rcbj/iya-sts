@@ -240,7 +240,46 @@ verify at all is `STS-VC-0061`).
 
 The DCQL query carries one credential query per format in
 `oid4vp.signInFormats`, and a `credential_sets` entry that accepts any one. The
-request is always signed and by reference.
+request is always signed and by reference, under the `x509_hash` Client
+Identifier by default (`oid4vp.signInClientIdPrefix`), and is answered
+encrypted with `direct_post.jwt` (`oid4vp.signInResponseMode`) — what
+[OpenID4VC HAIP 1.0](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0.html)
+section 5 has a Verifier send. A plaintext answer to such a request is refused
+(`STS-VC-0096`).
+
+#### Using a wallet app
+
+**Open your wallet on this device** is the request by reference under
+`openid4vp://` (`oid4vp.walletInvocation`; `haip-vp` for HAIP's
+`haip-vp://`): `client_id` and `request_uri`, which any OpenID4VP wallet the
+device has registered for the scheme opens. No web wallet is offered unless
+`oid4vp.walletUrl` names one, and then it is a second link beside the first.
+If nothing opens, the page says the device has no wallet app for the link,
+points at the Digital Credentials API button and — where it is on — the QR
+code, and says how to get a wallet and a credential.
+
+To sign in with a third-party wallet (the EU Digital Identity reference wallet,
+walt.id, Lissi, a browser or platform wallet over the Digital Credentials
+API):
+
+1. **Trust this service's Root in the wallet.** An `x509_hash` request carries
+   the Verifier's certificate chain in `x5c` (leaf, Issuing CA, Intermediate);
+   the wallet validates it to an anchor it holds. `GET
+   /oid4vp/verifier-certificate` shows the certificate, the chain and the
+   anchor. A wallet built for development often accepts any chain.
+2. **Put a credential this realm issued into the wallet**: the portal's
+   **Add to your wallet** page (`/portal/wallet`, [OpenID4VCI](oid4vci.md#wallet-initiated-and-issuer-initiated-issuance)),
+   scanned or opened with the wallet, and the Transaction Code typed in. Only
+   such a credential signs anybody in.
+3. **Sign in**: *Sign in with a wallet* on the sign-in screen, then the
+   Digital Credentials API button or **Open your wallet on this device**. The
+   wallet shows what is asked for, sends the answer encrypted, and sends the
+   browser back to the wait page, which finishes the sign-in.
+
+A wallet that cannot encrypt needs `oid4vp.signInResponseMode=direct_post`; a
+wallet that knows this Verifier out of band can use
+`oid4vp.signInClientIdPrefix=pre-registered`. A wallet that answers only
+`dc+sd-jwt` uses the first query of the credential set.
 
 **The Digital Credentials API is the way in.** The wait page asks the browser
 for a credential with a signed `openid4vp-v1-signed` request (OpenID4VP
@@ -449,8 +488,9 @@ check are the same in both modes. See
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `oid4vp.clientId` | `OID4VP_CLIENT_ID` | `sts-verifier` | yes | The `client_id` the Verifier presents, and the `aud` a Key Binding JWT must name. |
-| `oid4vp.walletUrl` | `OID4VP_WALLET_URL` | *(`oid4vci.walletUrl`)* | yes | Where the Verifier sends a holder to present; falls back to the OID4VCI wallet URL. |
-| `oid4vp.walletPresentationPath` | `OID4VP_WALLET_PRESENTATION_PATH` | `/vc-presentation-1.html` | yes | The page under the wallet URL a presentation request is handed to. |
+| `oid4vp.walletUrl` | `OID4VP_WALLET_URL` | *(`oid4vci.walletUrl`, empty)* | yes | A web wallet offered beside the wallet app link, where one is configured; falls back to the OID4VCI web wallet. |
+| `oid4vp.walletInvocation` | `OID4VP_WALLET_INVOCATION` | `openid4vp` | yes | The scheme a wallet app is handed a request under: `openid4vp` or `haip-vp`. |
+| `oid4vp.walletPresentationPath` | `OID4VP_WALLET_PRESENTATION_PATH` | *(empty)* | yes | The page under the web wallet's URL a request is handed to (`/vc-presentation-1.html` for the embedded debugger's). |
 | `oid4vp.allowedWalletUrls` | `OID4VP_ALLOWED_WALLET_URLS` | *(empty)* | yes | In product mode, the other wallet URLs a verification start's `wallet` may name. |
 | `oid4vp.requestObjectCertificateHeader` | `OID4VP_REQUEST_OBJECT_CERTIFICATE_HEADER` | `x5u` | yes | Whether the signed Request Object names its key's chain: `x5u`, `x5c`, `both` or `none`. |
 | `oid4vp.kbMaxAgeS` | `OID4VP_KB_MAX_AGE_S` | `600` | yes | How old a Key Binding JWT's `iat` may be. |
@@ -469,9 +509,11 @@ check are the same in both modes. See
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain, relayable QR code for a wallet on another device. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The formats a sign-in asks for, in order of preference. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | Whether a Digital Credentials API answer is encrypted (`dc_api.jwt`) or in the clear (`dc_api`). |
+| `oid4vp.signInClientIdPrefix` | `OID4VP_SIGN_IN_CLIENT_ID_PREFIX` | `x509_hash` | yes | The Client Identifier prefix of a sign-in's signed request (HAIP 1.0 requires `x509_hash`). |
+| `oid4vp.signInResponseMode` | `OID4VP_SIGN_IN_RESPONSE_MODE` | `direct_post.jwt` | yes | `direct_post.jwt` (encrypted, HAIP 1.0) or `direct_post` for a sign-in answered by link or QR code. |
 | `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer *Sign in with a self-issued ID* (SIOPv2) and the enrolment on `/portal/self-issued`. |
 | `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be. |
-| `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation`, `openid_federation`, `x509_san_dns` or `x509_hash`. |
+| `oid4vp.clientIdPrefix` | `OID4VP_CLIENT_ID_PREFIX` | `pre-registered` | yes | How a signed request an administrator starts names this Verifier: `pre-registered`, `decentralized_identifier`, `verifier_attestation`, `openid_federation`, `x509_san_dns` or `x509_hash`. A sign-in's is `oid4vp.signInClientIdPrefix`. |
 | `oid4vp.x509DnsName` | `OID4VP_X509_DNS_NAME` | *(empty)* | yes | The DNS name of the `x509_san_dns` Client Identifier. It must be the Response URI's host. Empty: the host of `global.publicBaseUrl`, else (development only) the request's host. |
 | `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The algorithm an `x509_san_dns` or `x509_hash` request is signed with: `ES256`, `ES384`, `ES512`, `PS256`, `RS256` or `EdDSA`. |
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT for the `verifier_attestation` prefix. **Warning:** empty, this realm attests itself. |

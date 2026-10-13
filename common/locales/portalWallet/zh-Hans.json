@@ -19,6 +19,7 @@
   "expires": "此要约将于 {when} 过期。",
   "openHere": "在本设备上的钱包中打开",
   "openWebWallet": "在网页钱包中打开",
+  "noApp": "如果没有任何应用打开，说明本设备没有可处理凭证要约的钱包应用：请改用手机上的钱包扫描二维码，或安装支持 OpenID for Verifiable Credential Issuance 的钱包后重试。",
   "uriHeading": "以链接形式显示的要约",
   "doneOffered": "您的要约已就绪。请用钱包扫描，然后输入交易码。"
 }

@@ -2066,6 +2066,15 @@ class OAuth2Server {
       // thing a client author needs to know about this grant before writing any
       // code is that the assertion is a JWT.
       'urn:ietf:params:oauth:client-assertion-type:jwt-bearer_supported': true,
+      // OPENID4VCI 1.0 SECTION 12.3 (2026-10-12): a wallet may redeem a
+      // pre-authorized code naming no client_id, which the token endpoint has
+      // allowed in every mode since 2026-10-05 (`clientlessPreAuthorized`).
+      // ABSENT, the member defaults to false, and a wallet that read the
+      // metadata then sends a client_id of its own — which product mode
+      // judges as any other client and refuses unless it is registered. So a
+      // real wallet redeeming an offer from the portal failed where this
+      // member was missing, and is told here that it need not name itself.
+      'pre-authorized_grant_anonymous_access_supported': true,
       // RFC 7522 section 2.2's spelling of the same member. Published
       // UNCONDITIONALLY like the one above, and for its reason: it says what a
       // client_assertion_type may be, and that is true of this server whether

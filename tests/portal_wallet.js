@@ -140,6 +140,11 @@ function childMain() {
          !isNaN(Date.parse(offer.expiresAt)),
          '2c. the offer comes by value and by reference, with its expiry',
          JSON.stringify(offer).slice(0, 400));
+    // A WALLET APP IS HANDED THE OFFER BY ITS SCHEME, AND NO WEB WALLET IS
+    // OFFERED BY DEFAULT (2026-10-12): `oid4vci.walletUrl` is empty.
+    note((offer.byValue || {}).walletUrl === '' && byRef.walletUrl === '',
+         '2c-ii. no web wallet link is offered where none is configured',
+         JSON.stringify([(offer.byValue || {}).walletUrl, byRef.walletUrl]));
     const fetched = await fetch(byRef.credentialOfferUri);
     const fetchedJson = await fetched.json().catch(function () {
       return null;
@@ -154,6 +159,29 @@ function childMain() {
          '2e. the offer is session-presented, naming OpenID4VCI, on the ' +
          'sign-on session the portal\'s token was issued on',
          JSON.stringify(mine));
+    const config = require(ROOT_DIR + '/common/config');
+    config.setOverride('oid4vci.walletInvocation', 'haip-vci');
+    const haip = await alice.act('/portal/wallet',
+      { configuration: 'IdentityCredential', mode: 'cross-device' });
+    config.clearOverride('oid4vci.walletInvocation');
+    const haipOffer = (haip.json && haip.json.offer) || {};
+    note(/^haip-vci:\/\/\?credential_offer=/.test(
+           String((haipOffer.byValue || {}).offerUri)) &&
+         /^haip-vci:\/\/\?credential_offer_uri=/.test(
+           String((haipOffer.byReference || {}).offerUri)),
+         '2c-iii. oid4vci.walletInvocation=haip-vci hands it over under ' +
+         'haip-vci:// (OpenID4VC HAIP 1.0 section 4.2)',
+         String((haipOffer.byValue || {}).offerUri).slice(0, 40));
+    const asMeta = await fetch(base +
+      '/.well-known/oauth-authorization-server');
+    const asJson = await asMeta.json().catch(function () {
+      return {};
+    });
+    note(asJson['pre-authorized_grant_anonymous_access_supported'] === true,
+         '2c-iv. the authorization server says a wallet may redeem the ' +
+         'code naming no client (OpenID4VCI 1.0 section 12.3), which is ' +
+         'how it is redeemed below', String(
+           asJson['pre-authorized_grant_anonymous_access_supported']));
 
     // --- 3. it redeems for a token about the caller -------------------------
     const tokenAnswer = await fetch(base + '/oauth2/token', {
@@ -240,9 +268,12 @@ function childMain() {
          decoded.indexOf('id="open_in_wallet" href="' +
                          offer.byValue.offerUri + '"') >= 0 &&
          /<form method="post" action="\/portal\/wallet">/.test(html) &&
+         /id="wallet-no-app"/.test(html) &&
+         !/id="open_in_web_wallet"/.test(html) &&
          !/portalWallet\./.test(html),
-         '5a. the POST\'s view draws the QR code, the Transaction Code and ' +
-         'the open-in-wallet link, in the person\'s language',
+         '5a. the POST\'s view draws the QR code, the Transaction Code, ' +
+         'the open-in-wallet link and what to do when nothing opens — and ' +
+         'no web wallet link — in the person\'s language',
          html.slice(0, 400));
     const page = await alice.draw('/portal/wallet');
     note(page.status === 200 && /id="wallet-make"/.test(page.html) &&

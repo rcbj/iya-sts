@@ -1743,10 +1743,6 @@
     "en": "f0ccc99bfa33469e",
     "text": "證書在程序啟動時產生"
   },
-  "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "錢包所在的位置，以「瀏覽器」可使用的 URL 表示。Credential Offer 頁面會將終端用戶送到這裡，因此它是除錯工具自己的地址，而不是此服務所提供的任何東西。"
-  },
   "oid4vci.authorizationServer|description": {
     "en": "a2ea9fbd6ea33488",
     "text": "設定此值即可在認證簽發者元數據的 authorization_servers 中公告「另一個」授權伺服器。空白——預設值——表示此服務就是自己的授權伺服器，這是此處每個測試所使用的安排。"

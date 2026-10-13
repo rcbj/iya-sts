@@ -21,8 +21,11 @@
 //     names the wait page, which REPLACES the start in the history so Back
 //     does not start a second.
 //   * THE WAIT PAGE (`/authn/wallet/wait`): the Digital Credentials API
-//     button, the same-device link, and — where the realm offers it — a link
-//     to the QR code (`?qr=1`), drawn here from the request's text by
+//     button, the same-device link — under the scheme a wallet APP
+//     registers for (`openid4vp://`, or HAIP's `haip-vp://`) since
+//     2026-10-12 — a configured web wallet's link beside it, what to do
+//     when no app opens, and — where the realm offers it — a link to the
+//     QR code (`?qr=1`), drawn here from the request's text by
 //     `common/web_qr.ts` (the portal's encoder, moved to `common/` by #572).
 //   * THE POLL: `POST …/status` every `pollSeconds` on the QR page, as its
 //     `<meta>` refresh did; once at once where the wallet sent the person
@@ -178,11 +181,27 @@ class WebVcSignin {
         esc(self + '&qr=1') + '">' + t.html('wallet.wait.qrLink') +
         '</a> &mdash; ' + t.html('wallet.wait.qrLinkNote') + '</p>'
       : '';
+    // A CONFIGURED WEB WALLET beside the link a wallet app opens
+    // (2026-10-12), and only where one is configured.
+    const web = v.webWallet
+      ? '<p><a class="fedbtn" id="wallet-web" href="' + esc(v.webWallet) +
+        '">' + t.html('wallet.webWallet.open') + '<span>' +
+        t.html('wallet.webWallet.note') + '</span></a></p>'
+      : '';
+    // WHAT TO DO WHEN NOTHING OPENS (2026-10-12): a link under a scheme no
+    // app on this device registered for does nothing at all, and a page
+    // that said nothing about it would leave the person staring at it.
+    const noApp = '<p class="sub" id="wallet-no-app">' +
+      t.html('wallet.noApp.lead') +
+      (v.dcRequest ? ' ' + t.html('wallet.noApp.dc') : '') +
+      (v.qr ? ' ' + t.html('wallet.noApp.qr') : '') +
+      ' ' + t.html('wallet.noApp.install') + '</p>';
     return '<h1>' + esc(WebVcSignin.heading(v, t)) + '</h1>' +
       '<p class="sub">' + t.html(sub) + '</p>' + dc +
       '<p><a class="fedbtn" id="wallet-open" href="' + esc(v.sameDevice) +
       '">' + t.html('wallet.sameDevice.open') + '<span>' +
-      t.html('wallet.sameDevice.note') + '</span></a></p>' + qrLink +
+      t.html('wallet.sameDevice.note') + '</span></a></p>' + web + noApp +
+      qrLink +
       '<p id="wallet-waiting">' +
       t.html('wallet.wait.expires', { seconds: seconds }) + ' ' +
       t.html('wallet.wait.notBack') + ' <a id="wallet-check" href="' +

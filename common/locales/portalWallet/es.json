@@ -19,6 +19,7 @@
   "expires": "Esta oferta caduca el {when}.",
   "openHere": "Abrir en una billetera de este dispositivo",
   "openWebWallet": "Abrir en la billetera web",
+  "noApp": "Si no se abre nada, este dispositivo no tiene una aplicación de billetera para ofertas de credenciales: escanee el código QR con la billetera de su teléfono, o instale una billetera compatible con OpenID for Verifiable Credential Issuance y vuelva a intentarlo.",
   "uriHeading": "La oferta, como enlace",
   "doneOffered": "Su oferta está lista. Escanéela con su billetera y luego escriba el código de transacción."
 }

@@ -19,6 +19,7 @@
   "expires": "此要約將於 {when} 到期。",
   "openHere": "在本裝置上的錢包中開啟",
   "openWebWallet": "在網頁錢包中開啟",
+  "noApp": "如果沒有任何程式開啟，表示此裝置沒有可處理憑證要約的錢包應用程式：請改用手機上的錢包掃描 QR 碼，或安裝支援 OpenID for Verifiable Credential Issuance 的錢包後再試一次。",
   "uriHeading": "以連結形式顯示的要約",
   "doneOffered": "您的要約已就緒。請用錢包掃描，然後輸入交易碼。"
 }

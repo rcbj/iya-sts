@@ -487,6 +487,22 @@ class VcSignin {
                            verdict: '' }, this.backOf(ctx), more || {});
   }
 
+  // A sign-in whose request cannot be signed or built (2026-10-12): the
+  // Verifier's certificate for an x509 Client Identifier, or a configured
+  // Verifier Attestation, is unusable. Logged where it was found, with its
+  // code; marked here and refused as a 500, because nothing the person can
+  // do fixes it.
+  private unbuildable(res: any, ctx: any, e: any): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcSignin.unbuildable().");
+    errorCodes.mark(res, String((e && e.code) || 'STS-VC-0112'));
+    // error-code: none — marked on the line above with the builder's code.
+    this.refuse(res, 500, 'This service cannot sign a wallet request at the ' +
+      'moment (' + String((e && e.message) || e) + '). Sign in another way.',
+      this.refusedView('A wallet request could not be made', ctx));
+    log.debug("Leaving VcSignin.unbuildable().");
+  }
+
   private closed(res: any, ctx: any): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcSignin.closed().");
@@ -708,8 +724,21 @@ class VcSignin {
     }
     // An x509 Client Identifier (#230) signs under the Verifier's
     // certificate, which is issued here, before the synchronous build
-    // below reads it; nothing for any other prefix.
-    await verifier.prepareSignedClientId(req);
+    // below reads it; nothing for any other prefix. A sign-in's prefix is
+    // `oid4vp.signInClientIdPrefix` (x509_hash by default since
+    // 2026-10-12), and a certificate that cannot be issued — or a
+    // request that cannot be built under it — is a refusal naming the
+    // builder's code (STS-VC-0110 to STS-VC-0113, STS-VC-0092), rather than
+    // an unanswered promise.
+    try {
+      await verifier.prepareSignedClientId(req,
+                                           verifier.signInClientIdPrefix());
+    } catch (e) {
+      log.debug("Caught in VcSignin.start(): " + ((e && e.message) || e));
+      this.unbuildable(res, ctx, e);
+      log.debug("Leaving VcSignin.start(). The request cannot be signed.");
+      return;
+    }
     const binding = this.bindingOf(req) || randomId(32);
     let did = '';
     try {
@@ -723,19 +752,31 @@ class VcSignin {
     // step a second factor waits on, which it must name to be admitted.
     const completeQuery = enrolFor ? '?enrol=1'
       : (ctx.mfaId ? '?mfa=' + encodeURIComponent(ctx.mfaId) : '');
-    const tx = verifier.buildVpRequest(req, {
-      responseType: selfIssued ? 'id_token' : 'vp_token',
-      signIn: {
-        authnId: record.id,
-        bindingHash: this.hashOf(binding),
-        completePath: authn.WALLET_WAIT_PATH + completeQuery,
-        ttlMs: this.ttlMs(),
-        crossDevice: this.qrOffered(),
-        issuerDids: did ? [did] : [],
-        dcApiOrigin: this.originOf(req)
-      }
-    });
+    let tx: any = null;
+    try {
+      tx = verifier.buildVpRequest(req, {
+        responseType: selfIssued ? 'id_token' : 'vp_token',
+        signIn: {
+          authnId: record.id,
+          bindingHash: this.hashOf(binding),
+          completePath: authn.WALLET_WAIT_PATH + completeQuery,
+          ttlMs: this.ttlMs(),
+          crossDevice: this.qrOffered(),
+          issuerDids: did ? [did] : [],
+          dcApiOrigin: this.originOf(req)
+        }
+      });
+    } catch (e) {
+      log.debug("Caught in VcSignin.start(): " + ((e && e.message) || e));
+      this.unbuildable(res, ctx, e);
+      log.debug("Leaving VcSignin.start(). The request was not built.");
+      return;
+    }
+    // A WEB WALLET's address, where one is configured or was named, or ''
+    // (2026-10-12): the link a wallet APP opens is the scheme's, drawn by
+    // the wait view whatever this holds.
     tx.signIn.walletUrl = wallet.url;
+    tx.signIn.walletNamed = !!(wallet as any).named;
     tx.signIn.mfaId = ctx.mfaId;
     if (enrolFor) {
       tx.signIn.enrol = { username: enrolFor };
@@ -882,6 +923,7 @@ class VcSignin {
     const { ctx, tx } = admitted;
     const selfIssued = tx.responseType === 'id_token';
     const query = verifier.vpRequestQuery(req, tx);
+    const scheme = verifier.walletScheme(tx);
     const dcRequest = verifier.dcApiRequestFor(tx);
     const record = ctx.record;
     authn.answerJson(res, 200, Object.assign({ ok: true,
@@ -896,12 +938,19 @@ class VcSignin {
         // The Digital Credentials API's request (openid4vp-v1-signed), or
         // null where the transaction offers none.
         dcRequest: dcRequest || null,
-        // The same-device link.
-        sameDevice: String(tx.signIn.walletUrl || '') + '?' + query,
-        // The plain QR code's text, only where it is offered; SIOPv2's
-        // static `siopv2:` for an ID Token alone (#129).
-        qr: tx.signIn.crossDevice
-          ? (selfIssued ? 'siopv2://?' : 'openid4vp://?') + query : '',
+        // THE SAME-DEVICE LINK (2026-10-12): the request by reference
+        // under the scheme a wallet APP registers for
+        // (`oid4vp.walletInvocation`, `siopv2://` for an ID Token alone),
+        // or the web wallet the start NAMED.
+        sameDevice: (tx.signIn.walletNamed && tx.signIn.walletUrl
+          ? String(tx.signIn.walletUrl) : scheme) + '?' + query,
+        // A configured WEB wallet's link beside it, or '' — none is
+        // offered where none is configured.
+        webWallet: !tx.signIn.walletNamed && tx.signIn.walletUrl
+          ? String(tx.signIn.walletUrl) + '?' + query : '',
+        // The plain QR code's text, only where it is offered: the same
+        // scheme, for a wallet app on another device.
+        qr: tx.signIn.crossDevice ? scheme + '?' + query : '',
         expiresIn: Math.max(0, Math.round((tx.expires - Date.now()) / 1000)),
         pollSeconds: this.pollSeconds(),
         protocol: String(record.protocol || ''),

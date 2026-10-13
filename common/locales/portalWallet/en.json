@@ -19,6 +19,7 @@
   "expires": "This offer expires {when}.",
   "openHere": "Open in a wallet on this device",
   "openWebWallet": "Open in the web wallet",
+  "noApp": "If nothing opens, this device has no wallet app for credential offers: scan the QR code with the wallet on your phone instead, or install a wallet that supports OpenID for Verifiable Credential Issuance and try again.",
   "uriHeading": "The offer, as a link",
   "doneOffered": "Your offer is ready. Scan it with your wallet, then type the Transaction Code."
 }

@@ -59,7 +59,11 @@ const EXTENSION_METADATA = [
   // draft-ietf-oauth-attestation-based-client-auth-11 section 15.2 registers
   // it (#229); the suite's RFC 8414 schema (v5.3.1) predates it, and knows
   // the other three members that section registers.
-  "client_attestation_pop_methods_supported"];
+  "client_attestation_pop_methods_supported",
+  // OpenID4VCI 1.0 section 12.3 (2026-10-12): published on the
+  // authorization server's metadata so a wallet redeems a pre-authorized
+  // code without naming a client.
+  "pre-authorized_grant_anonymous_access_supported"];
 
 function waitMs(ms) {
   log.debug("Entering waitMs().");

@@ -19,6 +19,7 @@
   "expires": "Cette offre expire le {when}.",
   "openHere": "Ouvrir dans un portefeuille sur cet appareil",
   "openWebWallet": "Ouvrir dans le portefeuille web",
+  "noApp": "Si rien ne s’ouvre, cet appareil n’a pas d’application de portefeuille pour les offres d’attestation : balayez plutôt le code QR avec le portefeuille de votre téléphone, ou installez un portefeuille compatible avec OpenID for Verifiable Credential Issuance et réessayez.",
   "uriHeading": "L’offre, sous forme de lien",
   "doneOffered": "Votre offre est prête. Scannez-la avec votre portefeuille, puis saisissez le code de transaction."
 }

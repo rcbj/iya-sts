@@ -19,6 +19,7 @@
   "expires": "Erbjudandet går ut {when}.",
   "openHere": "Öppna i en plånbok på den här enheten",
   "openWebWallet": "Öppna i webbplånboken",
+  "noApp": "Om ingenting öppnas har den här enheten ingen plånboksapp för erbjudanden om intyg: skanna i stället QR-koden med plånboken i din telefon, eller installera en plånbok som stöder OpenID for Verifiable Credential Issuance och försök igen.",
   "uriHeading": "Erbjudandet som länk",
   "doneOffered": "Ditt erbjudande är klart. Skanna det med din plånbok och skriv sedan in transaktionskoden."
 }

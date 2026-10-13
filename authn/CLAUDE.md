@@ -42,7 +42,7 @@ the button
 (`walletOptionHtml()`, gone when `oid4vp.signIn` is off — **no longer withheld
 under `forceMfa`**), and that door uses `pendingFor()` and
 `completeAuthentication()` exactly as the Kerberos door does. See *The wallet door* below; the design is argued in
-`oid4vc/CLAUDE.md`, *Signing in with a wallet*.
+`oid4vc/CLAUDE.md`, *Signing in with a wallet* — and, for how a wallet APP is reached and what request it is sent (the `openid4vp://` link, `x509_hash`, `direct_post.jwt`, 2026-10-12), *A wallet APP, and a request it can act on*.
 
 **It needed no inverted hook either**, which is worth saying because rule 3e's
 inventory of slots is long and another is the obvious move. The only two things

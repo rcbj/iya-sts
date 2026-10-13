@@ -19,6 +19,7 @@
   "expires": "Mag-e-expire ang offer na ito sa {when}.",
   "openHere": "Buksan sa isang wallet sa device na ito",
   "openWebWallet": "Buksan sa web wallet",
+  "noApp": "Kung walang bumukas, walang wallet app sa device na ito para sa mga credential offer: i-scan na lang ang QR code gamit ang wallet sa iyong telepono, o mag-install ng wallet na sumusuporta sa OpenID for Verifiable Credential Issuance at subukang muli.",
   "uriHeading": "Ang offer, bilang link",
   "doneOffered": "Handa na ang iyong offer. I-scan ito gamit ang iyong wallet, pagkatapos ay i-type ang Transaction Code."
 }

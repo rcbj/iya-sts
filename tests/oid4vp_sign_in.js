@@ -418,10 +418,26 @@ function childMain() {
       });
     }
 
-    async function respond(req, presentation, prefix) {
-      return request(port, 'POST', (prefix || '') + '/oid4vp/response', {
-        form: { state: req.requestObject.state,
-                vp_token: JSON.stringify({ [DCQL_ID]: [presentation] }) } });
+    // THE WALLET'S ANSWER. A sign-in asks for `direct_post.jwt` by
+    // default since 2026-10-12 (`oid4vp.signInResponseMode`), so the answer
+    // is ENCRYPTED to the request's ECDH-ES key, as a HAIP wallet sends it;
+    // `plain` sends it in the clear whatever was asked.
+    async function respond(req, presentation, prefix, plain) {
+      const ro = req.requestObject || {};
+      const fields = { state: ro.state,
+                       vp_token: JSON.stringify({ [DCQL_ID]: [presentation] }) };
+      let form = fields;
+      if (ro.response_mode === 'direct_post.jwt' && !plain) {
+        const key = ((ro.client_metadata || {}).jwks || { keys: [] }).keys
+          .filter(function (k) {
+            return k.alg === 'ECDH-ES';
+          })[0];
+        form = { response: require(ROOT + '/common/crypto').encryptJweCompact(
+          JSON.stringify({ vp_token: { [DCQL_ID]: [presentation] } }),
+          { alg: 'ECDH-ES', enc: 'A128GCM', jwk: key }) };
+      }
+      return request(port, 'POST', (prefix || '') + '/oid4vp/response',
+                     { form: form });
     }
 
     const sessionCookie = function (r) {
@@ -440,9 +456,12 @@ function childMain() {
     const aliceSub = await realms.run(DEFAULT, function () {
       return helpers.subjectForName('wsi-alice');
     });
-    const aud = await realms.run(DEFAULT, function () {
-      return config.value('oid4vp.clientId');
-    });
+    // THE CLIENT IDENTIFIER A SIGN-IN SIGNS UNDER is x509_hash's since
+    // 2026-10-12 (`oid4vp.signInClientIdPrefix`): the SHA-256 of the
+    // Verifier's certificate, which exists once the first sign-in starts.
+    // Read off that request (2i holds it to the certificate), and every
+    // presentation below is made for it.
+    let aud = '';
 
     // ====================================================================
     // 1. THE SCREEN, AND THE SWITCH
@@ -517,6 +536,7 @@ function childMain() {
 
     const browser1 = browser();
     let s = await start(browser1, authnId);
+    aud = String((s.requestObject || {}).client_id || '');
     note(s.started.status === 303 &&
          !!browser1.cookies.sts_wallet_binding,
          '2d. starting sets the binding cookie and sends the browser to the ' +
@@ -571,7 +591,42 @@ function childMain() {
     const queries = (ro.dcql_query || {}).credentials || [];
     const cq = queries[0] || {};
     const sets = (ro.dcql_query || {}).credential_sets || [];
-    note(ro.client_id === aud && cq.format === 'dc+sd-jwt' &&
+    // WHAT A WALLET THAT HAS NEVER HEARD OF THIS SERVICE CAN ACT ON
+    // (2026-10-12): an x509_hash Client Identifier — the SHA-256 of the
+    // certificate the request carries first in `x5c`, computed here — and
+    // an encrypted answer to a key the request offers.
+    const roHeader = JSON.parse(Buffer.from(String(
+      (await request(port, 'GET', pathOf(s.walletUrl.searchParams.get(
+        'request_uri')))).text).split('.')[0], 'base64url').toString('utf8'));
+    const leafHash = roHeader.x5c && roHeader.x5c.length
+      ? nodeCrypto.createHash('sha256').update(
+          Buffer.from(roHeader.x5c[0], 'base64')).digest('base64url') : '';
+    note(!!leafHash && ro.client_id === 'x509_hash:' + leafHash &&
+         s.walletUrl.searchParams.get('client_id') === ro.client_id &&
+         roHeader.typ === 'oauth-authz-req+jwt',
+         '2h-iv. the request is signed under the x509_hash Client ' +
+         'Identifier, the SHA-256 of the x5c leaf (oid4vp.' +
+         'signInClientIdPrefix, OpenID4VC HAIP 1.0 section 5)',
+         ro.client_id + ' ' + leafHash);
+    const offered = ((ro.client_metadata || {}).jwks || {}).keys || [];
+    note(ro.response_mode === 'direct_post.jwt' && !!ro.response_uri &&
+         offered.some(function (k) {
+           return k.alg === 'ECDH-ES' && k.crv === 'P-256';
+         }),
+         '2h-v. and asks for an encrypted answer, direct_post.jwt, to a ' +
+         'P-256 ECDH-ES key among those it offers (oid4vp.' +
+         'signInResponseMode, HAIP section 5.1)',
+         ro.response_mode + ' ' + JSON.stringify(offered.map(function (k) {
+           return k.alg;
+         })));
+    note(/^openid4vp:\/\/\?client_id=/.test(s.view.sameDevice) &&
+         s.walletUrl.searchParams.get('request_uri_method') === 'get' &&
+         s.view.webWallet === '',
+         '2h-vi. the same-device link is the request by reference under ' +
+         'openid4vp://, which a wallet app registers for, and no web wallet ' +
+         'is offered where none is configured',
+         s.view.sameDevice.slice(0, 40) + ' web=' + s.view.webWallet);
+    note(cq.format === 'dc+sd-jwt' &&
          JSON.stringify(cq.meta) === JSON.stringify(
            { vct_values: [vcConfigs.VCI_VCT] }) &&
          JSON.stringify(cq.claims) === JSON.stringify([{ path: ['sub'] }]),
@@ -616,6 +671,63 @@ function childMain() {
          'refresh did', qrShell.status + ' ' + withQr.view.pollSeconds);
     await realms.run(DEFAULT, function () {
       config.clearOverride('oid4vp.signInCrossDevice');
+    });
+
+    // HOW A REAL WALLET IS REACHED, AND ANSWERS (2026-10-12).
+    const clear = await start(browser(), pendingSignIn());
+    r = await respond(clear, present(alice.credential, aliceKey,
+                                     clear.requestObject.nonce, aud),
+                      '', true);
+    note(r.status === 400 && r.code === 'STS-VC-0096',
+         '2k. an answer in the clear to a sign-in that asked for ' +
+         'direct_post.jwt is refused, STS-VC-0096 (HAIP section 5.1)',
+         r.status + ' ' + r.code);
+    await realms.run(DEFAULT, function () {
+      config.setOverride('oid4vp.walletInvocation', 'haip-vp');
+      config.setOverride('oid4vp.walletUrl', 'https://web-wallet.example/w');
+      config.setOverride('oid4vp.walletPresentationPath', '/present');
+      config.setOverride('oid4vp.signInResponseMode', 'direct_post');
+      config.setOverride('oid4vp.signInClientIdPrefix', 'pre-registered');
+    });
+    const haip = await start(browser(), pendingSignIn());
+    note(/^haip-vp:\/\/\?client_id=/.test(haip.view.sameDevice || '') &&
+         /^https:\/\/web-wallet\.example\/w\/present\?client_id=/.test(
+           haip.view.webWallet || ''),
+         '2k-ii. oid4vp.walletInvocation=haip-vp puts the link under ' +
+         'haip-vp:// (HAIP section 5.1), and a configured web wallet is ' +
+         'offered beside it with its presentation page',
+         (haip.view.sameDevice || '').slice(0, 30) + ' ' +
+         (haip.view.webWallet || '').slice(0, 50));
+    const preRegistered = await realms.run(DEFAULT, function () {
+      return config.value('oid4vp.clientId');
+    });
+    note(haip.requestObject && haip.requestObject.response_mode ===
+           'direct_post' &&
+         haip.requestObject.client_id === preRegistered,
+         '2k-iii. and oid4vp.signInResponseMode and ' +
+         'oid4vp.signInClientIdPrefix choose the response mode and the ' +
+         'Client Identifier',
+         haip.requestObject && (haip.requestObject.response_mode + ' ' +
+                                haip.requestObject.client_id));
+    r = await respond(haip, present(alice.credential, aliceKey,
+                                    haip.requestObject.nonce,
+                                    haip.requestObject.client_id));
+    note(r.status === 200 && /response_code=/.test(
+           (r.json && r.json.redirect_uri) || ''),
+         '2k-iv. which takes the answer in the clear', r.status + ' ' +
+         r.text.slice(0, 120));
+    // Collected, so no answered sign-in is left waiting for section 3's
+    // inventory to find.
+    r = await collect(haip.who, haip, r.json && r.json.redirect_uri);
+    note(r.status === 303 && !!signedInSession(haip.who),
+         '2k-v. and the browser that started it is signed in',
+         r.status + ' ' + r.code + ' ' + (r.headers || {}).location);
+    await realms.run(DEFAULT, function () {
+      ['oid4vp.walletInvocation', 'oid4vp.walletUrl',
+       'oid4vp.walletPresentationPath', 'oid4vp.signInResponseMode',
+       'oid4vp.signInClientIdPrefix'].forEach(function (key) {
+        config.clearOverride(key);
+      });
     });
 
     // ====================================================================

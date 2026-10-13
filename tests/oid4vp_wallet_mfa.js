@@ -82,9 +82,9 @@ function childMain() {
       m.ldap.createUser('mfa-carol', { invent: false });
       credentials.setPassword('mfa-alice', 'Correct-Horse-1', {});
     });
-    const aud = await w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const aud = await w.signInAudience();
 
     // Signs in with the wallet and answers the wait page.
     async function walletSignIn(username, holder, credential, opts) {

@@ -25,8 +25,10 @@
 //     wallet on the other device asks for it, and it is what ties that
 //     wallet to the person looking at this screen;
 //   * "open in a wallet on this device": the `openid-credential-offer://`
-//     URI with the offer by value, which a native wallet registers for, and
-//     the configured web wallet's link where there is one.
+//     URI (HAIP's `haip-vci://` where `oid4vci.walletInvocation` says so)
+//     with the offer by value, which a wallet app registers for, the
+//     configured web wallet's link where there is one — none by default
+//     since 2026-10-12 — and what to do when nothing opens.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -82,6 +84,11 @@ class WalletPages {
           kit.esc(byValue.walletUrl) + '">' +
           t.html('portalWallet.openWebWallet') + '</a>'
         : '') + '</p>' +
+      // WHAT TO DO WHEN NOTHING OPENS (2026-10-12): the link is under a
+      // scheme only a wallet app registers for, and on a device without one
+      // it does nothing at all.
+      '<p class="sub" id="wallet-no-app">' + t.html('portalWallet.noApp') +
+      '</p>' +
       '<details><summary>' + t.html('portalWallet.uriHeading') +
       '</summary><p class="offer-uri" id="offer_uri">' + kit.esc(scan) +
       '</p></details></div>';

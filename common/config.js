@@ -9562,13 +9562,36 @@ const SETTINGS = [
                  'The CN is the first of tls.hostnames.' },
 
   // --- OID4VCI -------------------------------------------------------------
-  { key: 'oid4vci.walletUrl', group: 'OID4VCI', label: 'Wallet URL',
-    env: 'OID4VCI_WALLET_URL', type: 'string', dflt: 'http://localhost:3000',
+  // A WALLET IS INVOKED BY ITS SCHEME, NOT BY AN ADDRESS (2026-10-12, rcbj:
+  // "the goal is to actually have this button be usable"). Until then the
+  // default was `http://localhost:3000`, the embedded debugger's web wallet,
+  // which no person's wallet app is; a Credential Offer is handed to a
+  // wallet as `openid-credential-offer://` (OpenID4VCI 1.0 section 4.1) or
+  // HAIP's `haip-vci://`, which a wallet app registers for, and a WEB wallet
+  // is offered beside it only where one is configured here.
+  { key: 'oid4vci.walletUrl', group: 'OID4VCI', label: 'Web wallet URL',
+    env: 'OID4VCI_WALLET_URL', type: 'string', dflt: '',
     runtime: true,
-    description: 'Where the wallet lives, as a URL the BROWSER can use. The ' +
-                 'Credential Offer pages send the End-User here, so it is ' +
-                 'the debugger\'s own address rather than anything this ' +
-                 'service serves.' },
+    description: 'A WEB wallet\'s address, as a URL the BROWSER can use, for ' +
+                 'a deployment that runs one. Where it is set, a Credential ' +
+                 'Offer is also offered as a link to it (with ' +
+                 'oid4vci.walletIssuancePath and the offer on its query), ' +
+                 'beside the oid4vci.walletInvocation link a wallet app ' +
+                 'opens. EMPTY, the default: no web wallet is offered.' },
+
+  { key: 'oid4vci.walletInvocation', group: 'OID4VCI',
+    label: 'How a wallet app is handed an offer',
+    env: 'OID4VCI_WALLET_INVOCATION', type: 'enum',
+    enumValues: ['openid-credential-offer', 'haip-vci'],
+    dflt: 'openid-credential-offer', runtime: true,
+    description: 'The custom URL scheme of the link and QR code a Credential ' +
+                 'Offer is handed to a wallet app in. ' +
+                 'openid-credential-offer, the default: ' +
+                 'openid-credential-offer://, the scheme OpenID4VCI 1.0 ' +
+                 'section 4.1 defines and most wallets register. haip-vci: ' +
+                 'haip-vci://, which OpenID4VC HAIP 1.0 section 4.2 lets a ' +
+                 'HAIP wallet register instead. The offer is the same ' +
+                 'either way.' },
 
   { key: 'oid4vci.authorizationServer', group: 'OID4VCI',
     label: 'Authorization server', env: 'OID4VCI_AUTHORIZATION_SERVER',
@@ -9652,11 +9675,13 @@ const SETTINGS = [
                  'pre-authorized code and a notification_id stay usable.' },
 
   { key: 'oid4vci.walletIssuancePath', group: 'OID4VCI',
-    label: 'Wallet issuance page',
+    label: 'Web wallet issuance page',
     env: 'OID4VCI_WALLET_ISSUANCE_PATH', type: 'string',
-    dflt: '/vc-issuance-1.html', runtime: true,
-    description: 'The page under the wallet URL that a Credential Offer is ' +
-                 'handed to. The default is the debugger\'s own wallet page.' },
+    dflt: '', runtime: true,
+    description: 'The page under oid4vci.walletUrl that a Credential Offer ' +
+                 'is handed to, for a web wallet whose offer page is not its ' +
+                 'root. Empty, the default. (The embedded debugger\'s web ' +
+                 'wallet takes offers at /vc-issuance-1.html.)' },
 
   { key: 'oid4vci.requestEncryptionKeyBits', group: 'OID4VCI',
     label: 'Request encryption key size (bits)',
@@ -9861,9 +9886,27 @@ const SETTINGS = [
       return value('oid4vci.walletUrl');
     }, runtime: true,
     derived: true,
-    description: 'Where the Verifier sends the holder to present. Falls back ' +
-                 'to the OID4VCI wallet URL, since it is the same wallet in ' +
-                 'every arrangement this service is used in.' },
+    description: 'A WEB wallet\'s address, for a deployment that runs one: ' +
+                 'where it is set, a presentation request is also offered as ' +
+                 'a link to it (with oid4vp.walletPresentationPath and the ' +
+                 'request on its query), beside the oid4vp.walletInvocation ' +
+                 'link a wallet app opens. Falls back to the OID4VCI web ' +
+                 'wallet, which is empty by default: no web wallet is ' +
+                 'offered.' },
+
+  { key: 'oid4vp.walletInvocation', group: 'OID4VP',
+    label: 'How a wallet app is handed a request',
+    env: 'OID4VP_WALLET_INVOCATION', type: 'enum',
+    enumValues: ['openid4vp', 'haip-vp'], dflt: 'openid4vp', runtime: true,
+    description: 'The custom URL scheme of the "Open your wallet" link on ' +
+                 'the wallet sign-in page, of the QR code where one is ' +
+                 'offered, and of a verification start\'s requestUri: the ' +
+                 'request by reference (client_id and request_uri) under ' +
+                 'it. openid4vp, the default: openid4vp://, the scheme ' +
+                 'OpenID4VP 1.0 defines for a Verifier that does not know ' +
+                 'the wallet. haip-vp: haip-vp://, which OpenID4VC HAIP 1.0 ' +
+                 'section 5.1 lets a HAIP wallet register instead. A ' +
+                 'self-issued ID Token alone is always siopv2://.' },
 
   certificateHeaderSetting('oid4vp.requestObjectCertificateHeader', 'OID4VP',
     'OID4VP_REQUEST_OBJECT_CERTIFICATE_HEADER',
@@ -10265,11 +10308,13 @@ const SETTINGS = [
 
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',
-    label: 'Wallet presentation page',
+    label: 'Web wallet presentation page',
     env: 'OID4VP_WALLET_PRESENTATION_PATH', type: 'string',
-    dflt: '/vc-presentation-1.html', runtime: true,
-    description: 'The page under the wallet URL a presentation request is ' +
-                 'handed to. The default is the debugger\'s own wallet page.' },
+    dflt: '', runtime: true,
+    description: 'The page under oid4vp.walletUrl a presentation request is ' +
+                 'handed to, for a web wallet whose request page is not its ' +
+                 'root. Empty, the default. (The embedded debugger\'s web ' +
+                 'wallet takes requests at /vc-presentation-1.html.)' },
 
   { key: 'oid4vp.allowedWalletUrls', group: 'OID4VP',
     label: 'Other wallet URLs a request link may name (product)',
@@ -10337,6 +10382,48 @@ const SETTINGS = [
                  'and signs nobody in. Off removes the button and closes ' +
                  'the door; a verification an administrator starts is ' +
                  'unaffected.' },
+
+  // WHAT A REAL WALLET ACCEPTS (2026-10-12). A sign-in request went out
+  // signed under the `pre-registered` Client Identifier (`sts-verifier`),
+  // which only a wallet configured with this service out of band can check,
+  // and answered by plain `direct_post`. OpenID4VC HAIP 1.0 section 5 has a
+  // Verifier use `x509_hash` and an encrypted response (`direct_post.jwt`),
+  // and those are what a wallet that has never heard of this service can
+  // act on: it validates the certificate chain to an anchor it trusts.
+  { key: 'oid4vp.signInClientIdPrefix', group: 'OID4VP',
+    label: 'Wallet sign-in: Client Identifier prefix',
+    env: 'OID4VP_SIGN_IN_CLIENT_ID_PREFIX', type: 'enum',
+    enumValues: ['x509_hash', 'x509_san_dns', 'pre-registered',
+                 'decentralized_identifier', 'verifier_attestation',
+                 'openid_federation'],
+    dflt: 'x509_hash', runtime: true,
+    description: 'How a wallet authenticates the signed request a wallet ' +
+                 'sign-in sends (OpenID4VP 1.0 section 5.9), on the link, ' +
+                 'the QR code and the Digital Credentials API alike. ' +
+                 'x509_hash, the default and what OpenID4VC HAIP 1.0 ' +
+                 'requires: the SHA-256 of the Verifier\'s certificate, ' +
+                 'whose chain the request carries; the wallet must trust ' +
+                 'this service\'s Root (/oid4vp/verifier-certificate shows ' +
+                 'it). x509_san_dns: the certificate\'s DNS name ' +
+                 '(oid4vp.x509DnsName). The others are ' +
+                 'oid4vp.clientIdPrefix\'s, which governs a verification ' +
+                 'an administrator starts and not this; pre-registered ' +
+                 'works only with a wallet that has this Verifier\'s key ' +
+                 'out of band.' },
+
+  { key: 'oid4vp.signInResponseMode', group: 'OID4VP',
+    label: 'Wallet sign-in: response mode',
+    env: 'OID4VP_SIGN_IN_RESPONSE_MODE', type: 'enum',
+    enumValues: ['direct_post.jwt', 'direct_post'], dflt: 'direct_post.jwt',
+    runtime: true,
+    description: 'How a wallet on the same device, or one that scanned the ' +
+                 'QR code, answers a wallet sign-in. direct_post.jwt, the ' +
+                 'default and what OpenID4VC HAIP 1.0 section 5.1 requires: ' +
+                 'the answer is encrypted to a key only this sign-in holds ' +
+                 '(oid4vp.responseEncryptionKeyAlgs), and an unencrypted ' +
+                 'one is refused. direct_post: in the clear, for a wallet ' +
+                 'that cannot encrypt. The Digital Credentials API is ' +
+                 'oid4vp.signInDcApiResponseMode\'s.' },
 
   { key: 'oid4vp.signInTtlS', group: 'OID4VP',
     label: 'Wallet sign-in lifetime (s)',

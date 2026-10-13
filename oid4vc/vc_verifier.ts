@@ -849,10 +849,48 @@ class VcVerifier {
                         'parameter off.' };
       }
     }
-    log.debug("Leaving VcVerifier.vpWalletFor().");
-    return { url: (asked ||
-                   configured) + String(config.value(
-                       'oid4vp.walletPresentationPath') || '') };
+    // NO WEB WALLET UNLESS ONE IS CONFIGURED OR NAMED (2026-10-12): the
+    // default is empty, and a request is then handed to a wallet APP by
+    // its scheme (`walletScheme()`) rather than to an address that is no
+    // wallet at all.
+    const chosen = asked || configured;
+    log.debug("Leaving VcVerifier.vpWalletFor(). " +
+              (chosen ? "A web wallet." : "No web wallet."));
+    return { url: chosen ? chosen + String(config.value(
+                     'oid4vp.walletPresentationPath') || '') : '',
+             named: !!asked };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SCHEME A WALLET APP IS HANDED A REQUEST UNDER (2026-10-12).
+  //
+  // A Verifier that does not know which wallet the person holds hands the
+  // request to whichever one the device has registered for the scheme:
+  // `openid4vp://` (OpenID4VP 1.0), or `haip-vp://` where
+  // `oid4vp.walletInvocation` says so (OpenID4VC HAIP 1.0 section 5.1). A
+  // self-issued ID Token alone is SIOPv2's `siopv2://` (SIOPv2 section 7.2)
+  // whatever the setting says. The query after the `?` is
+  // `vpRequestQuery()`'s, so a request by reference is `client_id` and
+  // `request_uri`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the custom URL scheme, with its `://`, a wallet app is handed
+   * this transaction's request under.
+   *
+   * @param record - the transaction
+   * @returns `openid4vp://`, `haip-vp://` or `siopv2://`
+   */
+  walletScheme(record: any): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.walletScheme().");
+    if (record && record.responseType === 'id_token') {
+      log.debug("Leaving VcVerifier.walletScheme(). SIOPv2.");
+      return 'siopv2://';
+    }
+    const scheme = String(config.value('oid4vp.walletInvocation') || '') ===
+      'haip-vp' ? 'haip-vp://' : 'openid4vp://';
+    log.debug("Leaving VcVerifier.walletScheme(). " + scheme);
+    return scheme;
   }
 
   // How old a Key Binding JWT may be. It is signed for one presentation, so
@@ -1043,6 +1081,45 @@ class VcVerifier {
     }
     log.debug("Leaving VcVerifier.signedClientId(). Pre-registered.");
     return { clientId: this.vpClientId(), header: {}, kidDid: '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A SIGN-IN'S REQUEST IS SIGNED UNDER, AND ANSWERED BY (2026-10-12).
+  //
+  // A wallet sign-in is asked of whatever wallet the person holds, which has
+  // never heard of this service: `oid4vp.signInClientIdPrefix` (x509_hash
+  // by default, OpenID4VC HAIP 1.0 section 5) and
+  // `oid4vp.signInResponseMode` (direct_post.jwt, HAIP section 5.1). A
+  // verification an administrator starts keeps `oid4vp.clientIdPrefix`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the Client Identifier prefix a wallet sign-in's request is
+   * signed under (`oid4vp.signInClientIdPrefix`).
+   *
+   * @returns the prefix
+   */
+  signInClientIdPrefix(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.signInClientIdPrefix().");
+    const configured = String(config.value('oid4vp.signInClientIdPrefix') ||
+                              '');
+    const prefix = SIGNED_CLIENT_ID_PREFIXES.indexOf(configured) >= 0 ?
+      configured : 'x509_hash';
+    log.debug("Leaving VcVerifier.signInClientIdPrefix(). " + prefix);
+    return prefix;
+  }
+
+  // The response mode a sign-in asks for: the one a caller named, where it
+  // is one a sign-in may use, else `oid4vp.signInResponseMode`.
+  private signInResponseMode(asked?: unknown): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.signInResponseMode().");
+    const named = String(asked || '');
+    const mode = named === 'direct_post' || named === 'direct_post.jwt' ?
+      named : String(config.value('oid4vp.signInResponseMode') ||
+                     'direct_post.jwt');
+    log.debug("Leaving VcVerifier.signInResponseMode(). " + mode);
+    return mode;
   }
 
   // The prefix a signed request carries: the one a request named when it is
@@ -1471,11 +1548,23 @@ class VcVerifier {
     // arrangement (dcApiRequest()), over the Response URI. The OpenID
     // conformance suite's verifier plan has a variant for it, and the start
     // page refused the mode until then.
-    const responseMode = !signIn && (opts.responseMode === 'form_post' ||
-                                     opts.responseMode === 'direct_post.jwt')
-      ? String(opts.responseMode) : 'direct_post';
+    //
+    // A SIGN-IN asks for `oid4vp.signInResponseMode` (2026-10-12):
+    // `direct_post.jwt` by default, which OpenID4VC HAIP 1.0 section 5.1
+    // requires, and `direct_post` for a wallet that cannot encrypt. Never
+    // `form_post`, whose answer arrives through a browser the binding
+    // cookie would not be sent from.
+    const responseMode = signIn
+      ? (this.signInResponseMode(signIn.responseMode) === 'direct_post.jwt'
+        ? 'direct_post.jwt' : 'direct_post')
+      : ((opts.responseMode === 'form_post' ||
+          opts.responseMode === 'direct_post.jwt')
+        ? String(opts.responseMode) : 'direct_post');
+    // A sign-in's request is signed under `oid4vp.signInClientIdPrefix`
+    // (2026-10-12) unless the caller named one.
     const signed = byReference ?
-      this.signedClientId(req, opts.clientIdPrefix) : null;
+      this.signedClientId(req, opts.clientIdPrefix ||
+        (signIn ? this.signInClientIdPrefix() : '')) : null;
     const clientId = signed ? signed.clientId :
                      ('redirect_uri:' + responseUri);
     const ttlMs = signIn && signIn.ttlMs > 0 ? Number(signIn.ttlMs) :
@@ -2089,7 +2178,10 @@ class VcVerifier {
       return { ok: false, status: 400, code: 'STS-VC-0033',
                error: walletChoice.error };
     }
-    const wallet = walletChoice.url;
+    // A WEB WALLET where one is named or configured; otherwise the wallet
+    // app the device has for the scheme (2026-10-12).
+    const scheme = this.walletScheme(record);
+    const wallet = walletChoice.url || scheme;
     // WHERE THE WALLET GOES AFTERWARDS (#594): on the transaction, through
     // the store, so the node that answers the wallet's POST reads it.
     const completion = String((options && options.completionUri) || '');
@@ -2103,10 +2195,9 @@ class VcVerifier {
       ok: true, record: record, query: query, wallet: wallet,
       walletUrl: wallet + '?' + query,
       // SIOPv2 section 7.2's static `siopv2:` for an ID Token alone; the
-      // OpenID4VP scheme whenever a presentation is asked for — what the
-      // cross-device QR code carries.
-      requestUri: (record.responseType === 'id_token' ? 'siopv2://?' :
-                   'openid4vp://?') + query,
+      // wallet scheme (`oid4vp.walletInvocation`) whenever a presentation is
+      // asked for — what the cross-device QR code carries.
+      requestUri: scheme + '?' + query,
       mode: startMode
     };
   }
@@ -4326,7 +4417,10 @@ class VcVerifier {
       body = opened.body;
       const state = String(body.state || '');
       let record = vpTransactions.get(state);
-      if (record && !record.signIn &&
+      // A sign-in is held to its response mode as the bar door is
+      // (2026-10-12): a sign-in that asked for an encrypted answer takes no
+      // plaintext one (OpenID4VC HAIP 1.0 section 5.1).
+      if (record &&
           (record.responseMode === 'direct_post.jwt') !== opened.encrypted) {
         log.debug("Leaving the OID4VP response endpoint. The response " +
                   "mode was not the one asked for.");
@@ -4411,7 +4505,7 @@ class VcVerifier {
                                              { aud: record.clientId });
       if (!answer.shapeOk) {
         if (record.signIn) {
-          this.recordAnswer(record, answer, 'direct_post');
+          this.recordAnswer(record, answer, String(record.responseMode));
         } else {
           record.verdict = {
             ok: false, at: new Date().toISOString(),
@@ -4435,7 +4529,8 @@ class VcVerifier {
       // (OID4VP section 8.2), and only its SHA-256 is kept.
       let responseCode = '';
       if (record.signIn) {
-        const outcome = this.recordAnswer(record, answer, 'direct_post');
+        const outcome = this.recordAnswer(record, answer,
+                                          String(record.responseMode));
         if (outcome.ok) {
           responseCode = this.deps.randomId(24);
           record.signIn.responseCodeHash =
@@ -4633,6 +4728,10 @@ export = {
   completionUriFor: slot.forward('completionUriFor'),
   recentVerifications: slot.forward('recentVerifications'),
   vpWalletFor: slot.forward('vpWalletFor'),
+  // The scheme a wallet app is handed a request under (2026-10-12).
+  walletScheme: slot.forward('walletScheme'),
+  // A sign-in's Client Identifier prefix (2026-10-12), for `vc_signin.ts`.
+  signInClientIdPrefix: slot.forward('signInClientIdPrefix'),
   signInOutcome: slot.forward('signInOutcome'),
   signInFormats: slot.forward('signInFormats'),
   verifyAnswer: slot.forward('verifyAnswer'),

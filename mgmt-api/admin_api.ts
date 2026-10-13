@@ -1944,9 +1944,10 @@ class AdminApi {
                      '`signInTtlS`, `signInPollS`, `signInCrossDevice`), ' +
                      'set like every setting with `POST /config/set`.' +
                      '\n\n`oid4vp.walletUrl` is DERIVED: with no ' +
-                     'value of its own it is the OID4VCI wallet, since it is ' +
-                     'the same wallet in every arrangement this service is ' +
-                     'used in. Its `source` is `default` ' +
+                     'value of its own it is the OID4VCI web wallet (empty ' +
+                     'by default since 2026-10-12, when a wallet app is ' +
+                     'invoked by its scheme, `oid4vp.walletInvocation`). ' +
+                     'Its `source` is `default` ' +
                      'for that reason and for no other. ' +
                      'The DCQL query itself is `GET /verifier-request`.' },
       // THE TWO SECOND FACTORS (2026-09-10). Rule 7: `/admin/totp` and
@@ -11409,12 +11410,18 @@ class AdminApi {
             description: 'Builds a presentation request — the one ' +
                          'door a verification starts at since #594 — and ' +
                          'answers how a wallet is handed it: `walletUrl` ' +
-                         '(the ' +
-                         'wallet\'s presentation address with the request on ' +
-                         'its query, what a same-device start redirects to), ' +
-                         '`requestUri` (the `openid4vp://` URI, or SIOPv2\'s ' +
-                         '`siopv2://` for an ID Token alone, that a ' +
-                         'cross-device QR code carries), `query` itself, and ' +
+                         '(what a same-device start redirects to: the web ' +
+                         'wallet `wallet` named or `oid4vp.walletUrl` ' +
+                         'configures, with the request on its query, or — ' +
+                         'with neither, the default — the same as ' +
+                         '`requestUri`), `requestUri` (the request under ' +
+                         'the scheme a wallet app registers for: ' +
+                         '`openid4vp://`, HAIP\'s `haip-vp://` where ' +
+                         '`oid4vp.walletInvocation` says so, or SIOPv2\'s ' +
+                         '`siopv2://` for an ID Token alone; what a ' +
+                         'cross-device QR code carries), `wallet` (the ' +
+                         'address or scheme before the query), `query` ' +
+                         'itself, and ' +
                          '— by reference — the `request_uri` the wallet ' +
                          'fetches the signed Request Object from. `state` ' +
                          'names it; `GET /verifications?state=` reads its ' +
@@ -11480,8 +11487,9 @@ class AdminApi {
                 mode: { type: 'string',
                         enum: vcVerifier.START_VOCABULARY.mode },
                 wallet: { type: 'string',
-                          description: 'Where to send the holder, if not ' +
-                                       '`oid4vp.walletUrl`.' },
+                          description: 'A web wallet to send the holder ' +
+                                       'to, if not `oid4vp.walletUrl` or ' +
+                                       'a wallet app (the default).' },
                 redirect_uri: { type: 'string', maxLength: 2048,
                                 description: 'The caller\'s page the ' +
                                              'wallet is sent to once the ' +
