@@ -12091,3 +12091,75 @@ codes only they raised (`STS-SAML-0021`, `0022`, `0042`, `0043`,
 `STS-WSFED-0016`) are retired. The Provider Commands mock
 (`oauth-oidc/command_mock_rp.ts`) went in #591's fifth phase (#596), to the
 test peer's `peer_commands.js`.
+
+
+## 3cn. `ownership.ts`: WHO OWNS WHAT, AND WHAT AN OWNER MAY NOT TOUCH (#607, 2026-10-13)
+
+rcbj: a person may update the roles, groups, service accounts and
+applications they own from the user portal; the portal reaches the
+management API with `owner:read` / `owner:write`; and the check that the
+person is an owner of the object is XACML policy, in ONE place. The policy
+side is `xacml/CLAUDE.md` (the access-control document's second rule), the
+gate's side `mgmt-api/CLAUDE.md` (*OWNERS*), the portal's `portal/CLAUDE.md`.
+What lives here is the FACTS that rule decides on, and the two roles.
+
+**AN OWNER IS NAMED, BY DN.** A role's and a group's `owner` (#604, #603), a
+service account's `stsServiceAccountOwner` (#600), an application's
+`appOwner` (#604) — each value the DN of a person or a group of the realm,
+every door resolving a username or a cn first. A person owns an object when a
+value names them or a group they are in (direct or through `memberOf`,
+`groupsOfUser()`); DNs are compared through `dnKey()` (case, and the spaces
+around a comma, do not matter).
+
+**`ownership.ts` ANSWERS, AND NEVER DECIDES.** `identityOf()` (the person's
+DN and their groups' — the policy's `owner-identity`), `objectOf()` (an
+object's DN, its owner values, `protected` with `reasons`, `marked` — the
+policy's `object-owner` and `object-protected`), `ownsAnything()` (the owner
+roles), `protectionOf()`, and the administrator's mark (`setProtected()`). A
+"may" here would be the `if` rcbj's directive removes; `xacml/xacml_pip.ts`
+asks these for the PDP, and an override of `access-control` may read them
+differently. A library (rule 3): every register is reached lazily.
+
+**OWNER_READ AND OWNER_WRITE ARE COMPUTED** (rcbj's decision 2), from the four
+owner attributes when a decision is made: `roles.js`'s ninth and tenth
+built-ins, and the first that AUTHORIZE a permission (`owner:read`,
+`owner:write` — `OWNER_ROLES`). `holds()` reads `owns` off the context, which
+the leaf cannot work out, so the roles claim, the issuance PEP and the access
+PEP's own `rolesOf()` never carry them; `role_permissions.ts`'s `heldRoles()`
+asks `ownsAnything()` for a named, authenticated person and lists them with
+the configured roles, because what can authorize is what that list is. So the
+narrowing at issuance and held ∩ carried at `/admin-api` work for them as for
+the admin pair, and an owner taken off the last thing they owned is refused
+on their next call. An owner is a person or a group, so an application
+subject never holds them. `owner:read` and `owner:write` are protected
+scopes (#110, `scope_policy.ts`'s `OWNER_SCOPES`); `sts-user-portal` is
+seeded declaring both, with global consent.
+
+**PROTECTED — WHAT OWNING SOMETHING MUST NEVER BECOME** (#607's section 4,
+and rcbj's decision 4). Ownership is delegated administration, so the paths from
+owning to holding this service's permissions are closed as a FACT:
+
+* a role that is built in or native, or that authorizes a permission no owner
+  may come to hold — this service's protected scopes, the native roles' and
+  the owner roles' — since its owner could otherwise add themselves;
+* a group this service grants through by its NAME (the console rosters,
+  `roles.remotePepGroup`, `roles.xacmlUserGroup`), or a member of such a role;
+* one of this service's own applications (`applications.isInternalIdentifier()`
+  — the console's, the portal's, the management API's, the debugger's), one
+  that is a member of such a role, or one DECLARING a protected scope — its
+  owner regenerating the secret would hold what it holds;
+* a service account holding such a role (or REMOTE_PEPS, XACML_USER) — its
+  owner pushing the rotated password to a destination they read would be the
+  same;
+* and anything an administrator MARKED: `stsOwnerProtected` TRUE on the entry
+  (the role's, the group's, the person's, the application's), through each
+  register's own write so every other rule of the object stays its own —
+  `roles.setOwnerProtected()`, `ldap_server.setGroupOwnerProtected()`,
+  `service_accounts.setOwnerProtected()`, `applications.setOwnerProtected()`
+  — at `POST /admin-api/ownership/set-protected`, or an `ldapmodify` by a
+  holder of Admin Write.
+
+**A REGISTER THAT CANNOT BE READ LEAVES THE OBJECT CLOSED**, and owns nobody
+anything: not knowing is not permission, in both directions.
+
+`tests/owner_administration.js` holds the rule, the protections and the roles.

@@ -707,7 +707,8 @@ It was a CONFIDENTIAL OpenID Connect relying party from 2026-09-06 to #568:
 process and a session of its own in `sts_portal`. **It is a PUBLIC client
 now**, signing in in the browser (`web_portal_runtime.ts`): the authorization
 code flow with PKCE at the authorization server of the realm the portal was
-opened in, `resource` that realm's `/account-api`, back at
+opened in, `resource` that realm's `/account-api` (and its `/admin-api`,
+for an owner's pages, since #607), back at
 `/portal/callback` — a page the runtime draws, whose callback address the
 shell registers on the client entry as the console's does
 (`oidcRp.ensureSurfaceCallback()`: learnt in development, refused in product
@@ -1769,7 +1770,47 @@ lists them after *Your account*. A resource is the person's when one of its
 owner values — a role's `owner`, a group's `owner`, a service account's
 `stsServiceAccountOwner`, an application's `appOwner` — names the person's
 entry or a group the directory says they are in (`groupsOfUser()`); each row
-says which (`via`). Read-only: an owner grants nothing, and the owners are set
-on the console's Owners tabs. The person is the token's, as everywhere here.
-Everything is reached lazily at request time. `tests/portal_owned.js` holds it.
+says which (`via`). The owners are set on the console's Owners tabs, and an
+owner may add and remove other owners (#607). The person is the token's, as
+everywhere here. Everything is reached lazily at request time.
+`tests/portal_owned.js` holds it.
+
+**rcbj, 2026-10-13: no list of the person's groups under the table** — each
+row's `via` already names the group that makes it theirs — **and a pager on
+every page**, one page or many (`pageNav(..., always)`).
+
+### AND ONE OF THEM, ADMINISTERED (#607, 2026-10-13)
+
+rcbj: a person updates what they own from here, through the MANAGEMENT API,
+and the check that they own it is the access-control policy's owner rule —
+not repeated in `/account-api` (`mgmt-api/CLAUDE.md` *OWNERS*,
+`xacml/CLAUDE.md`, `common/CLAUDE.md` 3cn). So:
+
+* **EACH ROW OPENS ITS PAGE**, `/portal/owned/<kind>?name=<id>` — the same
+  path, so the column and the heading need nothing — unless the row is
+  `closed` (`portal_owned.ts` asks `ownership.protectionOf()` for the rows on
+  the page), which says so instead.
+* **THE PAGE IS DRAWN FROM `/admin-api`**: a `PortalPage` may carry
+  `admin(query)`, the management API path whose GET answers it for that
+  query, and the runtime reads it with the OWNER TOKEN; the view is
+  `{ owned: { status, answer, canWrite, query } }`. A refusal — the owner
+  rule's sentence, or why there is no owner token — is drawn, in English.
+* **ITS FORMS POST THERE**: `data-admin="/admin-api/<kind>/<action>"`, sent
+  as JSON with the owner token (`submitOwned()`; `fields.<attribute>` and
+  `lines.<attribute>` become an `update-fields` body's `fields`), and the page
+  is drawn again with the answer's message, a regenerated client secret said
+  once, or the errors. The controls are the template's default owner
+  actions; a realm whose policy narrows them refuses, and the refusal is
+  drawn. Without `owner:write` the page draws no form.
+* **THE OWNER TOKEN** (`web_portal_runtime.ts`): the sign-in names TWO
+  resources — this realm's `/account-api` and `/admin-api` (RFC 8707,
+  `SpaClient.formOf()` repeating the parameter) — and asks for
+  `owner:read owner:write` beside `account:manage`. The code is redeemed for
+  the account API, and the management API's token is REFRESHED from the same
+  grant with `/admin-api` as its resource when an owner's page asks; the
+  refresh token keeps both resources (`oauth-oidc/CLAUDE.md`), and one
+  rotation chain serves both. The authorization server issues the owner
+  scopes only to a person who owns something, so `scope` on that answer is
+  what `canWrite` reads. The shell names `/admin-api`'s listener where it is
+  elsewhere (`data-sts-api`, and `connect-src`).
 

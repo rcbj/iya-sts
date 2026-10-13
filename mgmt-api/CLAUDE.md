@@ -2384,3 +2384,65 @@ administrator's door to ask. **Since #595 it is the only door**: that
 demonstration document was deleted, and its principal rows are this
 operation's `database` (`?databasePage=`), which `sts_kerberos_samba.js` reads
 for the salts and kvnos it hands Samba.
+
+## OWNERS: `owner:read` AND `owner:write` (#607, 2026-10-13)
+
+rcbj: a person may update the roles, groups, service accounts and
+applications they own, from the user portal, through THIS API — and the check
+that they own the object is XACML policy, in one place, never repeated in
+`/account-api`. So this API takes a fourth pair of scopes, and its gate asks
+the access-control policy a second kind of question.
+
+**WHAT AN OWNER'S TOKEN IS.** One carrying `owner:read` or `owner:write` and
+NOT the admin scope the operation needs (`ownerPath` in the gate). The scopes
+are protected (#110) — declared on the client, held to it on every call
+(`declaredAdminScopes()` holds them too) — and authorized by the computed
+OWNER_READ and OWNER_WRITE (`common/CLAUDE.md` 3cn), so held ∩ carried
+applies: an owner:read token is OWNER_READ only, and a person taken off the
+last thing they owned is refused at once (`STS-API-0125`, said in an owner's
+words).
+
+**WHICH OPERATIONS AN OWNER MAY ASK — `OWNER_OPERATIONS`.** One object of the
+four kinds, named by the request: `GET /roles?role=`, `/groups?group=`,
+`/applications?application=`, `/service-accounts?account=` (a one-account
+read added for it), and `POST /roles/{action}`, `/groups/{action}`,
+`/applications/{action}`, `/users/{action}` naming the object in the body.
+`ownedOperationOf()` reads the request against the table (the body through
+`parseBody()`, which is pure), and for an application act every attribute it
+would write — the one of `set`, `add`, `remove`; `update-fields`' through
+`admin_actions.fieldsCoveredBy()`, the handler's own reading, and
+`appAllowedProtocol` where it carries families. Anything else on an owner's
+token — a LIST among them (rcbj's decision 6: the portal lists through
+`/account-api/owned/*`), and an object in a realm other than the token's — is
+refused in words (`STS-API-0132`), since the policy would only say a role was
+missing. The table names the object; it decides nothing.
+
+**THE QUESTION.** The administrator's requirement stays as it was
+(`requiredRoles` ADMIN_READ / ADMIN_WRITE, the first rule's), and
+`ownedObject` is added: `{ kind, id, action, attributes, requiredRole:
+OWNER_READ | OWNER_WRITE, person }`. The person goes by username in its own
+attribute because `subject-id` here is the token's client
+(`claims.client_id`), and putting the person there would add their
+configured roles to the decision outside held ∩ carried. Who owns the object,
+whether it is closed to its owners and who the person is as an owner are the
+PIP's (`xacml/CLAUDE.md`). A refusal by the owner rule is `STS-API-0133`.
+
+**WHAT AN OWNER IS ANSWERED.** A read whose answer is more than the one object
+is narrowed in `sendJson()` (`res.locals.ownerProjection`, the row's
+`project`): a role's read is `{ role }` (the register around it is the whole
+realm's); a group's the group, its members and owners (the drill-down also
+carries every group); an application's its identity, the attributes an owner
+may write (`OWNER_APPLICATION_FIELDS`, the template's defaults) and its
+owners (the drill-down carries what the console draws its tabs from, other
+applications' permissions among them). An administrator's read is untouched.
+
+**THE AUDIT ROW SAYS SO**: `res.locals.apiCaller.owner`, read by
+`common/audit.js`'s HTTP row — `as an owner` on the summary, `via: owner` in
+the detail.
+
+**`/admin-api/ownership`** answers one object's facts (`GET`, `kind` and
+`name`: owners, `protected` with `reasons`, `marked`) and writes the
+administrator's mark (`POST /ownership/set-protected`, `kind`, `name`,
+`protected`) — rcbj's decision 4, `stsOwnerProtected` on the object's own
+entry. No console form: the mark is an attribute, and this is its machine
+door beside an `ldapmodify`. Admin Read and Admin Write, as everything here.

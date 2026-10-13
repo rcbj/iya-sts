@@ -2151,3 +2151,49 @@ ADMIN_READ alone, both, and an empty required-all.
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /xacml` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `xacml/web_xacml_description.ts` from the `describeXacml` catalogs, with `/xacml/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before. **The gate is the page's, unchanged and asked first**, and `/xacml/description.js` asks it too: a part of the surface answered to a caller the page refuses would be a part outside the gate. A page load is therefore two access decisions where it was one. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## `access-control` has a second rule: an owner administers what they own (#607, 2026-10-13)
+
+rcbj: the check that a person owns the role, group, service account or
+application they are changing through the management API is XACML policy,
+in one place. The template's own argument for a helpdesk role — a new kind of
+access is a new Permit rule, under deny-unless-permit, and the first rule is
+untouched — is what it became: `:rule:owner-administers-what-they-own`,
+beside `:rule:may-reach-it`. An administrator is decided exactly as before;
+an owner only by this rule.
+
+**ITS CONJUNCTS, EACH NARROWING AND EACH FAILING CLOSED ON AN EMPTY BAG:**
+
+* the subject authenticated, and holds the role in
+  `urn:sts:xacml:owner-required-role` (OWNER_READ or OWNER_WRITE — held ∩
+  carried, so absent where the request is not an owner's question);
+* `urn:sts:xacml:object-protected` is `false` — asked for, not the absence of
+  `true`, so an object the PIP cannot answer for stays closed;
+* `any-of-any` over `urn:sts:xacml:owner-identity` (subject) and
+  `urn:sts:xacml:object-owner` (resource): the person or a group of theirs
+  among the owners;
+* the action (`urn:sts:xacml:admin-action`, on the ACTION) is on the list for
+  the kind (`urn:sts:xacml:object-kind`) — a parameter per kind:
+  `ownerRoleActions`, `ownerGroupActions`, `ownerServiceAccountActions`,
+  `ownerApplicationActions`;
+* `all-of-any` over `urn:sts:xacml:object-attribute` and
+  `ownerApplicationAttributes`: every attribute an application act writes is
+  one an owner may write (vacuous for an act that writes none);
+* and never the last owner: `remove-owner` / `remove-service-account-owner`
+  only with more than one value in `object-owner` (rcbj's decision 3).
+
+`permitOwnerAdministration: no` builds the first rule alone. The defaults
+leave out what turns owning into Admin: `create`, delete and rename,
+`add-permission` on a role, `set-service-account`, `reveal-secret`, and an
+application's scopes, roles, grant types, keys and delegation.
+
+**THE PIP ANSWERS THREE MORE DESIGNATORS** (`xacml_pip.ts`'s `ownerFact()`),
+out of `common/ownership.ts`: `object-owner` and `object-protected` — the ONE
+place it answers a RESOURCE designator, because the object is in the
+directory too — looked up once per decision by `object-kind` and
+`urn:sts:xacml:object-id`, and `owner-identity` by
+`urn:sts:xacml:owner-subject` (the person by username; `subject-id` is the
+client a person's token was issued to). An object that is not there answers
+empty bags. So `/admin/xacml/decide`, a remote PEP and the management API ask
+the same question and get the same answer. The facts and the protections are
+argued in `common/CLAUDE.md` (3cn). `tests/owner_administration.js` holds it.
