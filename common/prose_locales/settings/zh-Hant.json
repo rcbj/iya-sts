@@ -3687,6 +3687,14 @@
     "en": "37d7c47a629e2f87",
     "text": "當該人尚未在此登入時（RFC 9700 section 4.11.2），會顯示一個頁面取代將授權錯誤重新導向給用戶端，頁面上有繼續的連結。0（預設值）就到此為止：由該人決定。大於 0 時，頁面「也」會在這麼多秒後自行繼續（使用 meta refresh，不使用指令碼）並如此說明。**這會削弱該頁面存在的保護作用**：定時重新導向仍是對未在此驗證之瀏覽器的自動重新導向，RFC 9700 section 4.11.2 警告這會讓此伺服器被用作跳板，在當事人不同意的情況下將其送往用戶端的位址。該位址已與用戶端的註冊比對過，這限制了風險。form_post 錯誤保留其按鈕：沒有指令碼就無法發出 POST。（#317）"
   },
+  "oauth2.keyBinding|label": {
+    "en": "a7dcb6104de02166",
+    "text": "OpenID Connect 金鑰綁定"
+  },
+  "oauth2.keyBinding|description": {
+    "en": "2394ee67a689920d",
+    "text": "執行 OpenID Connect Key Binding 1.0（#150）。開啟時：探索文件列出 `bound_key` 範圍，未宣告任何範圍的用戶端可以請求它，請求它時必須提供 `dpop_jkt` 並使用授權碼流程（否則拒絕，STS-OAUTH-0704 與 0705）；隨後 ID Token 指明 DPoP 金鑰（`cnf.jwk`，`typ: dpop+id_token`），權杖請求必須以 `c_s256` 證明該金鑰，且每次更新都必須來自同一金鑰。**關閉時，它不存在，服務僅為 OpenID Connect Core**：不公布 `bound_key`，攜帶它的請求不會被拒絕——該範圍被忽略且不授予，正如 Core 對待 OP 不處理的範圍——也不綁定任何 ID Token。若信賴方會請求所有已公布的範圍且不了解 Key Binding，請將其關閉（#315）。關閉前已綁定的授權在更新時仍檢查其金鑰。"
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

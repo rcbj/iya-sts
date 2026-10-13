@@ -380,8 +380,8 @@
     "text": "full（#150，2026-09-26），在 oauth2.deviceAuthorization 开启时（默认关闭）：设备授权端点，客户端身份验证与令牌端点相同，需已注册的授权类型并遵循范围策略，从二十个字母的字母表中生成八个字母的用户代码，以及 verification_uri_complete；验证 URI 是此人的 /portal/device，在那里输入代码只会显示请求——客户端和范围——批准是第二个动作（第 5.4 节），输错五次代码会使会话在十分钟内被拒绝（第 5.1 节）；device_code 授权，带第 3.5 节的每个错误，slow_down 每次将间隔增加五秒，每次批准一个令牌响应，在集群中只认领一次，代码由 oauth2.device-code-sweep 作业清理；第 4 节的元数据。设备请求上的 DPoP 证明会将设备代码绑定到其密钥。"
   },
   "stsmetadata.specs.oidc-key-binding.coverage": {
-    "en": "01ba22045f843762",
-    "text": "full（#150，2026-09-26），在每种模式下：bound_key 范围，仅在 response_type=code 和 dpop_jkt 时认可；令牌端点上的 DPoP 证明，其 c_s256 是授权码或设备代码的哈希；带 cnf.jwk 且 JOSE 标头 typ 为 dpop+id_token 的 ID 令牌；无论 RFC 9449 是否绑定了刷新令牌，刷新都受限于同一密钥；以及第 7 节——在令牌交换时（包括 Native SSO）出示的绑定 ID 令牌，只有带上来自其密钥的证明才被接受。接受 ML-DSA-44、-65 和 -87 密钥，与任何 DPoP 证明相同。id_token_hint 是提示而不是凭据，不受该密钥约束。"
+    "en": "07b7a5b60cf9a369",
+    "text": "full（#150，2026-09-26），在每种模式下，只要 oauth2.keyBinding 处于开启状态（默认开启；关闭时，#315，该范围既不公布也不授予，请求该范围也不会被拒绝）：bound_key 范围，仅在 response_type=code 和 dpop_jkt 时认可；令牌端点上的 DPoP 证明，其 c_s256 是授权码或设备代码的哈希；带 cnf.jwk 且 JOSE 标头 typ 为 dpop+id_token 的 ID 令牌；无论 RFC 9449 是否绑定了刷新令牌，刷新都受限于同一密钥；以及第 7 节——在令牌交换时（包括 Native SSO）出示的绑定 ID 令牌，只有带上来自其密钥的证明才被接受。接受 ML-DSA-44、-65 和 -87 密钥，与任何 DPoP 证明相同。id_token_hint 是提示而不是凭据，不受该密钥约束。"
   },
   "stsmetadata.specs.oidc-native-sso.coverage": {
     "en": "2455f5c160afb595",

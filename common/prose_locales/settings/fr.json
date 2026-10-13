@@ -3687,6 +3687,14 @@
     "en": "37d7c47a629e2f87",
     "text": "La page affichée au lieu de rediriger une erreur d’autorisation vers le client, lorsque la personne ne s’est pas connectée ici (RFC 9700 section 4.11.2), comporte un lien pour continuer. 0 (la valeur par défaut) s’en tient là : la personne décide. Au-dessus de 0, la page continue AUSSI d’elle-même après ce nombre de secondes (un meta refresh, sans script) et l’indique. **Cela affaiblit la protection pour laquelle la page existe** : une redirection temporisée reste une redirection automatique d’un navigateur qui ne s’est pas authentifié ici, ce dont la RFC 9700 section 4.11.2 avertit qu’il permet d’utiliser ce serveur comme relais pour envoyer quelqu’un vers l’adresse d’un client sans son accord. L’adresse a déjà été comparée à l’enregistrement du client, ce qui borne le risque. Une erreur form_post conserve son bouton : un POST ne peut pas être fait sans script. (#317)"
   },
+  "oauth2.keyBinding|label": {
+    "en": "a7dcb6104de02166",
+    "text": "Liaison de clé OpenID Connect"
+  },
+  "oauth2.keyBinding|description": {
+    "en": "2394ee67a689920d",
+    "text": "Applique OpenID Connect Key Binding 1.0 (#150). Activé : le document de découverte liste la portée `bound_key`, un client qui ne déclare aucune portée peut la demander, et une requête qui la demande doit indiquer `dpop_jkt` et utiliser le flux par code (refusée sinon, STS-OAUTH-0704 et 0705) ; l’ID Token nomme alors la clé DPoP (`cnf.jwk`, `typ: dpop+id_token`), la requête de jeton doit la prouver avec `c_s256`, et chaque actualisation doit venir de la même clé. **Désactivé, il n’existe pas, et le service est OpenID Connect Core seul** : `bound_key` n’est pas annoncée, une requête qui la porte n’est pas refusée — la portée est ignorée et non accordée, comme Core traite une portée sur laquelle un OP n’agit pas — et aucun ID Token n’est lié. Désactivez-le là où des parties de confiance demandent toutes les portées annoncées et ignorent tout de Key Binding (#315). Une autorisation déjà liée avant la désactivation garde la vérification de sa clé à l’actualisation."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

@@ -380,8 +380,8 @@
     "text": "full（#150，2026-09-26），在 oauth2.deviceAuthorization 開啟時（預設關閉）：裝置授權端點，以與權杖端點相同的方式驗證用戶端，需已註冊的授權類型並套用範圍原則，使用取自二十個字母之字母表的八字母使用者代碼，以及 verification_uri_complete；驗證 URI 是該人的 /portal/device，在那裡代碼只會帶出請求——用戶端與範圍——而核准是第二個動作（第 5.4 節），輸入錯誤代碼五次後工作階段會被拒絕十分鐘（第 5.1 節）；device_code 授權類型附第 3.5 節的每種錯誤，slow_down 會將間隔延長五秒，每次核准一個權杖回應且在整個叢集中只能領取一次，代碼由 oauth2.device-code-sweep 工作清除；第 4 節中繼資料。裝置請求上的 DPoP 證明會將裝置代碼繫結至其金鑰。"
   },
   "stsmetadata.specs.oidc-key-binding.coverage": {
-    "en": "01ba22045f843762",
-    "text": "full（#150，2026-09-26），在每種模式下：bound_key 範圍，僅在 response_type=code 與 dpop_jkt 時遵循；權杖端點的 DPoP 證明，其 c_s256 為授權碼或裝置代碼的雜湊；帶有 cnf.jwk 及 JOSE 標頭 typ dpop+id_token 的 ID Token；無論 RFC 9449 是否繫結了重新整理權杖，重新整理都受限於同一把金鑰；以及第 7 節——已繫結的 ID Token 在權杖交換時（包括 Native SSO）只有搭配其金鑰的證明才能出示。接受 ML-DSA-44、-65 與 -87 金鑰，與任何 DPoP 證明相同。id_token_hint 是提示而非認證資料，不受該金鑰限制。"
+    "en": "07b7a5b60cf9a369",
+    "text": "full（#150，2026-09-26），在每種模式下，只要 oauth2.keyBinding 處於開啟狀態（預設開啟；關閉時，#315，該範圍既不公布也不授予，請求該範圍也不會被拒絕）：bound_key 範圍，僅在 response_type=code 與 dpop_jkt 時遵循；權杖端點的 DPoP 證明，其 c_s256 為授權碼或裝置代碼的雜湊；帶有 cnf.jwk 及 JOSE 標頭 typ dpop+id_token 的 ID Token；無論 RFC 9449 是否繫結了重新整理權杖，重新整理都受限於同一把金鑰；以及第 7 節——已繫結的 ID Token 在權杖交換時（包括 Native SSO）只有搭配其金鑰的證明才能出示。接受 ML-DSA-44、-65 與 -87 金鑰，與任何 DPoP 證明相同。id_token_hint 是提示而非認證資料，不受該金鑰限制。"
   },
   "stsmetadata.specs.oidc-native-sso.coverage": {
     "en": "2455f5c160afb595",
