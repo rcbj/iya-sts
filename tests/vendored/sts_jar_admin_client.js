@@ -44,6 +44,8 @@ const assert = require("assert");
 const http = require("http");
 const https = require("https");
 const nodeCrypto = require("crypto");
+const dns = require("dns");
+const net = require("net");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
@@ -84,8 +86,9 @@ const SECRET = "jar-secret-" + TAG + "-" +
 const REDIRECT = "https://rp.jar.example.test/cb";
 const APP = "jar-client-" + TAG;
 // Eight checks with no directory shared with the service; the product https
-// half adds three.
-const FLOOR = testCa.caLocation() ? 11 : 8;
+// half adds three where the job's host is a public address, and two where it
+// is a private one (see product()).
+const FLOOR = testCa.caLocation() ? 10 : 8;
 
 let checks = 0;
 function check(what, fn) {
@@ -472,11 +475,83 @@ async function product(plainHost) {
   const secure = await clientHost(await testCa.listenerCertificate(ca, HOST));
   try {
     await makeClient(PROD, secure);
-    await goodRequest(PROD, secure);
+    // A PRODUCT REALM NEVER FETCHES A KEY FROM A PRIVATE ADDRESS (2026-10-13).
+    // The jwks_uri goes through the federation outbound policy, which in
+    // product resolves the name once and refuses a loopback, private,
+    // link-local or reserved address (`mode.dialsInternalAddresses()`), with
+    // no override. The compose stacks' `tests` container is such an address,
+    // so there the product half asserts that refusal; only a job host with a
+    // public address can see the object verified (the first full run on
+    // develop 754d4c29 failed asserting the success).
+    if (await isPrivateHost(HOST)) {
+      await privateKeysRefused(PROD, secure);
+    } else {
+      await goodRequest(PROD, secure);
+    }
   } finally {
     secure.close();
   }
   log.debug("Leaving product().");
+}
+
+// Whether every address HOST resolves to is loopback, private, link-local or
+// reserved — the ranges product's outbound policy refuses.
+async function isPrivateHost(host) {
+  log.debug("Entering isPrivateHost(). " + host);
+  let found = [];
+  try {
+    found = await dns.promises.lookup(host, { all: true });
+  } catch (e) {
+    log.debug("Caught in isPrivateHost(): " + ((e && e.message) || e));
+    log.debug("Leaving isPrivateHost(). Unresolved.");
+    return false;
+  }
+  const internal = function (address) {
+    if (net.isIPv4(address)) {
+      const o = address.split(".").map(Number);
+      return o[0] === 10 || o[0] === 127 || o[0] === 0 ||
+             (o[0] === 172 && o[1] >= 16 && o[1] <= 31) ||
+             (o[0] === 192 && o[1] === 168) ||
+             (o[0] === 169 && o[1] === 254) ||
+             (o[0] === 100 && o[1] >= 64 && o[1] <= 127);
+    }
+    const a = address.toLowerCase();
+    return a === "::1" || a.indexOf("fc") === 0 || a.indexOf("fd") === 0 ||
+           a.indexOf("fe80") === 0 || a.indexOf("::ffff:") === 0;
+  };
+  const answer = found.length > 0 && found.every(function (one) {
+    return internal(one.address);
+  });
+  log.debug("Leaving isPrivateHost(). " + answer);
+  return answer;
+}
+
+// The product half where the job's host is private: the object is refused,
+// because the key it must be verified with is at an address product will not
+// dial — and the refusal says so.
+async function privateKeysRefused(realm, host) {
+  log.debug("Entering privateKeysRefused(). " + realm);
+  const rb = realmBase(realm);
+  const issuer = (await call("GET", rb +
+    "/.well-known/oauth-authorization-server")).json.issuer;
+  host.objects.good = signed(ES, requestClaims(issuer).claims);
+  const r = await browser().go("GET", "/realm/" + realm +
+    "/oauth2/authorize?" + form({ client_id: APP,
+                                  request_uri: host.origin + "/req/good",
+                                  state: "from-the-query" }));
+  const said = String(r.text || "") + " " + String(r.location || "");
+  check(realm + ": a jwks_uri at a private address is not dialled in " +
+        "product, so the object cannot be verified and is refused",
+        function () {
+    assert.ok(!sentToSignIn(r), shown(r));
+    assert.ok(/invalid_request_object/.test(said), shown(r));
+  });
+  check(realm + ": and the refusal names the outbound policy's internal-" +
+        "address rule", function () {
+    assert.ok(/loopback, private, link-local or reserved/.test(
+      decodeURIComponent(said.replace(/\+/g, " "))), shown(r));
+  });
+  log.debug("Leaving privateKeysRefused().");
 }
 
 async function test() {
