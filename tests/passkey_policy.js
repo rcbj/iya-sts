@@ -418,7 +418,7 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  t.check(!!view.passkey && view.passkey.fields.length === 15 &&
+  t.check(!!view.passkey && view.passkey.fields.length === 16 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;

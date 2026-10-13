@@ -963,6 +963,14 @@
     "en": "474a843b37cbf2dc",
     "text": "ACTIVÉ PAR DÉFAUT. Activé, l’écran de connexion propose *Se connecter avec une clé d’accès* et le remplissage automatique du champ du nom d’utilisateur, qui demandent au navigateur n’importe quel identifiant détectable de ce domaine (WebAuthn Level 3 section 5.4, `allowCredentials` vide) et connectent le compte que nomme son identifiant d’utilisateur (user handle), la vérification de l’utilisateur étant exigée et contrôlée. Désactivé, aucun des deux n’est proposé et une connexion nomme toujours d’abord la personne. Remplace le paramètre webauthn.usernameless."
   },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Exiger une connexion par clé d’accès sans nom d’utilisateur"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (appAuthnMechanism `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
+  },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
     "text": "Ce que demande « Utiliser une clé de sécurité » lorsque la connexion sans nom d’utilisateur est activée"
@@ -1087,6 +1095,10 @@
     "en": "474a843b37cbf2dc",
     "text": "ACTIVÉ PAR DÉFAUT. Activé, l’écran de connexion propose *Se connecter avec une clé d’accès* et le remplissage automatique du champ du nom d’utilisateur, qui demandent au navigateur n’importe quel identifiant détectable de ce domaine (WebAuthn Level 3 section 5.4, `allowCredentials` vide) et connectent le compte que nomme son identifiant d’utilisateur (user handle), la vérification de l’utilisateur étant exigée et contrôlée. Désactivé, aucun des deux n’est proposé et une connexion nomme toujours d’abord la personne. Remplace le paramètre webauthn.usernameless."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (appAuthnMechanism `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",
     "text": "Le `residentKey` qu’envoie un enregistrement via *Utiliser une clé de sécurité* (ou un enregistrement qui ne nomme aucun type) TANT QUE la connexion sans nom d’utilisateur est ACTIVÉE. Lorsqu’elle est désactivée, le bouton demande toujours `required` ; il crée donc un identifiant détectable comme le fait *Créer une clé d’accès* (qui demande toujours `required`). `discouraged` ou `preferred` épargnent les quelques emplacements résidents d’une clé de sécurité, au prix d’une clé qui a besoin du nom d’utilisateur pour se connecter. Remplace le paramètre webauthn.residentKey."
@@ -1178,6 +1190,10 @@
   "passkey.sentences.noUsernameless": {
     "en": "1152c46cd0b86b19",
     "text": "chaque connexion nomme d’abord la personne : aucune connexion par clé d’accès sans nom d’utilisateur"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "une application qui se connecte avec une clé d’accès seule ne demande aucun nom d’utilisateur : une connexion par clé d’accès sans nom d’utilisateur est le seul moyen d’entrer"
   },
   "passkey.sentences.createPasskey": {
     "en": "69c8c2e4b8f32675",

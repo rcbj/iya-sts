@@ -963,6 +963,14 @@
     "en": "474a843b37cbf2dc",
     "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與使用者名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其使用者控制代碼所指名的帳戶，且要求並檢查使用者驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
   },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "要求不需使用者名稱的密碼金鑰登入"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "預設關閉。開啟時，驗證機制只有密碼金鑰（僅 appAuthnMechanism `webauthn`）的應用程式會得到沒有使用者名稱欄位的登入畫面：*Sign in with a passkey* 是唯一的入口，指名某人的登入會被拒絕。需要上一列開啟。領域的 `default` 設定檔不會將其套用於管理主控台、偵錯工具或使用者入口網站；選取該應用程式的具名設定檔則會。"
+  },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
     "text": "無使用者名稱登入開啟時「Use a security key」所要求的內容"
@@ -1087,6 +1095,10 @@
     "en": "474a843b37cbf2dc",
     "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與使用者名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其使用者控制代碼所指名的帳戶，且要求並檢查使用者驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "預設關閉。開啟時，驗證機制只有密碼金鑰（僅 appAuthnMechanism `webauthn`）的應用程式會得到沒有使用者名稱欄位的登入畫面：*Sign in with a passkey* 是唯一的入口，指名某人的登入會被拒絕。需要上一列開啟。領域的 `default` 設定檔不會將其套用於管理主控台、偵錯工具或使用者入口網站；選取該應用程式的具名設定檔則會。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",
     "text": "在無使用者名稱登入「開啟」期間，透過 *Use a security key*（或未指名種類的註冊）進行註冊時送出的 `residentKey`。關閉期間，該按鈕一律要求 `required`，因此它會像 *Create a passkey*（一律要求 `required`）一樣建立可探索認證。`discouraged` 或 `preferred` 可節省安全金鑰為數不多的常駐槽位，代價是金鑰登入時需要使用者名稱。取代設定 webauthn.residentKey。"
@@ -1178,6 +1190,10 @@
   "passkey.sentences.noUsernameless": {
     "en": "1152c46cd0b86b19",
     "text": "每次登入都先指名該人：沒有不需使用者名稱的密碼金鑰登入"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "只以密碼金鑰登入的應用程式不要求使用者名稱：不需使用者名稱的密碼金鑰登入是唯一的入口"
   },
   "passkey.sentences.createPasskey": {
     "en": "69c8c2e4b8f32675",

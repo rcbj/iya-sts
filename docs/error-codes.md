@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4316** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4317** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 292
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 293
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -1453,6 +1453,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0330` | An act on a second-factor or emailed-factor step of the sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the operation does not take, or a page that is not one. | HTTP 400, { ok: false, errors } |
 | `STS-AUTHN-0331` | A Start over at a sign-in step (/authn-api/mfa/{id}/start-over or /authn-api/password-change/{id}/start-over) named a step that has already ended: spent, expired or never minted. Nothing is put back. | HTTP 400, { ok: false, errors } |
 | `STS-AUTHN-0332` | Too many usernameless passkey ceremonies were armed from this address (POST /authn-api/pending/{id}/passkey/options): its own per-address budget, security.rateLimitPerAddress in security.rateLimitWindowS. No challenge was minted. | HTTP 429 with Retry-After, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0333` | A sign-in at the sign-in screen named a person where the passkey policy requires a passkey sign-in with no username (requireUsernameless, #608): the application signs in with a passkey alone, and the screen asks for no username. | none — the sign-in screen is drawn again |
 
 ## STS-OAUTH
 
