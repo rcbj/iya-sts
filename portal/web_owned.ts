@@ -63,7 +63,9 @@ class OwnedPages {
     return '<div class="card"><h2>' + t.html('portalOwned.heading',
       { kind: kind }) + '</h2><p class="sub">' +
       t.html('portalOwned.sub') + '</p>' + body +
-      kit.pageNav(path, ctx.query, view.paging, 'page', t) + '</div>';
+      // ALWAYS DRAWN (rcbj, 2026-10-13), one page or many, so each of the
+      // four pages says where in the list it is.
+      kit.pageNav(path, ctx.query, view.paging, 'page', t, true) + '</div>';
   }
 
   /**
