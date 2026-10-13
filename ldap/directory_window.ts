@@ -142,6 +142,14 @@ class DirectoryWindow {
   private readonly ghosts: Map<string, { ref: WeakRef<Entry>;
                                          base: string | null }> = new Map();
   private readonly finalizer: FinalizationRegistry<string>;
+  // EVERY REALM WITH A KEY IN THE LRU OR THE GHOSTS (#612): what lets
+  // `collect(named)` look a journal's keys UP rather than scan for them. A
+  // journal names keys without a realm, so a key is probed once per realm
+  // here. A superset is harmless (a probe that misses), a subset would lose
+  // a write — so every insertion into the LRU goes through `put()`, which
+  // adds the realm first, and a ghost is only ever made from an LRU key.
+  // Bounded by the realms that exist; `dropRealm()` removes one.
+  private readonly realmsHeld: Set<string> = new Set();
   // The windowed count per realm, from the store, and this process's net.
   private readonly counts: Map<string, number> = new Map();
   private readonly countedAt: Map<string, number> = new Map();
@@ -300,6 +308,34 @@ class DirectoryWindow {
     return held;
   }
 
+  // Puts a slot in the LRU, the one door every insertion goes through so
+  // that `realmsHeld` covers every key there (#612).
+  // Hot path (every read or write of the directory): no Entering/Leaving
+  // pair, the exception the code style allows, stated as it requires.
+  private put(ck: string, slot: Slot): void {
+    this.realmsHeld.add(ck.slice(0, ck.indexOf('\n')));
+    this.lru.set(ck, slot);
+  }
+
+  // A ghost, if its entry is still held by somebody; a ghost whose entry
+  // has been collected is dropped HERE, when met, rather than left to the
+  // FinalizationRegistry, whose callback runs when the engine pleases —
+  // under a bulk load, far behind the evictions (#612).
+  // Hot path (every read or write of the directory): no Entering/Leaving
+  // pair, the exception the code style allows, stated as it requires.
+  private liveGhost(ck: string): Slot | null {
+    const ghost = this.ghosts.get(ck);
+    if (!ghost) {
+      return null;
+    }
+    const alive = ghost.ref.deref();
+    if (!alive) {
+      this.ghosts.delete(ck);
+      return null;
+    }
+    return { entry: alive, base: ghost.base };
+  }
+
   // Hands an entry out: remembered until the next flush, which is scheduled.
   // Hot path (every read or write of the directory): no Entering/Leaving
   // pair, the exception the code style allows, stated as it requires.
@@ -327,15 +363,13 @@ class DirectoryWindow {
     }
     const handed = this.touched.get(ck);
     if (handed) {
-      this.lru.set(ck, handed);
+      this.put(ck, handed);
       return handed;
     }
-    const ghost = this.ghosts.get(ck);
-    const alive = ghost ? ghost.ref.deref() : undefined;
-    if (ghost && alive) {
+    const back = this.liveGhost(ck);
+    if (back) {
       this.ghosts.delete(ck);
-      const back = { entry: alive, base: ghost.base };
-      this.lru.set(ck, back);
+      this.put(ck, back);
       return back;
     }
     if (!this.bridge) {
@@ -348,7 +382,7 @@ class DirectoryWindow {
     const slot: Slot = row
       ? this.slotFromRow(realmId, row)
       : { entry: null, base: null };
-    this.lru.set(ck, slot);
+    this.put(ck, slot);
     return slot;
   }
 
@@ -409,7 +443,7 @@ class DirectoryWindow {
       this.dirty.add(ck);
       this.lru.pin(ck);
     }
-    this.lru.set(ck, slot);
+    this.put(ck, slot);
     this.ghosts.delete(ck);
     if (entry) {
       this.touch(ck, slot);
@@ -493,7 +527,7 @@ class DirectoryWindow {
       held.base = JSON.stringify(entry);
       return;
     }
-    this.lru.set(ck, { entry: entry, base: JSON.stringify(entry) });
+    this.put(ck, { entry: entry, base: JSON.stringify(entry) });
     this.ghosts.delete(ck);
     this.touched.delete(ck);
   }
@@ -695,11 +729,7 @@ class DirectoryWindow {
           const ck = slotKey(realmId, row.key);
           let slot = this.lru.peek(ck) || this.touched.get(ck) || null;
           if (!slot) {
-            const ghost = this.ghosts.get(ck);
-            const alive = ghost ? ghost.ref.deref() : undefined;
-            slot = ghost && alive
-              ? { entry: alive, base: ghost.base }
-              : this.slotFromRow(realmId, row);
+            slot = this.liveGhost(ck) || this.slotFromRow(realmId, row);
           }
           if (slot.entry) {
             if (!readOnly) {
@@ -1151,6 +1181,7 @@ class DirectoryWindow {
   private dropRealm(realmId: string): void {
     log.debug("Entering DirectoryWindow.dropRealm().");
     this.resident.delete(realmId);
+    this.realmsHeld.delete(realmId);
     const prefix = realmId + '\n';
     this.lru.keys().forEach((ck) => {
       if (ck.startsWith(prefix)) {
@@ -1197,28 +1228,49 @@ class DirectoryWindow {
       candidates.set(ck, slot);
     });
     if (named === null) {
+      // A write that named nothing: everything held is a candidate, so this
+      // walks the LRU and every ghost — O(LRU + ghosts), and legitimately,
+      // since the question IS "everything". It runs only after a
+      // `touchDirectory()` with no DN, a realm change, or a failed flush
+      // that had walked everything; a bulk load's adds name their DN.
       this.lru.keys().forEach((ck) => {
         candidates.set(ck, this.lru.peek(ck) as Slot);
       });
-      this.ghosts.forEach((ghost, ck) => {
-        const alive = ghost.ref.deref();
+      // Deleting the entry being visited (a dead ghost, in `liveGhost()`)
+      // is defined for a Map's iterator: the walk goes on to the next.
+      for (const ck of this.ghosts.keys()) {
+        const alive = this.liveGhost(ck);
         if (alive && !candidates.has(ck)) {
-          candidates.set(ck, { entry: alive, base: ghost.base });
+          candidates.set(ck, alive);
         }
-      });
+      }
     } else if (named.size) {
-      const wanted = named;
-      this.lru.keys().forEach((ck) => {
-        if (wanted.has(ck.slice(ck.indexOf('\n') + 1))) {
-          candidates.set(ck, this.lru.peek(ck) as Slot);
-        }
-      });
-      this.ghosts.forEach((ghost, ck) => {
-        const alive = ghost.ref.deref();
-        if (alive && !candidates.has(ck) &&
-            wanted.has(ck.slice(ck.indexOf('\n') + 1))) {
-          candidates.set(ck, { entry: alive, base: ghost.base });
-        }
+      // THE JOURNAL'S KEYS ARE LOOKED UP, NOT SCANNED FOR (#612). Until
+      // 2026-10-13 this walked every LRU key and every ghost to find the
+      // handful named, once per flush; a ghost is made on every eviction
+      // and went only when the FinalizationRegistry got round to it, so
+      // under a 200K bulk load the ghost map grew with uptime and the walk
+      // was 7.4 s of a 15.6 s profile — the add rate halved in 33K adds and
+      // came back on a restart. Now O(|named| x realms held). The answer is
+      // the walk's: an LRU slot replaces a dirty or handed-out candidate's
+      // (the same slot, in practice), and a live ghost is taken only when
+      // nothing else made the key a candidate. Only the ORDER differs, and
+      // nothing reads it: the postgres driver sorts what it locks by key.
+      named.forEach((key) => {
+        this.realmsHeld.forEach((realmId) => {
+          const ck = slotKey(realmId, key);
+          const held = this.lru.peek(ck);
+          if (held) {
+            candidates.set(ck, held);
+            return;
+          }
+          if (!candidates.has(ck)) {
+            const alive = this.liveGhost(ck);
+            if (alive) {
+              candidates.set(ck, alive);
+            }
+          }
+        });
       });
     }
     this.touched.clear();
@@ -1265,7 +1317,7 @@ class DirectoryWindow {
       this.lru.pin(ck);
     }
     if (this.lru.peek(ck) !== slot) {
-      this.lru.set(ck, slot);
+      this.put(ck, slot);
     }
     this.ghosts.delete(ck);
   }
