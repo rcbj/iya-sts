@@ -1531,6 +1531,14 @@ const JOBS = [
   //   sts_cells_kerberos.js   an AS and a TGS exchange at cell B's TCP 88
   //                           for a person homed at A are answered at home,
   //                           a sign-out at A included (#588)
+  //   sts_cells_scim_client.js  one outbound SCIM client across both cells
+  //                           (#553): a refused transfer pushes nothing,
+  //                           both cells' people pushed from home, a group
+  //                           keeping both cells' members, a shared pause, a
+  //                           move that is not a deactivation, and a group
+  //                           deleted only when both cells answer (it cuts
+  //                           and restores the link, so it runs before
+  //                           sts_cells_unreachable.js)
   //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
   //                           cell_link.js): fail-closed refuses a refresh,
   //                           a sign-in and a bind; fail-open refreshes a
@@ -1547,6 +1555,7 @@ const JOBS = [
   { file: 'sts_cells_console.js',        browser: false, local: true },
   { file: 'sts_cells_ldap.js',           browser: false, local: true },
   { file: 'sts_cells_kerberos.js',       browser: false, local: true },
+  { file: 'sts_cells_scim_client.js',    browser: false, local: true },
   { file: 'sts_cells_unreachable.js',    browser: false, local: true },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
