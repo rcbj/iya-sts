@@ -1847,6 +1847,8 @@ so must `admin-ui/admin.ts`.
    declared type's details. `tests/rfc9396_authorization_details.js` holds the
    rest.
 
+   #### The access-type catalogue (#432 phases 3 and 4) — rule 3bz
+
    **THE DECLARATION IS THE ACCESS-TYPE CATALOGUE SINCE #432 (phase 4,
    2026-10-03)**, shared with GNAP, which reads it for access rights
    (`gnap/CLAUDE.md`, *Each right a policy question*). A definition may now
@@ -2240,7 +2242,11 @@ the same day and read it at introspection instead.
    the REALM's base under a named server too, since the session is the
    realm's) is the one framable page: `app.framedContentSecurityPolicy()`
    and X-Frame-Options removed. Its script hashes the MESSAGE's origin, so
-   a page that is not the relying party computes a different value. Off, both
+   a page that is not the relying party computes a different value.
+   `/oauth2/check_session.js` answers a relying party's `postMessage`, which
+   no markup can; so it is the one scripted page with **NO submit button**,
+   and with script off a relying party's question simply goes unanswered
+   (moved from the root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, both
    paths answer a 404 naming the setting (`STS-OAUTH-0601`), never Express's
    `Cannot GET`, which `tests/vendored/sts_metadata.js` reads as unrouted.
 
@@ -3327,7 +3333,7 @@ safe to turn on while something is running. **3au below does the opposite, on
 purpose**: a permission is a relationship the client was granted, a protected
 scope is a key to this service's own API.
 
-### 3au. `scopeRefusal()` — the scopes a client may be issued (#110, 2026-09-22)
+### 3au. `scopeRefusal()` — the scopes a client may be issued (#110, 2026-09-22) — and rule 3bt
 
 **Since #305 the decisions below are rules of the issuance policy**, and the
 functions here gather facts: `scopeRefusal()` through `scope_policy.judge()`,

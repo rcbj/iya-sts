@@ -18,7 +18,7 @@ provider for each of them**.
 | `saml_cells.ts` | **Where a SAML back-channel request is answered in a service deployed as cells** (#98 D10, 2026-09-28): the cell tag inside an artifact's handle, and the peer holding the session a query names (the `saml-session-holder` inter-cell operation). Registers no route. See *IN A SERVICE DEPLOYED AS CELLS*, at the end. |
 | `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
-## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
+## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG — rule 4b
 
 This is the first thing to know before reading either file, because everything
 else follows from it and because "surely most of that is shared" is the change
@@ -141,7 +141,7 @@ implementation:
 
 ---
 
-## Six decisions in `saml2_sso.ts`, and the two most likely to be undone
+## Six decisions in `saml2_sso.ts`, and the two most likely to be undone — rule 4a
 
 The file's own header argues all six at length. Two of them are the ones somebody
 will try to "fix":
@@ -695,6 +695,8 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 `authn_context.ts` — none of which requires them back, so they cannot join a
 cycle and their position is not a position at all.
 
+### 4a. `saml2_sso.ts` comes after `authn/authn.ts`, and has no screen of its own
+
 **`saml2_sso.ts` is position 10a in `common/protocol_stack.ts` (the require
 order `server.js` loads) and has one real constraint**: it
 must come after `../authn/authn.ts`, and it is a STRONGER dependency than
@@ -709,6 +711,8 @@ read together in the route order and on `/admin/sts-metadata`.
 direction — a plain require, not another inverted slot — and rule 3e's test is
 why: `common/protocol_stack.ts` requires this module at 10a and those at 18 or
 later, so a require from there closes no cycle and moves no route.
+
+### 4b. `saml11_sso.ts` comes after `authn/authn.ts` and after `saml2_sso.ts`
 
 **`saml11_sso.ts` is position 10b and has TWO constraints**, the second of which
 is the only require between the two profiles. It must come after
@@ -732,8 +736,8 @@ somebody's relying party will post a form at it anyway.
 
 ## `/saml2/autopost.js` IS THE FIFTH SCRIPTED PAGE
 
-`../common/app.js` sets `script-src 'none'` on every response. The HTTP POST
-binding (bindings section 3.5) **is** a self-submitting form — that is what keeps
+`../common/app.js` sets `script-src 'none'` as the service-wide default. The
+HTTP POST binding (bindings section 3.5) **is** a self-submitting form — that is what keeps
 a response of several kilobytes of signed XML out of a URL, a log and a Referer
 header — so there is no version of this binding without a script. The exception
 is the same shape as the other four and no wider: `script-src 'self'` naming ONE

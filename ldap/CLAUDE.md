@@ -6,8 +6,9 @@ directory is also the STORE for four other things: people, groups, applications
 (`../common/applications.js`) and the SPIFFE registry (`../spiffe/spiffe_registry.ts`).
 
 **It is built on the `node-ldapjs` SUBMODULE and the library is not patched.** See
-the root `CLAUDE.md` for the submodule's placement rules, which have already cost
-something three times.
+*node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork*,
+below, for the submodule's placement rules, which have already cost something
+three times.
 
 **636 RE-KEYS WHEN THE LISTENER CERTIFICATE IS RE-ISSUED (2026-09-21)** — `rekeyLdaps()`,
 registered on `tls_server.onServerCertificateChange()`, runs at bind and again after
@@ -1644,9 +1645,42 @@ on a connection. `toSearchEntry()` builds a `SearchResultEntry` instance with th
 response's `messageId`, which sidesteps both. The comments there explain it;
 read them before "simplifying" that function back to a plain object.
 
-The rest of the submodule's rules — where it must sit, why `--recursive`
-matters, and why `.npmrc` carries `omit=dev` — are in the root `CLAUDE.md`,
-because they are facts about the package root rather than about this module.
+### node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork
+
+**The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
+the first change is the `routeAnonymousBinds` server option
+(the bind refusals, below), the second `encodeErrorMessage`, which
+sends a refusal's text as its diagnosticMessage (#261). A change goes in THE FORK, never as a
+patch from this repository into the library: an option whose default is
+upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
+`docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
+here in the same change that starts using it. The service asks whether an
+option took rather than assuming the submodule is current, because an older
+checkout ignores an option it does not know.
+
+`ldap_server.js` is built on `ldapjs` 3.0.7, which resolves to `./node-ldapjs` —
+a git submodule pinned to [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs)
+(`"ldapjs": "file:node-ldapjs"` in package.json). Three things follow, and all of
+them have already cost something:
+
+* **This repository is itself a submodule of the parent project, so this one is
+  NESTED.** `git submodule update --init sts` over there stops one level short of
+  it; `--recursive` is required, and the parent's launchers and CI workflows pass
+  it. An uninitialised submodule is an EMPTY DIRECTORY, so the COPY succeeds, npm
+  installs a package with no `main`, and the failure arrives at runtime as
+  `Cannot find module 'ldapjs'` — which names a package.
+* **It has to sit inside this package root.** npm installs a `file:` dependency as
+  a symlink and node resolves that package's own requires by walking up from where
+  the REAL directory lives, so a copy one level up never reaches `node_modules`
+  here. The failure is `Cannot find module 'abstract-logging'` from inside ldapjs.
+* **`npm install` brings its devDependencies.** ldapjs's are tap and eslint —
+  about 200 packages and a dozen advisories that have nothing to do with this
+  service. `.npmrc` carries `omit=dev` and the Dockerfile passes `--omit=dev` as
+  well; the duplication is deliberate.
+
+(Moved here from the root `CLAUDE.md` on 2026-10-13; it was there because these
+are facts about the package root, and the root keeps the two warnings that
+reach outside this directory.)
 
 ---
 
@@ -2068,7 +2102,7 @@ endpoint list stops meaning anything.
 of these pages answers a question about what is in this service's directory,
 which is the question the four pages under the console's *Directory* heading
 already answer; the only thing that made them a separate surface was that they
-happened to have been written here. Four things follow, and each is worth
+happened to have been written here. Three things follow, and each is worth
 knowing before touching any of it.
 
 * **THEY ARE STILL BUILT HERE, and that is not a leftover.** A console page is

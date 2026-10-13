@@ -438,15 +438,13 @@ is something the service tells you rather than something to remember.
 Every page shows **one** realm — the one whose prefix it was reached under — and
 carries a **Trust realm** chooser at the top of the sidebar, inside the same
 card as the sections, that moves to the same page in another realm, carrying the
-filter and the page you were on. It is a `<select>` and a button rather than a
-select that navigates on change, because the console runs no script at all
-(`script-src 'none'`) and an inline handler is the one thing that policy
-forbids. It submits to `GET /admin/realm-switch`, which builds the target from
-the realm registry and a path it has checked is rooted and single-slashed —
-never from the query string as given.
+filter and the page you were on. It is a `<select>` and a button: pressing the
+button redraws the page you were on in the chosen realm, in place, with the
+realm's prefix taken from the realm registry rather than from anything typed.
 
-Every root-relative link in an HTML response is rewritten on the way out to
-carry the current realm's prefix, which is what makes the console work inside a
+Every root-relative link the console draws carries the current realm's
+prefix — the console adds it in the browser, as the service does on the way
+out for a page it draws itself — which is what makes the console work inside a
 realm without a link being edited. The chooser is the one control whose job is
 to leave the realm, so the links it builds are absolute and are left alone.
 

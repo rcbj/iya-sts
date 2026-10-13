@@ -1040,7 +1040,7 @@ needed to tell them apart.
 
 ---
 
-## THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
+## 3bn. THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
 
 The Verifiable Credentials and DID Working Groups' own test suites — VC Data
 Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,

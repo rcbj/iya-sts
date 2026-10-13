@@ -99,7 +99,11 @@ sequence of phases, each of which leaves a service that passes the suite
   console share that client half (`common/web_spa_client.ts`).
 * **The SPAs run script, and nothing else here does (decision D10).** Every
   page of this service works without JavaScript today (`script-src 'none'`,
-  thirteen argued exceptions). A single-page application cannot, so `/admin/`
+  thirteen argued exceptions). [Since this was written the console (#446),
+  the portal (#568) and the public pages (#570–#584) have become static
+  surfaces under `script-src 'self'` in the Node service; `script-src 'none'`
+  remains the default and the protocol documents' policy.] A single-page
+  application cannot, so `/admin/`
   and `/portal/` get `script-src 'self'` — the SPA's own bundled files, never
   `'unsafe-inline'` and never another origin — and `frame-ancestors` and
   `base-uri` stay as everywhere. This is a deliberate REVERSAL of the

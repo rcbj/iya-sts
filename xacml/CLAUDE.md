@@ -252,17 +252,21 @@ The former policies, editor, PEPs and decision destinations are tabs, not
 sidebar leaves; their distinct management API operations still supply them.
 The decision counters remain `/admin/xacml/monitor` under Monitoring.
 
-**The editor has no JavaScript, and that is argued rather than assumed.** This
-console is `script-src 'none'` and `admin-ui/CLAUDE.md` refuses a script nine
-times over under a rule that the argument must be *made* each time — the test
-being whether the page CANNOT work without one. An editor can. So every
+**The editor had no JavaScript, and that was argued rather than assumed.**
+This console was `script-src 'none'` and `admin-ui/CLAUDE.md` refused a script
+nine times over under a rule that the argument must be *made* each time — the
+test being whether the page CANNOT work without one. An editor can. So every
 "pick the next valid element" dropdown is a `<select>` whose options were
-computed on the server by `xacml_editor.ts`, and choosing one is a form POST.
+computed on the server by `xacml_editor.ts`, and choosing one was a form POST.
 
-**Every page of this console but one is `script-src 'none'`** (the exception is
-`/admin/api-explorer`, which arrived on 2026-09-09 and argues itself); the
-editor's version of the claim is unaffected, because that page genuinely has no
-script.
+**Every page of this console but one was `script-src 'none'`** (the exception
+was `/admin/api-explorer`, which arrived on 2026-09-09 and argued itself) —
+**until #446 (2026-10-05)**, when the whole console became a static
+application under `script-src 'self'`, drawn by `/admin/console.js` from
+`/admin-api`. The editor's design survived it: its options are still computed
+on the server (`GET /admin-api/xacml/editor`) and choosing one is still a
+round trip, now an `/admin-api` call rather than a form POST; the editor has
+no script of its own.
 
 *What it costs*: a round trip per element — a five-rule policy built by hand is
 perhaps forty POSTs. The page says so; the templates are the answer.
@@ -995,7 +999,7 @@ asserting NOTHING, and a Permit that can only have come from her entry under
 has never heard of, refused at both ends. **That section used to assert the
 opposite**, in both directions, and the inversion is recorded where it happens.
 
-### It answers ROLES as well as directory attributes (#303, 2026-09-27)
+### It answers ROLES as well as directory attributes (#303, 2026-09-27) — rule 3bq
 
 A designator for `urn:sts:xacml:role` — the issuance PEP's own attribute —
 is answered with the subject's CONFIGURED roles in the realm, through
@@ -1283,7 +1287,7 @@ refused is a document an administrator can read, edit, test on
 `/admin/xacml/decide` and see in the audit log — which is the whole point of
 routing an internal decision through a policy engine that is already here.
 
-### The request it builds is the contract
+### 3br. The request it builds is the contract
 
 | Category | Attribute | What it is |
 |---|---|---|
@@ -1299,6 +1303,8 @@ routing an internal decision through a policy engine that is already here.
 | access-subject | `urn:sts:xacml:home-jurisdiction` | the jurisdiction the subject is homed in — a transfer question only (#98) |
 | environment | `urn:sts:xacml:serving-jurisdiction`, `urn:sts:xacml:client-country`, `urn:sts:xacml:transfer-listed`, `urn:sts:xacml:realm`, `urn:sts:xacml:purpose`, `urn:sts:xacml:setting:cells.hardGeofence` | the serving cell's jurisdiction, the client's country when known, whether the realm lists the transfer, the realm, a release's purpose, the hard geofence — a transfer question only (#98) |
 | resource | `urn:sts:xacml:data-category` | `session`, `request` or `attributes` — a transfer question only (#98) |
+
+#### 3bs. One question per requested scope (#304, part C of #88)
 
 **AND ONE QUESTION PER REQUESTED SCOPE (#304, part C of #88).** Which scopes
 are issued is the policy's decision too, not code's: `issuance_gate`'s
@@ -1316,6 +1322,8 @@ policy instead, so role gating never switches off; a process with no XACML
 family drops a gated scope (`STS-XACML-0079`). The code that gathers the
 facts is `common/role_permissions.ts`; nothing in it decides.
 
+#### 3bt. The other scope rules (#305, part D of #88)
+
 **AND SINCE #305 (part D) THE OTHER SCOPE RULES ARE HERE TOO.** The #110 scope
 rules (`scope_policy.ts`), delegated permissions (`permissionRefusal()`),
 consent (`consent.outstanding()`, verdict `consent`) and the two RFC 9396 type
@@ -1330,6 +1338,8 @@ decider the gate evaluates the built-in policy itself** (rcbj's decision on
 #305): `xacml_scope_verdicts.js` is a library — engine, builder and templates,
 no route and no slot — which the issuance PEP and `issuance_gate.js` both ask
 through, so the rules hold in every process.
+
+#### Each GNAP access right (#432 phases 3 and 4) — rule 3bz
 
 **AND SINCE #432 (phase 3) EACH GNAP ACCESS RIGHT.** `gnap/gnap_rights.ts`
 asks one question per right, action-id `issue-gnap-right`, the right's type
@@ -1374,6 +1384,8 @@ A verdict this reader does not know refuses
 engine broke. `tests/gnap_catalogue.js` holds each rule through the policy
 and a realm's narrowing override.
 
+#### Who must be asked, and how strongly (#432 phase 6)
+
 **WHO MUST BE ASKED, AND HOW STRONGLY (#432 phase 6).** Two more members of
 the same obligation, `urn:sts:xacml:gnap-right-interaction` (none, skippable,
 always) and `urn:sts:xacml:gnap-right-acr`, carried by four more built-in
@@ -1386,6 +1398,8 @@ obligation, and an interaction word the reader does not know reads as
 `always`. The grant engine does what they say (`gnap/CLAUDE.md`, *Phase 6*);
 the approval fact gained the value `owner`, the resource owner approving on
 their portal.
+
+#### Where a person's data may go (#98, D4 and D11) — rule 3bu
 
 **AND SINCE #98 (D4, D11) WHERE A PERSON'S DATA MAY GO.** When the service is
 deployed as cells, three questions go to the same policy from
@@ -1410,6 +1424,8 @@ override built without the rules, `xacml.enabled` off, no decider — the
 built-in document decides, so the strict default never switches off. A
 verdict that is not one of the two for its question reads as the strict one.
 The three are not members of `ISSUANCE` (`common/CLAUDE.md`, 3bu).
+
+#### Which passkeys may be registered and sign somebody in (#536)
 
 **AND SINCE #536 WHICH PASSKEYS MAY BE REGISTERED AND SIGN SOMEBODY IN.** The
 passkey policy (#527-#535, Directory → Policies) CONFIGURES. Two questions go
@@ -1438,6 +1454,8 @@ two assertion doors for the attestation rules).
   neither answers, `common/passkey_rules.js` reads the same rules from the
   facts.
 * **Not members of `ISSUANCE`.**
+
+#### The subject, and the application
 
 **The subject is the party being authenticated and not always a person.** In a
 browser flow it is whoever signed in; in a `client_credentials` grant there is
@@ -2112,7 +2130,7 @@ shims the socket, `common/cell_channel.ts`) and writes the `xacml.pip.query`
 audit row. A query that does not parse, or names nobody the routing index
 knows, is answered where it arrived, as before. Single-cell mode does not look.
 
-## `access-control` has a third conjunct: every role named as required-all (#454, 2026-10-06)
+## `access-control` has a third conjunct: every role named as required-all (#454, 2026-10-06) — rule 3cc
 
 `requiredRoles` is ANY-ONE-OF, as the document has always read it
 (`any-of-any` over `urn:sts:xacml:required-role`). The admin console's own

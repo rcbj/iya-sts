@@ -2141,7 +2141,8 @@ when the path does not open with the prefix — so the same middleware enters
 it, a request worker derives it by the same rule from the same `originalUrl`,
 and `unknownRealmPath()` catches up on it the same way. A realm may not be
 called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
-from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+from the data leaf `enrollment_profiles.js` — JavaScript because realms.js is
+in the parent's load-time closure (#300) — which realms.js may require and
 `cert_enrollment.ts` could not be), and a realm that already was is never
 read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
 and the "named once" refusal. **A third way needs the argument made again**,
@@ -4447,7 +4448,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    no descendants, into a page explaining itself in two directions. The forward
    direction is what `/admin/delegation` and its map are for.
 
-## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
+## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au, and rule 3bt
 
 **THE RULES ARE THE ISSUANCE POLICY'S SINCE #305 (part D of #88).** This file
 gathers the FACTS about each requested scope — protected, declared,
@@ -5235,7 +5236,7 @@ The consequence for a reader is the sentence `/admin/ldap/roles` and
 state of a service refusing nobody**, not a sign that the feature failed to
 load.
 
-### A role authorizes permissions (#303, part B of #88, 2026-09-27)
+### 3bq. A role authorizes permissions (#303, part B of #88, 2026-09-27) — and rule 3bs's facts (#304)
 
 A THIRD relation, beside membership and requirement, stored on the ROLE entry
 because rcbj decided it lives there: `rolePermission` names what a holder may
@@ -5294,6 +5295,8 @@ ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 `sts-management-api` is not one — the separation #164 decision 2 made.
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
+
+#### A role conferred by a client (#454, 2026-10-06) — rule 3cc
 
 **A THIRD WAY OF HOLDING A ROLE: CONFERRED BY A CLIENT (#454, 2026-10-06).**
 A person holds a role as a member (or, for the console roles, through the
@@ -11331,7 +11334,7 @@ this definition: it must answer an application to read relationships from.
 The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
 `tests/registered_targets.js` holds it in both modes.
 
-## Hosted applications and the listeners they are on: `hosted_applications.js`, `listener_map.js` (#472, 2026-10-07)
+## 3cg. Hosted applications and the listeners they are on: `hosted_applications.js`, `listener_map.js` (#472, 2026-10-07)
 
 rcbj: "I want to be able to define custom listeners and map the hosted
 applications to specific listeners ... I want to be able to advertise services

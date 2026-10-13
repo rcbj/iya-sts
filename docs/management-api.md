@@ -535,22 +535,19 @@ roles grant (`admin:read` for Admin Read, `admin:write` for Admin Write). The
 API still checks it on every call, so a reader with only Admin Read who tries
 a `POST` gets the same 403 as from a terminal.
 
-The explorer mints a default-realm token, which is a service credential, so a
-realm's own administrators cannot see it. It also stops working while
-`oauth2.accessTokenRequireDpop` is on, because its script sends a plain Bearer
-header and has no DPoP key to prove. With that setting on, use `curl` and a
-proof.
+The explorer sends every call with the console's own access token and a DPoP
+proof by the console's own key, so it acts as the person signed in to the
+console, in the realm they signed in through, and it keeps working while
+`oauth2.accessTokenRequireDpop` is on.
 
-**The explorer is the one console page with a script.** The console is
-`script-src 'none'` like the rest of the service, which is what makes the whole
-family of reflected-content problems moot rather than merely unlikely. The
-explorer relaxes that on its own two routes and in exactly two clauses:
-`script-src 'self'`, and `connect-src 'self'` so the page can call the API it
-documents. Everything else, `default-src 'none'` included, stays as it is, and
-the console next door is still `script-src 'none'` — which the tests assert.
-The script is a **separate file** because `'self'` is enough for a file where an
-inline block would need `'unsafe-inline'`, the clause that would make the
-relaxation matter. It is served verbatim from disk, is not a node module, and
+**The explorer's script is a file of this service's own.** The console runs
+under `script-src 'self'` and `connect-src 'self'`, never `'unsafe-inline'`,
+and the console's script loads the explorer's own script
+(`/admin/api-explorer/explorer.js`) when the page is drawn. Everything else,
+`default-src 'none'` included, stays as it is. The script is a **separate
+file** because `'self'` is enough for a file where an inline block would need
+`'unsafe-inline'`, the clause that would make the policy matter. It is served
+verbatim from disk, is not a node module, and
 builds every element with `createElement` rather than assigning `innerHTML`,
 because it renders response bodies that are not always this service's own.
 
