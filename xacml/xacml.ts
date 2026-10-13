@@ -924,7 +924,7 @@ class XacmlSurface {
   // different part of this service answers:
   //
   //   1. WAS A CHAIN BUILT? `mtls.peerVerified()` — did what arrived verify
-  //      against an anchor in the truststore `POST /tls/trust` fills. A
+  //      against an anchor in the truststore `/admin-api/tls/trust` fills. A
   //      certificate that verified against nothing is a name the caller chose
   //      for itself, and everything below would be reading it.
   //   2. WHICH ENTRY IS THAT? `peps.certificateIdentity()` across the

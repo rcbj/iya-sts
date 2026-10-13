@@ -37,11 +37,11 @@
 // A certificate this service issues is useless at a listener unless the
 // listener trusts its chain, and the client truststore every listener shares
 // (`tls/tls_server.js`) was EMPTY by default — anchors arrived only through
-// /tls/trust. So since this module it trusts the SERVICE ROOT as well
-// (`trustAnchorPem()`, behind `tls.trustIssuedClientCertificates`), which
-// reaches the main port. OpenSSL will not end a path at an
-// Intermediate or an Issuing CA without a partial-chain flag node does not
-// expose, so the anchor HAS to be the Root.
+// its runtime door (`/admin-api/tls/trust` today). So since this module it
+// trusts the SERVICE ROOT as well (`trustAnchorPem()`, behind
+// `tls.trustIssuedClientCertificates`), which reaches the main port. OpenSSL
+// will not end a path at an Intermediate or an Issuing CA without a
+// partial-chain flag node does not expose, so the anchor HAS to be the Root.
 //
 // **AND THE ROOT VOUCHES FOR EVERY KEY PAIR THIS SERVICE HAS EVER ISSUED.** An
 // application's RFC 7523 key pair carries no extended key usage, which OpenSSL
@@ -68,7 +68,8 @@
 //
 // A chain through NO authority this process holds is not this module's
 // business and is answered `issuedHere: false`: that is an anchor somebody
-// installed through /tls/trust, and every door treats it exactly as before.
+// installed through /admin-api/tls/trust, and every door treats it exactly
+// as before.
 //
 // ---------------------------------------------------------------------------
 // THE REALM IS THE ISSUING CA'S.

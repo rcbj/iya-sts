@@ -2496,7 +2496,8 @@ class ScimAuth {
   // The first scheme RFC 7644 section 2 names. Available only where this
   // request arrived over TLS and the certificate VERIFIED — which means
   // `global.https` is on, so the main port asks every connection for one, and
-  // the chain ends at an anchor somebody POSTed to /tls/trust or, for a
+  // the chain ends at an anchor somebody added through
+  // /admin-api/tls/trust or, for a
   // certificate this service issued, at the service Root
   // (`tls.trustIssuedClientCertificates`; see tls/CLAUDE.md).
   //
@@ -2911,7 +2912,8 @@ class ScimAuth {
   //
   // `need` is 'read', 'write' or 'none' — the last being the discovery
   // endpoints, which are open unless `scim.authDiscovery` says otherwise. That
-  // default is the bootstrapping argument /tls/trust already makes: the
+  // default is the bootstrapping argument the open /tls/trust made until
+  // #597: the
   // ServiceProviderConfig is where a client READS which schemes exist, so
   // requiring a credential to fetch it means a client must already know the
   // answer to the question it is asking. A deployment that wants everything

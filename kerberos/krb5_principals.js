@@ -1673,7 +1673,7 @@ function configuredServiceDefinition(ctx) {
       'source, so a key derived from it would let anybody mint a ticket this ' +
       'acceptor accepts. The ' +
       'account ' + spn + '@' + REALM + ' was NOT created, so ' +
-      'the acceptor on krb5.servicePort and /authn/spnego accept no ticket. ' +
+      'the acceptor at /authn/spnego accepts no ticket. ' +
       'Set KRB5_SERVICE_PASSWORD to the password of that SPN\'s account in ' +
       'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt).';
     log.warn(errorCodes.tag('STS-KRB-0061') + 'krb5: ' + account.reason);

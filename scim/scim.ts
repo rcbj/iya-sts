@@ -147,7 +147,8 @@
 //
 // **THE DISCOVERY ENDPOINTS ARE OPEN.** /ServiceProviderConfig, /ResourceTypes
 // and /Schemas answer without a credential unless `scim.authDiscovery` says
-// otherwise, which is the bootstrapping argument POST /tls/trust already makes:
+// otherwise, which is the bootstrapping argument the open POST /tls/trust made
+// until #597 deleted it:
 // the ServiceProviderConfig is where a client READS which schemes exist, so
 // demanding a credential to fetch it means a client must already know the
 // answer to the question it is asking. RFC 7644 section 4 says nothing either
@@ -396,7 +397,8 @@ const CANONICAL_TYPES: Record<string, string[]> = {
 //     registration at /.well-known/hoba/register, and a client that speaks HOBA
 //     looks there. Inventing /scim/v2/hoba-keys would have been tidier and
 //     would have been a path nothing knows about.
-//   * It is UNAUTHENTICATED for the reason POST /tls/trust is: it is how a
+//   * It is UNAUTHENTICATED for the reason the open POST /tls/trust was
+//     until #597: it is how a
 //     caller GETS a credential, so requiring one to reach it would make the
 //     scheme unusable by anybody who did not already have another. In
 //     development mode anybody may register any key for any name, which is the

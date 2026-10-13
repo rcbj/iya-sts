@@ -122,11 +122,11 @@
 //
 // **THE TWO REALMS, THE FIXTURE ACCOUNTS AND THE PUBLISHED PASSWORDS ARE
 // DEVELOPMENT MODE (2026-09-12).** In product mode krb5_principals.js builds a
-// database without them, this KDC answers for one realm, and GET
-// /krb5/principals withholds both passwords. The ticket lifetimes, the TCP
-// request cap, the UDP reply threshold and the PAC's LogonServer are settings;
-// the PAC's invented passwordLastSet and logonCount are not invented there. See
-// kerberos/CLAUDE.md.
+// database without them and this KDC answers for one realm (GET
+// /krb5/principals, which printed both passwords, was deleted by #595). The
+// ticket lifetimes, the TCP request cap, the UDP reply threshold and the
+// PAC's LogonServer are settings; the PAC's invented passwordLastSet and
+// logonCount are not invented there. See kerberos/CLAUDE.md.
 // ---------------------------------------------------------------------------
 
 const net = require('net');
@@ -3711,8 +3711,8 @@ async function answerTgsReq(request, state) {
                'matches ' +
                (principals.SERVICE_DOMAINS.join(', ') ||
                 '(nothing configured)') +
-               ', and this one does not — GET /krb5/principals lists what it ' +
-               'knows.' });
+               ', and this one does not — GET ' +
+               '/admin-api/kerberos/principals lists what it knows.' });
     }
     service = created;
   }
@@ -5471,7 +5471,7 @@ module.exports = {
   },
   clockSkewSeconds: clockSkewSeconds,
   // The offset the KDC's clock runs at, as the mode lets `krb5.clockOffset`
-  // be: what `/krb5/principals` publishes, for a reader in a realm that is
-  // not served that demonstration (#585).
+  // be: what `/krb5/principals` published until #595 deleted it, for a
+  // reader in a realm that was not served that demonstration (#585).
   clockOffsetSeconds: clockOffsetSeconds
 };
