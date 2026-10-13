@@ -68,8 +68,11 @@ add an owner:
 3. Press **Add** beside the owner you want.
 
 **Remove** takes an owner off the table. Neither **Add** nor **Remove**
-changes the account until you press **Save the service account**. On
-**Users → New user** you type the owners instead, one per line.
+changes the account until you press **Save the owners and push destination**
+(**Make them a service account with these owners and push destination** for a
+person who is not one yet), which saves the owners, the destination and the
+secret name together. On **Users → New user** you type the owners instead,
+one per line.
 
 Through the management API, `owners` is the whole list. It replaces the
 owners the account has, so to add one you send the existing owners as well.
