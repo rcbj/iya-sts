@@ -24,10 +24,13 @@
 // class `stsServiceAccount`:
 //
 //   stsServiceAccount            TRUE. The flag. Its absence is a person.
-//   stsServiceAccountOwner       the DN of the person or group answerable for
-//                                the account (required while the policy's
-//                                `requireOwner` is on — rcbj: "the owner may
-//                                be a person or a group").
+//   stsServiceAccountOwner       the DN of a person or group answerable for
+//                                the account — MULTI-VALUED since #600, one
+//                                value per owner, at most MAX_OWNERS; at least
+//                                one while the policy's `requireOwner` is on
+//                                (rcbj: "the owner may be a person or a
+//                                group", and on #600 "it also needs to
+//                                support multiple owners").
 //   stsSecretDestination         the DN of the APPLICATION ENTRY the rotated
 //                                password is pushed to (rcbj: "Each push
 //                                destination is an application entry in the
@@ -95,6 +98,14 @@ const SECRET_ATTRIBUTES = ['stsPreviousPassword'];
 const MAX_SECRET_NAME = 512;
 
 /**
+ * The most owners one service account may name (#600). A bound on a list
+ * written onto a person entry, and the reason the console's owner table needs
+ * no pager: an account answered for by more than this many people and groups
+ * is answered for by a group.
+ */
+const MAX_OWNERS = 25;
+
+/**
  * The directory schema a service account adds to a person entry.
  */
 const SCHEMA = {
@@ -110,7 +121,8 @@ const SCHEMA = {
             'through common/service_accounts.ts\'s isServiceAccount(), ' +
             'never read directly.' },
     { name: 'stsServiceAccountOwner',
-      what: 'The DN of the person or group answerable for the account.' },
+      what: 'The DN of a person or group answerable for the account; one ' +
+            'value per owner.' },
     { name: 'stsSecretDestination',
       what: 'The DN of the application entry (a push destination) a rotated ' +
             'password is written to.' },
@@ -137,13 +149,24 @@ const SCHEMA = {
 interface DirectoryHooks {
   readServiceAccount?(key: string): {
     found: boolean; person: boolean; dn: string; username: string;
-    values: Record<string, string>;
+    values: Record<string, string | string[]>;
   } | null;
   writeServiceAccount?(key: string,
-                       changes: Record<string, string | null>): boolean;
+                       changes: Record<string, string | string[] | null>):
+    boolean;
   serviceAccountNames?(): string[];
   resolveOwner?(value: string): { kind: string; dn: string; name: string };
   [hook: string]: unknown;
+}
+
+/**
+ * One owner of a service account, resolved: `kind` is `person` or `group`, or
+ * '' for a value that no longer names either (an owner deleted since).
+ */
+interface ServiceAccountOwner {
+  dn: string;
+  kind: string;
+  name: string;
 }
 
 /**
@@ -153,9 +176,7 @@ interface ServiceAccountFacts {
   username: string;
   dn: string;
   serviceAccount: boolean;
-  owner: string;
-  ownerKind: string;
-  ownerName: string;
+  owners: ServiceAccountOwner[];
   destination: string;
   secretName: string;
   rotatedAt: string;
@@ -207,6 +228,54 @@ function firstOf(entry: any, name: string): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+// Every value of an attribute, on the same three shapes `firstOf()` reads —
+// for the one list here, the owners (#600). Blank values are left out.
+function allOf(entry: any, name: string): string[] {
+  log.debug("Entering allOf(). " + name);
+  const bag = entry && typeof entry === 'object'
+    ? (entry.attributes && typeof entry.attributes === 'object'
+      ? entry.attributes : entry)
+    : {};
+  const wanted = name.toLowerCase();
+  const key = Object.keys(bag).filter(function (one) {
+    return one.toLowerCase() === wanted;
+  })[0];
+  const found = key === undefined ? [] : [].concat(bag[key]);
+  const out = found.map(function (one) {
+    return one === undefined || one === null ? '' : String(one).trim();
+  }).filter(function (one) {
+    return !!one;
+  });
+  log.debug("Leaving allOf(). " + out.length);
+  return out;
+}
+
+// THE OWNERS A CALLER GAVE (#600), as a list of the strings it named — or
+// null where the member is absent, which `check()` reads as no owner: a set
+// REPLACES the owners as it replaces the destination, so a caller changing one
+// sends the others too. An array is taken value by value; a string is one
+// owner per line, never split on a comma, because a DN is made of commas. The
+// console's form sends an empty `owners` beside one hidden `owner` per row.
+function ownersGivenOf(body: Record<string, any>): string[] | null {
+  log.debug("Entering ownersGivenOf().");
+  const given = body ? body.owners : undefined;
+  if (given === undefined || given === null) {
+    log.debug("Leaving ownersGivenOf(). None given.");
+    return null;
+  }
+  const out: string[] = [];
+  [].concat(given).forEach(function (one) {
+    String(one == null ? '' : one).split(/\r?\n/).forEach(function (line) {
+      const value = line.trim();
+      if (value) {
+        out.push(value);
+      }
+    });
+  });
+  log.debug("Leaving ownersGivenOf(). " + out.length);
+  return out;
+}
+
 /**
  * Service accounts (#221): person entries flagged `stsServiceAccount`, their
  * owner, the destination their rotated password is pushed to, and the state of
@@ -225,6 +294,10 @@ class ServiceAccounts {
    * The attributes withheld from every read.
    */
   static readonly SECRET_ATTRIBUTES = SECRET_ATTRIBUTES;
+  /**
+   * The most owners one service account may name (#600).
+   */
+  static readonly MAX_OWNERS = MAX_OWNERS;
   /**
    * The schema a service account adds to a person entry.
    */
@@ -370,7 +443,7 @@ class ServiceAccounts {
   }
 
   /**
-   * Reads what a service account is: its owner, destination and rotation
+   * Reads what a service account is: its owners, destination and rotation
    * state.
    *
    * @param username - any key the directory locates an entry by
@@ -388,22 +461,26 @@ class ServiceAccounts {
     const value = function (name: string): string {
       return firstOf(found.values, name);
     };
-    const owner = value('stsServiceAccountOwner');
-    let ownerKind = '';
-    let ownerName = '';
-    if (owner && this.directory &&
-        typeof this.directory.resolveOwner === 'function') {
-      const resolved = this.directory.resolveOwner(owner);
-      ownerKind = resolved.kind;
-      ownerName = resolved.name;
-    }
+    // EVERY OWNER, resolved (#600). A value that no longer names a person or
+    // a group — an owner deleted since — is kept with an empty kind, so the
+    // page can say so and a Save can take it off; it is never dropped here.
+    const self = this;
+    const owners = allOf(found.values, 'stsServiceAccountOwner')
+      .map(function (dn) {
+        const resolved = self.directory &&
+                         typeof self.directory.resolveOwner === 'function'
+          ? self.directory.resolveOwner(dn) : null;
+        const kind = resolved && (resolved.kind === 'person' ||
+                                  resolved.kind === 'group')
+          ? resolved.kind : '';
+        return { dn: kind ? resolved.dn : dn, kind: kind,
+                 name: kind ? resolved.name : '' };
+      });
     const out: ServiceAccountFacts = {
       username: found.username,
       dn: found.dn,
       serviceAccount: true,
-      owner: owner,
-      ownerKind: ownerKind,
-      ownerName: ownerName,
+      owners: owners,
       destination: value('stsSecretDestination'),
       secretName: value('stsSecretName'),
       rotatedAt: value('stsPasswordRotatedAt'),
@@ -500,29 +577,34 @@ class ServiceAccounts {
 
   /**
    * Checks what would make an entry a service account, without writing: the
-   * owner (a person or a group in this realm, never `selfDn`; required while
-   * the policy's `requireOwner` is on), and the destination with the
-   * secret's name, both or neither. Asked by `set()`, and by the console's
-   * and the API's create BEFORE the person exists, so a refused account is
-   * never left behind as an ordinary person.
+   * owners (each a person or a group in this realm, never `selfDn`; at most
+   * MAX_OWNERS; at least one while the policy's `requireOwner` is on), and
+   * the destination with the secret's name, both or neither. Asked by
+   * `set()`, and by the console's and the API's create BEFORE the person
+   * exists, so a refused account is never left behind as an ordinary person.
    *
-   * @param given - `owner`, `destination`, `secretName`
+   * @param given - `owners` (an array, or one per line), `destination`,
+   *   `secretName`
    * @param selfDn - the account's own DN, or '' for one not created yet
-   * @returns `{ ok: true, owner, destination, secretName }`, or a refusal
+   * @returns `{ ok: true, owners, destination, secretName }`, or a refusal
    */
   check(given: Record<string, any>, selfDn?: string) {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.check().");
     const body = given || {};
-    // THE OWNER: a person or a group in this realm, never the account itself.
-    const ownerGiven = String(body.owner == null ? '' : body.owner).trim();
-    let owner = { kind: '', dn: '', name: '' };
-    if (ownerGiven) {
-      owner = this.directory &&
-              typeof this.directory.resolveOwner === 'function'
-        ? this.directory.resolveOwner(ownerGiven) : owner;
+    // THE OWNERS (#600): each a person or a group in this realm, never the
+    // account itself, each once — two spellings of one entry (a username and
+    // its DN) are one owner, kept in the order first given.
+    const named = ownersGivenOf(body) || [];
+    const owners: ServiceAccountOwner[] = [];
+    const seen: Record<string, boolean> = {};
+    for (const ownerGiven of named) {
+      const owner = this.directory &&
+                    typeof this.directory.resolveOwner === 'function'
+        ? this.directory.resolveOwner(ownerGiven)
+        : { kind: '', dn: '', name: '' };
       if (owner.kind !== 'person' && owner.kind !== 'group') {
-        log.debug("Leaving ServiceAccounts.check(). The owner names nobody.");
+        log.debug("Leaving ServiceAccounts.check(). An owner names nobody.");
         return this.refusal('STS-SVCACCT-0024', '"' +
           ownerGiven.slice(0, 128) + '" is neither a person nor a group in ' +
           'this realm, so it cannot own a service account.');
@@ -532,11 +614,23 @@ class ServiceAccounts {
         return this.refusal('STS-SVCACCT-0025', 'A service account cannot ' +
           'own itself: the owner is who answers for it.');
       }
-    } else if (this.deps.requiresOwner()) {
+      const key = owner.dn.toLowerCase().replace(/\s*,\s*/g, ',');
+      if (!seen[key]) {
+        seen[key] = true;
+        owners.push({ dn: owner.dn, kind: owner.kind, name: owner.name });
+      }
+    }
+    if (owners.length > MAX_OWNERS) {
+      log.debug("Leaving ServiceAccounts.check(). Too many owners.");
+      return this.refusal('STS-SVCACCT-0031', 'A service account may name ' +
+        'at most ' + MAX_OWNERS + ' owners, and ' + owners.length + ' were ' +
+        'given. Make a group of them and name the group.');
+    }
+    if (!owners.length && this.deps.requiresOwner()) {
       log.debug("Leaving ServiceAccounts.check(). No owner.");
       return this.refusal('STS-SVCACCT-0023', 'This realm\'s ' +
         'service-account policy requires an owner — a person or a group ' +
-        'answerable for the account. Name one in `owner`.');
+        'answerable for the account. Name at least one in `owners`.');
     }
     // THE DESTINATION AND THE SECRET'S NAME, both or neither.
     const destination = String(body.destination == null ? ''
@@ -568,7 +662,7 @@ class ServiceAccounts {
       }
     }
     log.debug("Leaving ServiceAccounts.check(). Allowed.");
-    return { ok: true as const, owner: owner, destination: destination,
+    return { ok: true as const, owners: owners, destination: destination,
              secretName: secretName };
   }
 
@@ -577,13 +671,14 @@ class ServiceAccounts {
    * again.
    *
    * `serviceAccount` false clears every attribute this module writes, the
-   * previous password and the rotation state included. Otherwise `owner` (a
-   * DN, username or group name — required while the policy's `requireOwner`
-   * is on), and `destination` (an application entry's DN) with `secretName`,
-   * both or neither.
+   * previous password and the rotation state included. Otherwise `owners` —
+   * the WHOLE list, which replaces what the account names; each a DN,
+   * username or group name, at least one while the policy's `requireOwner`
+   * is on (#600) — and `destination` (an application entry's DN) with
+   * `secretName`, both or neither.
    *
    * @param username - the person
-   * @param given - `serviceAccount`, `owner`, `destination`, `secretName`
+   * @param given - `serviceAccount`, `owners`, `destination`, `secretName`
    * @returns `{ ok: true, account, changed }`, or a refusal with a code
    */
   set(username: unknown, given: Record<string, any>) {
@@ -611,7 +706,7 @@ class ServiceAccounts {
     }
     const was = ServiceAccounts.isServiceAccount(found.values);
     if (!this.truthy(body.serviceAccount)) {
-      const changes: Record<string, string | null> = {};
+      const changes: Record<string, string | string[] | null> = {};
       ATTRIBUTES.forEach(function (name) {
         changes[name] = null;
       });
@@ -631,12 +726,16 @@ class ServiceAccounts {
       log.debug("Leaving ServiceAccounts.set(). Refused by the checks.");
       return checked;
     }
-    const owner = checked.owner;
+    const owners = checked.owners;
     const destination = checked.destination;
     const secretName = checked.secretName;
-    const changes: Record<string, string | null> = {
+    const changes: Record<string, string | string[] | null> = {
       stsServiceAccount: 'TRUE',
-      stsServiceAccountOwner: owner.dn || null,
+      stsServiceAccountOwner: owners.length
+        ? owners.map(function (one) {
+          return one.dn;
+        })
+        : null,
       stsSecretDestination: destination || null,
       stsSecretName: secretName || null
     };
@@ -647,7 +746,9 @@ class ServiceAccounts {
     }
     log.info('service_accounts: ' + found.username + ' is ' +
              (was ? 'still' : 'now') + ' a service account, owned by ' +
-             (owner.dn || 'nobody') + (destination ? ', pushing to ' +
+             (owners.length ? owners.map(function (one) {
+               return one.dn;
+             }).join('; ') : 'nobody') + (destination ? ', pushing to ' +
              destination : '') + '.');
     log.debug("Leaving ServiceAccounts.set(). Written.");
     return { ok: true, account: this.of(found.dn), changed: !was,
@@ -659,7 +760,8 @@ class ServiceAccounts {
   // there is one writer of these attributes.
   // -------------------------------------------------------------------------
   private writeState(username: unknown,
-                     changes: Record<string, string | null>): boolean {
+                     changes: Record<string, string | string[] | null>):
+      boolean {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.writeState().");
     const found = this.read(username);
@@ -818,6 +920,7 @@ export = {
   OBJECT_CLASS: ServiceAccounts.OBJECT_CLASS,
   ATTRIBUTES: ServiceAccounts.ATTRIBUTES,
   SECRET_ATTRIBUTES: ServiceAccounts.SECRET_ATTRIBUTES,
+  MAX_OWNERS: ServiceAccounts.MAX_OWNERS,
   SCHEMA: ServiceAccounts.SCHEMA,
   isServiceAccount: ServiceAccounts.isServiceAccount,
   setDirectory: slot.forward('setDirectory'),

@@ -139,6 +139,9 @@ import serverProse = require('../common/server_prose');
 import PageLocale = require('../common/page_locale');
 import oidcRp = require('../common/oidc_rp');
 import lingeringClose = require('../common/lingering_close');
+// A service account's owner bound, which the document states (#600). A
+// library: the actions layer loaded it long before this module.
+import serviceAccounts = require('../common/service_accounts');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
@@ -4560,7 +4563,8 @@ class AdminApi {
         summary: 'Every service account and the state of its rotation',
         description: 'Every service account in this realm (#221) — a person ' +
                      'entry carrying `stsServiceAccount` — paged in ' +
-                     '`accounts`, each with `username`, `owner`, ' +
+                     '`accounts`, each with `username`, `owners` (each ' +
+                     '`{ dn, kind, name }`, #600), ' +
                      '`destination`, `secretName`, `rotatedAt`, ' +
                      '`previousPasswordUntil` (the overlap) and `rotation` ' +
                      '(`rotates`, `nextDueAt`, `failures`, `lastError`, ' +
@@ -6221,9 +6225,11 @@ class AdminApi {
         // would leave the console suite unable to tell that page's Create
         // button from a control that reaches nothing. A THIRD since
         // 2026-10-01: a person's field grid posts to /admin/users/edit, which
-        // reaches `update-fields` here.
-        mirrors: 'POST /admin/users, POST /admin/users/new and POST ' +
-                 '/admin/users/edit',
+        // reaches `update-fields` here. A FOURTH since #600: a person's
+        // service account form posts to /admin/users/service-account, whose
+        // Save reaches `set-service-account` with the owners table.
+        mirrors: 'POST /admin/users, POST /admin/users/new, POST ' +
+                 '/admin/users/edit and POST /admin/users/service-account',
         handler: function (req, res) {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
@@ -6477,16 +6483,20 @@ class AdminApi {
                                     'SERVICE ACCOUNT (#221): a person entry ' +
                                     'carrying `stsServiceAccount`, governed ' +
                                     'by the realm\'s service-account ' +
-                                    'policy. `owner`, and `destination` with ' +
+                                    'policy. `owners`, and `destination` with ' +
                                     '`secretName`, are read with it, and ' +
                                     'checked BEFORE the person is created — ' +
                                     'a refusal creates nobody.' },
-                owner: { type: 'string',
-                         description: 'With `serviceAccount`: the person or ' +
-                                      'group answerable for it — a DN, a ' +
-                                      'username or a group\'s cn. Required ' +
-                                      'while the policy\'s `requireOwner` is ' +
-                                      'on (the default).' },
+                owners: { type: ['array', 'string'],
+                          items: { type: 'string' },
+                          description: 'With `serviceAccount`: the people ' +
+                                       'and groups answerable for it ' +
+                                       '(#600) — each a DN, a username or ' +
+                                       'a group\'s cn; an array, or a ' +
+                                       'string of one per line. At least ' +
+                                       'one while the policy\'s ' +
+                                       '`requireOwner` is on (the ' +
+                                       'default).' },
                 destination: { type: 'string',
                                description: 'With `serviceAccount`: the DN ' +
                                             'of the push destination (an ' +
@@ -7230,9 +7240,13 @@ class AdminApi {
                          '(not by default), which password doors open, and ' +
                          'whether its password rotates and is pushed to a ' +
                          'secrets manager.\n\n`serviceAccount` true (the ' +
-                         'default) sets or changes it: `owner`, a person or ' +
-                         'group in this realm, is required while the ' +
-                         'policy\'s `requireOwner` is on; `destination`, a ' +
+                         'default) sets or changes it: `owners`, the WHOLE ' +
+                         'list of the people and groups in this realm who ' +
+                         'answer for it (#600) — it replaces the list the ' +
+                         'account names, at most ' +
+                         serviceAccounts.MAX_OWNERS + ', at least one ' +
+                         'while the policy\'s `requireOwner` is on; ' +
+                         '`destination`, a ' +
                          'push destination\'s DN, and `secretName` go ' +
                          'together. `serviceAccount` false makes them an ' +
                          'ordinary person again and clears the owner, the ' +
@@ -7256,10 +7270,16 @@ class AdminApi {
                                                'service account (the ' +
                                                'default); false makes them ' +
                                                'a person again.' },
-                owner: { type: 'string',
-                         description: 'The person or group answerable for ' +
-                                      'the account: a DN, a username or a ' +
-                                      'group\'s cn.' },
+                owners: { type: ['array', 'string'],
+                          items: { type: 'string' },
+                          description: 'The people and groups answerable ' +
+                                       'for the account (#600), each a DN, ' +
+                                       'a username or a group\'s cn: an ' +
+                                       'array, or a string of one per ' +
+                                       'line. It REPLACES the owners the ' +
+                                       'account names; absent or empty is ' +
+                                       'none, refused while the policy ' +
+                                       'requires an owner.' },
                 destination: { type: 'string',
                                description: 'The DN of the push destination ' +
                                             '(an application entry).' },
@@ -7270,8 +7290,8 @@ class AdminApi {
               },
               required: ['user'],
               examples: [{ user: 'svc-backup', serviceAccount: true,
-                           owner: 'cn=operations,ou=groups,dc=example,' +
-                                  'dc=com' }],
+                           owners: ['cn=operations,ou=groups,dc=example,' +
+                                    'dc=com', 'alice'] }],
               additionalProperties: false
             },
             responseDescription: 'The account as it now stands (`account`), ' +

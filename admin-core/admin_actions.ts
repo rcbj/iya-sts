@@ -478,8 +478,9 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // person answers.
   'answer-ciba-request',
   // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
-  // person one (`serviceAccount` true, the default), changes its `owner`,
-  // `destination` and `secretName`, or makes it a person again
+  // person one (`serviceAccount` true, the default), changes its `owners`
+  // (#600: the whole list), `destination` and `secretName`, or makes it a
+  // person again
   // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
   // it; where the realm's policy refuses a service account every browser
   // sign-in, becoming one ends the person's sessions. `rotate-password`
@@ -2884,16 +2885,26 @@ class AdminActions {
       : this.truthy(body.serviceAccount);
     const result = serviceAccounts.set(who, {
       serviceAccount: wanted,
-      owner: body.owner,
+      owners: body.owners,
       destination: body.destination,
       secretName: body.secretName
     });
+    const ownersOf = function (account) {
+      log.debug("Entering ownersOf().");
+      log.debug("Leaving ownersOf().");
+      return ((account && account.owners) || []).map(function (one) {
+        return one.dn;
+      });
+    };
     audited(wanted ? 'admin.service-account.set'
                    : 'admin.service-account.cleared',
             (result.ok ? '' : 'could not ') +
             (wanted ? 'make ' + who + ' a service account'
                     : 'make ' + who + ' an ordinary person again'),
-            { owner: String(body.owner || ''),
+            { owners: result.ok ? ownersOf((result as any).account)
+                                : [].concat(body.owners == null ? []
+                                                               : body.owners)
+                                    .map(String),
               destination: String(body.destination || ''),
               secretName: String(body.secretName || ''),
               errors: result.ok ? undefined
@@ -2916,8 +2927,9 @@ class AdminActions {
              signedOut: signedOut,
              message: wanted
                ? who + ' is ' + (done.changed ? 'now' : 'still') + ' a ' +
-                 'service account' + (done.account && done.account.owner
-                   ? ', owned by ' + done.account.owner : '') + '.' +
+                 'service account' + (ownersOf(done.account).length
+                   ? ', owned by ' + ownersOf(done.account).join('; ')
+                   : '') + '.' +
                  (signedOut ? ' This realm refuses a service account every ' +
                    'browser sign-in, so their sessions were ended.' : '')
                : who + ' is an ordinary person' +
@@ -3673,7 +3685,7 @@ class AdminActions {
       if (asServiceAccount) {
         const { serviceAccounts } = this.deps;
         const flagged = serviceAccounts.set(result.username, {
-          serviceAccount: true, owner: body.owner,
+          serviceAccount: true, owners: body.owners,
           destination: body.destination, secretName: body.secretName });
         answer.serviceAccount = !!flagged.ok;
         if (!flagged.ok) {
@@ -3685,7 +3697,10 @@ class AdminActions {
             actor: (body.actor || ''), target: result.username,
             outcome: 'success',
             summary: result.username + ' was created as a service account',
-            detail: { owner: String(body.owner || ''),
+            detail: { owners: (((flagged as any).account || {}).owners ||
+                               []).map(function (one) {
+                        return one.dn;
+                      }),
                       destination: String(body.destination || ''),
                       via: ctx.via }
           });
