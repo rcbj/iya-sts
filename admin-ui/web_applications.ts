@@ -1828,7 +1828,7 @@ class ApplicationsPage {
             '<h3>' + t.html('consoleSaml.meta.title') + '</h3>' +
             kit.note(t.html('consoleSaml.meta.consumeNote')) +
             '<form method="post" action="/admin/saml2#cfg-' + family +
-            '" enctype="multipart/form-data">' +
+            '" enctype="multipart/form-data">' + carryBack +
             '<input type="hidden" name="action" value="upload-metadata">' +
             '<input type="hidden" name="family" value="' + family + '">' +
             '<input type="hidden" name="sp" value="' +
