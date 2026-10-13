@@ -1,24 +1,4 @@
 {
-  "endpoints.route./krb5/principals.name": {
-    "en": "533f66256ae25c27",
-    "text": "Vad KDC:n känner till"
-  },
-  "endpoints.route./krb5/service.name": {
-    "en": "591e0168bdd0f251",
-    "text": "Den skyddade tjänsten"
-  },
-  "endpoints.route./spnego.name": {
-    "en": "23bfd6168fa5fd44",
-    "text": "En SPNEGO-skyddad sida annonseras här"
-  },
-  "endpoints.route./spnego/pages.js.name": {
-    "en": "f32f6a1508ae1e7b",
-    "text": "SPNEGO-sidornas skript"
-  },
-  "endpoints.route./spnego/protected.name": {
-    "en": "8c763f4b490426dd",
-    "text": "Den skyddade resursen"
-  },
   "endpoints.route./xacml.name": {
     "en": "1184e17250970dab",
     "text": "Vad XACML-ytan är"
@@ -2054,10 +2034,6 @@
   "endpoints.socket.kdcRealm": {
     "en": "bf03c3bc314da5cf",
     "text": "Key Distribution Center (sfär {{realm}})"
-  },
-  "endpoints.socket.krb5Service": {
-    "en": "a510f49fab5cf00e",
-    "text": "Den skyddade Kerberos-tjänsten (AP-REQ)"
   },
   "endpoints.socket.mainPort": {
     "en": "6b11a59c1fd5cd82",

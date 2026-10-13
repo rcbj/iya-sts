@@ -724,12 +724,12 @@
     "text": "Existen los endpoints de demostración y de control de pruebas"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "3984f2e4ba94f429",
-    "text": "Se sirven y se listan: los endpoints de prueba de VC-API, el servicio Kerberos protegido (/krb5/service y su socket TCP), /krb5/principals, /spnego y /spnego/protected."
+    "en": "e91d15ca7620fc31",
+    "text": "Se sirven y se listan: los endpoints de prueba de VC-API."
   },
   "mode.requirements.demo-endpoints.product": {
-    "en": "b82d8439b897527e",
-    "text": "Ninguno se sirve ni se lista. Cada uno responde exactamente como lo hace una ruta en la que no hay nada registrado — el propio 404 de Express \"Cannot GET\" — y ninguna página de metadatos, página de la consola, documento o línea de registro nombra ninguno. Un dominio de desarrollo dentro de un proceso de producto los conserva, salvo el socket del servicio protegido, que pertenece al proceso. Las puertas administrativas se mantienen: /admin-api inicia una verificación, lee los principales y cambia el almacén de confianza, y el portal de usuario hace una oferta de credencial."
+    "en": "65526c68ee1acd20",
+    "text": "Ninguno se sirve ni se lista. Cada uno responde exactamente como lo hace una ruta en la que no hay nada registrado — el propio 404 de Express \"Cannot GET\" — y ninguna página de metadatos, página de la consola, documento o línea de registro nombra ninguno. Un dominio de desarrollo dentro de un proceso de producto los conserva. Las puertas administrativas se mantienen: /admin-api inicia una verificación, lee los principales y cambia el almacén de confianza, y el portal de usuario hace una oferta de credencial."
   },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",

@@ -32,8 +32,8 @@
     "text": "partial：从内置的 protos 提供六个服务、42 个方法，其中 36 个已实现。未实现的六个各自应答一个原因——AppendBundle 和 PublishJWTAuthority（它们会发布本服务器不持有密钥的颁发机构）、RefreshBundle（它会获取某人注册的 URL），以及三个 WIT 方法。调用方会经过身份验证和授权：TCP 端口使用双向 TLS，调用方的 SPIFFE ID 取自其 X509-SVID 的 URI SAN 并针对信任包验证，每个方法都按 SPIRE 自己的 policy_data.json（local、agent、admin、downstream）检查，Unix 套接字被视为 `local` 而受信任，正如真实的 spire-server 信任其私有套接字一样。RenewAgent 正因此不再是未实现的：它为该连接上的代理续期。没有任何设置可以恢复旧的状态——那时端口是明文的，任何能访问到它的人都可以创建授予任意身份的注册条目：spiffe.authRequired 已于 2026-09-06 移除。"
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "df72e1139e447029",
-    "text": "partial：通过 TCP、UDP 和 MS-KKDCP 进行的 AS 和 TGS 交换，包括预身份验证（PA-ENC-TIMESTAMP）、携带盐值的 PA-ETYPE-INFO2、票据标志、时钟偏差强制检查以及错误目录。两个彼此信任的领域，因此跨领域引荐可以工作。FAST 和 OTP 预身份验证各有其行（RFC 6113、RFC 6560），PKINIT 也是（RFC 4556）；没有请求签名，没有 kpasswd（S4U 属于 [MS-SFU]，有其自己的行）。AP 交换属于受保护的服务，不在这里。任何用户名都能通过身份验证，且每个用户账户共享同一个密码，GET /krb5/principals 会公布它：预身份验证是真正验证的（密码就是密钥，所以必须如此），但每个人的密码都相同，未知用户名会被当场创建而不是被拒绝。这就是开发模式。在产品模式下，固定测试账户、第二个领域和每条委托规则都不存在，不会按需创建任何内容，不公布任何密码，所配置的服务账户只有在 krb5.servicePassword 被设为其公布的默认值以外的值时才存在，并且每个领域的 krbtgt 密钥是随机的，密封保存在目录中，由 krb5.krbtgt-rotate 作业轮换（krb5.krbtgtRotationIntervalDays），被替换的版本会保留，时长为在其下签发的 TGT 最长可存活的时间；“轮换并作废”则什么都不保留。目前没有标准化的后量子 Kerberos 加密类型，因此轮换使用 AES 加密类型。产品模式的 KDC 使用从目录中人员自己的密码派生的密钥对他们进行身份验证（在他们登录一次之后），使用运营方创建的随机密钥对服务主体进行身份验证；持有或必须持有第二因素的人仅凭密码得不到任何票据（在密码验证通过之后返回 KDC_ERR_POLICY）——只能通过带 OTP 预身份验证的 FAST，或通过 PKINIT 使用证书。"
+    "en": "f830c0cae35e4109",
+    "text": "partial：通过 TCP、UDP 和 MS-KKDCP 进行的 AS 和 TGS 交换，包括预身份验证（PA-ENC-TIMESTAMP）、携带盐值的 PA-ETYPE-INFO2、票据标志、时钟偏差强制检查以及错误目录。两个彼此信任的领域，因此跨领域引荐可以工作。FAST 和 OTP 预身份验证各有其行（RFC 6113、RFC 6560），PKINIT 也是（RFC 4556）；没有请求签名，没有 kpasswd（S4U 属于 [MS-SFU]，有其自己的行）。AP 交换属于接受方（SPNEGO），不在这里。任何用户名都能通过身份验证，且每个用户账户共享同一个密码，设置 krb5.userPassword 会公布它：预身份验证是真正验证的（密码就是密钥，所以必须如此），但每个人的密码都相同，未知用户名会被当场创建而不是被拒绝。这就是开发模式。在产品模式下，固定测试账户、第二个领域和每条委托规则都不存在，不会按需创建任何内容，不公布任何密码，所配置的服务账户只有在 krb5.servicePassword 被设为其公布的默认值以外的值时才存在，并且每个领域的 krbtgt 密钥是随机的，密封保存在目录中，由 krb5.krbtgt-rotate 作业轮换（krb5.krbtgtRotationIntervalDays），被替换的版本会保留，时长为在其下签发的 TGT 最长可存活的时间；“轮换并作废”则什么都不保留。目前没有标准化的后量子 Kerberos 加密类型，因此轮换使用 AES 加密类型。产品模式的 KDC 使用从目录中人员自己的密码派生的密钥对他们进行身份验证（在他们登录一次之后），使用运营方创建的随机密钥对服务主体进行身份验证；持有或必须持有第二因素的人仅凭密码得不到任何票据（在密码验证通过之后返回 KDC_ERR_POLICY）——只能通过带 OTP 预身份验证的 FAST，或通过 PKINIT 使用证书。"
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -710,26 +710,6 @@
   "stsmetadata.endpoints./KdcProxy.what": {
     "en": "39d7480d625c43d6",
     "text": "将 KDC-PROXY-MESSAGE 中继给本进程中监听 TCP 和 UDP 端口 88 的 KDC。浏览器无法打开原始套接字，因此浏览器内的客户端通过此端点在不经 api 中继的情况下访问 KDC。"
-  },
-  "stsmetadata.endpoints./krb5/principals.what": {
-    "en": "e857357e62157f67",
-    "text": "两个领域的主体数据库：名称、盐值（它们无法从主体名称推导出来，这正是 PA-ETYPE-INFO2 存在的原因）、提供的 etype、刻意设置的错误配置，以及每个账户携带的 PAC 身份。还有账户策略——任何用户名都能通过身份验证，所有用户共享一个密码，而这里就是写下该密码的地方。这不是真正的 Kerberos 端点——KDC 不会发布其中任何内容。"
-  },
-  "stsmetadata.endpoints./krb5/service.what": {
-    "en": "0dd3e8c8492058d0",
-    "text": "AP-REQ 接受方是什么、其原始 TCP 套接字在哪里监听，以及它对票据依次执行的检查。这同样不是真正的 Kerberos 端点。"
-  },
-  "stsmetadata.endpoints./spnego.what": {
-    "en": "fcacaf13e1689e84",
-    "text": "说明 /spnego/protected 存在、其背后是哪个服务主体名称、接受哪些机制，以及哪些查询开关会让协商以某种特定方式失败。这些都不在协议交换本身之中——客户端必须从 URL 推导出 SPN，并从自己的配置中找到 KDC，这就是为什么如此多的 SPNEGO 失败在线路上不留任何痕迹。添加 ?format=json。"
-  },
-  "stsmetadata.endpoints./spnego/pages.js.what": {
-    "en": "98f0627014fe9965",
-    "text": "NON-SPEC (#583)。两个 SPNEGO 演示页面的运行时和渲染器，打包为由 build-typescript.sh 构建的单个文件（kerberos/spnego-pages-spa.js），并以预压缩形式提供：它根据每个外壳携带的状态绘制 /spnego，以及 /spnego/protected 给出的每个应答的正文。协商的状态码及其 WWW-Authenticate 响应头不在它绘制的内容之列。"
-  },
-  "stsmetadata.endpoints./spnego/protected.what": {
-    "en": "65103e3f5c4a9682",
-    "text": "对未经身份验证的请求以 401 和一个单独的 “WWW-Authenticate: Negotiate” 应答，对有效请求以 200 并在该头部中携带 AP-REP 应答。Kerberos 检查由 krb5_service.js 执行，未作改动——此端点只增加了协商和承载协商的 HTTP，没有自己的协议代码。"
   },
   "stsmetadata.endpoints./xacml.what": {
     "en": "c6327138add686ae",
@@ -2376,8 +2356,8 @@
     "text": "询问要在应用的哪个联合身份提供方处登录；需要 ?authn= id，因此不带参数访问时应答 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "827e8510ccf17768",
-    "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由 /spnego/protected 使用的同一个接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使开发模式保持宽松的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，应用条目上的 appAuthnMechanism: spnego 会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
+    "en": "23818b4a272ea292",
+    "text": "集成认证，也是此处唯一一个依赖本服务真正验证过的凭据的登录。在其他地方，所输入的用户名就是身份；Kerberos 无法这样工作，因为那里的密码就是密钥——所以这个入口会针对真实的长期密钥检查真实的服务票据，经由本服务自己的接受方，且没有任何自己的协议代码。其背后的 KDC 仍然在协议允许的范围内尽可能宽松（任意用户名、一个共享密码、首次见到时创建账户），这正是使开发模式保持宽松的原因——验证是真的，账户策略不是。它对每个应用都可用，且不为任何应用注册：/authn/login 上的按钮为任何正在进行的流程提供它，应用条目上的 appAuthnMechanism: spnego 会将该应用的人员直接送到这里，而身份提供方一侧联合关系上的 fedAuthnMechanism: spnego 则使 Kerberos 票据能满足一个从未听说过 Kerberos 的外部合作方。会话随后声明的内容读取自票据自身的标志——pre-authent 对应 amr [\"pwd\"]，hw-authent 对应 [\"hwk\"]，两者都有则两者都声明，两者都不声明的票据则什么都不声明，因为本服务不会说出任何凭据都未证明的因素。它接受 ?authn=，绝不接受 returnTo：返回地址在待处理记录上，因此这里完全没有开放重定向的攻击面。无法获取票据的客户端会看到一个链接到登录界面的页面，因为对于未针对此主机配置的每个浏览器来说，单纯的 401 Negotiate 都是死路。krb5.spnegoAuthentication 可将其关闭，届时它应答 403 并说明这一点，而不是 404。"
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -3320,28 +3300,20 @@
     "text": "在 /sts 上基于 SOAP 的 RST / RSTR，支持全部四个版本（1.0 至 1.4），颁发任一种 SAML 方言，断言已签名，并可选加密给请求方的证书。"
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "73e20c397fc290ee",
-    "text": "一个 KDC：AS-REQ / TGS-REQ、预认证、四种加密类型、票据中的 Microsoft PAC、跨领域引荐和约束委派。此页面上的行是它的 HTTP 视图及其 MS-KKDCP 代理，该代理之所以存在，是因为浏览器无法打开套接字。"
+    "en": "3048c833f899933d",
+    "text": "一个 KDC：AS-REQ / TGS-REQ、预身份验证、四种加密类型、票据中的 Microsoft PAC、跨领域引用以及受约束委派。本页上的这一行是它的 MS-KKDCP 代理，之所以存在，是因为浏览器无法打开套接字。"
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
     "text": "KDC 本身使用 TCP 和 UDP 端口 88，此页面看不到它。"
   },
-  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
-    "en": "3048c833f899933d",
-    "text": "一个 KDC：AS-REQ / TGS-REQ、预身份验证、四种加密类型、票据中的 Microsoft PAC、跨领域引用以及受约束委派。本页上的这一行是它的 MS-KKDCP 代理，之所以存在，是因为浏览器无法打开套接字。"
-  },
   "stsmetadata.protocols.SPNEGO.what": {
-    "en": "17e95091fc9d97ee",
-    "text": "基于 HTTP 的 Kerberos：/spnego/protected 以 401 WWW-Authenticate: Negotiate 应答，读取浏览器或客户端发回的 NegTokenInit，并针对服务主体的密钥接受其中的 AP-REQ。"
+    "en": "dcf9bfda53ee9570",
+    "text": "基于 HTTP 的 Kerberos：/authn/spnego 应答 401 WWW-Authenticate: Negotiate，读取浏览器发回的 NegTokenInit，用服务主体的密钥接受其中的 AP-REQ，并让其客户端登录（Authentication 组）。"
   },
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "它接受的票据来自端口 88 上的 KDC。"
-  },
-  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
-    "en": "dcf9bfda53ee9570",
-    "text": "基于 HTTP 的 Kerberos：/authn/spnego 应答 401 WWW-Authenticate: Negotiate，读取浏览器发回的 NegTokenInit，用服务主体的密钥接受其中的 AP-REQ，并让其客户端登录（Authentication 组）。"
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",

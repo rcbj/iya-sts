@@ -1,9 +1,4 @@
 {
-  "endpoints.route./krb5/principals.name": "What the KDC knows",
-  "endpoints.route./krb5/service.name": "The protected service",
-  "endpoints.route./spnego.name": "A SPNEGO-protected page is advertised here",
-  "endpoints.route./spnego/pages.js.name": "The SPNEGO pages' script",
-  "endpoints.route./spnego/protected.name": "The protected resource",
   "endpoints.route./xacml.name": "What the XACML surface is",
   "endpoints.route./xacml/description.js.name": "The description page's script",
   "endpoints.route./xacml/pdp.name": "A decision",
@@ -513,7 +508,6 @@
   "endpoints.route./admin-api/scep/:action.name": "Challenges, the RA certificate, revocation and host names",
   "endpoints.socket.kdc": "Key Distribution Center",
   "endpoints.socket.kdcRealm": "Key Distribution Center (realm {{realm}})",
-  "endpoints.socket.krb5Service": "The protected Kerberos service (AP-REQ)",
   "endpoints.socket.mainPort": "Client certificates on the main port",
   "endpoints.socket.mainPortTransport": "TLS (a client certificate asked for, never required)"
 }

@@ -39,14 +39,6 @@
     "en": "3f7729c5149376d6",
     "text": "TCP et UDP 88 ; des messages Kerberos, pas du TLS."
   },
-  "listeners.builtin.krb5-service.name": {
-    "en": "7e652746e02ec2bc",
-    "text": "Service de test Kerberos"
-  },
-  "listeners.builtin.krb5-service.what": {
-    "en": "eae5de4d9754b836",
-    "text": "Le service de test protégé par SPNEGO."
-  },
   "listeners.builtin.revocation.name": {
     "en": "384cb54062bffd4b",
     "text": "Révocation (HTTP simple)"
@@ -304,8 +296,8 @@
     "text": "Kerberos"
   },
   "listeners.applications.kerberos.what": {
-    "en": "49ef797d2558967c",
-    "text": "MS-KKDCP et les vues HTTP de Kerberos."
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP, le KDC Kerberos sur HTTPS."
   },
   "listeners.applications.spiffe.label": {
     "en": "6d5acbdc8de3d29a",

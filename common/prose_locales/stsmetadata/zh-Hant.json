@@ -32,8 +32,8 @@
     "text": "partial：從內建的 protos 提供六項服務、42 個方法，其中 36 個已實作。未實作的六個各自以理由回應——AppendBundle 與 PublishJWTAuthority（它們會發布一個本伺服器未持有金鑰的授權單位）、RefreshBundle（它會擷取某人註冊的 URL），以及三個 WIT 方法。「呼叫端會經過驗證與授權」：TCP 連接埠為相互 TLS，呼叫端的 SPIFFE ID 取自其 X509-SVID 的 URI SAN 並以信任套件組驗證，每個方法都依 SPIRE 自己的 policy_data.json——local、agent、admin、downstream——加以檢查，Unix socket 則如同真正的 spire-server 信任其私有 socket 那樣被信任為 `local`。RenewAgent 也因此不再是未實作：它會更新連線上的代理程式。沒有任何設定能恢復舊的狀態——當時連接埠是純文字的，任何能到達它的人都能建立授予任意身分的註冊項目：spiffe.authRequired 已於 2026-09-06 移除。"
   },
   "stsmetadata.specs.rfc4120.coverage": {
-    "en": "df72e1139e447029",
-    "text": "partial：透過 TCP、UDP 與 MS-KKDCP 的 AS 與 TGS 交換，具備預先驗證（PA-ENC-TIMESTAMP）、攜帶 salt 的 PA-ETYPE-INFO2、票證旗標、時鐘偏差強制執行與錯誤目錄。兩個彼此信任的領域，因此跨領域轉介可以運作。FAST 與 OTP 預先驗證各有其專屬列（RFC 6113、RFC 6560），PKINIT（RFC 4556）亦然；沒有請求簽章，沒有 kpasswd（S4U 屬於 [MS-SFU]，有其專屬列）。AP 交換屬於受保護的服務，而不在此處。「任何」使用者名稱都能通過驗證，且每個使用者帳戶共用「同一個」密碼，由 GET /krb5/principals 公布：預先驗證是真正驗證的（密碼即金鑰，所以必須如此），但每個人的密碼都相同，而且未知的使用者名稱會當場建立而不是被拒絕。「那是開發模式」。在產品模式下，測試用帳戶、第二個領域與每條委派規則都不存在，不會依需求建立任何東西，不會公布任何密碼，已設定的服務帳戶只有在 krb5.servicePassword 設為其公布預設值以外的值時才存在，而每個領域的 krbtgt 金鑰是「隨機」的，密封存放於目錄中，並由 krb5.krbtgt-rotate 工作（krb5.krbtgtRotationIntervalDays）輪替，被取代的版本會保留到其下 TGT 可存活的最長時間；「輪替並使失效」則不保留任何版本。目前沒有標準化的後量子 Kerberos enctype，因此輪替使用 AES enctype。產品模式的 KDC 以衍生自目錄中「人員」自己密碼的金鑰驗證他們（在他們登入一次之後），並以營運者建立的隨機金鑰驗證服務主體；持有或必須持有第二因素的人，僅憑密碼「得不到」票證（在密碼驗證通過後回應 KDC_ERR_POLICY）——只能透過搭配 OTP 預先驗證的 FAST，或透過 PKINIT 使用憑證。"
+    "en": "f830c0cae35e4109",
+    "text": "partial：透過 TCP、UDP 與 MS-KKDCP 的 AS 與 TGS 交換，具備預先驗證（PA-ENC-TIMESTAMP）、攜帶 salt 的 PA-ETYPE-INFO2、票證旗標、時鐘偏差強制執行與錯誤目錄。兩個彼此信任的領域，因此跨領域轉介可以運作。FAST 與 OTP 預先驗證各有其專屬列（RFC 6113、RFC 6560），PKINIT（RFC 4556）亦然；沒有請求簽章，沒有 kpasswd（S4U 屬於 [MS-SFU]，有其專屬列）。AP 交換屬於接受端（SPNEGO），而不在此處。「任何」使用者名稱都能通過驗證，且每個使用者帳戶共用「同一個」密碼，由設定 krb5.userPassword 公布：預先驗證是真正驗證的（密碼即金鑰，所以必須如此），但每個人的密碼都相同，而且未知的使用者名稱會當場建立而不是被拒絕。「那是開發模式」。在產品模式下，測試用帳戶、第二個領域與每條委派規則都不存在，不會依需求建立任何東西，不會公布任何密碼，已設定的服務帳戶只有在 krb5.servicePassword 設為其公布預設值以外的值時才存在，而每個領域的 krbtgt 金鑰是「隨機」的，密封存放於目錄中，並由 krb5.krbtgt-rotate 工作（krb5.krbtgtRotationIntervalDays）輪替，被取代的版本會保留到其下 TGT 可存活的最長時間；「輪替並使失效」則不保留任何版本。目前沒有標準化的後量子 Kerberos enctype，因此輪替使用 AES enctype。產品模式的 KDC 以衍生自目錄中「人員」自己密碼的金鑰驗證他們（在他們登入一次之後），並以營運者建立的隨機金鑰驗證服務主體；持有或必須持有第二因素的人，僅憑密碼「得不到」票證（在密碼驗證通過後回應 KDC_ERR_POLICY）——只能透過搭配 OTP 預先驗證的 FAST，或透過 PKINIT 使用憑證。"
   },
   "stsmetadata.specs.rfc6113.coverage": {
     "en": "a3a867d4d0ef4d0b",
@@ -710,26 +710,6 @@
   "stsmetadata.endpoints./KdcProxy.what": {
     "en": "39d7480d625c43d6",
     "text": "將 KDC-PROXY-MESSAGE 轉送給此程序中接聽 TCP 與 UDP 連接埠 88 的 KDC。瀏覽器無法開啟原始通訊端，因此這是瀏覽器內用戶端不經 api 轉送即可連上 KDC 的方式。"
-  },
-  "stsmetadata.endpoints./krb5/principals.what": {
-    "en": "e857357e62157f67",
-    "text": "兩個領域的主體資料庫：名稱、salt（無法由主體名稱推導，這正是 PA-ETYPE-INFO2 存在的原因）、提供的 etype、刻意的錯誤設定，以及每個帳戶攜帶的 PAC 身分。還有帳戶原則——任何使用者名稱都能通過驗證、所有使用者共用同一個密碼，而這裡就是寫下該密碼的地方。這不是真正的 Kerberos 端點——KDC 不會公開任何這些資訊。"
-  },
-  "stsmetadata.endpoints./krb5/service.what": {
-    "en": "0dd3e8c8492058d0",
-    "text": "AP-REQ 接受器是什麼、其原始 TCP 通訊端在何處接聽，以及它對票證依序套用的檢查。這同樣不是真正的 Kerberos 端點。"
-  },
-  "stsmetadata.endpoints./spnego.what": {
-    "en": "fcacaf13e1689e84",
-    "text": "說明 /spnego/protected 存在、其背後是哪個服務主體名稱、接受哪些機制，以及哪些查詢參數會讓協商以某種特定方式失敗。這些都不在協定交換本身之中——用戶端必須從 URL 推導出 SPN，並從自己的設定找到 KDC，這就是為何許多 SPNEGO 失敗在線路上不留任何證據。加上 ?format=json。"
-  },
-  "stsmetadata.endpoints./spnego/pages.js.what": {
-    "en": "98f0627014fe9965",
-    "text": "NON-SPEC (#583)。兩個 SPNEGO 示範頁面的執行環境和轉譯器，打包為由 build-typescript.sh 建構的單一檔案（kerberos/spnego-pages-spa.js），並以預先壓縮的形式提供：它根據每個外殼攜帶的狀態繪製 /spnego，以及 /spnego/protected 給出的每個回應的本文。協商的狀態碼及其 WWW-Authenticate 標頭不在它繪製的內容之列。"
-  },
-  "stsmetadata.endpoints./spnego/protected.what": {
-    "en": "65103e3f5c4a9682",
-    "text": "對未經驗證的請求回應 401 並附上單純的「WWW-Authenticate: Negotiate」，對有效的請求則回應 200 並在該標頭中附上 AP-REP。Kerberos 檢查是 krb5_service.js 的，未經更動——此端點只加入協商與承載協商的 HTTP，沒有自己的協定程式碼。"
   },
   "stsmetadata.endpoints./xacml.what": {
     "en": "c6327138add686ae",
@@ -2376,8 +2356,8 @@
     "text": "詢問要在應用程式的哪個聯盟身分識別提供者登入；需要 ?authn= id，因此直接開啟會回應 400"
   },
   "stsmetadata.endpoints./authn/spnego.what": {
-    "en": "827e8510ccf17768",
-    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過 /spnego/protected 使用的同一個接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
+    "en": "23818b4a272ea292",
+    "text": "「整合式驗證，也是此處唯一一種建立在本服務真正驗證過之認證上的登入」。在其他各處，輸入的使用者名稱「就是」身分；Kerberos 無法這樣運作，因為在那裡密碼就是金鑰——因此此入口會依真實的長期金鑰檢查真實的服務票證，透過本服務自己的接受器，沒有自己的協定程式碼。其背後的 KDC 仍是協定所允許的最寬鬆程度（任何使用者名稱、一個共用密碼、首次出現時建立帳戶），這讓開發模式保持寬鬆——驗證是真實的，帳戶原則則不是。它「對每個應用程式都可用」，但不為任何應用程式註冊：/authn/login 上的按鈕會為任何正在進行的流程提供它，應用程式項目上的 appAuthnMechanism: spnego 會將該應用程式的使用者直接送來這裡，而身分識別提供者端聯盟關係上的 fedAuthnMechanism: spnego 則讓 Kerberos 票證能滿足一個從未聽說過 Kerberos 的外部合作夥伴。工作階段隨後宣告的內容讀取自「票證」本身的旗標——pre-authent 為 amr [\"pwd\"]，hw-authent 為 [\"hwk\"]，兩者皆有則兩者皆列，兩者皆未宣告的票證則什麼都沒有，因為本服務不會指名任何認證都未證明的要素。它接受 ?authn=，「絕不」接受 returnTo：返回位址在待處理記錄上，因此這裡完全沒有開放式重新導向的攻擊面。無法取得票證的用戶端會看到一個連結至登入畫面的頁面，因為單純的 401 Negotiate 在每個未針對此主機設定的瀏覽器中都是死路。krb5.spnegoAuthentication 可將其關閉，此時它會回應 403 並說明，而非 404。"
   },
   "stsmetadata.endpoints./authn/spnego.effect": {
     "en": "a4ec6fd15c1f1f70",
@@ -3320,28 +3300,20 @@
     "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言，判斷提示已簽署，並可選擇加密給請求者的憑證。"
   },
   "stsmetadata.protocols.Kerberos.what": {
-    "en": "73e20c397fc290ee",
-    "text": "KDC：AS-REQ / TGS-REQ、預先驗證、四種加密類型、票證中的 Microsoft PAC、跨領域轉介與限制委派。此頁面上的列是其 HTTP 檢視與其 MS-KKDCP 代理，後者之所以存在，是因為瀏覽器無法開啟通訊端。"
+    "en": "3048c833f899933d",
+    "text": "一個 KDC：AS-REQ / TGS-REQ、預先驗證、四種加密類型、票證中的 Microsoft PAC、跨領域轉介以及受限委派。本頁上的這一列是它的 MS-KKDCP 代理，之所以存在，是因為瀏覽器無法開啟通訊端。"
   },
   "stsmetadata.protocols.Kerberos.sockets": {
     "en": "4505d4e4ca3cd818",
     "text": "KDC 本身位於 TCP 與 UDP 連接埠 88，此頁面看不到。"
   },
-  "stsmetadata.protocols.Kerberos.whatWithoutDemos": {
-    "en": "3048c833f899933d",
-    "text": "一個 KDC：AS-REQ / TGS-REQ、預先驗證、四種加密類型、票證中的 Microsoft PAC、跨領域轉介以及受限委派。本頁上的這一列是它的 MS-KKDCP 代理，之所以存在，是因為瀏覽器無法開啟通訊端。"
-  },
   "stsmetadata.protocols.SPNEGO.what": {
-    "en": "17e95091fc9d97ee",
-    "text": "透過 HTTP 的 Kerberos：/spnego/protected 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器或用戶端送回的 NegTokenInit，並依服務主體的金鑰接受其中的 AP-REQ。"
+    "en": "dcf9bfda53ee9570",
+    "text": "透過 HTTP 的 Kerberos：/authn/spnego 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器傳回的 NegTokenInit，以服務主體的金鑰接受其中的 AP-REQ，並讓其用戶端登入（Authentication 群組）。"
   },
   "stsmetadata.protocols.SPNEGO.sockets": {
     "en": "1cf21dccb7134b10",
     "text": "它接受的票證來自連接埠 88 上的 KDC。"
-  },
-  "stsmetadata.protocols.SPNEGO.whatWithoutDemos": {
-    "en": "dcf9bfda53ee9570",
-    "text": "透過 HTTP 的 Kerberos：/authn/spnego 回應 401 WWW-Authenticate: Negotiate，讀取瀏覽器傳回的 NegTokenInit，以服務主體的金鑰接受其中的 AP-REQ，並讓其用戶端登入（Authentication 群組）。"
   },
   "stsmetadata.protocols.SPIFFE.what": {
     "en": "cfbf16100557b1ef",
