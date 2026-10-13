@@ -328,6 +328,34 @@ secret every time.
 asks `stats.userRow(key)`, which runs the same builder for that key only, and
 `knownUserKeys()` — nine pages' "can this member's name be a link" — asks
 `stats.userKeys()` instead of building every row to read their keys.
+
+**THE HEADLINE IS A COUNT AND THE LIST IS CAPPED, AND THEY ARE TWO NUMBERS
+(#610, 2026-10-13).** With a bulk load running into 8081, `/admin/users`
+said 7,014 people while the directory held 25,000: the tile was `known`,
+the length of the LIST — at most `credentials.factorScanLimit` directory
+names united with the register's — and `scanned`, the only count of the
+directory, was the length of `persons()`, every name listed to be counted.
+rcbj wanted the number defined without a full scan, and refused both a
+larger cap and listing everybody. So the population asks the directory two
+questions instead (population hooks `personCount` and `personNamesUpTo`,
+beside `credentialCensus`): how many people it defines — `directoryPeople`
+on `/admin-api/users` and `/admin-api/mfa`, the page's first tile — and the
+first `scanLimit` names with whether there were more (`capped`); `scanned`
+is now how many names the list read. Every Directory page counts its
+container the same way, `ldap_server.js`'s `countUnderContainer()`
+(`ldap/CLAUDE.md`, *the window*): the store's `count(*)` at most ten
+seconds old in a windowed process, the realm's keys walked otherwise. A
+capped list in a windowed process is the first names in the STORE's key
+order, which under a non-C collation is not `persons()`'s prefix — the
+page says it is a capped subset, and which subset is the store's.
+
+The other Directory pages were audited for the same fault on that day and
+had none: none caps its list, so its count is its list's length, and only
+devices and groups grow with the directory. Devices' `total` was already a
+count and is now `countUnderContainer()`'s; their ROWS are still the whole
+of `ou=devices` paged per request in a windowed process, which is a listing
+to bound, not a count to fix. Groups are walked because a group may sit
+anywhere (`groupRuleFor()`), and the walk is the list.
 `/admin/sessions` asks `stats.issuedArtifactsOfKind('Kerberos TGT')` for the
 tickets rather than building `issuedList()`.
 

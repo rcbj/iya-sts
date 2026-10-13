@@ -494,6 +494,21 @@ function lookups(t) {
   t.equal(o.w.capCount('default'), 1 + 4,
           'D2-9. capCount() is the realm\'s: resident plus the store\'s ' +
           'windowed count and this process\'s net');
+  // #610: a container's count held for a page's headline — the store's
+  // reading and this process's own net since, read again only when it is
+  // more than ten seconds old.
+  t.equal(o.w.recentCountUnder('default', USERS), 3,
+          'D2-10. recentCountUnder() first reads what countUnder() does');
+  rows.set('default\nuid=other,' + USERS,
+           row('default', 'uid=other,' + USERS, person('other')));
+  f.set('uid=late,' + USERS, { dn: 'uid=late,' + USERS,
+                               attributes: person('late') });
+  t.equal(o.w.recentCountUnder('default', USERS), 4,
+          'D2-11. and while it is held, moves with this process\'s own ' +
+          'create at once — another process\'s row waits for the next ' +
+          'reading');
+  t.equal(o.w.countUnder('default', USERS), 5,
+          'D2-12. where countUnder() asks the store every time');
   o.w.collect(new Set());
   log.debug("Leaving lookups().");
 }
