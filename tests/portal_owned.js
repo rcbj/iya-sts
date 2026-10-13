@@ -21,6 +21,10 @@
 //      each is theirs, and a sentence for none.
 //   C. THE OPERATIONS: four GETs under /account-api/owned, each mirroring
 //      its portal page, for the person alone.
+//   D. ONE OF THEM, ADMINISTERED (#607): a row opens its page unless it is
+//      closed to its owners; the page is read from /admin-api, and its forms
+//      post there — the controls an owner may use, none on a read-only
+//      token, no Remove on the last owner, a refusal drawn.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -174,6 +178,82 @@ function theColumnAndOperations(t) {
   log.debug('Leaving theColumnAndOperations().');
 }
 
+function theOwnerPages(t) {
+  log.debug('Entering theOwnerPages().');
+  const ctx = function (here) {
+    return { t: kit.context().t, query: {}, here: here };
+  };
+  const has = function (html, text) {
+    return html.indexOf(text) >= 0;
+  };
+  const list = OwnedPages.render({ kind: 'roles', paging: { page: 1,
+    pages: 1 }, rows: [
+      { name: 'open-one', id: 'open-one', closed: false,
+        via: { you: true, groups: [] } },
+      { name: 'closed-one', id: 'closed-one', closed: true,
+        via: { you: true, groups: [] } }] }, ctx('/portal/owned/roles'));
+  t.check(has(list, 'href="/portal/owned/roles?name=open-one"') &&
+          !has(list, '?name=closed-one'),
+          'D1. a row opens its page; one closed to its owners does not',
+          list.slice(0, 600));
+  const owners = [{ dn: 'uid=a,ou=users,dc=x', kind: 'person', name: 'a' },
+                  { dn: 'uid=b,ou=users,dc=x', kind: 'person', name: 'b' }];
+  const role = function (canWrite, ownerList) {
+    return OwnedPages.render({ owned: { status: 200, canWrite: canWrite,
+      query: { name: 'r' }, answer: { role: { name: 'r', users: ['bob'],
+        groups: [], applications: [], owners: ownerList } } } },
+      ctx('/portal/owned/roles?name=r'));
+  };
+  const writable = role(true, owners);
+  t.check(['/admin-api/roles/describe-role', '/admin-api/roles/add-member',
+           '/admin-api/roles/remove-member', '/admin-api/roles/add-owner',
+           '/admin-api/roles/remove-owner'].every(function (op) {
+    return has(writable, 'data-admin="' + op + '"');
+  }), 'D2. a role\'s page posts each control to its /admin-api operation',
+  writable.slice(0, 600));
+  t.check(!has(role(false, owners), 'data-admin='),
+          'D3. a read-only token draws no form');
+  t.check(!has(role(true, owners.slice(0, 1)),
+               'data-admin="/admin-api/roles/remove-owner"'),
+          'D4. the last owner has no Remove');
+  const refused = OwnedPages.render({ owned: { status: 403, canWrite: true,
+    query: { name: 'r' }, answer: { errors: ['The owner rule refused it.'] }
+  } }, ctx('/portal/owned/roles?name=r'));
+  t.check(has(refused, 'class="err"') &&
+          has(refused, 'The owner rule refused it.') &&
+          !has(refused, 'data-admin='),
+          'D5. a refusal is drawn, and nothing else', refused);
+  const app = OwnedPages.render({ owned: { status: 200, canWrite: true,
+    query: { name: 'urn:x' }, answer: { identifier: 'urn:x',
+      fields: { oauthRedirectUri: ['https://x.example/cb'] },
+      owners: owners } } }, ctx('/portal/owned/applications?name=urn%3Ax'));
+  t.check(has(app, 'data-admin="/admin-api/applications/update-fields"') &&
+          has(app, 'name="lines.oauthRedirectUri"') &&
+          has(app, 'https://x.example/cb') &&
+          has(app, 'data-admin="/admin-api/applications/regenerate-secret"'),
+          'D6. an application\'s page edits its owner fields and makes a ' +
+          'new secret', app.slice(0, 600));
+  const account = function (destination) {
+    return OwnedPages.render({ owned: { status: 200, canWrite: true,
+      query: { name: 'svc' }, answer: { found: true, account: {
+        username: 'svc', destination: destination, secretName: 's',
+        owners: owners } } } }, ctx('/portal/owned/service-accounts?name=svc'));
+  };
+  t.check(has(account(''),
+              'data-admin="/admin-api/users/set-service-account-destination"')
+          && !has(account(''), '/admin-api/users/rotate-password') &&
+          has(account('cn=vault'), '/admin-api/users/rotate-password'),
+          'D7. a service account\'s page sets its destination, and rotates ' +
+          'only where it has one');
+  const rolesPage = OwnedPages.PAGES.filter(function (one) {
+    return one.path === '/portal/owned/roles';
+  })[0];
+  t.check(rolesPage.admin({ name: 'a b' }) === '/admin-api/roles?role=a%20b' &&
+          rolesPage.admin({}) === null,
+          'D8. ?name= reads the object from /admin-api; the list does not');
+  log.debug('Leaving theOwnerPages().');
+}
+
 module.exports = {
   name: 'portal owned',
   describe: 'Resources I own (#604): the roles, groups, service accounts ' +
@@ -183,6 +263,7 @@ module.exports = {
     log.debug('Entering run().');
     await theOwnership(t);
     theColumnAndOperations(t);
+    theOwnerPages(t);
     log.debug('Leaving run().');
   }
 };
