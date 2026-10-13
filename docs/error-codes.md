@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4321** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4322** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 96
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
-* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 31
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 32
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
@@ -3007,6 +3007,7 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0029` | A SCIM service provider's /ResourceTypes marks a schema extension required that this client has no values for (anything but the enterprise User extension, which is sent empty if need be); the resource is not sent and the delivery is dead-lettered naming the extension (RFC 7643 sections 3.3, 6). | none — nothing is sent |
 | `STS-SCIMC-0030` | A resource this client would send lacks an attribute RFC 7643 requires — a User's userName or a Group's displayName — so no create or replace is sent (RFC 7644 section 3.5.1); dead-lettered. | none — nothing is sent |
 | `STS-SCIMC-0031` | In a service deployed as cells, the issuance policy refused to release a person's data to an outbound SCIM client's service provider (release-attributes, purpose scim-provision, the client's scimClientJurisdiction as the serving side; #553). The person is out of scope: nothing is sent for one never pushed, and one pushed before is deprovisioned. Recorded at debug level; never a delivery or a dead letter. | none — nothing is sent |
+| `STS-SCIMC-0032` | In a service deployed as cells, another cell did not answer scim-client-group-share (#553): a group's owner cell could not learn every cell's share before deleting the group or replacing its members on a service provider without PATCH, or a cell could not tell the owner its share changed. Nothing is deleted or replaced; the delivery is retried, and the provider is not paused. | none — nothing is sent |
 
 ## STS-SCIM
 

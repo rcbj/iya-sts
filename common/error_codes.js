@@ -12926,6 +12926,9 @@ const CODES = [
   { code: 'STS-SCIMC-0031',
     summary: 'In a service deployed as cells, the issuance policy refused to release a person\'s data to an outbound SCIM client\'s service provider (release-attributes, purpose scim-provision, the client\'s scimClientJurisdiction as the serving side; #553). The person is out of scope: nothing is sent for one never pushed, and one pushed before is deprovisioned. Recorded at debug level; never a delivery or a dead letter.',
     spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0032',
+    summary: 'In a service deployed as cells, another cell did not answer scim-client-group-share (#553): a group\'s owner cell could not learn every cell\'s share before deleting the group or replacing its members on a service provider without PATCH, or a cell could not tell the owner its share changed. Nothing is deleted or replaced; the delivery is retried, and the provider is not paused.',
+    spec: 'none — nothing is sent' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',

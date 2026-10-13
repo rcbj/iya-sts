@@ -1002,10 +1002,44 @@ create does. Gone from every cell, they are deprovisioned as before. The
 re-home moves the index row before it deletes the entry (step 5 before 6),
 which is what makes the lookup answer the new cell.
 
+**A GROUP IS EVERY CELL'S, AND NO CELL SENDS ITS MEMBER LIST** (section 3).
+A group's definition is global and its person membership is split per cell
+(`persistence/tiers.js`), so until #553 each cell PUT — or PATCH-diffed
+against — the group with ITS members only, and the cells overwrote one
+another. `syncGroupCells()` now:
+* CHANGES MEMBERSHIP BY PATCH ONLY (`patchShare()`): adds this cell's
+  SHARE (`shareOf()`: the provider ids of its pushable, linked, active
+  members) and removes only ids THIS CELL linked (`linkedUserIds()` plus the
+  share it last wrote, kept on the group's link as `members`). Another
+  cell's member is never removed, because no cell holds another's links;
+* CREATES FROM ANY CELL: a POST answered 409 adopts by externalId alone
+  (`create(…, adoptOnly)`) and does NOT replace — a PUT of this cell's share
+  would be exactly the overwrite this fixes — then PATCHes the share in. Not
+  by displayName, unlike a single cell: adopting a group somebody else named
+  the same, without replacing its externalId, would add our people to it;
+* LEAVES THE LIFECYCLE TO ONE OWNER (`ownerCell()`: the realm's
+  `cells.homeCell` when it pushes to the client, else `sha256(uuid) mod` the
+  sorted pushing cells — the same answer in every cell). Only the owner
+  renames, and only the owner deletes: when it has nothing in the group it
+  asks every other pushing cell `scim-client-group-share`, KEEPS the group
+  if any answers a member (renaming it if need be), and DELETES only when
+  every cell answered none — a cell that cannot be reached is a retry
+  (`STS-SCIMC-0032`, `kind: 'cell'`, which `failure()` retries WITHOUT
+  pausing the provider), never a delete. A cell whose share empties takes
+  its members out and TELLS the owner (`recheck`), which queues the group;
+* WITHOUT PATCH (rcbj's decision 2) only the owner writes: it gathers every
+  share — provider ids, nothing else, so no attribute of a person crosses —
+  merges them and PUTs; any cell unreachable, nothing is PUT (a partial
+  membership is the one thing a merge must not write). The other cells only
+  tell the owner. A 409 there adopts AND replaces, since the owner holds
+  every share.
+
 **RECONCILIATION IS PER CELL** (section 6). Each cell pushes its own
 pushable residents; of the remote resources, it deprovisions only what it
 linked or holds (`reconcilesUnlinked()`): a projection or another cell's
-person is that cell's. **The orphan sweep for USERS is not built beyond
+person is that cell's; of GROUPS, a remote group it never linked is
+considered only by the group's OWNER, which alone deletes one. **The orphan
+sweep for USERS is not built beyond
 this**, deliberately: "an externalId that belongs to no cell" cannot be told
 from "an externalId of somebody else's system" without a record, and the only
 record — the links — is per cell, so deprovisioning on a routing-index miss

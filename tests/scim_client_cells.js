@@ -30,6 +30,15 @@
 //   C. A MOVE IS A HANDOVER: the old cell sends nothing and drops its link;
 //      the new home finds the resource by externalId and keeps it active.
 //      A person gone everywhere is deprovisioned.
+//   D. A GROUP ACROSS CELLS, WITH PATCH: members from both cells kept
+//      through changes in either; a group two cells create is one group (the
+//      second adopts it on 409 by externalId, and PATCHes its share in); a
+//      cell never removes another cell's member; the OWNER deletes only
+//      when every cell answers none, and not while one is unreachable — and
+//      a member-groups group with members in the other cell is kept.
+//   E. WITHOUT PATCH: the owner PUTs every cell's share merged, the other
+//      cell never writes the group, and nothing is PUT while a cell cannot
+//      be asked.
 //   Z. NOTHING A SERVICE PROVIDER SEES NAMES A CELL, and a service that is
 //      one cell asks no transfer question.
 // ===========================================================================
@@ -154,6 +163,9 @@ function provider(from, options, text) {
   const parts = url.pathname.replace(/^\/scim\/v2/, '').split('/')
     .filter(Boolean);
   const body = text ? JSON.parse(text) : null;
+  // Time passes as requests are answered, so a change made while a
+  // delivery is in flight is LATER than its attempt, as it is in life.
+  world.t += 1;
   sp.requests.push({ from: from, method: options.method,
                      path: url.pathname + url.search, body: body,
                      headers: options.headers, text: text || '' });
@@ -194,7 +206,8 @@ function provider(from, options, text) {
     });
     const filter = url.searchParams.get('filter');
     if (filter) {
-      if (sp.hideSearch > 0 && /^externalId eq/.test(filter)) {
+      if (sp.hideSearch > 0 && type === 'Group' &&
+          /^externalId eq/.test(filter)) {
         sp.hideSearch -= 1;
         all = [];
       } else {
@@ -484,7 +497,7 @@ function channelStub(cellId) {
     call: function (target, name, body) {
       world.calls = (world.calls || []).concat([{ from: cellId, to: target,
                                                   name: name }]);
-      if (world.unreachable[target] || world.unreachable[cellId]) {
+      if (world.unreachable[target]) {
         return Promise.reject(new Error('cell "' + target + '" is not ' +
                                         'reachable'));
       }
@@ -800,6 +813,204 @@ async function handover(t, a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// D. A GROUP ACROSS CELLS, WITH PATCH.
+// ---------------------------------------------------------------------------
+function groupThere(name) {
+  log.debug('Entering groupThere().');
+  const uuid = uuidFor('group-' + name);
+  const hits = Object.keys(sp.groups).map(function (k) {
+    return sp.groups[k];
+  }).filter(function (r) {
+    return r.body.externalId === uuid;
+  });
+  log.debug('Leaving groupThere().');
+  return hits;
+}
+
+function memberNames(group) {
+  log.debug('Entering memberNames().');
+  const out = (group.body.members || []).map(function (m) {
+    const user = sp.users[m.value];
+    return user ? user.body.userName : '?' + m.value;
+  }).sort();
+  log.debug('Leaving memberNames().');
+  return out.join(',');
+}
+
+function patchesFrom(cellId, since) {
+  log.debug('Entering patchesFrom().');
+  const out = sp.requests.slice(since).filter(function (r) {
+    return r.from === cellId && r.method === 'PATCH' &&
+           r.path.indexOf('/Groups/') >= 0;
+  });
+  log.debug('Leaving patchesFrom().');
+  return out;
+}
+
+async function groupsWithPatch(t, a, b) {
+  log.debug('Entering groupsWithPatch().');
+  sp.patch = true;
+  world.settings['cells.homeCell'] = 'cella';
+  setClient({ scimClientGroupMode: 'all' });
+  const staff = defineGroup('staff');
+  a.dir.add('gina');
+  b.dir.add('hank');
+  a.dir.join('gina', 'staff');
+  b.dir.join('hank', 'staff');
+  changed(a, 'gina');
+  await drain([a]);
+  t.check(groupThere('staff').length === 1,
+          'D1. cell A creates the group with its share');
+  sp.hideSearch = 1;
+  const before = sp.requests.length;
+  changed(b, 'hank');
+  await drain([b]);
+  const posts = sp.requests.slice(before).filter(function (r) {
+    return r.from === 'cellb' && r.method === 'POST' &&
+           r.path.indexOf('/Groups') >= 0;
+  });
+  t.check(posts.length === 1 && groupThere('staff').length === 1 &&
+          patchesFrom('cellb', before).length >= 1,
+          'D2. a group two cells create is one group: the second POST is ' +
+          'answered 409 and the group adopted by externalId, its share ' +
+          'PATCHed in (never PUT)', sp.requests.slice(before).map(function (r) {
+            return r.from + ' ' + r.method + ' ' + r.path;
+          }));
+  t.check(memberNames(groupThere('staff')[0]) === 'gina,hank',
+          'D3. a group with members in both cells keeps every member',
+          memberNames(groupThere('staff')[0]));
+  t.check(!sp.requests.slice(before).some(function (r) {
+    return r.from === 'cellb' && r.method === 'PUT' &&
+           r.path.indexOf('/Groups') >= 0;
+  }), 'D4. no cell PUTs a member list where PATCH is supported');
+
+  const mark = sp.requests.length;
+  a.dir.add('ivy');
+  a.dir.join('ivy', 'staff');
+  changed(a, 'ivy');
+  await drain([a]);
+  const hankId = userThere('hank').id;
+  t.check(memberNames(groupThere('staff')[0]) === 'gina,hank,ivy' &&
+          !patchesFrom('cella', mark).some(function (r) {
+            return r.text.indexOf(hankId) >= 0;
+          }), 'D5. a change in cell A adds its member and never touches ' +
+              'cell B\'s', memberNames(groupThere('staff')[0]));
+  const mark2 = sp.requests.length;
+  b.dir.leave('hank', 'staff');
+  changed(b, 'hank', 'membership', 'staff');
+  await drain([b]);
+  const ginaId = userThere('gina').id;
+  t.check(memberNames(groupThere('staff')[0]) === 'gina,ivy' &&
+          !patchesFrom('cellb', mark2).some(function (r) {
+            return r.text.indexOf(ginaId) >= 0;
+          }), 'D6. a change in cell B removes only its own member',
+          memberNames(groupThere('staff')[0]));
+  b.dir.join('hank', 'staff');
+  changed(b, 'hank', 'membership', 'staff');
+  await drain([b]);
+  const mark3 = sp.requests.length;
+  a.instance.enqueue(clientOf(a), 'Group', staff.uuid, 'staff');
+  await drain([a]);
+  t.check(memberNames(groupThere('staff')[0]) === 'gina,hank,ivy' &&
+          !patchesFrom('cella', mark3).some(function (r) {
+            return r.text.indexOf(hankId) >= 0;
+          }), 'D7. cell A syncing the group again leaves cell B\'s member ' +
+              'alone', memberNames(groupThere('staff')[0]));
+
+  // DELETION BY THE OWNER (cella, the realm's cells.homeCell).
+  undefineGroup('staff');
+  world.unreachable.cellb = true;
+  a.instance.enqueue(clientOf(a), 'Group', staff.uuid, 'staff');
+  await drain([a]);
+  const waiting = rowsOf(a).filter(function (row) {
+    return row.uuid === staff.uuid;
+  })[0];
+  t.check(groupThere('staff').length === 1 && waiting &&
+          waiting.state === 'pending' && waiting.errorCode === 'STS-SCIMC-0032',
+          'D8. the owner does not delete while a cell cannot be reached ' +
+          '(retried, STS-SCIMC-0032)', waiting);
+  world.unreachable.cellb = false;
+  world.t += 3600000;
+  await drain([a]);
+  t.check(groupThere('staff').length === 0,
+          'D9. deleting a group needs every cell to report no members: ' +
+          'deleted once cell B answered none');
+  t.check(rowsOf(a, 'dead').length === 0 && rowsOf(b, 'dead').length === 0,
+          'D10. no dead letter on either cell');
+
+  // member-groups: members only in cell B keep the group the owner has no
+  // share of; the last one leaving lets the owner delete it.
+  setClient({ scimClientGroupMode: 'member-groups' });
+  const ops = defineGroup('ops');
+  b.dir.join('hank', 'ops');
+  changed(b, 'hank', 'membership', 'ops');
+  await drain([b]);
+  a.instance.enqueue(clientOf(a), 'Group', ops.uuid, 'ops');
+  await drain([a]);
+  t.check(groupThere('ops').length === 1 &&
+          memberNames(groupThere('ops')[0]) === 'hank',
+          'D11. the owner keeps a group whose members are all in another ' +
+          'cell');
+  b.dir.leave('hank', 'ops');
+  changed(b, 'hank', 'membership', 'ops');
+  await drain([b, a]);
+  t.check(groupThere('ops').length === 0,
+          'D12. the last member leaving in cell B tells the owner, which ' +
+          'deletes it once every cell answers none');
+  log.debug('Leaving groupsWithPatch().');
+}
+
+// ---------------------------------------------------------------------------
+// E. A SERVICE PROVIDER WITHOUT PATCH.
+// ---------------------------------------------------------------------------
+async function groupsWithoutPatch(t, a, b) {
+  log.debug('Entering groupsWithoutPatch().');
+  sp.patch = false;
+  // Past the ten minutes a discovery is believed, so both cells read that
+  // the provider has no PATCH.
+  world.t += 11 * 60000;
+  setClient({ scimClientGroupMode: 'all' });
+  defineGroup('eng');
+  a.dir.join('gina', 'eng');
+  b.dir.join('hank', 'eng');
+  const before = sp.requests.length;
+  changed(b, 'hank');
+  await drain([b, a]);
+  const eng = groupThere('eng');
+  t.check(eng.length === 1 && memberNames(eng[0]) === 'gina,hank',
+          'E1. the owner writes the group with every cell\'s share merged',
+          sp.requests.slice(before).map(function (r) {
+            return r.from + ' ' + r.method + ' ' + r.path + ' ' +
+                   (r.text || '').slice(0, 200);
+          }));
+  t.check(!sp.requests.slice(before).some(function (r) {
+    return r.from === 'cellb' && r.path.indexOf('/Groups') >= 0 &&
+           r.method !== 'GET';
+  }), 'E2. without PATCH the other cell never writes the group');
+  b.dir.add('jack');
+  b.dir.join('jack', 'eng');
+  world.unreachable.cellb = true;
+  const mark = sp.requests.length;
+  changed(b, 'jack');
+  await drain([b, a]);
+  t.check(!sp.requests.slice(mark).some(function (r) {
+    return r.method === 'PUT' && r.path.indexOf('/Groups') >= 0;
+  }) && memberNames(groupThere('eng')[0]) === 'gina,hank',
+          'E3. no PUT while a cell cannot be asked for its share — never ' +
+          'a partial membership');
+  world.unreachable.cellb = false;
+  world.t += 3600000;
+  await drain([a, b]);
+  t.check(memberNames(groupThere('eng')[0]) === 'gina,hank,jack',
+          'E4. once every cell answers, the merged membership is PUT',
+          memberNames(groupThere('eng')[0]));
+  sp.patch = true;
+  world.t += 11 * 60000;
+  setClient();
+  log.debug('Leaving groupsWithoutPatch().');
+}
+
+// ---------------------------------------------------------------------------
 // Z. WHAT A SERVICE PROVIDER SEES, AND ONE CELL.
 // ---------------------------------------------------------------------------
 function noCellNamed(t) {
@@ -842,6 +1053,8 @@ async function run(t) {
       await homeCells(t, a, b);
       await transferDecision(t, a, b);
       await handover(t, a, b);
+      await groupsWithPatch(t, a, b);
+      await groupsWithoutPatch(t, a, b);
       noCellNamed(t);
       await oneCell(t);
     });
@@ -856,6 +1069,8 @@ module.exports = {
   describe: 'The outbound SCIM client in a service deployed as cells ' +
             '(#553), two cells in one process with the channel, the routing ' +
             'index and the cell map stubbed: home-cell pushing, the ' +
-            'scim-provision transfer decision, and a move as a handover',
+            'scim-provision transfer decision, a move as a handover, and ' +
+            'groups by per-cell PATCH, owner-cell deletion and the merged ' +
+            'PUT without PATCH',
   run: run
 };

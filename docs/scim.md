@@ -747,10 +747,34 @@ are before acting:
   a move keeps) and replaces it. They are never deactivated in between;
 * **gone from every cell**: they are deprovisioned, as in one cell.
 
+**Groups are shared by every cell.** A group's definition is the same in every
+cell, but each cell holds only its own residents as members (its share). So:
+
+* **membership changes by `PATCH` only.** Each cell adds its own members and
+  removes only members it pushed itself. A cell never touches another cell's
+  members, and never sends a whole member list where `PATCH` is supported;
+* **any cell may create the group.** A second cell's `POST` is answered `409`,
+  and that cell adopts the group by `externalId` (the group's `entryUUID`, the
+  same in every cell) and patches its members in. It does not replace it;
+* **one owner cell renames and deletes it.** The owner is the realm's
+  `cells.homeCell` when that cell pushes to the client, else a cell chosen by a
+  hash of the group's `entryUUID`; every cell computes the same one. Before
+  deleting the group the owner asks every other cell whether it still has
+  members in it. It deletes only when every cell answers "none". If a cell
+  cannot be reached, the group is not deleted and the owner tries again later
+  (`STS-SCIMC-0032`). In `member-groups` mode, a group whose members are all
+  in other cells is kept;
+* **a service provider without `PATCH`** is written by the owner alone. It
+  gathers every cell's share (only the provider's own ids for the members),
+  merges them and replaces the group with a `PUT`. If any cell cannot be
+  reached, nothing is sent and the owner tries again, so a partial membership
+  is never written. The other cells tell the owner when their share changes.
+
 **Reconciliation is per cell.** Each cell reconciles the people homed there,
 on its own schedule. It deprovisions only what it linked or holds: a remote
 resource whose `externalId` is a projection, or a person of another cell, is
-left to that cell.
+left to that cell. Each cell reconciles its share of every group in scope,
+and only the owner cell considers deleting a group it did not push itself.
 
 ### What it does not do
 
@@ -795,6 +819,7 @@ a log line. The most common:
 | `STS-SCIMC-0029` | a required schema extension the client cannot send |
 | `STS-SCIMC-0030` | a required attribute missing |
 | `STS-SCIMC-0031` | in a service deployed as cells, the issuance policy kept a person's data out of the provider's jurisdiction; the person is out of scope |
+| `STS-SCIMC-0032` | in a service deployed as cells, another cell could not be asked for its share of a group; the group is not deleted or replaced, and the delivery is retried |
 
 [Error codes](error-codes.md) lists all of them.
 

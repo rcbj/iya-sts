@@ -11047,6 +11047,14 @@ never a host, port or pid. The Cluster page's row has a `prepare` step
 every peer before the synchronous status block draws; a cell that does not
 answer is drawn unreachable (`STS-CELL-0194`), never dropped.
 
+**THE OUTBOUND SCIM CLIENT'S OPERATIONS (#553)**, registered by
+`scim/scim_client.ts`'s `registerCellOps()` (`scim/CLAUDE.md`, *The outbound
+SCIM client across cells*):
+
+| Operation | Asked by | Answers |
+|---|---|---|
+| `scim-client-group-share` | a group's OWNER cell before it deletes the group, or PUTs the merged membership to a provider without PATCH; and, with `recheck`, another cell telling the owner its share changed | this cell's share of the group at that client — the SERVICE PROVIDER'S opaque ids of its pushed, linked members, never an attribute; with `recheck` the owner queues the group |
+
 | Module | What it is |
 |---|---|
 | `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |

@@ -109,7 +109,13 @@
 //   * a person who left this cell is looked up in the routing index first:
 //     homed elsewhere is a HANDOVER (nothing sent), gone everywhere a
 //     deprovision;
-//   * `scimClientCells` limits which cells push at all.
+//   * `scimClientCells` limits which cells push at all;
+//   * a group's membership changes by PATCH only, each cell adding its own
+//     members and removing only ids it linked; any cell may create it (a
+//     409 adopts by externalId, unreplaced); ONE OWNER cell renames and
+//     deletes it, deleting only when every cell answers
+//     `scim-client-group-share` with no member; without PATCH the owner
+//     PUTs every cell's share merged, and nothing while a cell is away.
 // In a service that is one cell none of it is asked.
 // ===========================================================================
 
@@ -469,6 +475,7 @@ class ScimClients {
       log.debug("Caught in ScimClients.install(): " +
                 ((e && e.message) || e));
     }
+    this.registerCellOps();
     this.delivery.scheduleSweep();
     const jobs = scheduler();
     if (!jobs.job('scim-client.reconcile')) {
@@ -488,6 +495,27 @@ class ScimClients {
       });
     }
     log.debug("Leaving ScimClients.install().");
+  }
+
+  /**
+   * Registers the inter-cell operations this client answers for other
+   * cells (#553): `scim-client-group-share`. Harmless in a service that is
+   * one cell, where nobody calls them.
+   */
+  registerCellOps(): void {
+    const { log, channel } = this.deps;
+    const self = this;
+    log.debug("Entering ScimClients.registerCellOps().");
+    try {
+      const ch = channel();
+      ch.registerOp(OP_GROUP_SHARE, function (body: Json): Promise<Json> {
+        return self.answerGroupShare(body);
+      });
+    } catch (e) {
+      log.debug("Caught in ScimClients.registerCellOps(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving ScimClients.registerCellOps().");
   }
 
   // =========================================================================
@@ -2060,7 +2088,10 @@ class ScimClients {
     log.debug("Entering ScimClients.failure(). " + code);
     const status = Number(answer && answer.status) || 0;
     const network = answer && ['timeout', 'network'].indexOf(answer.kind) >= 0;
-    const retry = network || Rules.retryable(status);
+    // ANOTHER CELL NOT ANSWERING (#553 section 3) is worth another attempt
+    // and says nothing about the service provider, so it pauses nobody.
+    const cell = !!answer && answer.kind === 'cell';
+    const retry = network || cell || Rules.retryable(status);
     const struggling = network || status === 429 || status >= 500;
     let retryAfterMs = 0;
     const header = answer && answer.headers && answer.headers['retry-after'];
@@ -2401,8 +2432,14 @@ class ScimClients {
   // Creates a resource; a 409 uniqueness adopts the one found by externalId,
   // then by `second` (userName or displayName). `{ ok, id, etag, created }`
   // or a failure.
+  //
+  // `adoptOnly` (#553 section 3, a group in a service deployed as cells):
+  // the resource found by EXTERNALID alone is adopted and NOT replaced —
+  // another cell made it, and a PUT of this cell's share would overwrite
+  // that cell's members; the caller PATCHes this cell's members in.
   private async create(c: Json, disc: Json, type: string, body: Json,
-                       second: [string, string]): Promise<Json> {
+                       second: [string, string],
+                       adoptOnly?: boolean): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering ScimClients.create(). " + type);
     const answer = await this.request(c, 'POST', disc.endpoints[type], body);
@@ -2428,7 +2465,7 @@ class ScimClients {
     // ADOPT, NOT RETRY (RFC 7644 section 3.3).
     let found = await this.findBy(c, disc, type, 'externalId',
                                   String(body.externalId || ''));
-    if (found.ok && !found.id && second[1]) {
+    if (found.ok && !found.id && second[1] && !adoptOnly) {
       found = await this.findBy(c, disc, type, second[0], second[1]);
     }
     if (!found.ok || !found.id) {
@@ -2437,6 +2474,11 @@ class ScimClients {
                           why: 'HTTP 409 uniqueness, and nothing to adopt ' +
                                'was found by externalId or ' + second[0] }
                       : found;
+    }
+    if (adoptOnly) {
+      log.debug("Leaving ScimClients.create(). Adopted, not replaced.");
+      return { ok: true, id: found.id, etag: found.etag || '',
+               adopted: true };
     }
     const path = disc.endpoints[type] + '/' + encodeURIComponent(found.id);
     const replaced = await this.writeKnown(c, disc, 'PUT', path, body,
@@ -2649,6 +2691,13 @@ class ScimClients {
   private async syncGroup(c: Json, disc: Json, row: Json): Promise<Json> {
     const { log, directory } = this.deps;
     log.debug("Entering ScimClients.syncGroup(). " + row.uuid);
+    if (this.multi()) {
+      // A GROUP ACROSS CELLS (#553 section 3): each cell's share, and one
+      // owner cell for its lifecycle.
+      const across = await this.syncGroupCells(c, disc, row);
+      log.debug("Leaving ScimClients.syncGroup(). Across cells.");
+      return across;
+    }
     const dir = directory();
     const stored = dir.entryByUuid(row.uuid);
     const group = stored ? dir.readGroupEntry(stored.dn) : null;
@@ -2774,6 +2823,545 @@ class ScimClients {
       ScimClients.etagOf(current) || etag);
     log.debug("Leaving ScimClients.patchGroup(). " + answer.status);
     return answer;
+  }
+
+  // =========================================================================
+  // A GROUP ACROSS CELLS (#553 section 3). A group's DEFINITION is global and
+  // its person membership is split: each cell holds its own residents' share
+  // (`persistence/tiers.js`). So no cell ever sends a member list:
+  //   * membership changes by PATCH only — a cell adds its own linked
+  //     members and removes only ids it linked itself;
+  //   * any cell may create the group, and a 409 adopts the one another cell
+  //     made, by externalId (the entryUUID, the same in every cell), without
+  //     replacing it;
+  //   * ONE OWNER CELL (ownerCell()) renames it and deletes it, deleting only
+  //     when every pushing cell answers `scim-client-group-share` with no
+  //     member — a cell that cannot be reached means not deleted;
+  //   * a service provider without PATCH is written by the owner alone: the
+  //     shares gathered over the same operation (the provider's opaque ids,
+  //     nothing else), merged and PUT — and nothing PUT while a cell cannot
+  //     be reached, so a partial membership is never written.
+  // =========================================================================
+
+  // Whether a group is in a client's scope by its DEFINITION — the mode and
+  // the selection, not who is in it (member-groups asks every cell's share).
+  private groupDefined(c: Json, group: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.groupDefined(). " + c.groupMode);
+    let answer = false;
+    if (!group || c.groupMode === 'none') {
+      answer = false;
+    } else if (c.groupMode === 'selected') {
+      answer = this.namesGroup(c.groups, { dn: group.dn,
+        cn: this.firstOf(group.attributes, 'cn') });
+    } else {
+      answer = true;
+    }
+    log.debug("Leaving ScimClients.groupDefined(). " + answer);
+    return answer;
+  }
+
+  /**
+   * This cell's SHARE of a group at a client (#553 section 3): the service
+   * provider's ids of the group's members homed here who are pushed, linked
+   * and active. Only the provider's opaque ids — never an attribute.
+   *
+   * @param c - the client row
+   * @param group - the group's entry object, with this cell's members
+   * @param queue - true to queue a member who is not there yet (their
+   *   group is queued again once they are)
+   * @returns the ids, sorted
+   */
+  shareOf(c: Json, group: Json, queue: boolean): string[] {
+    const { log, directory } = this.deps;
+    log.debug("Entering ScimClients.shareOf().");
+    const dir = directory();
+    const out: string[] = [];
+    this.membersInScope(c, group).forEach((person: Json) => {
+      const uuid = this.uuidOf(person);
+      const link = uuid ? this.linkOf(c, 'User', uuid) : null;
+      if (link && link.remoteId && !link.inactive) {
+        if (out.indexOf(String(link.remoteId)) < 0) {
+          out.push(String(link.remoteId));
+        }
+      } else if (uuid && queue) {
+        this.enqueue(c, 'User', uuid, dir.usernameOfEntry(person));
+      }
+    });
+    log.debug("Leaving ScimClients.shareOf(). " + out.length);
+    return out.sort();
+  }
+
+  // The provider ids of every person this cell linked for a client: the ids
+  // this cell may REMOVE from a group, and no other.
+  private linkedUserIds(c: Json): Record<string, boolean> {
+    const { log, realms } = this.deps;
+    log.debug("Entering ScimClients.linkedUserIds().");
+    const prefix = c.identifier + '|User|';
+    const out: Record<string, boolean> = {};
+    this.links.realmMap(realms.currentId()).forEach(function (link: Json,
+                                                             key: string) {
+      if (key.indexOf(prefix) === 0 && link && link.remoteId) {
+        out[String(link.remoteId)] = true;
+      }
+    });
+    log.debug("Leaving ScimClients.linkedUserIds().");
+    return out;
+  }
+
+  // A failure because another cell did not answer: retried, pausing nobody.
+  private cellFailure(why: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.cellFailure().");
+    log.debug("Leaving ScimClients.cellFailure().");
+    return { ok: false, code: 'STS-SCIMC-0032', why: why,
+             answer: { kind: 'cell', status: 0, why: why } };
+  }
+
+  /**
+   * Asks every OTHER cell that pushes to a client for its share of a group,
+   * over `scim-client-group-share` (#553 section 3).
+   *
+   * @param c - the client row
+   * @param uuid - the group's entryUUID
+   * @returns a promise of `{ shares: { cell: ids }, unreachable: [cells] }`
+   */
+  async askShares(c: Json, uuid: string): Promise<Json> {
+    const { log, realms, channel } = this.deps;
+    log.debug("Entering ScimClients.askShares().");
+    const here = this.here();
+    const out: Json = { shares: {}, unreachable: [] };
+    const others = this.pushingCells(c).filter(function (one) {
+      return one && one !== here;
+    });
+    await Promise.all(others.map(function (cell: string) {
+      return Promise.resolve().then(function () {
+        return channel().call(cell, OP_GROUP_SHARE, {
+          realm: realms.currentId(), client: c.identifier, uuid: uuid });
+      }).then(function (answer: Json) {
+        out.shares[cell] = (answer && Array.isArray(answer.members)
+          ? answer.members : []).map(String);
+      }, function (e: Json) {
+        log.warn(errorCodes.tag('STS-SCIMC-0032') + 'scim client "' +
+                 c.identifier + '": cell "' + cell + '" did not answer ' +
+                 OP_GROUP_SHARE + ': ' + ((e && e.message) || e));
+        out.unreachable.push(cell);
+      });
+    }));
+    log.debug("Leaving ScimClients.askShares(). " +
+              out.unreachable.length + " unreachable.");
+    return out;
+  }
+
+  // Tells a group's owner cell to look at it again (its share here changed,
+  // and the owner deletes or merges). True once it is told; the owner is
+  // this cell, it is queued here.
+  private async tellOwner(c: Json, uuid: string, name: string):
+      Promise<boolean> {
+    const { log, realms, channel } = this.deps;
+    log.debug("Entering ScimClients.tellOwner().");
+    const owner = this.ownerCell(c, uuid);
+    if (!owner || owner === this.here()) {
+      this.enqueue(c, 'Group', uuid, name);
+      log.debug("Leaving ScimClients.tellOwner(). Here.");
+      return true;
+    }
+    try {
+      await channel().call(owner, OP_GROUP_SHARE, {
+        realm: realms.currentId(), client: c.identifier, uuid: uuid,
+        recheck: true });
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-SCIMC-0032') + 'scim client "' +
+               c.identifier + '": the owner cell "' + owner + '" of a ' +
+               'group could not be told: ' + ((e && e.message) || e));
+      log.debug("Leaving ScimClients.tellOwner(). Unreachable.");
+      return false;
+    }
+    log.debug("Leaving ScimClients.tellOwner(). Told.");
+    return true;
+  }
+
+  /**
+   * Answers `scim-client-group-share` for another cell: this cell's share of
+   * a group at a client — the provider's ids, nothing else — and, with
+   * `recheck`, queues the group here when this cell owns it.
+   *
+   * @param body - `{ realm, client, uuid, recheck }`
+   * @returns a promise of `{ members }`
+   */
+  async answerGroupShare(body: Json): Promise<Json> {
+    const { log, realms, directory } = this.deps;
+    log.debug("Entering ScimClients.answerGroupShare().");
+    const given = body || {};
+    const realm = realms.get(String(given.realm || ''));
+    if (!realm) {
+      log.debug("Leaving ScimClients.answerGroupShare(). No realm.");
+      return { members: [] };
+    }
+    const answer = realms.run(realm, () => {
+      const c = this.get(String(given.client || ''));
+      const uuid = String(given.uuid || '').toLowerCase();
+      if (!c || !UUID_SHAPED.test(uuid) || !this.pushesHere(c)) {
+        return { members: [] };
+      }
+      const dir = directory();
+      const stored = dir.entryByUuid(uuid);
+      const group = stored ? dir.readGroupEntry(stored.dn) : null;
+      const members = group && this.groupDefined(c, group)
+        ? this.shareOf(c, group, false) : [];
+      if (given.recheck && this.ownerCell(c, uuid) === this.here()) {
+        const link = this.linkOf(c, 'Group', uuid);
+        this.enqueue(c, 'Group', uuid, group
+          ? this.firstOf(group.attributes, 'cn') : (link && link.name) || '');
+        this.deliverSoon();
+      }
+      return { members: members };
+    });
+    log.debug("Leaving ScimClients.answerGroupShare().");
+    return answer;
+  }
+
+  // One group in a service deployed as cells.
+  private async syncGroupCells(c: Json, disc: Json, row: Json):
+      Promise<Json> {
+    const { log, directory } = this.deps;
+    log.debug("Entering ScimClients.syncGroupCells(). " + row.uuid);
+    const dir = directory();
+    const stored = dir.entryByUuid(row.uuid);
+    const group = stored ? dir.readGroupEntry(stored.dn) : null;
+    const defined = !!group && this.groupDefined(c, group);
+    const share = defined ? this.shareOf(c, group, true) : [];
+    const link = this.linkOf(c, 'Group', row.uuid);
+    const facts: Json = {
+      group: group, defined: defined, share: share, link: link,
+      owner: this.ownerCell(c, row.uuid) === this.here(),
+      before: link && Array.isArray(link.members) ? link.members : [],
+      displayName: group ? (this.firstOf(group.attributes, 'cn') || group.dn)
+                         : String((link && link.name) || row.name || '')
+    };
+    const outcome = disc.patch
+      ? await this.groupByPatch(c, disc, row, facts)
+      : await this.groupByMerge(c, disc, row, facts);
+    log.debug("Leaving ScimClients.syncGroupCells(). ok=" + outcome.ok);
+    return outcome;
+  }
+
+  // The link a cell keeps for a group: the provider's id and THIS cell's
+  // share as it last wrote it.
+  private keepGroupLink(c: Json, row: Json, facts: Json, id: string,
+                        etag: string, members: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.keepGroupLink().");
+    this.writeLink(c, 'Group', row.uuid, { remoteId: id, etag: etag || '',
+      dn: facts.group ? facts.group.dn : ((facts.link && facts.link.dn) || ''),
+      name: facts.displayName, members: members.slice() });
+    log.debug("Leaving ScimClients.keepGroupLink().");
+  }
+
+  // A provider WITH PATCH: this cell's share by PATCH; the owner's
+  // lifecycle when this cell has nothing there.
+  private async groupByPatch(c: Json, disc: Json, row: Json, facts: Json):
+      Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.groupByPatch().");
+    const wantedHere = facts.defined &&
+      (c.groupMode !== 'member-groups' || facts.share.length > 0);
+    for (let round = 0; round < 2; round++) {
+      const remote = await this.remoteOf(c, disc, 'Group', row.uuid);
+      if (!remote.ok) {
+        log.debug("Leaving ScimClients.groupByPatch(). The lookup failed.");
+        return remote;
+      }
+      if (!wantedHere) {
+        const out = await this.groupLeft(c, disc, row, facts, remote);
+        log.debug("Leaving ScimClients.groupByPatch(). Nothing here.");
+        return out;
+      }
+      let id = String(remote.id || '');
+      let etag = String(remote.etag || '');
+      if (!id) {
+        const body: Json = { schemas: [GROUP_SCHEMA],
+          displayName: facts.displayName, externalId: row.uuid,
+          members: facts.share.map(function (one: string) {
+            return { value: one, type: 'User' };
+          }) };
+        const refused = this.unsendable(disc, 'Group', body);
+        if (refused) {
+          log.debug("Leaving ScimClients.groupByPatch(). Not sendable.");
+          return refused;
+        }
+        const made = await this.create(c, disc, 'Group', body,
+                                       ['displayName', facts.displayName],
+                                       true);
+        if (!made.ok) {
+          log.debug("Leaving ScimClients.groupByPatch(). Not created.");
+          return made;
+        }
+        if (made.created) {
+          this.keepGroupLink(c, row, facts, made.id, made.etag, facts.share);
+          log.debug("Leaving ScimClients.groupByPatch(). Created.");
+          return { ok: true };
+        }
+        // Another cell made it: this cell's members go in by PATCH.
+        id = made.id;
+        etag = made.etag || '';
+      }
+      const path = disc.endpoints.Group + '/' + encodeURIComponent(id);
+      const patched = await this.patchShare(c, disc, path, facts,
+        facts.owner ? facts.displayName : '', etag);
+      if (patched.ok) {
+        this.keepGroupLink(c, row, facts, id, ScimClients.etagOf(patched),
+                           facts.share);
+        log.debug("Leaving ScimClients.groupByPatch(). Patched.");
+        return { ok: true };
+      }
+      if (patched.status !== 404 || round > 0) {
+        log.debug("Leaving ScimClients.groupByPatch(). The PATCH failed.");
+        return { ok: false, answer: patched };
+      }
+      // Gone there: forget the id and find or make it again.
+      this.writeLink(c, 'Group', row.uuid, null);
+      facts.before = [];
+    }
+    log.debug("Leaving ScimClients.groupByPatch(). Unreachable.");
+    return { ok: false, answer: { kind: 'build', status: 0,
+                                  why: 'no attempt' } };
+  }
+
+  // This cell's members of a group by PATCH (RFC 7644 section 3.5.2): adds
+  // its share's ids the group lacks, removes ids THIS CELL linked that are
+  // no longer in its share — never another cell's — and, for the owner, the
+  // rename.
+  private async patchShare(c: Json, disc: Json, path: string, facts: Json,
+                           rename: string, etag: string): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.patchShare().");
+    const current = await this.request(c, 'GET', path + '?attributes=' +
+      encodeURIComponent('members,displayName'), null);
+    if (!current.ok) {
+      log.debug("Leaving ScimClients.patchShare(). The read failed.");
+      return current;
+    }
+    const have = ((current.json && current.json.members) || [])
+      .map(function (one: Json) {
+        return String((one && one.value) || '');
+      });
+    const mine = this.linkedUserIds(c);
+    (facts.before || []).forEach(function (id: string) {
+      mine[id] = true;
+    });
+    const share: string[] = facts.share;
+    const operations: Json[] = [];
+    if (rename && current.json && current.json.displayName !== rename) {
+      operations.push({ op: 'replace', path: 'displayName', value: rename });
+    }
+    const adding = share.filter(function (id) {
+      return have.indexOf(id) < 0;
+    });
+    if (adding.length) {
+      operations.push({ op: 'add', path: 'members',
+                        value: adding.map(function (id) {
+                          return { value: id };
+                        }) });
+    }
+    have.filter(function (id: string) {
+      return id && mine[id] && share.indexOf(id) < 0;
+    }).forEach(function (id: string) {
+      operations.push({ op: 'remove',
+                        path: 'members[' + Rules.eqFilter('value', id) + ']' });
+    });
+    if (!operations.length) {
+      log.debug("Leaving ScimClients.patchShare(). Nothing to change.");
+      return current;
+    }
+    const answer = await this.writeKnown(c, disc, 'PATCH', path,
+      { schemas: [PATCH_OP], Operations: operations },
+      ScimClients.etagOf(current) || etag);
+    log.debug("Leaving ScimClients.patchShare(). " + answer.status);
+    return answer;
+  }
+
+  // This cell has nothing in a group (it is gone, out of the client's
+  // scope, or — member-groups — none of this cell's people are in it): this
+  // cell's members come out, and the OWNER decides whether the group goes.
+  private async groupLeft(c: Json, disc: Json, row: Json, facts: Json,
+                          remote: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.groupLeft().");
+    if (remote.id && facts.before.length) {
+      const path = disc.endpoints.Group + '/' + encodeURIComponent(remote.id);
+      const out = await this.patchShare(c, disc, path,
+        Object.assign({}, facts, { share: [] }), '', remote.etag || '');
+      if (!out.ok && out.status !== 404) {
+        log.debug("Leaving ScimClients.groupLeft(). The PATCH failed.");
+        return { ok: false, answer: out };
+      }
+    }
+    if (facts.owner) {
+      const out = await this.ownerLifecycle(c, disc, row, facts, remote);
+      log.debug("Leaving ScimClients.groupLeft(). The owner decided.");
+      return out;
+    }
+    if (facts.link && !(await this.tellOwner(c, row.uuid,
+                                             facts.displayName))) {
+      log.debug("Leaving ScimClients.groupLeft(). The owner was not told.");
+      return this.cellFailure('the owner cell of the group could not be ' +
+                              'reached; this cell\'s members are out, and ' +
+                              'whether the group goes is the owner\'s');
+    }
+    this.writeLink(c, 'Group', row.uuid, null);
+    log.debug("Leaving ScimClients.groupLeft(). Left.");
+    return { ok: true };
+  }
+
+  // THE OWNER'S LIFECYCLE, when the owner itself has nothing in the group:
+  // every other pushing cell is asked for its share; any member anywhere
+  // keeps the group (renamed if need be); no member anywhere — and every
+  // cell answered — deletes it. A cell that cannot be reached: not deleted,
+  // and retried.
+  private async ownerLifecycle(c: Json, disc: Json, row: Json, facts: Json,
+                               remote: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.ownerLifecycle().");
+    const asked = await this.askShares(c, row.uuid);
+    if (asked.unreachable.length) {
+      log.debug("Leaving ScimClients.ownerLifecycle(). A cell is away.");
+      return this.cellFailure('cell(s) ' + asked.unreachable.join(', ') +
+                              ' could not be asked whether they still have ' +
+                              'members in the group; it is not deleted');
+    }
+    const elsewhere = Object.keys(asked.shares).some(function (cell) {
+      return asked.shares[cell].length > 0;
+    });
+    if (elsewhere) {
+      // Kept: other cells have members. The rename is still the owner's.
+      if (remote.id && facts.defined) {
+        const path = disc.endpoints.Group + '/' +
+          encodeURIComponent(remote.id);
+        const renamed = await this.patchShare(c, disc, path,
+          Object.assign({}, facts, { share: [], before: [] }),
+          facts.displayName, remote.etag || '');
+        if (!renamed.ok) {
+          log.debug("Leaving ScimClients.ownerLifecycle(). Not renamed.");
+          return { ok: false, answer: renamed };
+        }
+        this.keepGroupLink(c, row, facts, remote.id,
+                           ScimClients.etagOf(renamed), []);
+      }
+      log.debug("Leaving ScimClients.ownerLifecycle(). Kept.");
+      return { ok: true };
+    }
+    if (remote.id) {
+      const path = disc.endpoints.Group + '/' + encodeURIComponent(remote.id);
+      const gone = await this.writeKnown(c, disc, 'DELETE', path, null,
+                                         remote.etag || '');
+      if (!gone.ok && gone.status !== 404) {
+        log.debug("Leaving ScimClients.ownerLifecycle(). Not deleted.");
+        return { ok: false, answer: gone };
+      }
+    }
+    this.writeLink(c, 'Group', row.uuid, null);
+    log.debug("Leaving ScimClients.ownerLifecycle(). Deleted.");
+    return { ok: true };
+  }
+
+  // A provider WITHOUT PATCH (#553 section 3, rcbj's decision 2): only the
+  // owner writes, a PUT of every cell's share merged. Another cell tells
+  // the owner; the owner PUTs only when every cell answered.
+  private async groupByMerge(c: Json, disc: Json, row: Json, facts: Json):
+      Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.groupByMerge().");
+    if (!facts.owner) {
+      if (!(await this.tellOwner(c, row.uuid, facts.displayName))) {
+        log.debug("Leaving ScimClients.groupByMerge(). Owner not told.");
+        return this.cellFailure('the owner cell of the group could not be ' +
+                                'reached to replace its members');
+      }
+      if (facts.defined || facts.link) {
+        this.writeLink(c, 'Group', row.uuid, facts.defined
+          ? { remoteId: (facts.link && facts.link.remoteId) || '', etag: '',
+              dn: facts.group ? facts.group.dn : '',
+              name: facts.displayName, members: facts.share.slice() }
+          : null);
+      }
+      log.debug("Leaving ScimClients.groupByMerge(). The owner writes.");
+      return { ok: true };
+    }
+    const asked = await this.askShares(c, row.uuid);
+    if (asked.unreachable.length) {
+      log.debug("Leaving ScimClients.groupByMerge(). A cell is away.");
+      return this.cellFailure('cell(s) ' + asked.unreachable.join(', ') +
+                              ' could not be asked for their members; ' +
+                              'nothing is replaced until every cell ' +
+                              'answers');
+    }
+    const merged: string[] = facts.share.slice();
+    Object.keys(asked.shares).sort().forEach(function (cell) {
+      asked.shares[cell].forEach(function (id: string) {
+        if (merged.indexOf(id) < 0) {
+          merged.push(id);
+        }
+      });
+    });
+    const remote = await this.remoteOf(c, disc, 'Group', row.uuid);
+    if (!remote.ok) {
+      log.debug("Leaving ScimClients.groupByMerge(). The lookup failed.");
+      return remote;
+    }
+    const wanted = facts.defined &&
+      (c.groupMode !== 'member-groups' || merged.length > 0);
+    if (!wanted) {
+      if (remote.id) {
+        const path = disc.endpoints.Group + '/' +
+          encodeURIComponent(remote.id);
+        const gone = await this.writeKnown(c, disc, 'DELETE', path, null,
+                                           remote.etag || '');
+        if (!gone.ok && gone.status !== 404) {
+          log.debug("Leaving ScimClients.groupByMerge(). Not deleted.");
+          return { ok: false, answer: gone };
+        }
+      }
+      this.writeLink(c, 'Group', row.uuid, null);
+      log.debug("Leaving ScimClients.groupByMerge(). Deleted.");
+      return { ok: true };
+    }
+    const body: Json = { schemas: [GROUP_SCHEMA],
+      displayName: facts.displayName, externalId: row.uuid,
+      members: merged.map(function (one) {
+        return { value: one, type: 'User' };
+      }) };
+    const refused = this.unsendable(disc, 'Group', body);
+    if (refused) {
+      log.debug("Leaving ScimClients.groupByMerge(). Not sendable.");
+      return refused;
+    }
+    let result: Json = null;
+    if (remote.id) {
+      const path = disc.endpoints.Group + '/' + encodeURIComponent(remote.id);
+      const replaced = await this.writeKnown(c, disc, 'PUT', path, body,
+                                             remote.etag || '');
+      if (replaced.ok) {
+        result = { ok: true, id: remote.id,
+                   etag: ScimClients.etagOf(replaced) };
+      } else if (replaced.status !== 404) {
+        log.debug("Leaving ScimClients.groupByMerge(). Not replaced.");
+        return { ok: false, answer: replaced };
+      }
+    }
+    if (!result) {
+      // A 409 here adopts AND replaces: the owner holds every share.
+      result = await this.create(c, disc, 'Group', body,
+                                 ['displayName', facts.displayName]);
+      if (!result.ok) {
+        log.debug("Leaving ScimClients.groupByMerge(). Not created.");
+        return result;
+      }
+    }
+    this.keepGroupLink(c, row, facts, result.id, result.etag || '',
+                       facts.share);
+    log.debug("Leaving ScimClients.groupByMerge(). Replaced, merged.");
+    return { ok: true };
   }
 
   // =========================================================================
