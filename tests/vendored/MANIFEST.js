@@ -1438,6 +1438,12 @@ const JOBS = [
   // over a real handshake on the main port, for clients created through
   // /admin-api, in a development and a product realm.
   { file: 'sts_client_authentication.js', browser: false, local: true },
+  // #293 WP2 (2026-10-13): a JAR client created through /admin-api, its
+  // request objects and key set served by this job — registered request_uri
+  // and jwks_uri, the registered algorithm, signed objects required; product
+  // refusing a plain-http request_uri at registration, and the https flow
+  // where a directory is shared with the service.
+  { file: 'sts_jar_admin_client.js',     browser: false, local: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.

@@ -288,9 +288,24 @@ The realm settings `oauth2.requireSignedRequestObject`,
 `oauth2.requireRequestObjectType` and
 `oauth2.requireRequestObjectIssuerAudience` (all `false` by default) apply the
 same checks to every client. Development mode accepts an `http` request URI
-and an `alg: none` object. Product mode refuses both. The job that covers this
-is `tests/rfc9101_request_objects.js`, which signs with `ES256` and
-`typ: oauth-authz-req+jwt`.
+and an `alg: none` object. Product mode refuses both, and refuses an `http`
+request URI when it is registered, before any request is made (RFC 9101
+section 5.2). The `https` host is verified under the federation outbound
+policy, so a private CA is named by `federation.outboundCaFile`.
+
+The job `sts_jar_admin_client.js` creates such a client through `/admin-api`
+and serves its request objects and key set itself. It checks that:
+* a registered `request_uri` is fetched, and its object is verified with the
+  key at the registered `jwks_uri`;
+* the flow ends at the client with the object's `state`, not the query's;
+* a `request_uri` that was not registered is refused and never fetched;
+* an object signed with another algorithm, or with a key that is not in the
+  set, is refused;
+* an unsigned object is refused while `oauthRequireSignedRequestObject` is
+  `TRUE`.
+
+`tests/rfc9101_request_objects.js` covers the rest in process, signing with
+`ES256` and `typ: oauth-authz-req+jwt`.
 
 ## CIBA
 
