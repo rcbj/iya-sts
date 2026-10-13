@@ -2309,8 +2309,9 @@ two TLS listeners were deleted on 2026-09-16, and LDAPS asks for no client
 certificate — with its subject, issuer, serial, validity, SHA-256
 fingerprint and SOURCE (`file` from `tls.trustAnchorsFile`, `runtime` otherwise), paged,
 with an add form (a textarea of PEM blocks) and a Remove button on every row. It is the
-runtime door product mode did not have — `POST /tls/trust` needs no credential, so product
-mode refuses it — and `GET /admin-api/tls/trust` / `POST /admin-api/tls/trust/{add,remove}`
+runtime door product mode did not have — the open `POST /tls/trust` needed no credential,
+so product mode refused it, and #597 deleted it — and `GET /admin-api/tls/trust` /
+`POST /admin-api/tls/trust/{add,remove}`
 mirror it (rule 7). `tls/CLAUDE.md` argues what the truststore does; four things are this
 file's.
 

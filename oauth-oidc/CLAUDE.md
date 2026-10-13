@@ -2622,7 +2622,8 @@ pages that relax `script-src`. The argument for it is made in `oauth2.ts`, above
   flow into an RFC 9700-conforming one (see rule 3f and `oauth2_bcp.js`) and, with
   it, **turns the main port into an HTTPS listener** on the certificate LDAPS 636
   and the debugger's listener already share — so there is then no plain listener
-  in this process and `/tls/trust` has to be bootstrapped with verification off. The flag is OFF by
+  in this process and the truststore's first add has to be made with
+  verification off. The flag is OFF by
   default, changes nothing until it is set, and is RESTART-ONLY because of that
   socket. What it does and does not enforce is published at `GET /oauth2/rfc9700`
   rather than left to be read out of the code. Nothing else here has such a mode.

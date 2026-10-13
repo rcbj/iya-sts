@@ -138,8 +138,8 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    code would go unexercised — hence any username, one shared password
    (`scim.digestPassword`). HOBA's signature is genuinely verified for the same
    reason; what is permissive there is the REGISTRATION, which is
-   unauthenticated for the reason `POST /tls/trust` is — it is how a caller GETS
-   a credential. Between them they make five negatives reachable that no
+   unauthenticated for the reason the open `POST /tls/trust` was until #597 —
+   it is how a caller GETS a credential. Between them they make five negatives reachable that no
    permissive server can produce, including the one worth knowing: a replayed
    nonce count is refused WITHOUT `stale=true`, because `stale` means "your
    credential was fine, try again" and a replay is the opposite claim.
@@ -150,7 +150,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    rule 6a above for the three and three.
 
    **THE DISCOVERY ENDPOINTS ARE OPEN BY DEFAULT** (`scim.authDiscovery`), which
-   is `POST /tls/trust`'s bootstrapping argument: the ServiceProviderConfig is
+   is the bootstrapping argument the open `POST /tls/trust` made until #597: the ServiceProviderConfig is
    where a client READS which schemes exist, so demanding a credential to fetch
    it means a client must already know the answer to the question it is asking.
    **And it is what the specification asks**: RFC 7643 section 5 says a service

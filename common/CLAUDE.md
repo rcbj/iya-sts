@@ -5211,7 +5211,7 @@ it exists in the realm most deployments only ever have.
 `/xacml/pep/*` and `POST /xacml/pip` — the documents this service enforces its
 own access with, and a named person's directory attributes. `XACML_USER`
 reaches the four XACML endpoints proper. One group granting both would make
-admitting a caller to the demonstration surface silently admit it to those,
+admitting a caller to the XACML surface proper silently admit it to those,
 which is the collapse the split exists to prevent.
 
 **A PERSON IS GRANTED ONE BY GOING IN THE GROUP**, not by a role entry: the
@@ -9496,7 +9496,8 @@ because a leaf failing two at once hid two deleted checks in the first round:
   username.
 
 A chain through NO held authority answers `issuedHere: false` and every door
-treats it exactly as before — that is an anchor somebody installed at `/tls/trust`.
+treats it exactly as before — that is an anchor somebody installed through
+`/admin-api/tls/trust`.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and

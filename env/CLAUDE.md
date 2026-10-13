@@ -54,7 +54,7 @@ setting" warning at startup rather than a silent no-op.
 What it costs is that the FIRST fetch of the certificate cannot be verified —
 there is no plain listener left and the key does not exist until the process
 starts. `docs/configuration.md`'s `global.https` section is the user-facing half;
-`tls/CLAUDE.md` says what it takes away from `/tls/trust`, and
+`tls/CLAUDE.md` says what it takes away from the truststore's first add, and
 `tests/tools/trust.js` is what pays for it in a test run.
 
 ## AND THEY ARE WHAT RAISED THE RATE LIMITS (2026-09-06)
