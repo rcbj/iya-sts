@@ -7884,3 +7884,39 @@ tab, and a service account's section of the person page —
   `common/ownership.ts`'s MARKED sentence, to the letter.
 * Without Admin Write the section says whether the mark is set and draws no
   form.
+
+## AN APPLICATION'S PASSKEY POLICY, AND THE PASSKEY POLICY TAB'S SEARCH AND SUB-TABS (#609; rcbj, 2026-10-13)
+
+* **Nothing is stored on the application** (rcbj's decision 1). The relation
+  is a named passkey policy's `stsPasskeySelectApplication`, and
+  `passkeyPolicy.forApplication()` reads it, matching an application's
+  identifier and each client_id as `selectionFor()` matches the one a
+  sign-in names. The application read carries it as `page.passkeyPolicies`
+  (`admin_views.applicationPasskeyPolicies()`), and
+  `ApplicationsPage.applicationPasskeyPolicyCard()` draws it READ-ONLY at
+  the foot of the Every protocol sub-tab: the policies naming it with their
+  precedence, the lowest marked, each linked to `#passkey-profile-<name>`
+  on the Policies page, the group note. **`appliesBy` is there because a
+  sign-in names ONE of the names** — an OAuth sign-in the client_id — so two
+  policies naming the application by different names give different
+  answers; the card says so per name rather than pretending there is one.
+* **The Passkey policy tab is three sub-tabs** (`kit.subTabbedPanels()`):
+  `passkey-sub-default`, `passkey-sub-named`, `passkey-sub-new`, the schema
+  under all three. `PoliciesPage.isTabbedKind()` limits it to the passkey
+  policy; the locale policy's named profiles are drawn as they were.
+* **The applications box's search is #459's machinery in a plain form**: a
+  `fg-cell fg-search` around the comma-separated box, `WebKit.fieldSearchOf()`
+  with kind `policy-applications` (its own `boxTip` branch: no "this
+  application itself"), keyed per form (`passkey-apps` for New policy,
+  `passkey-apps.<name>` for a stored one) so no two forms share a cell. The
+  forms still post to `/admin/policies`; `isFieldSearch()` knows the page
+  (`WebAnswers.POLICIES_PAGE`) and `ConsoleRuntime.policySearch()` answers
+  the press in the browser: the Applications list, five a page, leaving out
+  what the box names, the form's posted fields kept as
+  `state.policyDrafts[<key>]` and an Add appending the IDENTIFIER
+  (`WebAnswers.withListedValue()`). Nothing is written until the form's
+  Save. **Each searching form opens with a hidden `default-submit`**, the
+  application grid's reason: otherwise Enter in any box presses Find.
+  `tests/passkey_policy_on_application.js` holds the data, the card, the
+  sub-tabs and the search; `tests/vendored/sts_passkey_policy_application.js`
+  the API half.
