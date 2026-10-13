@@ -576,7 +576,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'inherit-claim-attributes', 'set-access-type',
                              'remove-access-type', 'set-permission-claims',
                              'clear-permission-claims', 'export-ldif',
-                             'import-ldif', 'forget'];
+                             'import-ldif', 'forget', 'add-owner',
+                             'remove-owner'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -4788,6 +4789,7 @@ class AdminActions {
     const action = String(body.action || '');
     const identifier = String(body.application || '').trim();
     const needsOne = ['set', 'add', 'remove', 'update-fields',
+                      'add-owner', 'remove-owner',
                       'confirm-address',
                       'discard-address', 'regenerate-secret',
                       'rotate-secret', 'add-secret', 'remove-secret',
@@ -4968,6 +4970,31 @@ class AdminActions {
     // redirects with the MESSAGE only: the new value is on the page it lands
     // on, behind the same fold the old one was, and a secret in a query string
     // would be a secret in the browser history and every log on the way.
+    // AN APPLICATION'S OWNERS (#604): one added or taken off at a time,
+    // written at once — the application page's Owners tab, and its two
+    // operations. Who may be an owner and every refusal are applications.js's.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const { auditLog } = this.deps;
+      const adding = action === 'add-owner';
+      const owner = String(body.owner || '').trim();
+      const result: any = adding ? applications.addOwner(identifier, owner)
+                                 : applications.removeOwner(identifier, owner);
+      if (result.ok && result.changed) {
+        auditLog.audit({
+          action: adding ? 'application.add-owner'
+                         : 'application.remove-owner',
+          actor: String(body.actor || ''), target: identifier,
+          channel: 'http',
+          detail: (adding ? 'made ' : 'took ') + result.owner +
+                  (adding ? ' an owner of ' : ' off the owners of ') +
+                  identifier });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                (result.ok ? ' ok.' : ' refused.'));
+      return this.refusedBy(adding ? 'STS-ADMIN-0856' : 'STS-ADMIN-0857',
+                            result);
+    }
+
     if (action === 'regenerate-secret') {
       const result = applications.regenerateClientSecret(identifier,
         { actor: body.actor || '' });

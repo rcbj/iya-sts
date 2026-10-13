@@ -785,5 +785,8 @@
   "ldif.importIntro": "Creates an application in this realm from an LDIF file holding one application record, as an export writes it. The application named in the file must not already exist here: an import never overwrites, so it cannot change the application on this page.",
   "ldif.file": "LDIF file",
   "ldif.paste": "or paste the LDIF",
-  "ldif.import": "Import LDIF"
+  "ldif.import": "Import LDIF",
+  "owners.tab": "Owners",
+  "owners.lead": "The people and groups who answer for this application. Find one below and press <strong>Add</strong>, or take one off with <strong>Remove</strong>: each is saved the moment you press it. An owner grants nothing: nothing in this service reads it to decide anything.",
+  "owners.leadRead": "The people and groups who answer for this application, from its <code>appOwner</code> values. An owner grants nothing."
 }

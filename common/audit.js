@@ -656,6 +656,10 @@ const ACTIONS = [
     label: 'An application was exported to an LDIF file' },
   { action: 'application.import', category: 'application',
     label: 'An application was imported from an LDIF file' },
+  { action: 'application.add-owner', category: 'application',
+    label: 'An owner was added to an application' },
+  { action: 'application.remove-owner', category: 'application',
+    label: 'An owner was taken off an application' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes

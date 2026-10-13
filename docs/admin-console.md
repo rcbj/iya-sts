@@ -665,6 +665,13 @@ made* opens that role's page, `/admin/roles?role=<name>`. It has two tabs:
   are the same acts, and `GET /admin-api/roles?role=` answers the role in full
   as `role`.
 
+**An application's owners.** An application's page has an **Owners** tab
+too, after **Roles**, which works the same way: find a person or a group and
+press **Add**, or press **Remove**, and each change is saved at once. The
+owners are the application's `appOwner` values; at most 25, and an owner
+grants nothing. `POST /admin-api/applications/add-owner` and
+`POST /admin-api/applications/remove-owner` are the same acts.
+
 **What counts as a group is two rules.** An entry under `ou=groups`, *or* an
 entry carrying a group `objectClass` (`groupOfNames`, `groupOfUniqueNames`,
 `posixGroup`, `groupOfURLs`) wherever it sits. The directory is schemaless, so

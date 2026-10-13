@@ -22,6 +22,7 @@
 import kit = require('./web_kit');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import SettingsForms = require('./web_settings');
+import GroupsPage = require('./web_groups');
 
 type Json = any;
 
@@ -1368,6 +1369,22 @@ class ApplicationsPage {
             json.page.roles, carryBack, t) +
             ApplicationsPage.applicationRolesSection(row, json.page.roles,
               carryBack, t) },
+        // WHO ANSWERS FOR IT (#604, rcbj: "the owner pattern to a new tab
+        // under Directory->Applications->Application"): the group's Owners
+        // section (#603) on the application, each Add and Remove written at
+        // once, posting to /admin/applications/owners.
+        { id: 'tab-owners',
+          label: t.text('consoleApplications.owners.tab'),
+          html: GroupsPage.ownersSection(t, {
+            owners: json.page.owners || [], maxOwners: json.page.maxOwners },
+            !!ctx.write, kit.queryWith(kit.listViewOf('/admin/applications',
+                                                      ctx.query), {}),
+            json.state, {
+              route: '/admin/applications/owners', id: 'application-owners',
+              field: 'application', value: row.identifier,
+              stateKey: 'applicationOwners', self: '',
+              lead: t.html('consoleApplications.owners.lead'),
+              leadRead: t.html('consoleApplications.owners.leadRead') }) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.

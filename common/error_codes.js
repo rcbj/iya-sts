@@ -19645,6 +19645,18 @@ const CODES = [
       'register\'s own; where the register gives one, that code is ' +
       'recorded instead (#604).',
     spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-ADMIN-0856',
+    summary: 'Adding an owner to an application, on the application page or ' +
+      'through POST /admin-api/applications/add-owner, was refused with no ' +
+      'code of the registry\'s own; where the registry gives one, that code ' +
+      'is recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-ADMIN-0857',
+    summary: 'Taking an owner off an application, on the application page ' +
+      'or through POST /admin-api/applications/remove-owner, was refused ' +
+      'with no code of the registry\'s own; where the registry gives one, ' +
+      'that code is recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -21370,6 +21382,30 @@ const CODES = [
       'its client secrets (they would not seal, or the directory refused ' +
       'the write). The application is there without them.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0353',
+    summary: 'An owner could not be added to or taken off an application: ' +
+      'there is no application by that identifier (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0354',
+    summary: 'Adding an owner to an application was refused: no owner was ' +
+      'named (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0355',
+    summary: 'Adding an owner to an application was refused: the value ' +
+      'names no person and no group in this realm (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0356',
+    summary: 'Adding an owner to an application was refused: it already ' +
+      'names the most owners an application may (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0357',
+    summary: 'Taking an owner off an application was refused: the value is ' +
+      'not one of its owners (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0358',
+    summary: 'An application\'s owners could not be written to the ' +
+      'directory (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

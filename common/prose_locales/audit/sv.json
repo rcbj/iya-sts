@@ -543,6 +543,14 @@
     "en": "11baa5a45c403972",
     "text": "En applikation importerades från en LDIF-fil"
   },
+  "audit.actions.application.add-owner.label": {
+    "en": "5fb5f4fb1a5e6255",
+    "text": "En ägare lades till i en applikation"
+  },
+  "audit.actions.application.remove-owner.label": {
+    "en": "74db31f6ed42d060",
+    "text": "En ägare togs bort från en applikation"
+  },
   "audit.actions.application.update.label": {
     "en": "fdd9e6c7aff9da36",
     "text": "En applikation registrerade något nytt"

@@ -7842,3 +7842,13 @@ stylesheet's list):
 `tests/role_owners.js` holds the register, the acts, the helpers, the page and
 the stylesheet.
 
+**AND AN APPLICATION'S PAGE HAS AN OWNERS TAB (#604, rcbj: "the owner
+pattern to a new tab under Directory->Applications->Application")**:
+`tab-owners`, after Roles, the same `ownersSection()` posting to
+`/admin/applications/owners` (`WebAnswers.APPLICATION_OWNERS_PAGE`, in the
+applications action's `mirrors`), its owners on the page data
+(`page.owners`, `page.maxOwners`), its state `applicationOwners`, the runtime's
+search asked with holder `page`. The acts are `add-owner` and `remove-owner` on
+`applicationsAction()`, over `applications.addOwner()` and `removeOwner()`.
+`tests/role_owners.js` section F holds them.
+

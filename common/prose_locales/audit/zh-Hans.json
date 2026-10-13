@@ -543,6 +543,14 @@
     "en": "11baa5a45c403972",
     "text": "应用从 LDIF 文件导入"
   },
+  "audit.actions.application.add-owner.label": {
+    "en": "5fb5f4fb1a5e6255",
+    "text": "已向应用程序添加所有者"
+  },
+  "audit.actions.application.remove-owner.label": {
+    "en": "74db31f6ed42d060",
+    "text": "已从应用程序移除所有者"
+  },
   "audit.actions.application.update.label": {
     "en": "fdd9e6c7aff9da36",
     "text": "应用记录了新的内容"

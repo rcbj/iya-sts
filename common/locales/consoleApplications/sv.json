@@ -785,5 +785,8 @@
   "ldif.importIntro": "Skapar en applikation i den här sfären från en LDIF-fil med en applikationspost, så som en export skriver den. Applikationen som filen namnger får inte redan finnas här: en import skriver aldrig över, så den kan inte ändra applikationen på den här sidan.",
   "ldif.file": "LDIF-fil",
   "ldif.paste": "eller klistra in LDIF",
-  "ldif.import": "Importera LDIF"
+  "ldif.import": "Importera LDIF",
+  "owners.tab": "Ägare",
+  "owners.lead": "De personer och grupper som ansvarar för den här applikationen. Sök upp en nedan och tryck <strong>Lägg till</strong>, eller ta bort en med <strong>Ta bort</strong>: varje ändring sparas så fort du trycker. En ägare ger ingenting: inget i den här tjänsten läser den för att besluta något.",
+  "owners.leadRead": "De personer och grupper som ansvarar för den här applikationen, enligt dess värden i <code>appOwner</code>. En ägare ger ingenting."
 }

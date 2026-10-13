@@ -17097,6 +17097,8 @@ applications.setDirectory({
   allApplications: allApplications,
   countApplications: applicationCount,
   deleteApplication: deleteApplicationEntry,
+  // An application's owners (#604) are resolved as a service account's are.
+  resolveOwner: resolveServiceAccountOwner,
   // Two facts about the container itself, for the pages that report where these
   // entries live and how many will fit. They are here rather than in that
   // module because that module deliberately does not know where the container

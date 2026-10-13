@@ -1788,6 +1788,10 @@ class ConsoleRuntime extends SpaClient {
         await this.groupOwnerSearch(fields, 'role', 'roleOwners');
         return;
       }
+      if (page === WebAnswers.APPLICATION_OWNERS_PAGE) {
+        await this.groupOwnerSearch(fields, 'page', 'applicationOwners');
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }

@@ -543,6 +543,14 @@
     "en": "11baa5a45c403972",
     "text": "May application na na-import mula sa isang LDIF file"
   },
+  "audit.actions.application.add-owner.label": {
+    "en": "5fb5f4fb1a5e6255",
+    "text": "May idinagdag na may-ari sa isang application"
+  },
+  "audit.actions.application.remove-owner.label": {
+    "en": "74db31f6ed42d060",
+    "text": "May inalis na may-ari sa isang application"
+  },
   "audit.actions.application.update.label": {
     "en": "fdd9e6c7aff9da36",
     "text": "May application na nagtala ng bago"

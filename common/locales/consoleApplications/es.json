@@ -785,5 +785,8 @@
   "ldif.importIntro": "Crea una aplicación en este dominio a partir de un archivo LDIF con un registro de aplicación, tal como lo escribe una exportación. La aplicación que nombra el archivo no debe existir ya aquí: una importación nunca sobrescribe, así que no puede cambiar la aplicación de esta página.",
   "ldif.file": "Archivo LDIF",
   "ldif.paste": "o pegue el LDIF",
-  "ldif.import": "Importar LDIF"
+  "ldif.import": "Importar LDIF",
+  "owners.tab": "Propietarios",
+  "owners.lead": "Las personas y los grupos que responden por esta aplicación. Busque uno abajo y pulse <strong>Añadir</strong>, o quite uno con <strong>Quitar</strong>: cada cambio se guarda en cuanto lo pulsa. Un propietario no concede nada: nada en este servicio lo lee para decidir algo.",
+  "owners.leadRead": "Las personas y los grupos que responden por esta aplicación, de sus valores <code>appOwner</code>. Un propietario no concede nada."
 }

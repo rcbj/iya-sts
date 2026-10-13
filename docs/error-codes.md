@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4305** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4313** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -88,12 +88,12 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 234
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 236
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 92
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
-* [Registries (`STS-REG`)](#sts-reg) — 170
+* [Registries (`STS-REG`)](#sts-reg) — 176
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -4541,6 +4541,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0853` | Taking an owner off a group, on the group page or through POST /admin-api/groups/remove-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-ADMIN-0854` | Adding an owner to a role, on the role page or through POST /admin-api/roles/add-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-ADMIN-0855` | Taking an owner off a role, on the role page or through POST /admin-api/roles/remove-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-ADMIN-0856` | Adding an owner to an application, on the application page or through POST /admin-api/applications/add-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-ADMIN-0857` | Taking an owner off an application, on the application page or through POST /admin-api/applications/remove-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 
 ## STS-API
 
@@ -4958,6 +4960,12 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0350` | An application import was refused: the record carries a DERIVED attribute (a counter, a sighting, an observed value), which records what happened to the application this service saw rather than what an administrator configures. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0351` | An application import was refused: the record carries an attribute that is not in the application schema, or a credential that no import can write (a Kerberos service key, an enrollment key or challenge, a GNAP macaroon key). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0352` | An application import created the entry but could not write its client secrets (they would not seal, or the directory refused the write). The application is there without them. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0353` | An owner could not be added to or taken off an application: there is no application by that identifier (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0354` | Adding an owner to an application was refused: no owner was named (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0355` | Adding an owner to an application was refused: the value names no person and no group in this realm (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0356` | Adding an owner to an application was refused: it already names the most owners an application may (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0357` | Taking an owner off an application was refused: the value is not one of its owners (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0358` | An application's owners could not be written to the directory (#604). | HTTP 400 (API) or a refusal on the application page |
 
 ## STS-DBG
 

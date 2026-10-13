@@ -5394,6 +5394,11 @@ caller does not name them** (`given.owners === undefined`), for
 grants nothing; `ownersOf()` reports one deleted since with `kind: ''`, and
 `entryOf()` answers the role's directory entry for its page.
 
+**An application has owners too (#604)**: `appOwner` on its entry, written by
+`applications.addOwner()` and `removeOwner()` alone (in no EDITABLE row, so the
+field grid never draws it), with the same rules and its own codes
+(`STS-REG-0353` to `0358`), resolved through the directory's `resolveOwner`.
+
 ### `roles.js` is a LEAF and must stay one
 
 It requires `helpers.js` and `config.js` and nothing else here, which is what

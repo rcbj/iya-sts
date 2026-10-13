@@ -785,5 +785,8 @@
   "ldif.importIntro": "根据包含一条应用程序记录的 LDIF 文件（导出所写的格式）在此领域中创建应用程序。文件中指定的应用程序不得已存在于此：导入从不覆盖，因此不会更改本页的应用程序。",
   "ldif.file": "LDIF 文件",
   "ldif.paste": "或粘贴 LDIF",
-  "ldif.import": "导入 LDIF"
+  "ldif.import": "导入 LDIF",
+  "owners.tab": "所有者",
+  "owners.lead": "对此应用程序负责的人员和组。在下方查找一个并按 <strong>添加</strong>，或用 <strong>移除</strong> 删除一个：每次按下即刻保存。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。",
+  "owners.leadRead": "对此应用程序负责的人员和组，来自其 <code>appOwner</code> 值。所有者不授予任何权限。"
 }

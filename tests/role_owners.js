@@ -31,6 +31,10 @@
 //      requiring applications; the owners with a Remove each for Admin
 //      Write and none without; a role that is not there says so.
 //   E. THE STYLESHEET marks both tabs when they are read.
+//   F. AN APPLICATION'S OWNERS (rcbj: "the owner pattern to a new tab under
+//      Directory->Applications->Application"): `appOwner` added and taken
+//      off through `applicationsAction()`, the refusals' codes, and the
+//      application page's Owners tab.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -44,6 +48,7 @@ const roles = require('../common/roles');
 const adminActions = require('../admin-core/admin_actions');
 const WebAnswers = require('../admin-ui/web_answers');
 const RolesPage = require('../admin-ui/web_roles');
+const applications = require('../common/applications');
 const kit = require('../admin-ui/web_kit');
 
 const log = require('bunyan').createLogger({ name: 'role_owners',
@@ -293,6 +298,46 @@ function theStylesheet(t) {
   log.debug('Leaving theStylesheet().');
 }
 
+async function theApplications(t) {
+  log.debug('Entering theApplications().');
+  await withRealm(t, 'app-owners', function () {
+    person('ao-ann');
+    ldap.createGroup('ao-ops', { origin: 'test' });
+    const made = applications.createApplication({ identifier: 'ao-app',
+      kind: 'oauth2-client' });
+    const added = adminActions.applicationsAction({ action: 'add-owner',
+      application: 'ao-app', owner: 'ao-ann' });
+    const group = adminActions.applicationsAction({ action: 'add-owner',
+      application: 'ao-app', owner: 'ao-ops' });
+    const again = adminActions.applicationsAction({ action: 'add-owner',
+      application: 'ao-app', owner: 'ao-ann' });
+    t.check(made && made.ok !== false && added.ok && group.ok &&
+            again.ok && again.changed === false &&
+            group.owners.length === 2 &&
+            applications.ownersOf('ao-app').length === 2 &&
+            group.owners[1].kind === 'group',
+            'F1. a person and a group are added to an application, each once',
+            JSON.stringify({ made: made, group: group }).slice(0, 400));
+    const nobody = adminActions.applicationsAction({ action: 'add-owner',
+      application: 'ao-app', owner: 'ao-no-such' });
+    const stranger = adminActions.applicationsAction({ action:
+      'remove-owner', application: 'ao-app', owner: 'uid=x,dc=y' });
+    const noApp = adminActions.applicationsAction({ action: 'add-owner',
+      application: 'ao-nothing', owner: 'ao-ann' });
+    t.check(errorCodes.codeOf(nobody) === 'STS-REG-0355' &&
+            errorCodes.codeOf(stranger) === 'STS-REG-0357' &&
+            noApp.ok === false,
+            'F2. nobody, a stranger and no application are refused',
+            JSON.stringify([nobody, stranger, noApp]).slice(0, 400));
+    const off = adminActions.applicationsAction({ action: 'remove-owner',
+      application: 'ao-app', owner: dnOf('ao-ann') });
+    t.check(off.ok && off.owners.length === 1 &&
+            applications.get('ao-app') !== null,
+            'F3. a remove keeps the other owner', JSON.stringify(off));
+  });
+  log.debug('Leaving theApplications().');
+}
+
 module.exports = {
   name: 'role owners',
   describe: 'A role\'s owners and its page (#604): people and groups of ' +
@@ -305,6 +350,7 @@ module.exports = {
     theHelpers(t);
     thePage(t);
     theStylesheet(t);
+    await theApplications(t);
     log.debug('Leaving run().');
   }
 };

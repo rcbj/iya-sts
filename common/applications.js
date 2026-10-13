@@ -1488,6 +1488,17 @@ const SCHEMA = {
     // taken away, so a form that could remove it would be a form that could
     // bring a withdrawn grant back. `common/consent.ts` writes it, through
     // `noteGlobalConsentWithdrawn()` below, and nothing else does.
+    // WHO ANSWERS FOR THE APPLICATION (#604): people and groups of this
+    // realm, by DN, the rule a group's and a role's owners follow. Written by
+    // the application page's Owners tab alone (addOwner(), removeOwner()),
+    // so it is in no EDITABLE row and the field grid never draws it.
+    { name: 'appOwner', kind: 'multi',
+      from: 'the application page\'s Owners tab',
+      what: 'A person or a group of this realm who answers for the ' +
+            'application (#604), by DN, as a group\'s and a role\'s ' +
+            'owners are. Multi-valued, at most 25. An owner GRANTS ' +
+            'NOTHING: nothing in this service reads it to decide anything. ' +
+            'The user portal lists what a person owns.' },
     { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
       from: 'the consent register, when a global consent is withdrawn',
       what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
@@ -17389,6 +17400,160 @@ function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
   return saved;
 }
 
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWNERS (#604, rcbj: "Go ahead and [add] the owner pattern
+// to a new tab under Directory->Applications->Application"). The group's and
+// the role's rules: each owner a PERSON or a GROUP of this realm, resolved by
+// the directory's `resolveOwner` (the service account's resolver); one that
+// names nobody is refused when added and reported, never dropped, when it is
+// deleted since; at most MAX_OWNERS. Written onto `appOwner` with
+// noteGlobalConsentWithdrawn()'s load-and-save, and quietly: an owner is not
+// a credential. AN OWNER GRANTS NOTHING.
+// ---------------------------------------------------------------------------
+/** The most owners an application may name; for more, name a group. */
+const MAX_OWNERS = 25;
+
+function ownerLower(dn) {
+  log.debug("Entering ownerLower().");
+  log.debug("Leaving ownerLower().");
+  return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Describes an application's owners, each resolved to a person or a group
+ * of this realm, or `kind: ''` where it names nobody now.
+ *
+ * @param source - a view, a record, or the identifier
+ * @returns `[{ dn, kind, name, present }]`, in the order the entry holds them
+ */
+function ownersOf(source) {
+  log.debug("Entering ownersOf().");
+  let fields = source && typeof source === 'object'
+    ? (source.fields || {}) : null;
+  if (!fields) {
+    const loaded = load(String(source || ''));
+    fields = loaded.known ? loaded.record.fields : {};
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const out = valuesOf(fields.appOwner).map(function (dn) {
+    const found = resolve ? resolve(dn) : { kind: '', dn: '', name: '' };
+    return { dn: found.kind ? found.dn : dn, kind: found.kind || '',
+             name: found.name || '', present: !!found.kind };
+  });
+  log.debug("Leaving ownersOf(). " + out.length);
+  return out;
+}
+
+/**
+ * Adds one owner to an application, writing at once (#604). An owner
+ * already listed answers ok with `changed: false`.
+ *
+ * @param identifier - the application's identifier
+ * @param owner - a person (username, DN or `urn:uuid:` subject) or a group
+ *   (cn or DN) of this realm
+ * @returns `{ ok: true, changed, application, owner, owners, message }`, or
+ *   `{ ok: false, errors }` carrying an error code
+ */
+function addOwner(identifier, owner) {
+  log.debug("Entering addOwner(). identifier=" + identifier);
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving addOwner(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const wanted = String(owner == null ? '' : owner).trim();
+  if (!wanted) {
+    log.debug("Leaving addOwner(). No owner.");
+    return errorCodes.mark({ ok: false, errors: ['Who? Send `owner` with a ' +
+             'person (a username or DN) or a group (its cn or DN) of this ' +
+             'realm.'] }, 'STS-REG-0354');
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const resolved = resolve ? resolve(wanted) : { kind: '' };
+  if (!resolved.kind) {
+    log.debug("Leaving addOwner(). Names nobody.");
+    return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 128) +
+             '" names no person and no group in this realm. An owner ' +
+             'answers for the application, so it must name somebody.'] },
+             'STS-REG-0355');
+  }
+  const record = loaded.record;
+  const before = ownersOf(record);
+  const values = valuesOf(record.fields.appOwner);
+  if (values.some(function (dn) {
+    return ownerLower(dn) === ownerLower(resolved.dn);
+  })) {
+    log.debug("Leaving addOwner(). Already an owner.");
+    return { ok: true, changed: false, application: record.identifier,
+             owner: resolved.dn, owners: before,
+             message: (resolved.name || resolved.dn) + ' was already an ' +
+                      'owner of ' + record.identifier + '.' };
+  }
+  if (values.length >= MAX_OWNERS) {
+    log.debug("Leaving addOwner(). Too many.");
+    return errorCodes.mark({ ok: false, errors: [record.identifier +
+             ' already names ' + values.length + ' owners, the most an ' +
+             'application may name (' + MAX_OWNERS + '). Name a group of ' +
+             'them instead.'] }, 'STS-REG-0356');
+  }
+  record.fields.appOwner = values.concat([resolved.dn]);
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving addOwner(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The owner could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving addOwner(). Added.");
+  return { ok: true, changed: true, application: record.identifier,
+           owner: resolved.dn, owners: ownersOf(record.identifier),
+           message: (resolved.name || resolved.dn) + ' is now an owner of ' +
+                    record.identifier + '.' };
+}
+
+/**
+ * Takes one owner off an application, writing at once (#604). Refused for a
+ * value it does not list; the last owner may go.
+ *
+ * @param identifier - the application's identifier
+ * @param owner - the owner's DN, as the application lists it
+ * @returns `{ ok: true, changed: true, application, owner, owners, message }`,
+ *   or `{ ok: false, errors }` carrying an error code
+ */
+function removeOwner(identifier, owner) {
+  log.debug("Entering removeOwner(). identifier=" + identifier);
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving removeOwner(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const record = loaded.record;
+  const wanted = String(owner == null ? '' : owner).trim();
+  const values = valuesOf(record.fields.appOwner);
+  const kept = values.filter(function (dn) {
+    return ownerLower(dn) !== ownerLower(wanted);
+  });
+  if (!wanted || kept.length === values.length) {
+    log.debug("Leaving removeOwner(). Not an owner.");
+    return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 128) +
+             '" is not one of ' + record.identifier + '\'s owners.'] },
+             'STS-REG-0357');
+  }
+  record.fields.appOwner = kept;
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving removeOwner(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The owners could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving removeOwner(). Removed.");
+  return { ok: true, changed: true, application: record.identifier,
+           owner: wanted, owners: ownersOf(record.identifier),
+           message: wanted + ' is no longer an owner of ' +
+                    record.identifier + '.' };
+}
+
 /**
  * Returns one application by its registry identifier.
  *
@@ -19152,6 +19317,11 @@ module.exports = {
   FIELD_SECTIONS: FIELD_SECTIONS,
   SIMPLE_FIELD_ATTRIBUTES: SIMPLE_FIELD_ATTRIBUTES,
   PAGE_TAB_ATTRIBUTES: PAGE_TAB_ATTRIBUTES,
+  // An application's owners (#604).
+  MAX_OWNERS: MAX_OWNERS,
+  ownersOf: ownersOf,
+  addOwner: addOwner,
+  removeOwner: removeOwner,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
   CHOICE_IDS: CHOICE_IDS,

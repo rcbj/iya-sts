@@ -135,6 +135,8 @@
   "audit.actions.application.secret-revealed.label": "A credential of an application was revealed to an administrator",
   "audit.actions.application.export.label": "An application was exported to an LDIF file",
   "audit.actions.application.import.label": "An application was imported from an LDIF file",
+  "audit.actions.application.add-owner.label": "An owner was added to an application",
+  "audit.actions.application.remove-owner.label": "An owner was taken off an application",
   "audit.actions.application.update.label": "An application recorded something new",
   "audit.actions.consent.grant.label": "A person consented an application's scopes",
   "audit.actions.consent.deny.label": "A person refused an application's scopes",

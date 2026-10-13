@@ -9908,6 +9908,9 @@ class AdminViews {
     // carry (`scopePolicy.configuredScopeWarnings()`).
     const scopeWarnings = self.applicationScopeWarnings(row.identifier);
     (out as any).warnings = scopeWarnings;
+    // ITS OWNERS (#604), resolved, for the Owners tab.
+    (out as any).owners = applications.ownersOf(row);
+    (out as any).maxOwners = applications.MAX_OWNERS;
     (out.config as any).fieldWarnings = scopeWarnings.length
       ? { wstrustJwtScope: scopeWarnings } : {};
     log.debug("Leaving AdminViews.applicationPageData().");

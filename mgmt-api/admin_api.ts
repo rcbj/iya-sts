@@ -13259,8 +13259,11 @@ class AdminApi {
         // and /admin/applications/new's RFC 9728 import, whose load and create
         // post to that page so a refusal can redraw it. The console suite reads
         // this field to learn which console paths take a POST.
-        mirrors: 'POST /admin/applications, POST /admin/applications/new ' +
-                 'and POST /admin/applications/edit',
+        // And since #604 the application page's Owners tab, which posts to
+        // /admin/applications/owners so its Find is told apart.
+        mirrors: 'POST /admin/applications, POST /admin/applications/new, ' +
+                 'POST /admin/applications/edit and ' +
+                 'POST /admin/applications/owners',
         handler: function (req, res) {
           log.debug("Entering the management API applications action " +
                     "endpoint.");
@@ -13721,6 +13724,51 @@ class AdminApi {
 
           // THE CREDENTIALS SECTION'S SECRET CONTROLS (2026-09-13; several
           // secrets since 2026-10-01).
+          // AN APPLICATION'S OWNERS (#604): what the application page's
+          // Owners tab saves the moment Add or Remove is pressed.
+          { action: 'add-owner', operationId: 'addApplicationOwner',
+            summary: 'Add one owner to an application',
+            description: 'Adds a person or a group of this realm to the ' +
+                         'application\'s `appOwner` values and writes at ' +
+                         'once. `owner` is a username, a DN or a `urn:uuid:` ' +
+                         'subject for a person, a `cn` or DN for a group. ' +
+                         'One that names nobody is refused; at most 25. An ' +
+                         'owner already listed is `ok` with `changed: ' +
+                         'false`.\n\n**AN OWNER GRANTS NOTHING**; the user ' +
+                         'portal lists what a person owns.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                owner: { type: 'string',
+                         description: 'The person or group to add.' }
+              },
+              required: ['application', 'owner'],
+              examples: [{ application: 'webapp1', owner: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s owners as they now ' +
+                                 'stand (`owners`).' },
+          { action: 'remove-owner', operationId: 'removeApplicationOwner',
+            summary: 'Take one owner off an application',
+            description: 'Takes one `appOwner` value off the application and ' +
+                         'writes at once (#604). `owner` is the DN as ' +
+                         'listed; one not listed is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                application: { type: 'string' },
+                owner: { type: 'string', description: 'The owner\'s DN.' }
+              },
+              required: ['application', 'owner'],
+              examples: [{ application: 'webapp1',
+                           owner: 'uid=alice,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The application\'s owners as they now ' +
+                                 'stand (`owners`).' },
           { action: 'regenerate-secret',
             operationId: 'regenerateApplicationClientSecret',
             summary: 'Mint a new client secret for an application, replacing ' +
