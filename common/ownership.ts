@@ -400,12 +400,12 @@ class Ownership {
           });
         }
       } else {
-        const loaded = this.deps.applications().load(out.name);
-        if (loaded && loaded.known) {
+        const app = this.deps.applications().get(out.name);
+        if (app) {
           out.found = true;
-          out.name = loaded.record.identifier;
-          out.dn = String((loaded.entry || {}).dn || '');
-          out.owners = [].concat(loaded.record.fields.appOwner || [])
+          out.name = String(app.identifier);
+          out.dn = String(app.dn || '');
+          out.owners = [].concat((app.fields || {}).appOwner || [])
             .map(String).filter(Boolean);
         }
       }
