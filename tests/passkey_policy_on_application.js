@@ -137,9 +137,13 @@ function data(t, names) {
           'A6. an application no policy names gets default',
           JSON.stringify(lone));
   t.check(passkeyPolicy.selectionFor('', APP) === names.strict &&
-          passkeyPolicy.selectionFor('', CLIENT) === names.strict &&
-          passkeyPolicy.selectionFor('', OTHER) === names.other,
-          'A7. selection is as it was: the card agrees with it');
+          passkeyPolicy.selectionFor('', CLIENT) === names.client &&
+          passkeyPolicy.selectionFor('', OTHER) === names.other &&
+          !!pk && pk.appliesBy[APP] === names.strict &&
+          pk.appliesBy[CLIENT] === names.client,
+          'A7. selection is as it was, and the answer says per name what a ' +
+          'sign-in naming the application by it gets — an OAuth sign-in ' +
+          'names the client_id', JSON.stringify(pk && pk.appliesBy));
   log.debug('Leaving data().');
   return json;
 }
@@ -156,9 +160,12 @@ function card(t, json, names) {
           html.indexOf('href="/admin/policies#passkey-profile-' +
                        names.client + '"') >= 0 &&
           /class="pk-applies"/.test(html) &&
-          !/<form|<input|<button/.test(html),
-          'B1. the card lists both, links each, marks the winner and holds ' +
-          'no control', html.slice(0, 600));
+          !/<form|<input|<button/.test(html) &&
+          html.indexOf('<code>' + CLIENT + '</code> gets <strong>' +
+                       names.client + '</strong>') >= 0,
+          'B1. the card lists both, links each, marks the winner, says what ' +
+          'a sign-in naming the client_id gets, and holds no control',
+          html.slice(0, 600));
   t.check(/select by group/.test(html) && /<strong>default<\/strong>/
     .test(page.applicationPasskeyPolicyCard(readOf(LONE), ctx.t)),
           'B2. it says a group policy can still win, and names default ' +

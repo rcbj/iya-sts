@@ -801,6 +801,7 @@
   "passkey.appliesNo": "superada",
   "passkey.winner": "Un inicio de sesión para esta aplicación recibe la política <strong>{name}</strong>: la de menor precedencia entre las que la nombran.",
   "passkey.default": "Un inicio de sesión para esta aplicación recibe la política de llaves de acceso <strong>default</strong>.",
+  "passkey.byName": "Un inicio de sesión que la nombra como <code>{value}</code> recibe <strong>{name}</strong> en su lugar.",
   "passkey.open": "Abrir en Directorio → Políticas",
   "passkey.groupNote": "Una política con nombre que selecciona por grupo aún puede prevalecer para una persona concreta: si una política que nombra uno de los grupos de la persona tiene una precedencia menor, se le aplica esa. Este dominio tiene {n} política(s) de llaves de acceso con nombre que seleccionan por grupo."
 }

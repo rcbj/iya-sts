@@ -801,6 +801,7 @@
   "passkey.appliesNo": "outranked",
   "passkey.winner": "A sign-in for this application gets the <strong>{name}</strong> policy: the lowest precedence of those naming it.",
   "passkey.default": "A sign-in for this application gets the <strong>default</strong> passkey policy.",
+  "passkey.byName": "A sign-in that names it as <code>{value}</code> gets <strong>{name}</strong> instead.",
   "passkey.open": "Open on Directory → Policies",
   "passkey.groupNote": "A named policy selecting by group can still win for a given person: where a policy naming one of the person's groups has a lower precedence, it applies to them instead. This realm has {n} named passkey policy(ies) that select by group."
 }

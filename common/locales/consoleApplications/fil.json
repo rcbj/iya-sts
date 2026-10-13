@@ -801,6 +801,7 @@
   "passkey.appliesNo": "nalampasan",
   "passkey.winner": "Ang pag-sign in para sa application na ito ay nakakakuha ng patakarang <strong>{name}</strong>: ang may pinakamababang precedence sa mga nagbabanggit dito.",
   "passkey.default": "Ang pag-sign in para sa application na ito ay nakakakuha ng <strong>default</strong> na patakaran sa passkey.",
+  "passkey.byName": "Ang pag-sign in na bumabanggit dito bilang <code>{value}</code> ay nakakakuha ng <strong>{name}</strong> sa halip.",
   "passkey.open": "Buksan sa Directory → Policies",
   "passkey.groupNote": "Ang isang pinangalanang patakaran na pumipili ayon sa grupo ay maaari pa ring manalo para sa isang partikular na tao: kung ang isang patakarang nagbabanggit sa isa sa mga grupo ng tao ay may mas mababang precedence, iyon ang nalalapat sa kanila. May {n} pinangalanang patakaran sa passkey ang realm na ito na pumipili ayon sa grupo."
 }

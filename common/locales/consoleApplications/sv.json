@@ -801,6 +801,7 @@
   "passkey.appliesNo": "åsidosatt",
   "passkey.winner": "En inloggning för det här programmet får policyn <strong>{name}</strong>: den lägsta prioriteten bland dem som anger det.",
   "passkey.default": "En inloggning för det här programmet får policyn för nyckelpass <strong>default</strong>.",
+  "passkey.byName": "En inloggning som anger det som <code>{value}</code> får <strong>{name}</strong> i stället.",
   "passkey.open": "Öppna under Katalog → Policyer",
   "passkey.groupNote": "En namngiven policy som väljer efter grupp kan ändå vinna för en viss person: när en policy som anger en av personens grupper har lägre prioritet gäller den i stället. Den här sfären har {n} namngivna policyer för nyckelpass som väljer efter grupp."
 }

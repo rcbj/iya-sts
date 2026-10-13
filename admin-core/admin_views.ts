@@ -9795,7 +9795,8 @@ class AdminViews {
     } catch (e) {
       log.debug("Caught in AdminViews.applicationPasskeyPolicies(): " +
                 ((e && e.message) || e));
-      out = { policies: [], applies: 'default', groupPolicies: 0 };
+      out = { policies: [], applies: 'default', appliesBy: {},
+              groupPolicies: 0 };
     }
     log.debug("Leaving AdminViews.applicationPasskeyPolicies(). " +
               out.policies.length + " policy(ies).");

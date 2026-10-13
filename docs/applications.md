@@ -979,6 +979,11 @@ The one that applies is the lowest precedence among them. Where none names the
 application, the card says the `default` passkey policy applies. Each name
 links to that policy on Directory → Policies.
 
+A sign-in names the application by one of its names: an OAuth or OpenID
+Connect sign-in by its client_id, SAML by its entity ID. Where policies name
+the application by different names, a sign-in gets the policy that names the
+name it used, and the card says so for each name that gets a different one.
+
 **A policy selecting by group can still win for a given person.** Where a
 named policy lists one of the person's groups and has a lower precedence,
 it applies to them instead; the card says how many named policies select by
@@ -993,7 +998,8 @@ name one application; precedence decides between them.
 The API answer is `page.passkeyPolicies` on
 `GET /admin-api/applications?application=<id>`: `policies` (each `name`,
 `dn`, `precedence`, `selectApplications`, `selectGroups`, `matched`,
-`applies` and `link`), `applies`, `groupPolicies`, `names` and `link`.
+`applies` and `link`), `applies`, `appliesBy` (the policy per name),
+`groupPolicies`, `names` and `link`.
 
 ## Development and product mode
 

@@ -979,18 +979,21 @@ class PasskeyPolicy {
    *
    * @param names - what the application answers to: its identifier and each
    *   client_id
-   * @returns `{ policies, applies, groupPolicies }` — each policy `{ name,
-   *   dn, precedence, selectApplications, selectGroups, matched, applies }`;
-   *   `applies` the profile a sign-in naming the application gets before
-   *   any person is known; `groupPolicies` how many named profiles select
-   *   by group and could still win for a person
+   * @returns `{ policies, applies, appliesBy, groupPolicies }` — each
+   *   policy `{ name, dn, precedence, selectApplications, selectGroups,
+   *   matched, applies }`; `applies` the lowest precedence naming the
+   *   application by any of its names, else `default`; `appliesBy` the
+   *   profile a sign-in naming it by each one gets before any person is
+   *   known; `groupPolicies` how many named profiles select by group and
+   *   could still win for a person
    */
   forApplication(names: unknown[]): {
       policies: Array<{ name: string; dn: string; precedence: number;
                         selectApplications: string[];
                         selectGroups: string[]; matched: string[];
                         applies: boolean }>;
-      applies: string; groupPolicies: number } {
+      applies: string; appliesBy: Record<string, string>;
+      groupPolicies: number } {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.forApplication().");
     const wanted = (Array.isArray(names) ? names : []).map(function (one) {
@@ -999,7 +1002,8 @@ class PasskeyPolicy {
     }).filter(Boolean);
     if (!this.haveDirectory()) {
       log.debug("Leaving PasskeyPolicy.forApplication(). No directory.");
-      return { policies: [], applies: DEFAULT_PROFILE, groupPolicies: 0 };
+      return { policies: [], applies: DEFAULT_PROFILE, appliesBy: {},
+               groupPolicies: 0 };
     }
     const named = this.directory.allPasskeyPolicies().filter(function (one) {
       return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
@@ -1031,9 +1035,27 @@ class PasskeyPolicy {
       return one.selectGroups.length > 0;
     }).length;
     const applies = policies.length ? policies[0].name : DEFAULT_PROFILE;
+    // A SIGN-IN NAMES ONE OF THEM — an OAuth client its client_id, SAML its
+    // entity ID — so where two policies name the application by different
+    // names, which applies depends on the name: `selectionFor()`'s answer
+    // for each, before any person is known.
+    const appliesBy: Record<string, string> = {};
+    (Array.isArray(names) ? names : []).forEach(function (one) {
+      const raw = String(one === undefined || one === null ? '' : one).trim();
+      if (!raw) {
+        return;
+      }
+      const lower = raw.toLowerCase();
+      const first = policies.filter(function (p) {
+        return p.matched.some(function (m) {
+          return m.trim().toLowerCase() === lower;
+        });
+      })[0];
+      appliesBy[raw] = first ? first.name : DEFAULT_PROFILE;
+    });
     log.debug("Leaving PasskeyPolicy.forApplication(). " + policies.length +
               " name it; " + applies + " applies.");
-    return { policies: policies, applies: applies,
+    return { policies: policies, applies: applies, appliesBy: appliesBy,
              groupPolicies: groupPolicies };
   }
 

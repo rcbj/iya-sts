@@ -1953,12 +1953,25 @@ class ApplicationsPage {
       ? t.html('consoleApplications.passkey.winner',
                { name: String(pk.applies) })
       : t.html('consoleApplications.passkey.default');
+    // WHERE THE NAME DECIDES (#609): a sign-in names the application by one
+    // of its names — an OAuth client by its client_id — so a name whose
+    // sign-in gets another policy than the one marked is said, one line
+    // each.
+    const byName = pk.appliesBy || {};
+    const differs = Object.keys(byName).filter(function (name) {
+      return byName[name] !== pk.applies;
+    }).map(function (name) {
+      return '<li>' + t.html('consoleApplications.passkey.byName',
+                             { value: name, name: String(byName[name]) }) +
+        '</li>';
+    }).join('');
     return '<div class="pk-card" id="cfg-every-passkey">' +
       '<h3>' + t.html('consoleApplications.passkey.heading') + '</h3>' +
       kit.note(lead) + table +
       '<p>' + verdict + ' <a href="' + kit.esc(policies.length
         ? String(policies[0].link || defaultLink) : defaultLink) + '">' +
       t.html('consoleApplications.passkey.open') + '</a></p>' +
+      (differs ? '<ul>' + differs + '</ul>' : '') +
       kit.note(t.html('consoleApplications.passkey.groupNote',
                       { n: String(pk.groupPolicies || 0) })) +
       '</div>';

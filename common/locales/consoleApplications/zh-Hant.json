@@ -801,6 +801,7 @@
   "passkey.appliesNo": "被優先",
   "passkey.winner": "此應用程式的登入使用 <strong>{name}</strong> 原則：即指定它的原則中優先順序數值最低的那個。",
   "passkey.default": "此應用程式的登入使用 <strong>default</strong> 通行金鑰原則。",
+  "passkey.byName": "以 <code>{value}</code> 指定它的登入改用 <strong>{name}</strong>。",
   "passkey.open": "在目錄 → 原則中開啟",
   "passkey.groupNote": "依群組選取的具名原則仍可能對某個人生效：如果指定此人所屬某個群組的原則優先順序數值更低，則對其適用該原則。此領域有 {n} 個依群組選取的具名通行金鑰原則。"
 }

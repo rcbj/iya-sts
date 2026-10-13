@@ -801,6 +801,7 @@
   "passkey.appliesNo": "supplantée",
   "passkey.winner": "Une connexion pour cette application reçoit la politique <strong>{name}</strong> : la priorité la plus basse parmi celles qui la citent.",
   "passkey.default": "Une connexion pour cette application reçoit la politique de clés d’accès <strong>default</strong>.",
+  "passkey.byName": "Une connexion qui la désigne comme <code>{value}</code> reçoit <strong>{name}</strong> à la place.",
   "passkey.open": "Ouvrir dans Annuaire → Politiques",
   "passkey.groupNote": "Une politique nommée qui sélectionne par groupe peut tout de même l’emporter pour une personne donnée : lorsqu’une politique citant l’un des groupes de la personne a une priorité plus basse, c’est elle qui s’applique. Ce domaine compte {n} politique(s) de clés d’accès nommée(s) qui sélectionnent par groupe."
 }

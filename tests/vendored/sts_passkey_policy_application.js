@@ -184,6 +184,9 @@ async function test() {
     assert.strictEqual(pk.policies[0].link,
                        "/admin/policies#passkey-profile-" + STRICT);
     assert.ok(pk.groupPolicies >= 1, JSON.stringify(pk));
+    // An OAuth sign-in names the client_id, and gets the policy naming it.
+    assert.strictEqual(pk.appliesBy[APP], STRICT, JSON.stringify(pk));
+    assert.strictEqual(pk.appliesBy[CLIENT], BYCLIENT, JSON.stringify(pk));
   });
 
   const lone = (await pageOf(LONE)).page.passkeyPolicies;

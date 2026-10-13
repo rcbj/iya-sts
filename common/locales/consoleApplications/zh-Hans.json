@@ -801,6 +801,7 @@
   "passkey.appliesNo": "被优先",
   "passkey.winner": "此应用程序的登录使用 <strong>{name}</strong> 策略：即指定它的策略中优先级数值最低的那个。",
   "passkey.default": "此应用程序的登录使用 <strong>default</strong> 通行密钥策略。",
+  "passkey.byName": "以 <code>{value}</code> 指定它的登录改用 <strong>{name}</strong>。",
   "passkey.open": "在目录 → 策略中打开",
   "passkey.groupNote": "按组选择的命名策略仍可能对某个人生效：如果指定此人所在某个组的策略优先级数值更低，则对其适用该策略。此领域有 {n} 个按组选择的命名通行密钥策略。"
 }

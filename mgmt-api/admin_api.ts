@@ -13174,9 +13174,11 @@ class AdminApi {
                      'in precedence order, each with `name`, `dn`, ' +
                      '`precedence`, `matched` (the values that named it), ' +
                      '`selectGroups`, `applies` and `link`; `applies` (the ' +
-                     'policy a sign-in naming the application gets before ' +
-                     'any person is known: the lowest precedence naming it, ' +
-                     'else `default`); and `groupPolicies`, how many named ' +
+                     'lowest precedence naming it by any of its names, else ' +
+                     '`default`); `appliesBy` (for each name, the policy a ' +
+                     'sign-in naming the application by it gets before any ' +
+                     'person is known — an OAuth sign-in names the ' +
+                     'client_id); and `groupPolicies`, how many named ' +
                      'policies select by group and could still win for a ' +
                      'given person. Nothing about it is stored on the ' +
                      'application.\n\n**This reply carries credentials** — ' +
