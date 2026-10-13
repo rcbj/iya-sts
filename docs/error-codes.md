@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4317** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4320** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 96
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
-* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 27
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 30
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
@@ -2982,8 +2982,8 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0004` | An outbound SCIM client's TLS material is unusable: its CA certificates, scimClient.caFile, or its client certificate and private key would not load. | none — nothing is sent |
 | `STS-SCIMC-0005` | A request to a SCIM service provider or its token endpoint timed out (scimClient.timeoutMs); retried. | none |
 | `STS-SCIMC-0006` | A request to a SCIM service provider or its token endpoint failed at the network: refused, reset, unresolved, or the TLS handshake or certificate check failed; retried. | none |
-| `STS-SCIMC-0007` | A SCIM service provider answered 400 or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidVers, invalidFilter, tooMany); dead-lettered with its scimType. | none |
-| `STS-SCIMC-0008` | A SCIM service provider answered an error status: 408, 429, 500, 502, 503 or 504 are retried, anything else is dead-lettered. | none |
+| `STS-SCIMC-0007` | A SCIM service provider answered 400, 408, a 409 that is not uniqueness, or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidFilter, sensitive); dead-lettered with its scimType. tooMany narrows the query first, uniqueness adopts, and invalidVers re-reads as a 412 does. | none |
+| `STS-SCIMC-0008` | A SCIM service provider answered an error status: 429, 500, 502, 503 or 504 are retried (and pause the client), anything else is dead-lettered. 408 is not retried (2026-10-13). | none |
 | `STS-SCIMC-0009` | A SCIM service provider answered 401 or 403 to an authenticated request: its credential, token or certificate is not accepted, or it is not authorized for the operation (RFC 7644 section 2). A 401 with an OAuth token is retried once with a fresh token first. | none |
 | `STS-SCIMC-0010` | An outbound SCIM client's OAuth 2.0 token request failed: the token endpoint refused the client_credentials grant, answered no access_token, or could not be reached. | none |
 | `STS-SCIMC-0011` | A SCIM delivery was not attempted because the claim store could not be asked; the next sweep tries again. | none |
@@ -2996,13 +2996,16 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0018` | A SCIM client action failed unexpectedly. | HTTP 500 (console and API) |
 | `STS-SCIMC-0019` | A SCIM service provider's /ServiceProviderConfig or /ResourceTypes could not be read or was not a SCIM document (RFC 7644 section 4); the client assumes /Users and /Groups and no PATCH, filter or ETag support. | none |
 | `STS-SCIMC-0020` | A create answered 409 uniqueness (RFC 7644 section 3.3) and no resource could be found by externalId, userName or displayName to adopt; dead-lettered for an operator. | none |
-| `STS-SCIMC-0021` | A write answered 412 Precondition Failed (RFC 7644 section 3.14) more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered. | none |
+| `STS-SCIMC-0021` | A PUT, PATCH or DELETE answered 412 Precondition Failed (RFC 7644 section 3.14), or 400 invalidVers, more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered. | none |
 | `STS-SCIMC-0022` | An outbound SCIM client's scope filter is not an LDAP filter this service can evaluate (RFC 4515); nobody is in its scope until it is fixed. | HTTP 400 (console and API) at the write |
 | `STS-SCIMC-0023` | An outbound SCIM client's reconciliation failed part way: listing the service provider's resources, or reading the realm. | none (a log line and the action's answer) |
 | `STS-SCIMC-0024` | An outbound SCIM client's TLS client certificate could not be issued from the realm's tls-client Issuing CA. | HTTP 400 (console and API) |
 | `STS-SCIMC-0025` | A SCIM service provider answered a create or a read with a body that is not a SCIM resource carrying an id (RFC 7643 section 3.1). | none |
 | `STS-SCIMC-0026` | A SCIM service provider holds more than one resource with this realm's externalId for one entry (RFC 7643 section 3.1: the client owns externalId); dead-lettered for an operator to resolve. | none |
 | `STS-SCIMC-0027` | scimClient.skipTlsVerification is on in a product-mode realm and is ignored: the service provider's certificate is verified (logged once per process). | none (a log line) |
+| `STS-SCIMC-0028` | A SCIM service provider answered 400 tooMany (RFC 7644 section 3.4.2) to a query this client had already narrowed as far as it can: an externalId lookup asked for a page of two, or a reconciliation listing asked for one resource a page and, where filtering is supported, for externalId pr; dead-lettered, or the reconciliation reports the listing failed. | none |
+| `STS-SCIMC-0029` | A SCIM service provider's /ResourceTypes marks a schema extension required that this client has no values for (anything but the enterprise User extension, which is sent empty if need be); the resource is not sent and the delivery is dead-lettered naming the extension (RFC 7643 sections 3.3, 6). | none — nothing is sent |
+| `STS-SCIMC-0030` | A resource this client would send lacks an attribute RFC 7643 requires — a User's userName or a Group's displayName — so no create or replace is sent (RFC 7644 section 3.5.1); dead-lettered. | none — nothing is sent |
 
 ## STS-SCIM
 
