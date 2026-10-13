@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "不过期：随主体一起丢弃，在其记录被替换（密码更改或恢复）时丢弃，或在超过上限时作为最近最少使用者被丢弃；从不持久化。"
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "人员与凭据持有者计数"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "本领域定义了多少人、多少人持有密码、所有持有凭据属性的人（原始值），以及登录时见过的名称中有多少是这里的人员：即 /admin/users 在不列出整个目录的情况下对整个目录的统计块（#610）。"
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "结构性：每个领域一份计数和一份名称计数；计数保存的是持有凭据的人，而不是所有人。"
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "直到本领域的 ou=users 下有任何写入为止；在把目录作为存储窗口持有的进程中，最多十秒。"
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "目录设备索引"

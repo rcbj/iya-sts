@@ -145,6 +145,11 @@ class DirectoryWindow {
   // The windowed count per realm, from the store, and this process's net.
   private readonly counts: Map<string, number> = new Map();
   private readonly countedAt: Map<string, number> = new Map();
+  // A container's count (#610), keyed `realm\ncontainer`: the store's
+  // reading, when it was taken, and this process's net since — the realm
+  // count's arrangement above, for one container. See `recentCountUnder()`.
+  private readonly containerCounts: Map<string, { n: number; at: number }> =
+    new Map();
   // Keys another process changed while this one was busy with them: dropped
   // once this process's own flush has let them go (see `markStale()`).
   private readonly stale: Set<string> = new Set();
@@ -213,6 +218,7 @@ class DirectoryWindow {
       }
     });
     this.counts.clear();
+    this.containerCounts.clear();
     log.debug("Leaving DirectoryWindow.attach().");
   }
 
@@ -411,10 +417,23 @@ class DirectoryWindow {
       this.touched.delete(ck);
       this.askForFlush();
     }
+    const delta = (entry && !existed ? 1 : 0) - (!entry && existed ? 1 : 0);
     if (this.counts.has(realmId)) {
       const n = this.counts.get(realmId) as number;
-      this.counts.set(realmId, n + (entry && !existed ? 1 : 0) -
-                      (!entry && existed ? 1 : 0));
+      this.counts.set(realmId, n + delta);
+    }
+    // A container count held (#610) moves with this process's own create or
+    // delete under it, so an operator who just made somebody sees them
+    // counted; a handful of containers at most, so the loop is short.
+    if (delta !== 0 && this.containerCounts.size) {
+      this.containerCounts.forEach(function (held, cck) {
+        const cut = cck.indexOf('\n');
+        const base = cck.slice(cut + 1);
+        if (cck.slice(0, cut) === realmId && key !== base &&
+            DirectoryWindow.within(key, base)) {
+          held.n += delta;
+        }
+      });
     }
     return existed;
   }
@@ -993,6 +1012,116 @@ class DirectoryWindow {
   }
 
   /**
+   * How many entries are strictly under a base and how many of them hold an
+   * attribute, now: the store's two counts in one statement and this
+   * process's changes not yet written (#610). An entry "holds" an attribute
+   * when it carries the NAME with at least one value — what the store's
+   * `attr_names` says, the only reading of an entry's attributes the
+   * database can make, its values being sealed.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param attribute - the attribute name, lower-cased as stored
+   * @returns `{ n, holding }`
+   */
+  countHolding(realmId: string, base: string, attribute: string):
+      { n: number; holding: number } {
+    log.debug("Entering DirectoryWindow.countHolding(). " + attribute);
+    const has = function (entry: Entry | null | undefined): number {
+      const values = entry ? (entry.attributes || {})[attribute] : null;
+      return Array.isArray(values) && values.length > 0 ? 1 : 0;
+    };
+    let n = 0;
+    let holding = 0;
+    this.residentOf(realmId).forEach(function (entry, key) {
+      if (key !== base && DirectoryWindow.within(key, base)) {
+        n += 1;
+        holding += has(entry);
+      }
+    });
+    const reaches = this.deps.windowedContainers(realmId).some(function (c) {
+      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
+    });
+    if (reaches && this.bridge) {
+      const stored = this.bridge.query('countHolding',
+        [realmId, base, attribute]) as { n: number; holding: number };
+      n += Number(stored && stored.n) || 0;
+      holding += Number(stored && stored.holding) || 0;
+      // `countUnder()`'s net, and the attribute's beside it: the entry as
+      // it is here against its BASE, the JSON the store holds.
+      this.dirty.forEach((ck) => {
+        const cut = ck.indexOf('\n');
+        const key = ck.slice(cut + 1);
+        if (ck.slice(0, cut) !== realmId || key === base ||
+            !DirectoryWindow.within(key, base) || this.inFlight.has(ck)) {
+          return;
+        }
+        const slot = this.lru.peek(ck) as Slot;
+        let before: Entry | null = null;
+        if (slot.base !== null) {
+          try {
+            before = JSON.parse(slot.base) as Entry;
+          } catch (e) {
+            log.debug("Caught in DirectoryWindow.countHolding(): " +
+                      ((e && e.message) || e));
+            // A base that does not parse is one this window wrote itself
+            // and cannot be; counted as an entry holding nothing.
+            before = { dn: key, attributes: {} } as Entry;
+          }
+        }
+        n += (slot.entry ? 1 : 0) - (before ? 1 : 0);
+        holding += has(slot.entry) - has(before);
+      });
+    }
+    log.debug("Leaving DirectoryWindow.countHolding().");
+    return { n: Math.max(0, n), holding: Math.max(0, holding) };
+  }
+
+  // ---------------------------------------------------------------------
+  // A CONTAINER'S COUNT FOR A PAGE'S HEADLINE (#610, 2026-10-13).
+  //
+  // `countUnder()` asks the store every time, and the store's answer is a
+  // `count(*)` that is LINEAR in the realm's rows: `underClause()`'s
+  // `right(dn_key, n)` cannot use an index, and even `parent_key = $2`,
+  // which can, is a sequential scan when nearly every row of the realm is
+  // a person — measured on 8081's postgres on 2026-10-13 at 13–15 ms for
+  // 29,303 rows, both forms, so about 100 ms at 200,000. That is cheap
+  // beside listing every name (which is what `/admin/users` did), and too
+  // much to pay on every poll of a console page from a thread that answers
+  // every socket. So the reading is `capCount()`'s: the store's count at
+  // most ten seconds old, plus this process's own creates and deletes under
+  // the container since (`write()` moves it). Another process's writes
+  // reach it within ten seconds; this process's at once.
+  // ---------------------------------------------------------------------
+  /**
+   * How many entries are strictly under a base: the store's count, read
+   * again when the last reading is more than ten seconds old, plus this
+   * process's own net since.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @returns the count
+   */
+  recentCountUnder(realmId: string, base: string): number {
+    log.debug("Entering DirectoryWindow.recentCountUnder().");
+    const cck = slotKey(realmId, base);
+    const held = this.containerCounts.get(cck);
+    if (held && Date.now() - held.at <= 10000) {
+      log.debug("Leaving DirectoryWindow.recentCountUnder(). Held.");
+      return Math.max(0, held.n);
+    }
+    const n = this.countUnder(realmId, base);
+    // Only once there is a store to have asked: a count taken before the
+    // bridge is resident entries alone, and holding it would hide the
+    // store's rows for ten seconds.
+    if (this.bridge) {
+      this.containerCounts.set(cck, { n: n, at: Date.now() });
+    }
+    log.debug("Leaving DirectoryWindow.recentCountUnder(). Counted.");
+    return n;
+  }
+
+  /**
    * A realm's count read from the store now, for `ldap.maxEntries` and for
    * a report.
    *
@@ -1037,6 +1166,11 @@ class DirectoryWindow {
         });
       });
     this.counts.delete(realmId);
+    Array.from(this.containerCounts.keys()).forEach((cck) => {
+      if (cck.startsWith(prefix)) {
+        this.containerCounts.delete(cck);
+      }
+    });
     log.debug("Leaving DirectoryWindow.dropRealm().");
   }
 

@@ -226,20 +226,51 @@ class UsersPage {
     // question nobody asked. Since #352 they come from `peopleCensus()`, one
     // pass over the directory, and only the rows drawn below are decorated —
     // `admin-core/CLAUDE.md`, *The users list pages before it decorates*.
+    //
+    // **AND SINCE #610 THEY COUNT THE DIRECTORY, NOT THE LIST.** The list is
+    // capped at `scanLimit` of the directory's people, and on a bulk-loaded
+    // realm every tile described the first five thousand of 25,000 —
+    // including a "listed below" tile that counted the table's rows, which
+    // the capped warning and the paging already say, and which is gone.
+    // `directoryCounts` is every person under `ou=users`, counted without
+    // listing them (`admin-core/admin_views.ts` defines each member). It is
+    // null where the directory offers no tally, and the tiles are then the
+    // list's, as they were.
+    const dc = json.directoryCounts;
+    const tiles = dc
+      ? [[dc.people,
+          t.text('consoleUsers.body.tileInDirectory')],
+         [dc.signedInHere,
+          t.text('consoleUsers.body.tileAuthenticated')],
+         [dc.neverSignedInHere,
+          t.text('consoleUsers.body.tileNeverHere')],
+         [json.withActiveSession,
+          t.text('consoleUsers.body.tileActive')],
+         [dc.withSecond,
+          t.text('consoleUsers.body.tileSecond')],
+         [dc.passwordOnly,
+          t.text('consoleUsers.body.tilePasswordOnly')],
+         [dc.noWayIn,
+          t.text('consoleUsers.body.tileNoWayIn')]]
+      : [[json.authenticatedHere,
+          t.text('consoleUsers.body.tileAuthenticated')],
+         [json.known - json.authenticatedHere,
+          t.text('consoleUsers.body.tileNeverHere')],
+         [json.withActiveSession,
+          t.text('consoleUsers.body.tileActive')],
+         [factorCounts.withSecond,
+          t.text('consoleUsers.body.tileSecond')],
+         [factorCounts.passwordOnly,
+          t.text('consoleUsers.body.tilePasswordOnly')],
+         [factorCounts.noCredential,
+          t.text('consoleUsers.body.tileNoWayIn')]];
+    const unreadable = dc ? dc.unreadable : factorCounts.unreadable;
     const inner = '<div class="tiles">' +
-        kit.tile(json.known, t.text('consoleUsers.body.tilePeople')) +
-        kit.tile(json.authenticatedHere,
-                 t.text('consoleUsers.body.tileAuthenticated')) +
-        kit.tile(json.known - json.authenticatedHere,
-                  t.text('consoleUsers.body.tileNeverHere')) +
-        kit.tile(json.withActiveSession,
-                 t.text('consoleUsers.body.tileActive')) +
-        kit.tile(factorCounts.withSecond,
-                 t.text('consoleUsers.body.tileSecond')) +
-        kit.tile(factorCounts.passwordOnly,
-                 t.text('consoleUsers.body.tilePasswordOnly')) +
-        kit.tile(factorCounts.noCredential,
-                 t.text('consoleUsers.body.tileNoWayIn')) +
+        tiles.filter(function (one) {
+          return one[0] !== null && one[0] !== undefined;
+        }).map(function (one) {
+          return kit.tile(one[0], one[1]);
+        }).join('') +
       '</div>' +
       // ---------------------------------------------------------------------
       // WHAT THIS TABLE IS A LIST OF, AND IT CHANGED ON 2026-09-10.
@@ -252,19 +283,26 @@ class UsersPage {
       // NEVER signed in. See peopleRows().
       // ---------------------------------------------------------------------
       kit.note(t.html('consoleUsers.body.everybody')) +
+      (dc
+        ? kit.note(t.html('consoleUsers.body.tilesCountDirectory',
+                          { keeps: json.registryKeeps }))
+        : '') +
       (json.store
         ? ''
         : kit.warn(t.html('consoleUsers.body.noDirectory'))) +
       (json.capped
-        ? kit.warn(t.html('consoleUsers.body.capped',
-                          { scanned: String(json.scanned),
+        ? kit.warn(t.html('consoleUsers.body.cappedList',
+                          { people: json.directoryPeople === null ||
+                                    json.directoryPeople === undefined
+                              ? '> ' + String(json.scanLimit)
+                              : String(json.directoryPeople),
                             limit: String(json.scanLimit) }))
         : '') +
       // The "Show them" link carries an href, so it is code between two
       // pieces of the sentence.
-      (factorCounts.unreadable
+      (unreadable
         ? kit.warn(t.html('consoleUsers.body.unreadable',
-                          { count: String(factorCounts.unreadable) }) +
+                          { count: String(unreadable) }) +
           '<a href="' +
           kit.esc('/admin/users' + kit.queryWith({ factor: 'unreadable' },
             {})) +

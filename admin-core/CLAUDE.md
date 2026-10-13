@@ -328,6 +328,55 @@ secret every time.
 asks `stats.userRow(key)`, which runs the same builder for that key only, and
 `knownUserKeys()` — nine pages' "can this member's name be a link" — asks
 `stats.userKeys()` instead of building every row to read their keys.
+
+**THE TILES COUNT THE DIRECTORY AND THE LIST IS CAPPED, AND THEY ARE
+DIFFERENT NUMBERS (#610, 2026-10-13).** With a bulk load running into 8081,
+`/admin/users` said 7,014 people while the directory held 25,000: every tile
+counted the LIST — at most `credentials.factorScanLimit` directory names
+united with the register's — and `scanned`, the only count of the
+directory, was the length of `persons()`, every name listed to be counted.
+rcbj wanted the numbers defined without a full scan, and refused both a
+larger cap and listing everybody. So:
+
+* **The list** asks `personNamesUpTo(limit)` for the first `scanLimit`
+  names and whether there were more (`capped`); `scanned` is how many it
+  read. In a windowed process that is the first names in the STORE's key
+  order, which under a non-C collation is not `persons()`'s prefix. The
+  `?factor=` filter, `factors` and `authenticatedHere` stay the list's.
+* **The tiles** are `directoryCounts` on `/admin-api/users` and
+  `/admin-api/mfa`, over every person under `ou=users`: `people`, and
+  `signedInHere`/`neverSignedInHere` — the register's authenticated NAMES
+  asked of the directory (`countPeopleNamed()`: the username index in
+  memory, `byKeys` and one `withNames` statement in a window), so it costs
+  O(register), and a sign-in the register (`stats.MAX_USERS`) has forgotten
+  counts as never — and the credential tiles from
+  `credentials.directoryFactorCounts()`: the directory COUNTS its people and
+  those holding a password (`countHolding`, one `count(*) FILTER` over
+  `attr_names` in a window) and hands over, raw, only the holders of the
+  attributes `credentials.ts` names (WebAuthn, TOTP, the mail factor's
+  opt-in), which that file interprets as for one person — key roles, the
+  sealed TOTP verdict, the emailed factor under the realm's policy — so
+  nothing is approximated by presence but the password (an empty first
+  value counts as one there and not in the census). The "listed below" tile
+  is gone: the capped warning and the paging say how many rows there are.
+* **Cost**: in a window, two counts that are linear in the realm's rows
+  (13–15 ms for 29,303 on 8081) and O(holders + register) entries read; in
+  memory, one pass over `ou=users` reading those attributes — a walk. Kept
+  until `ou=users` is written, and in a window ten seconds at most besides
+  (`ldap.credential-tallies` on `/admin/caches`).
+  `tests/users_page_before_decoration.js` section 7 compares every tile
+  with a count of every person.
+
+Every other Directory page counts its container with `ldap_server.js`'s
+`countUnderContainer()` (`ldap/CLAUDE.md`, *the window*).
+
+The other Directory pages were audited for the same fault on that day and
+had none: none caps its list, so its count is its list's length, and only
+devices and groups grow with the directory. Devices' `total` was already a
+count and is now `countUnderContainer()`'s; their ROWS are still the whole
+of `ou=devices` paged per request in a windowed process, which is a listing
+to bound, not a count to fix. Groups are walked because a group may sit
+anywhere (`groupRuleFor()`), and the walk is the list.
 `/admin/sessions` asks `stats.issuedArtifactsOfKind('Kerberos TGT')` for the
 tickets rather than building `issuedList()`.
 

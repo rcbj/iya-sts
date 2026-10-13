@@ -646,7 +646,17 @@ ldif or multi-cell service is unchanged.
   - `memberOfClaims()` (#352's claims index), `holdingAny()` and
     `holdersWithValues()` visit the holders only (`eachHolderOfAny()`);
     `personRows()` pages `ou=users` read-only; `batchHasChildren()` asks
-    `hasChildren()`; `countDeviceEntries()` is `countUnder()`.
+    `hasChildren()`; `countDeviceEntries()` and `personCount()` are
+    `countUnderContainer()` (#610): `recentCountUnder()`, the store's count
+    of the container at most ten seconds old plus this process's own creates
+    and deletes since (a `count(*)` is linear in the realm's rows — 13–15 ms
+    for 29,303 on 8081, measured), and outside a window the realm's KEYS
+    walked with an `endsWith`, no entry read — still a walk, said there.
+    `personNamesUpTo(limit)` pages only the first `limit` + 1 people;
+    `credentialTallies()` is `countHolding()` (one `count(*) FILTER` over
+    `attr_names`) and `holders()` per credential attribute, and
+    `countPeopleNamed()` is `byKeys` plus one `withNames` —
+    `admin-core/CLAUDE.md`, *the tiles count the directory*.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each
     answer read back through the window and asked the service's own rule, the
     entries changed here and not yet written added: `existingUserEntry()`
@@ -660,8 +670,8 @@ ldif or multi-cell service is unchanged.
     subjects, federation links, claimed memberships, delegation flags, a
     person attribute's holders, Kerberos key infos; `anybodyHoldsACredential()`
     asks `anyWithAttribute`.
-  - `personCount()` is the store's count; `allPersons()` pages `ou=users`
-    alone; `entriesUnder()` pages a windowed container and does NOT cache it;
+  - `personCount()` is the store's count (above); `allPersons()` pages
+    `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it;
     the LDAP search walks only what its base reaches, read-only and lazily, so
     a size limit stops the paging.
   - **Still whole walks, correct and paged**: `populateVcAttributes()`

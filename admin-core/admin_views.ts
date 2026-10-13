@@ -11873,6 +11873,45 @@ class AdminViews {
       const key = stats.identityKeyOf(session.username || session.sub);
       liveByUser[key] = (liveByUser[key] || 0) + 1;
     });
+    // -----------------------------------------------------------------------
+    // THE TILES, OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
+    //
+    // `factorCounts` and `authenticatedHere` above are over the LIST, which
+    // is capped at `scanLimit` directory people, and the tiles drew them —
+    // so on a bulk-loaded realm every tile described the first five
+    // thousand people. These are the same questions over every person the
+    // realm's directory defines, without listing them
+    // (`credentials.directoryFactorCounts()`, which says how), and:
+    //
+    //   signedInHere       of those people, how many the register has seen
+    //                      authenticate — asked per register NAME, never per
+    //                      person (`directoryPeopleNamed()`). The register
+    //                      keeps the most recent `stats.MAX_USERS`
+    //                      identities, so a sign-in it has forgotten counts
+    //                      as never.
+    //   neverSignedInHere  people less signedInHere.
+    //
+    // Null where the directory offers no tally (no store, a test's stub);
+    // the page then draws the list's counts, as it always did.
+    // -----------------------------------------------------------------------
+    const { credentials } = this.deps;
+    let directoryCounts = null;
+    const tallied = credentials.directoryFactorCounts();
+    if (tallied) {
+      const named = credentials.directoryPeopleNamed(
+        all.filter(function (row) {
+          return row.authenticated;
+        }).map(function (row) {
+          return row.key;
+        }));
+      const signedIn = named === null ? null
+        : Math.min(named, tallied.people);
+      directoryCounts = Object.assign({}, tallied, {
+        signedInHere: signedIn,
+        neverSignedInHere: signedIn === null ? null
+          : tallied.people - signedIn
+      });
+    }
     const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -11898,6 +11937,20 @@ class AdminViews {
           // it the credential columns are absent rather than false.
           store: population.store, scanned: population.scanned,
           capped: population.capped, scanLimit: population.limit,
+          // HOW MANY PEOPLE THE DIRECTORY DEFINES (#610), counted by the
+          // directory — the store's `count(*)` in a windowed process — and
+          // never the length of this list, which is capped at `scanLimit`
+          // of them (`scanned` read, `capped` when there were more) and
+          // united with everybody the register has seen. Null where the
+          // directory offers no count.
+          // The same reading as the tiles' where the directory tallied,
+          // so the first tile and the ones after it are one count.
+          directoryPeople: directoryCounts ? directoryCounts.people
+            : population.directoryPeople,
+          // THE TILES (#610): every person the directory defines, counted
+          // — see above. `factors` and `authenticatedHere` stay the LIST's,
+          // for the `?factor=` filter and for a caller that asked them.
+          directoryCounts: directoryCounts,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
                     factor: wantedFactor || null, kind: wantedKind || null },
@@ -12105,6 +12158,7 @@ class AdminViews {
               holders.scanned + " scanned in the directory.");
     return { rows: rows, store: holders.store, scanned: holders.scanned,
              capped: holders.capped, limit: holders.limit,
+             directoryPeople: holders.directoryPeople,
              registryCap: stats.MAX_USERS, spellings: spellings };
   }
 
@@ -13448,6 +13502,8 @@ class AdminViews {
       counts: Object.assign({ people: list.json.known }, list.json.factors),
       store: list.json.store, scanned: list.json.scanned,
       capped: list.json.capped, scanLimit: list.json.scanLimit,
+      directoryPeople: list.json.directoryPeople,
+      directoryCounts: list.json.directoryCounts,
       filter: list.json.filter,
       page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
       firstRow: list.json.firstRow, lastRow: list.json.lastRow,

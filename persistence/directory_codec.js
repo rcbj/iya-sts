@@ -256,6 +256,11 @@ function keyArgs(name, args) {
   if (name === 'byName') {
     const wanted = lower(a[2]);
     a[2] = { key: lookupOf('name', wanted), rdn: wanted };
+  } else if (name === 'withNames') {
+    a[2] = (a[2] || []).map(function (one) {
+      const wanted = lower(one);
+      return { key: lookupOf('name', wanted), rdn: wanted };
+    });
   } else if (name === 'byUuid') {
     a[1] = { key: lookupOf('uuid', lower(a[1])) };
   } else if (name === 'byMail') {

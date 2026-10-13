@@ -5975,7 +5975,28 @@ class AdminApi {
                      'remembers. OpenAPI cannot spell a parameter whose name ' +
                      'is built at runtime, and a `session-{id}Page` in the ' +
                      'list would generate a client that sends a literal ' +
-                     '`{id}` — so it is here in words instead.',
+                     '`{id}` — so it is here in words instead.\n\nTHE ' +
+                     'LIST IS CAPPED AND THE COUNT IS NOT (#610). ' +
+                     '`directoryPeople` is how many people the realm\'s ' +
+                     'directory defines, counted by the directory without ' +
+                     'listing them (null where it offers no count). The ' +
+                     'rows are at most `scanLimit` of those people — ' +
+                     '`scanned` of them read, `capped` true when the ' +
+                     'directory held more — united with everybody this ' +
+                     'service has seen, so `known` is the length of that ' +
+                     'list and never the size of the directory. ' +
+                     '`directoryCounts` is what the page\'s tiles draw, ' +
+                     'over every person the directory defines, without ' +
+                     'listing them: `people`; `signedInHere`, those of ' +
+                     'them the register has seen authenticate (it keeps ' +
+                     'the most recent identities only), and ' +
+                     '`neverSignedInHere`, the rest; `withSecond`, ' +
+                     '`withTotp`, `withKeys`, `primaryKeys`, `unreadable`, ' +
+                     '`withPassword`, `passwordOnly` (a password and no ' +
+                     'second factor) and `noWayIn` (neither a password nor ' +
+                     'a sign-in key). Null where the directory offers no ' +
+                     'such count. `factors`, `authenticatedHere` and the ' +
+                     '`factor` filter stay the LIST\'s.',
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'user', in: 'query', required: false,
@@ -9461,7 +9482,11 @@ class AdminApi {
                      'module that performs the algorithm.\n\nThe scan stops ' +
                      'at 5,000 people (`capped`), because reading a ' +
                      'credential per person happens on the one thread that ' +
-                     'answers every socket this service holds.',
+                     'answers every socket this service holds — the ' +
+                     'scan, not the count: `counts` is over the capped ' +
+                     'roster, and `directoryPeople` and `directoryCounts` ' +
+                     'over every person the directory defines, as on ' +
+                     'GET /admin-api/users (#610).',
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },

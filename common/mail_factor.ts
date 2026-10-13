@@ -99,6 +99,10 @@ class MailFactor {
    * The two kinds of emailed factor: `code` and `link`.
    */
   static readonly KINDS: Kind[] = ['code', 'link'];
+  // The attribute whose value opts a person in (#610): `credentials.ts`
+  // asks the directory for its holders, since nobody without it can hold
+  // an emailed factor — `heldOfAttributes()` answers '' first thing.
+  static readonly OPT_IN_ATTRIBUTE = 'stsMailFactor';
 
   /**
    * Creates the emailed factor.
@@ -191,7 +195,7 @@ class MailFactor {
     const out = {
       mail: first('mail').trim(),
       verified: first('stsMailVerified').trim(),
-      factor: first('stsMailFactor').trim().toLowerCase(),
+      factor: first(MailFactor.OPT_IN_ATTRIBUTE).trim().toLowerCase(),
       failures: first('stsMailFactorFailures').trim()
     };
     log.debug("Leaving MailFactor.valuesOf().");
@@ -709,6 +713,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   MECHANISM: MailFactor.MECHANISM,
   KINDS: MailFactor.KINDS,
+  OPT_IN_ATTRIBUTE: MailFactor.OPT_IN_ATTRIBUTE,
   isKind: MailFactor.isKind,
   status: slot.forward('status'),
   held: slot.forward('held'),
