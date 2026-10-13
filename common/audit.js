@@ -1951,18 +1951,38 @@ function httpActionFor(path, method) {
 // than 200 is exactly the event somebody hunting a start-up failure wants to
 // find, and it happens once rather than every five seconds.
 //
-// THE COUNTERS ARE UNTOUCHED. `/admin/metrics` counts this call as it always
-// did, because a counter is one row however often it goes up — this is a rule
-// about the event LOG, where one act is one line, and not about how much the
-// service was asked to do.
+// AND THE COUNTERS FOLLOW THE SAME RULE SINCE #312 (2026-10-13). They did
+// not until then, on the argument that a counter is one row however often it
+// goes up. That held for the table's length and not for what it SAYS: behind a
+// load balancer the probes are the traffic — testidp's two HTTP target groups
+// asked every node every ten seconds from every zone, 18,000 calls in a few
+// hours and nearly all of them this one — and every other row on
+// `/admin/metrics` read as noise beside it. `common/admin_stats.js` asks
+// `quietWhenOk()` below, so the list is this one and there is no second copy;
+// a quiet probe goes up a counter of its own there, `calls.healthProbes`,
+// rather than vanishing.
 const QUIET_WHEN_OK = ['/healthcheck'];
+
+// A hot path (every answered request, twice): no Entering/Leaving pair.
+/**
+ * Whether an answered request is a liveness probe that succeeded: a `GET` or
+ * `HEAD` of a path in `QUIET_WHEN_OK` answered 200. Neither the audit log nor
+ * the metrics' request counts record one.
+ *
+ * @param method - the request method
+ * @param path - the path, without its query string
+ * @param status - the status answered
+ */
+function quietWhenOk(method, path, status) {
+  const m = String(method || '').toUpperCase();
+  return QUIET_WHEN_OK.indexOf(String(path || '')) >= 0 &&
+      (m === 'GET' || m === 'HEAD') &&
+      parseInt(status, 10) === 200;
+}
 
 function isQuietProbe(req, res, path) {
   log.debug("Entering isQuietProbe(). " + path);
-  const method = String(req.method || '').toUpperCase();
-  const quiet = QUIET_WHEN_OK.indexOf(path) >= 0 &&
-      (method === 'GET' || method === 'HEAD') &&
-      parseInt(res.statusCode, 10) === 200;
+  const quiet = quietWhenOk(req.method, path, res.statusCode);
   log.debug("Leaving isQuietProbe(). " + quiet);
   return quiet;
 }
@@ -2439,6 +2459,7 @@ module.exports = {
   audit: audit,
   record: audit,
   recordHttp: recordHttp,
+  quietWhenOk: quietWhenOk,
   recordDirectory: recordDirectory,
   failure: failure,
   directoryActionFor: directoryActionFor,
