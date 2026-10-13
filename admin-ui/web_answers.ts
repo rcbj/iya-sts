@@ -55,8 +55,15 @@ type Json = any;
 // simple / advanced switch. Every other submitter on these forms is the act.
 const ROUND_TRIP_PAGES = ['/admin/users/new', '/admin/users/edit',
                           '/admin/applications/new',
-                          '/admin/applications/edit'];
+                          '/admin/applications/edit',
+                          '/admin/users/service-account'];
 const ROUND_TRIP_NAMES = ['grow', 'drop', 'switchview'];
+
+// A PERSON'S SERVICE ACCOUNT FORM (#600) posts to a route of its own, so that
+// its Remove, Find, Previous, Next and Add are told apart from every other
+// form on the person's page; its Save resolves through the users action's
+// `mirrors` to `set-service-account`.
+const SERVICE_ACCOUNT_PAGE = '/admin/users/service-account';
 
 /**
  * Draws the answers a notice cannot carry.
@@ -88,6 +95,83 @@ class WebAnswers {
       return String(value.length ? value[value.length - 1] : '');
     }
     return value === undefined || value === null ? '' : String(value);
+  }
+
+  /**
+   * The route a person's service account form posts to (#600).
+   */
+  static readonly SERVICE_ACCOUNT_PAGE = SERVICE_ACCOUNT_PAGE;
+
+  /**
+   * Every non-empty value of a form field, in the order posted.
+   *
+   * @param fields - the form's fields
+   * @param name - the field
+   * @returns the values
+   */
+  static all(fields: Json, name: string): string[] {
+    const value = fields ? fields[name] : undefined;
+    return (value === undefined || value === null ? [] : [].concat(value))
+      .map(function (one) {
+        return String(one == null ? '' : one).trim();
+      }).filter(function (one) {
+        return !!one;
+      });
+  }
+
+  // THE SERVICE ACCOUNT FORM AS IT STANDS (#600): the owners in its table
+  // (one hidden `owner` per row, in order), what each was called when the
+  // search offered it, and the destination and secret name as typed — so a
+  // Remove or a search draws the form again with nothing lost.
+  /**
+   * The service account form's draft, read from the form.
+   *
+   * @param fields - the form's fields
+   * @param before - the draft drawn last, whose labels are kept
+   * @returns `{ owners, labels, destination, secretName, find }`
+   */
+  static serviceAccountDraftOf(fields: Json, before?: Json): Json {
+    const labels = Object.assign({}, (before && before.labels) || {});
+    return {
+      owners: WebAnswers.all(fields, 'owner'),
+      labels: labels,
+      destination: WebAnswers.one(fields, 'destination'),
+      secretName: WebAnswers.one(fields, 'secretName'),
+      find: (before && before.find) || null
+    };
+  }
+
+  /**
+   * A draft with one more owner, kept once; its label taken from the search
+   * that offered it.
+   *
+   * @param draft - `serviceAccountDraftOf()`'s answer
+   * @param dn - the owner's DN
+   * @returns the draft
+   */
+  static withOwnerAdded(draft: Json, dn: string): Json {
+    const out = Object.assign({}, draft, {
+      owners: (draft.owners || []).slice(),
+      labels: Object.assign({}, draft.labels || {})
+    });
+    const comparable = function (one) {
+      return String(one || '').toLowerCase().replace(/\s*,\s*/g, ',');
+    };
+    const value = String(dn || '').trim();
+    if (!value || out.owners.some(function (one) {
+      return comparable(one) === comparable(value);
+    })) {
+      return out;
+    }
+    out.owners.push(value);
+    const offered = ((draft.find && draft.find.rows) || [])
+      .filter(function (one) {
+        return comparable(one.value) === comparable(value);
+      })[0];
+    if (offered) {
+      out.labels[value] = { kind: offered.kind, label: offered.label };
+    }
+    return out;
   }
 
   /**
@@ -204,6 +288,21 @@ class WebAnswers {
       return WebAnswers.newUserAgain(json, fields, switched);
     }
     const out = WebAnswers.copy(json);
+    // A REMOVE IN THE SERVICE ACCOUNT FORM (#600): the row's owner taken out
+    // of the table, everything else as it was. The draft has a member of its
+    // own, so the person's Attributes grid, which draws from `state.draft`,
+    // is left alone.
+    if (page === SERVICE_ACCOUNT_PAGE) {
+      const before = out.state || {};
+      const draft = WebAnswers.serviceAccountDraftOf(fields,
+                                                      before.serviceAccount);
+      const dropped = WebAnswers.one(fields, 'drop').match(/^owner\.(\d+)$/);
+      if (dropped) {
+        draft.owners.splice(Number(dropped[1]), 1);
+      }
+      out.state = Object.assign({}, before, { serviceAccount: draft });
+      return out;
+    }
     if (page === '/admin/applications/new') {
       const before = out.state || {};
       // A LOADED RFC 9728 DOCUMENT stays loaded: the server read the
@@ -243,7 +342,8 @@ class WebAnswers {
    * @returns true for Find, Previous, Next and Add on an application's grid
    */
   static isFieldSearch(page: string, fields: Json): boolean {
-    return page === '/admin/applications/edit' &&
+    return (page === '/admin/applications/edit' ||
+            page === SERVICE_ACCOUNT_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -269,8 +369,10 @@ class WebAnswers {
       attribute: attribute,
       // WHICH KIND a `parties` search asks for (#461): the toggle's value,
       // people unless it says applications. Ignored by the other kinds.
-      which: WebAnswers.one(fields, 'fgkind.' + attribute) === 'applications'
-        ? 'applications' : 'people',
+      // A service account's `owners` search (#600) asks people or GROUPS.
+      which: ['applications', 'groups'].indexOf(
+        WebAnswers.one(fields, 'fgkind.' + attribute)) >= 0
+        ? WebAnswers.one(fields, 'fgkind.' + attribute) : 'people',
       query: WebAnswers.one(fields, 'fgfind.' + attribute).trim(),
       // An Add keeps the page it was pressed on; the answer is clamped, so a
       // page the Add emptied comes back as the last one.
@@ -332,7 +434,11 @@ class WebAnswers {
     // `parties` (#461) asks one of two lists, as the toggle says: the
     // Users page's or the Applications page's. The users list takes no
     // `exclude`, and needs none: the one value is replaced, not added to.
-    const people = kind === 'parties' && asked.which !== 'applications';
+    // `owners` (#600) asks one of two lists too: the Users page's, or the
+    // Groups page's, which leaves out the groups the table holds.
+    const ownerGroups = kind === 'owners' && asked.which === 'groups';
+    const people = (kind === 'parties' && asked.which !== 'applications') ||
+                   (kind === 'owners' && !ownerGroups);
     const params = new URLSearchParams();
     if (asked.query) {
       params.append('q', asked.query);
@@ -344,7 +450,7 @@ class WebAnswers {
         params.append('exclude', one);
       }
     });
-    return '/admin-api/' + (kind === 'groups' ? 'groups'
+    return '/admin-api/' + (kind === 'groups' || ownerGroups ? 'groups'
       : people ? 'users' : 'applications') + '?' + params.toString();
   }
 
@@ -360,6 +466,9 @@ class WebAnswers {
    *   `application`), the value its entry's DN ('' where it has none)
    */
   static fieldSearchFound(kind: string, asked: Json, answer: Json): Json {
+    if (kind === 'owners') {
+      return WebAnswers.ownerSearchFound(asked, answer);
+    }
     const parties = kind === 'parties';
     const people = parties && asked.which !== 'applications';
     const list = kind === 'groups' ? 'groups' : people ? 'users'
@@ -388,6 +497,39 @@ class WebAnswers {
           });
     return { kind: kind, which: parties ? (people ? 'people'
                                                   : 'applications') : '',
+             query: asked.query,
+             page: ok ? Number(answer.page) || 1 : 1,
+             pages: ok ? Number(answer.pages) || 1 : 1,
+             matched: ok ? Number(answer.matched) || 0 : 0,
+             rows: rows, failed: !ok };
+  }
+
+  // A SERVICE ACCOUNT'S OWNER SEARCH (#600), from the Users or the Groups
+  // list's answer: each row a person's or a group's DN (`value`), what it is
+  // called, and its kind — a person's `key` too, so the page can tell the
+  // account itself from somebody else.
+  /**
+   * An owner search's results, from the list's answer.
+   *
+   * @param asked - `fieldSearchOf()`'s answer
+   * @param answer - the list operation's JSON, or null when it failed
+   * @returns `{ kind, which, query, page, pages, matched, rows, failed }`
+   */
+  static ownerSearchFound(asked: Json, answer: Json): Json {
+    const groups = asked.which === 'groups';
+    const list = groups ? 'groups' : 'users';
+    const ok = !!answer && Array.isArray(answer[list]);
+    const rows = !ok ? [] : groups
+      ? answer.groups.map(function (one) {
+        return { kind: 'group', value: String(one.dn || ''),
+                 label: String(one.cn || '') };
+      })
+      : answer.users.map(function (one) {
+        return { kind: 'person', value: String(one.dn || ''),
+                 label: String(one.name || one.key || ''),
+                 key: String(one.key || '') };
+      });
+    return { kind: 'owners', which: groups ? 'groups' : 'people',
              query: asked.query,
              page: ok ? Number(answer.page) || 1 : 1,
              pages: ok ? Number(answer.pages) || 1 : 1,
@@ -425,6 +567,17 @@ class WebAnswers {
     if (page === '/admin/users/edit' && !ok) {
       const out = WebAnswers.copy(json);
       out.state = { draft: fields, error: errors };
+      return { json: out, banner: '' };
+    }
+    // A REFUSED SERVICE ACCOUNT SAVE (#600) keeps the table, the search and
+    // the destination as they were, with the refusal above the table.
+    if (page === SERVICE_ACCOUNT_PAGE && !ok) {
+      const out = WebAnswers.copy(json);
+      const before = out.state || {};
+      const draft = WebAnswers.serviceAccountDraftOf(fields,
+                                                      before.serviceAccount);
+      draft.error = errors.length ? errors : ['Refused.'];
+      out.state = Object.assign({}, before, { serviceAccount: draft });
       return { json: out, banner: '' };
     }
     if (page === '/admin/applications/edit' && !ok) {

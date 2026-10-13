@@ -17836,7 +17836,10 @@ function readServiceAccount(key) {
   serviceAccounts.ATTRIBUTES.forEach(function (name) {
     const held = stored.attributes[name.toLowerCase()] || [];
     if (held.length) {
-      values[name] = String(held[0]);
+      // THE OWNERS ARE A LIST (#600); every other attribute here holds one
+      // value.
+      values[name] = name === 'stsServiceAccountOwner'
+        ? held.map(String) : String(held[0]);
     }
   });
   const person = isPersonEntry(stored);
@@ -17860,11 +17863,16 @@ function writeServiceAccount(key, changes) {
     if (SERVICE_ACCOUNT_ATTRIBUTES.indexOf(lower) < 0) {
       return;
     }
+    // A LIST (the owners, #600) is written whole; an empty one is a clear.
     const value = changes[name];
-    if (value === null || value === undefined || value === '') {
+    const values = (Array.isArray(value) ? value : [value])
+      .filter(function (one) {
+        return one !== null && one !== undefined && one !== '';
+      }).map(String);
+    if (!values.length) {
       delete stored.attributes[lower];
     } else {
-      stored.attributes[lower] = [String(value)];
+      stored.attributes[lower] = values;
     }
   });
   keepServiceAccountClass(stored.attributes);
@@ -17976,20 +17984,33 @@ function serviceAccountWriteRefusal(working, touched) {
     log.debug('Leaving first().');
     return String((working[name] || [''])[0] || '').trim();
   };
-  const owner = first('stsserviceaccountowner');
-  if (!owner && serviceAccountPolicy.requiresOwner()) {
+  // EVERY OWNER (#600): at least one while the policy requires it, at most
+  // MAX_OWNERS, and each a person or a group in this realm.
+  const owners = (working.stsserviceaccountowner || []).map(function (one) {
+    return String(one || '').trim();
+  }).filter(function (one) {
+    return !!one;
+  });
+  if (!owners.length && serviceAccountPolicy.requiresOwner()) {
     log.debug('Leaving serviceAccountWriteRefusal(). No owner.');
     return coded('STS-SVCACCT-0023', new ldap.ConstraintViolationError(
       'this realm\'s service-account policy requires stsServiceAccountOwner ' +
       '(a person or a group)'));
   }
-  if (owner) {
+  if (owners.length > serviceAccounts.MAX_OWNERS) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Too many owners.');
+    return coded('STS-SVCACCT-0031', new ldap.ConstraintViolationError(
+      'stsServiceAccountOwner may hold at most ' +
+      serviceAccounts.MAX_OWNERS + ' values'));
+  }
+  const nobody = owners.filter(function (owner) {
     const resolved = resolveServiceAccountOwner(owner);
-    if (resolved.kind !== 'person' && resolved.kind !== 'group') {
-      log.debug('Leaving serviceAccountWriteRefusal(). The owner is nobody.');
-      return coded('STS-SVCACCT-0024', new ldap.ConstraintViolationError(
-        'stsServiceAccountOwner must name a person or a group in this realm'));
-    }
+    return resolved.kind !== 'person' && resolved.kind !== 'group';
+  });
+  if (nobody.length) {
+    log.debug('Leaving serviceAccountWriteRefusal(). An owner is nobody.');
+    return coded('STS-SVCACCT-0024', new ldap.ConstraintViolationError(
+      'stsServiceAccountOwner must name a person or a group in this realm'));
   }
   if (!!first('stssecretdestination') !== !!first('stssecretname')) {
     log.debug('Leaving serviceAccountWriteRefusal(). Half a destination.');

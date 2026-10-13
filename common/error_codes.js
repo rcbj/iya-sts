@@ -17945,6 +17945,10 @@ const CODES = [
       'maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); ' +
       'refused in product mode as pwdHistory is.',
     spec: 'constraintViolation (19)' },
+  { code: 'STS-SVCACCT-0031',
+    summary: 'A service account was given more owners than it may name ' +
+      '(MAX_OWNERS, #600); a group stands for many.',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-SVCACCT-0040',
     summary: 'A rotation was asked of an entry that is not a service account ' +
       'in this realm.',

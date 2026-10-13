@@ -1776,6 +1776,10 @@ class ConsoleRuntime extends SpaClient {
     // A FIELD'S SEARCH (#459) is a round trip that needs data: the list
     // operation's page of five, drawn under the box. It writes nothing.
     if (page && this.view && WebAnswers.isFieldSearch(page, fields)) {
+      if (page === WebAnswers.SERVICE_ACCOUNT_PAGE) {
+        await this.ownerSearch(fields);
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -1961,6 +1965,46 @@ class ConsoleRuntime extends SpaClient {
     const attribute = asked.attribute;
     const refocus = function () {
       const box = doc.getElementById('fgq-' + attribute);
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
+  // A SERVICE ACCOUNT'S OWNER SEARCH (#600): the field search's Find,
+  // Previous, Next and Add, for the person page's service account form. The
+  // Users or the Groups list is asked for a page of five, and the form drawn
+  // again from its draft (`state.serviceAccount`) — an Add puts the owner in
+  // the table — with the focus back in the search box. Nothing is written
+  // until the form's Save.
+  /**
+   * Runs an owner search's Find, Previous, Next or Add and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async ownerSearch(fields: Json): Promise<void> {
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const before = (this.view.json && this.view.json.state) || {};
+    let draft = WebAnswers.serviceAccountDraftOf(fields,
+                                                 before.serviceAccount);
+    if (asked.add) {
+      draft = WebAnswers.withOwnerAdded(draft, asked.add);
+    }
+    const answer = await this.apiJson('GET',
+      WebAnswers.fieldSearchPath('owners', asked, draft.owners));
+    draft.find = WebAnswers.fieldSearchFound('owners', asked,
+      answer && answer.status === 200 ? answer.json : null);
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, { serviceAccount: draft }) });
+    this.drawView(null, '');
+    const doc = this.env.document;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-owners');
       if (box && box.focus) {
         box.focus({ preventScroll: true });
       }

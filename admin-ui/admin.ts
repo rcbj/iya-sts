@@ -4471,6 +4471,12 @@ class AdminConsole {
       'font-size:.85em}' +
       'button.fg-findbtn,button.fg-add,button.fg-prev,button.fg-next{' +
       'padding:2px 8px;line-height:1.2;min-width:0}' +
+      // A SERVICE ACCOUNT'S OWNER SEARCH (#600): the field search's pieces,
+      // always shown — it is a section of its own, not a cell in a grid.
+      '.sa-find{max-width:46rem;margin:.3em 0 .8em;padding:.4em .6em;' +
+      'border:1px solid #d5d5dd;border-radius:4px}' +
+      '.sa-find input[type=search]{flex:1 1 auto;min-width:0}' +
+      '.sa-owners td{vertical-align:middle}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's RFC 9728 IMPORT (2026-09-13): a checkbox that
       // shows the three ways to give a document, and a pane of three TABS over

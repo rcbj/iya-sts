@@ -12298,8 +12298,8 @@ class AdminViews {
   }
 
   /**
-   * Describes a service account for its person page: its owner, destination
-   * and rotation state, and what the realm's policy lets it do.
+   * Describes a service account for its person page: its owners,
+   * destination and rotation state, and what the realm's policy lets it do.
    *
    * @param key - the person
    * @returns the description, or null for an ordinary person
@@ -12321,8 +12321,9 @@ class AdminViews {
       : NaN;
     log.debug("Leaving AdminViews.serviceAccountJson().");
     return {
-      owner: facts.owner || null, ownerKind: facts.ownerKind || null,
-      ownerName: facts.ownerName || null,
+      // EVERY OWNER (#600), each `{ dn, kind, name }`; `kind` '' for a value
+      // that no longer names a person or a group.
+      owners: facts.owners,
       destination: facts.destination || null,
       secretName: facts.secretName || null,
       rotatedAt: facts.rotatedAt || null,
@@ -12344,6 +12345,7 @@ class AdminViews {
         exemptFromSecondFactor: profile.exemptFromSecondFactor === true,
         allowBrowserSignIn: profile.allowBrowserSignIn === true,
         doors: serviceAccountPolicy.allowedDoors(profile),
+        requiresOwner: profile.requireOwner === true,
         from: profile.from
       }
     };
@@ -12667,6 +12669,16 @@ class AdminViews {
       // Who may act for them (#108): `stsNotDelegated` and `stsMayAct`.
       delegation: credentials.delegationFactsFor(key) || {},
       keyPairs: keyPairs,
+      // WHAT THE SERVICE ACCOUNT TAB'S OWNER LIST IS HELD TO (#600), whether
+      // or not they are one yet: the policy's `requireOwner`, the most owners
+      // an account may name, and their own DN, which a search may not offer
+      // (an account cannot own itself).
+      serviceAccountRules: {
+        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(),
+        maxOwners: this.deps.serviceAccounts.MAX_OWNERS,
+        dn: String((view.directory && view.directory.json &&
+                    view.directory.json.dn) || '')
+      },
       serviceProviders: (federation.inRole('service-provider') || [])
         .map(function (one) {
           return { fedId: one.fedId, fedPeer: one.fedPeer || '' };

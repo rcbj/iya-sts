@@ -343,7 +343,7 @@ async function ensureServiceAccount(base, tier, owner) {
   log.debug("Entering ensureServiceAccount(). " + tier.identifier);
   const created = await call("POST", base + "/admin-api/users/create", {
     username: tier.identifier, invent: false, credential: "password",
-    password: tier.password, serviceAccount: true, owner: owner,
+    password: tier.password, serviceAccount: true, owners: [owner],
     attributes: { cn: tier.identifier, sn: tier.identifier,
                   displayName: tier.name } });
   if (!(created.status === 200 && created.json && created.json.ok)) {
@@ -352,7 +352,7 @@ async function ensureServiceAccount(base, tier, owner) {
              " ") + "); reconciling it.");
     await adminOk(base, "/users/set-service-account",
                   { user: tier.identifier, serviceAccount: true,
-                    owner: owner },
+                    owners: [owner] },
                   "making " + tier.identifier + " a service account");
     await adminOk(base, "/users/set-password",
                   { user: tier.identifier, password: tier.password },
