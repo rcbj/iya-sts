@@ -589,6 +589,21 @@ password to. Its location appears in the application's configuration; its
 write credential is set on **Directory → Secret destinations**, where it is
 never shown again. See [Secret push destinations](secret-destinations.md).
 
+### An outbound SCIM client
+
+An application declared for **SCIM client (outbound provisioning)**
+(`scim-client`) is not a client of this service either: it is a remote SCIM
+2.0 service provider this service PUSHES the realm's people and groups to
+(#552). Its address, authentication, scope, groups and deprovisioning are
+attributes of the entry (`scimClientBaseUrl`, `scimClientAuthMethod`,
+`scimClientScopeMode` and the rest), and its three credentials
+(`scimClientPassword`, `scimClientOAuthClientSecret`,
+`scimClientTlsPrivateKey`) are sealed on it and never shown. Create and edit
+one on Protocols → SCIM → **Clients**, or with
+`POST /admin-api/scim/clients/add-client`, rather than by hand: that form
+checks the definition as a whole. Nothing is issued through this family. See
+[The outbound SCIM client](scim.md#the-outbound-scim-client).
+
 ### Certificate enrollment (ACME, EST, SCEP)
 
 ACME, EST and SCEP are three protocol families an application may be

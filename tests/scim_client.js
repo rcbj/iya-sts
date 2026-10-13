@@ -33,7 +33,29 @@
 //   I. OAuth 2.0 client_secret_basic and client_secret_post, the token
 //      cached, and one fresh token after a 401;
 //   J. a TLS client certificate issued by the realm's CA is presented;
-//   K. no credential appears in any view, audit row or log line.
+//   K. no credential appears in any view, audit row or log line;
+// and, added by the audit against #552's checklist (2026-10-13), each
+// against a fresh service provider and a client of its own:
+//   L. the four group modes — none, selected, member-groups, all — and a
+//      group's members changed by PATCH add and PATCH remove by value;
+//   M. a 409 uniqueness adopts the resource found by EXTERNALID (a linked
+//      id gone, the resource re-created there under another id); a 409
+//      without uniqueness is a dead letter, nothing adopted;
+//   N. a required enterprise extension is sent (empty); any other required
+//      extension is a dead letter naming it (STS-SCIMC-0029); the required
+//      attributes (STS-SCIMC-0030); a replace clears what the entry lost
+//      (null, []) — and a change after a purge-dead is sent at once, not
+//      after the lease its old row's claim held; 408 is not retried; a 400
+//      invalidVers re-reads and tries again; an Error body's status read as
+//      a number or a string;
+//   O. a reconciliation pages through a service provider that sends no
+//      totalResults and answers tooMany above three a page — narrowed, and
+//      every page read; an externalId lookup answered tooMany is narrowed;
+//   P. the scheduled reconciliation (scim-client.reconcile): a client whose
+//      interval has come round is reconciled, and not again before it has;
+//   Q. a DELETE answered 412 re-reads and deletes again with If-Match;
+//   R. an UPLOADED TLS client certificate is presented with Basic, and with
+//      an OAuth 2.0 token.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -50,6 +72,8 @@ const ldap = require('../ldap/ldap_server');
 const applications = require('../common/applications');
 const audit = require('../common/audit');
 const scimClients = require('../scim/scim_client');
+const scimRules = require('../scim/scim_client_rules');
+const scheduler = require('../cluster/scheduler');
 const accountState = require('../common/account_state');
 
 const log = require('bunyan').createLogger({ name: 'scim_client',
@@ -111,18 +135,31 @@ function freshProvider() {
     fail: [],
     // Token endpoint: issued tokens, and how a client authenticated.
     tokens: {}, tokenRequests: [], invalidateTokens: false,
-    clientCertificate: null
+    clientCertificate: null,
+    // A verified client certificate asked of every SCIM request, beside
+    // `auth`.
+    requireCert: false,
+    // An unfiltered list asking for more than this a page is answered 400
+    // tooMany (0: never).
+    tooManyAbove: 0,
+    // Lists answer no totalResults.
+    omitTotal: false,
+    // /ResourceTypes' required schemaExtensions, by type.
+    requiredExtensions: {}
   };
 }
 
 let sp = freshProvider();
 
-function scimError(res, status, scimType, detail, headers) {
+// RFC 7644 section 3.12's Error. `numeric` sends `status` as a number, as
+// some service providers do; the specification's examples use a string.
+function scimError(res, status, scimType, detail, headers, numeric) {
   log.debug('Entering scimError().');
   res.writeHead(status, Object.assign({
     'Content-Type': 'application/scim+json' }, headers || {}));
   res.end(JSON.stringify({ schemas: [
-    'urn:ietf:params:scim:api:messages:2.0:Error'], status: String(status),
+    'urn:ietf:params:scim:api:messages:2.0:Error'],
+    status: numeric ? status : String(status),
     scimType: scimType, detail: detail }));
   log.debug('Leaving scimError().');
 }
@@ -151,6 +188,11 @@ function withMeta(r, type) {
 
 function matchesFilter(r, filter) {
   log.debug('Entering matchesFilter().');
+  const present = /^(\w+) pr$/.exec(filter);
+  if (present) {
+    log.debug('Leaving matchesFilter(). pr.');
+    return !!r.body[present[1]];
+  }
   const m = /^(\w+) eq (".*")$/.exec(filter);
   if (!m) {
     log.debug('Leaving matchesFilter(). Unreadable.');
@@ -188,7 +230,14 @@ function handleScim(req, res, raw) {
   const body = raw ? JSON.parse(raw) : null;
   sp.requests.push({ method: req.method, path: url.pathname + url.search,
                      body: body, headers: req.headers });
-  // Authentication.
+  // Authentication: a client certificate where asked, and then the scheme.
+  if (sp.requireCert) {
+    const peer = req.socket.getPeerCertificate();
+    sp.clientCertificate = peer && peer.subject ? peer : null;
+    if (!req.client.authorized) {
+      return scimError(res, 401, undefined, 'no certificate');
+    }
+  }
   if (sp.auth === 'basic') {
     const want = 'Basic ' + Buffer.from('pusher:' + BASIC_PASSWORD)
       .toString('base64');
@@ -211,9 +260,11 @@ function handleScim(req, res, raw) {
   }
   for (let i = 0; i < sp.fail.length; i++) {
     const f = sp.fail[i];
-    if (f.method === req.method && url.pathname.indexOf(f.path) >= 0) {
+    if (f.method === req.method && url.pathname.indexOf(f.path) >= 0 &&
+        (!f.query || url.search.indexOf(f.query) >= 0)) {
       sp.fail.splice(i, 1);
-      return scimError(res, f.status, f.scimType, 'scripted', f.headers);
+      return scimError(res, f.status, f.scimType, 'scripted', f.headers,
+                       f.numeric);
     }
   }
   if (parts[0] === 'ServiceProviderConfig') {
@@ -228,8 +279,13 @@ function handleScim(req, res, raw) {
   if (parts[0] === 'ResourceTypes') {
     return send(res, 200, { schemas: [
       'urn:ietf:params:scim:api:messages:2.0:ListResponse'], totalResults: 2,
-      Resources: [{ id: 'User', name: 'User', endpoint: '/Users' },
-                  { id: 'Group', name: 'Group', endpoint: '/Groups' }] });
+      Resources: ['User', 'Group'].map(function (name) {
+        return { id: name, name: name, endpoint: '/' + name + 's',
+                 schemaExtensions: (sp.requiredExtensions[name] || [])
+                   .map(function (schema) {
+                     return { schema: schema, required: true };
+                   }) };
+      }) });
   }
   const type = parts[0] === 'Users' ? 'User' : parts[0] === 'Groups'
     ? 'Group' : '';
@@ -250,11 +306,16 @@ function handleScim(req, res, raw) {
     }
     const start = Number(url.searchParams.get('startIndex') || 1);
     const count = Number(url.searchParams.get('count') || 100);
+    if (sp.tooManyAbove && !filter && count > sp.tooManyAbove) {
+      return scimError(res, 400, 'tooMany', 'ask for fewer');
+    }
     const page = all.slice(start - 1, start - 1 + count);
     const answer = { schemas: [
       'urn:ietf:params:scim:api:messages:2.0:ListResponse'],
-      totalResults: all.length, startIndex: start,
-      itemsPerPage: page.length };
+      startIndex: start, itemsPerPage: page.length };
+    if (!sp.omitTotal) {
+      answer.totalResults = all.length;
+    }
     if (page.length) {
       answer.Resources = page.map(function (r) {
         return withMeta(r, type);
@@ -774,6 +835,474 @@ async function certificate(t, material, ca) {
   log.debug('Leaving certificate().');
 }
 
+// ---------------------------------------------------------------------------
+// THE AUDIT'S SECTIONS (2026-10-13): each against a fresh service provider
+// and a client of its own, after the Basic client is gone.
+// ---------------------------------------------------------------------------
+const ENTERPRISE =
+  'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
+
+// A Basic client of the realm, enabled, with what `extra` adds.
+async function addBasic(id, base, ca, extra) {
+  log.debug('Entering addBasic(). ' + id);
+  const answer = await act(Object.assign({ action: 'add-client',
+    identifier: id, baseUrl: base, authMethod: 'basic', username: 'pusher',
+    password: BASIC_PASSWORD, caCertificates: ca, enabled: 'true' },
+    extra || {}));
+  log.debug('Leaving addBasic().');
+  return answer;
+}
+
+// A person's entry rewritten: `set` added, the attributes `drop` names gone.
+function rewrite(name, set, drop) {
+  log.debug('Entering rewrite(). ' + name);
+  const dn = 'uid=' + name + ',' + ldap.usersDn();
+  const attrs = Object.assign({}, ldap.readPerson(dn).attributes);
+  (drop || []).forEach(function (gone) {
+    Object.keys(attrs).forEach(function (key) {
+      if (key.toLowerCase() === gone.toLowerCase()) {
+        delete attrs[key];
+      }
+    });
+  });
+  ldap.writePerson(dn, Object.assign(attrs, set || {}));
+  log.debug('Leaving rewrite().');
+}
+
+// The requests whose method is `method` and whose path holds `part`.
+function requestsTo(method, part) {
+  log.debug('Entering requestsTo().');
+  const out = sp.requests.filter(function (r) {
+    return r.method === method && r.path.indexOf(part) >= 0;
+  });
+  log.debug('Leaving requestsTo(). ' + out.length);
+  return out;
+}
+
+function deadOf(id) {
+  log.debug('Entering deadOf().');
+  const out = scimClients.view({ client: id }).client.queues.dead;
+  log.debug('Leaving deadOf(). ' + out.length);
+  return out;
+}
+
+async function groupModes(t, base, ca) {
+  log.debug('Entering groupModes().');
+  sp = freshProvider();
+  ldap.createGroup('other' + RUN, { members: ['bob' + RUN] });
+  const id = 'gm-' + RUN;
+  await addBasic(id, base, ca, { groupMode: 'none' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  t.check(!!userNamed('alice' + RUN) && !Object.keys(sp.groups).length &&
+          !requestsTo('POST', '/Groups').length,
+          'L1. group mode none pushes people and no group');
+  await act({ action: 'update-client', id: id, groupMode: 'selected',
+              groups: 'staff' + RUN });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  t.check(!!groupNamed('staff' + RUN) && !groupNamed('other' + RUN),
+          'L2. group mode selected pushes the named group and no other');
+  await act({ action: 'update-client', id: id, groupMode: 'member-groups',
+              scopeMode: 'filter', scopeFilter: '(givenName=Alice)' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  t.check(!!groupNamed('staff' + RUN) && !groupNamed('other' + RUN),
+          'L3. group mode member-groups pushes only a group with a member ' +
+          'in scope');
+  await act({ action: 'update-client', id: id, groupMode: 'all' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  const other = groupNamed('other' + RUN);
+  t.check(!!other && !(other.body.members || []).length,
+          'L4. group mode all pushes every group, its members limited to ' +
+          'the people in scope', JSON.stringify(other && other.body));
+  await act({ action: 'update-client', id: id, scopeMode: 'all' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  const bob = userNamed('bob' + RUN);
+  const added = requestsTo('PATCH', '/Groups/' + other.id).filter(
+    function (r) {
+      return (r.body.Operations || []).some(function (op) {
+        return op.op === 'add' && op.path === 'members' &&
+               JSON.stringify(op.value) === JSON.stringify([{
+                 value: bob.id }]);
+      });
+    });
+  t.check(added.length >= 1 && (groupNamed('other' + RUN).body.members ||
+    []).some(function (m) {
+    return m.value === bob.id;
+  }), 'L5. a member who came into scope is added by PATCH add members',
+          JSON.stringify(requestsTo('PATCH', '/Groups/').map(function (r) {
+            return r.body;
+          })));
+  await act({ action: 'update-client', id: id, scopeMode: 'filter',
+             scopeFilter: '(givenName=Alice)' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  const removed = requestsTo('PATCH', '/Groups/' + other.id).filter(
+    function (r) {
+      return (r.body.Operations || []).some(function (op) {
+        return op.op === 'remove' &&
+               op.path === 'members[value eq ' + JSON.stringify(bob.id) +
+                           ']';
+      });
+    });
+  t.check(removed.length >= 1 &&
+          !(groupNamed('other' + RUN).body.members || []).length,
+          'L6. a member who left the scope is removed by PATCH remove ' +
+          'members[value eq "..."]');
+  t.check(deadOf(id).length === 0, 'L7. no dead letter on the way',
+          JSON.stringify(deadOf(id)));
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving groupModes().');
+}
+
+async function adoption(t, base, ca) {
+  log.debug('Entering adoption().');
+  sp = freshProvider();
+  const id = 'adopt-' + RUN;
+  ldap.createUser('dave' + RUN, { attributes: { givenName: 'Dave',
+                                                sn: 'Moore' } });
+  await addBasic(id, base, ca);
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  const first = userNamed('dave' + RUN);
+  // Re-created there under another id: the link's id is gone.
+  delete sp.users[first.id];
+  sp.users['sp-moved'] = Object.assign({}, first, { id: 'sp-moved' });
+  const mark = sp.requests.length;
+  rewrite('dave' + RUN, { title: 'Moved' });
+  await drain();
+  const after = sp.requests.slice(mark);
+  const post = after.findIndex(function (r) {
+    return r.method === 'POST' && /\/Users$/.test(r.path);
+  });
+  const search = after.findIndex(function (r, i) {
+    return i > post && r.method === 'GET' &&
+           decodeURIComponent(r.path).indexOf('externalId eq ' +
+             JSON.stringify(uuidOf('dave' + RUN))) >= 0;
+  });
+  t.check(post >= 0 && search > post &&
+          sp.users['sp-moved'].body.title === 'Moved' &&
+          !after.some(function (r) {
+            return /userName eq/.test(decodeURIComponent(r.path));
+          }),
+          'M1. a 409 uniqueness adopts the resource found by externalId',
+          JSON.stringify(after.map(function (r) {
+            return r.method + ' ' + r.path;
+          })));
+  sp.fail.push({ method: 'POST', path: '/Users', status: 409 });
+  ldap.createUser('frank' + RUN, { attributes: { givenName: 'Frank',
+                                                 sn: 'Hill' } });
+  await drain(3);
+  const dead = deadOf(id);
+  t.check(dead.length === 1 && dead[0].errorCode === 'STS-SCIMC-0007' &&
+          /409/.test(dead[0].why) && !userNamed('frank' + RUN),
+          'M2. a 409 without uniqueness is a dead letter, nothing adopted',
+          JSON.stringify(dead));
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving adoption().');
+}
+
+async function resourceRules(t, base, ca) {
+  log.debug('Entering resourceRules().');
+  sp = freshProvider();
+  sp.requiredExtensions = { User: [ENTERPRISE] };
+  const id = 'ext-' + RUN;
+  await addBasic(id, base, ca, { scopeMode: 'filter',
+                                 scopeFilter: '(sn=Green)' });
+  ldap.createUser('gina' + RUN, { attributes: { givenName: 'Gina',
+    sn: 'Green', title: 'Analyst', mail: 'gina' + RUN + '@example.test' } });
+  await drain();
+  const post = requestsTo('POST', '/Users').filter(function (r) {
+    return r.body && r.body.userName === 'gina' + RUN;
+  })[0];
+  t.check(!!post && post.body.schemas.indexOf(ENTERPRISE) > 0 &&
+          typeof post.body[ENTERPRISE] === 'object',
+          'N1. a required enterprise extension is sent, empty if need be',
+          JSON.stringify(post && post.body));
+  sp.requiredExtensions = { User: ['urn:example:scim:ext:Badge'] };
+  await act({ action: 'test-connection', id: id });
+  rewrite('gina' + RUN, { title: 'Lead' });
+  await drain(3);
+  let dead = deadOf(id);
+  t.check(dead.length === 1 && dead[0].errorCode === 'STS-SCIMC-0029' &&
+          dead[0].why.indexOf('urn:example:scim:ext:Badge') >= 0 &&
+          userNamed('gina' + RUN).body.title === 'Analyst',
+          'N2. any other required extension is a dead letter naming it, ' +
+          'and nothing is sent', JSON.stringify(dead));
+  await act({ action: 'purge-dead', id: id });
+  sp.requiredExtensions = {};
+  await act({ action: 'test-connection', id: id });
+  t.check(scimRules.missingRequired('User', {}).join() === 'userName' &&
+          scimRules.missingRequired('Group', { displayName: ' ' }).join() ===
+            'displayName' &&
+          scimRules.missingRequired('User', { userName: 'x' }).length === 0,
+          'N3. a User without userName or a Group without displayName is ' +
+          'not sendable (STS-SCIMC-0030)');
+  rewrite('gina' + RUN, { title: 'Lead' });
+  await drain();
+  const mark = sp.requests.length;
+  rewrite('gina' + RUN, {}, ['title', 'mail']);
+  await drain();
+  const put = sp.requests.slice(mark).filter(function (r) {
+    return r.method === 'PUT' && /\/Users\//.test(r.path);
+  }).pop();
+  t.check(!!put && 'title' in put.body && put.body.title === null &&
+          Array.isArray(put.body.emails) && !put.body.emails.length,
+          'N4. a replace clears what the entry lost: null, and [] for a ' +
+          'multi-valued attribute', JSON.stringify(put && put.body));
+  sp.fail.push({ method: 'PUT', path: '/Users/', status: 408 });
+  rewrite('gina' + RUN, { title: 'Timed' });
+  await drain(3);
+  dead = deadOf(id);
+  t.check(dead.length === 1 && dead[0].attempts === 1 &&
+          dead[0].errorCode === 'STS-SCIMC-0007',
+          'N5. 408 is not retried: a dead letter after one attempt',
+          JSON.stringify(dead));
+  await act({ action: 'purge-dead', id: id });
+  const user = userNamed('gina' + RUN);
+  const before = sp.requests.length;
+  sp.fail.push({ method: 'PUT', path: '/Users/', status: 400,
+                 scimType: 'invalidVers' });
+  rewrite('gina' + RUN, { title: 'Versioned' });
+  await drain();
+  const seq = sp.requests.slice(before).filter(function (r) {
+    return r.path.indexOf('/Users/' + user.id) >= 0;
+  }).map(function (r) {
+    return r.method;
+  }).join(' ');
+  t.check(/PUT GET PUT/.test(seq) &&
+          userNamed('gina' + RUN).body.title === 'Versioned' &&
+          deadOf(id).length === 0,
+          'N6. a 400 invalidVers re-reads the version and tries again', seq);
+  sp.fail.push({ method: 'PUT', path: '/Users/', status: 400,
+                 scimType: 'invalidValue', numeric: true });
+  rewrite('gina' + RUN, { title: 'Numbered' });
+  await drain(3);
+  dead = deadOf(id);
+  t.check(dead.length === 1 && /scimType invalidValue/.test(dead[0].why) &&
+          scimRules.errorOf({ status: 409, scimType: 'uniqueness' })
+            .status === 409 &&
+          scimRules.errorOf({ status: '409' }).status === 409 &&
+          scimRules.errorOf({ scimType: 'a b' }).scimType === '',
+          'N7. an Error body is read whether its status is a number or a ' +
+          'string, and its scimType is on the dead letter',
+          JSON.stringify(dead));
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving resourceRules().');
+}
+
+async function paging(t, base, ca) {
+  log.debug('Entering paging().');
+  sp = freshProvider();
+  sp.omitTotal = true;
+  sp.tooManyAbove = 3;
+  const id = 'page-' + RUN;
+  await addBasic(id, base, ca, { scopeMode: 'filter',
+                                 scopeFilter: '(givenName=Alice)' });
+  // Every other person of the realm is there already, out of scope; and two
+  // resources nobody here owns.
+  const first = function (attrs, name) {
+    log.debug('Entering first(). ' + name);
+    const key = Object.keys(attrs || {}).filter(function (one) {
+      return one.toLowerCase() === name.toLowerCase();
+    })[0];
+    log.debug('Leaving first().');
+    return key ? String([].concat(attrs[key])[0]) : '';
+  };
+  let known = 0;
+  ldap.allPersons().forEach(function (person) {
+    const uuid = first(person.attributes, 'entryUUID').toLowerCase();
+    const given = first(person.attributes, 'givenName');
+    if (!uuid || given === 'Alice') {
+      return;
+    }
+    known++;
+    sp.users['seed-' + known] = { id: 'seed-' + known, v: 1, body: {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+      userName: 'seed-' + known, externalId: uuid } };
+  });
+  ['f0', 'f1'].forEach(function (k) {
+    sp.users['foreign-' + k] = { id: 'foreign-' + k, v: 1, body: {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+      userName: 'foreign-' + k, externalId: nodeCrypto.randomUUID() } };
+  });
+  const result = await act({ action: 'reconcile', id: id });
+  const lists = requestsTo('GET', '/Users?startIndex=').map(function (r) {
+    return r.path;
+  });
+  t.check(known >= 3 && result.ok && result.deprovisioned === known,
+          'O1. with no totalResults every page is read: each of ' + known +
+          ' resources out of scope is found', JSON.stringify(result));
+  t.check(lists.some(function (one) {
+    return /count=50/.test(one);
+  }) && lists.some(function (one) {
+    return /count=3&/.test(one) && !/startIndex=1&/.test(one);
+  }), 'O2. tooMany halves the page until it is answered, then pages on',
+          JSON.stringify(lists));
+  await drain();
+  sp.tooManyAbove = 0;
+  sp.fail.push({ method: 'GET', path: '/Users', query: 'filter=',
+                 status: 400, scimType: 'tooMany' });
+  ldap.createUser('hank' + RUN, { attributes: { givenName: 'Alice',
+                                                sn: 'Hank' } });
+  await drain();
+  t.check(!!userNamed('hank' + RUN) && requestsTo('GET', 'count=2').some(
+    function (r) {
+      return /filter=/.test(r.path);
+    }), 'O3. an externalId lookup answered tooMany asks for a page of two');
+  t.check(deadOf(id).length === 0, 'O4. no dead letter on the way',
+          JSON.stringify(deadOf(id)));
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving paging().');
+}
+
+async function scheduled(t, base, ca) {
+  log.debug('Entering scheduled().');
+  sp = freshProvider();
+  const id = 'sched-' + RUN;
+  await addBasic(id, base, ca, { scopeMode: 'filter',
+                                 scopeFilter: '(givenName=Alice)',
+                                 reconcileMinutes: '1' });
+  t.check(!!scheduler.job('scim-client.reconcile') &&
+          !!scheduler.job('scim-client.deliver'),
+          'P0. both cluster scheduler jobs are registered');
+  const first = await scimClients.reconcileDue();
+  const view = scimClients.view({ client: id }).client;
+  t.check(first.reconciled === 1 && !!view.lastReconcileAt,
+          'P1. a client whose interval has come round is reconciled',
+          JSON.stringify(first));
+  await act({ action: 'update-client', id: id, enabled: 'false' });
+  const refused = await act({ action: 'reconcile', id: id });
+  t.check(!refused.ok && codeOf(refused) === 'STS-SCIMC-0017',
+          'P1b. a disabled client is not reconciled by hand',
+          JSON.stringify(refused));
+  await act({ action: 'update-client', id: id, enabled: 'true' });
+  const second = await scimClients.reconcileDue();
+  t.check(second.reconciled === 0,
+          'P2. and not again before its interval has passed',
+          JSON.stringify(second));
+  await drain();
+  t.check(!!userNamed('alice' + RUN),
+          'P3. what the scheduled reconciliation queued is delivered');
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving scheduled().');
+}
+
+async function deleteStale(t, base, ca) {
+  log.debug('Entering deleteStale().');
+  sp = freshProvider();
+  const id = 'del-' + RUN;
+  await addBasic(id, base, ca, { scopeMode: 'filter',
+                                 scopeFilter: '(givenName=Alice)',
+                                 deprovision: 'delete' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  const alice = userNamed('alice' + RUN);
+  sp.fail.push({ method: 'DELETE', path: '/Users/', status: 412 });
+  await act({ action: 'update-client', id: id,
+              scopeFilter: '(givenName=Nobody' + RUN + ')' });
+  await act({ action: 'reconcile', id: id });
+  await drain();
+  // Everybody given Alice was pushed and is deleted now; the first DELETE,
+  // whichever it was, was answered 412.
+  const deleted = requestsTo('DELETE', '/Users/').map(function (r) {
+    return r.path.split('/').pop();
+  });
+  const seqs = deleted.map(function (rid) {
+    return sp.requests.filter(function (r) {
+      return r.path.indexOf('/Users/' + rid) >= 0;
+    }).map(function (r) {
+      return r.method + (r.headers['if-match'] ? '+If-Match' : '');
+    }).join(' ');
+  });
+  t.check(seqs.some(function (seq) {
+    return /DELETE\+If-Match GET DELETE\+If-Match/.test(seq);
+  }) && !!alice && !sp.users[alice.id] && deadOf(id).length === 0,
+          'Q1. a DELETE answered 412 re-reads and deletes again with ' +
+          'If-Match', JSON.stringify(seqs));
+  await act({ action: 'remove-client', id: id });
+  log.debug('Leaving deleteStale().');
+}
+
+// A client certificate signed by the test CA, as an operator would upload.
+function clientCertificate(dir) {
+  log.debug('Entering clientCertificate().');
+  const ossl = function (args) {
+    const r = childProcess.spawnSync('openssl', args, { cwd: dir,
+                                                       encoding: 'utf8' });
+    if (r.status !== 0) {
+      throw new Error('openssl ' + args[0] + ' failed: ' + r.stderr);
+    }
+  };
+  ossl(['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+        '-nodes', '-keyout', 'client.key', '-out', 'client.csr', '-subj',
+        '/CN=uploaded-client-' + RUN]);
+  fs.writeFileSync(path.join(dir, 'client.cnf'),
+    'basicConstraints=critical,CA:FALSE\n' +
+    'keyUsage=critical,digitalSignature\n' +
+    'extendedKeyUsage=clientAuth\n');
+  ossl(['x509', '-req', '-in', 'client.csr', '-CA', 'ca.crt', '-CAkey',
+        'ca.key', '-CAcreateserial', '-out', 'client.crt', '-days', '2',
+        '-extfile', 'client.cnf']);
+  log.debug('Leaving clientCertificate().');
+  return { cert: fs.readFileSync(path.join(dir, 'client.crt'), 'utf8'),
+           key: fs.readFileSync(path.join(dir, 'client.key'), 'utf8') };
+}
+
+async function uploaded(t, material, dir) {
+  log.debug('Entering uploaded().');
+  sp = freshProvider();
+  const pair = clientCertificate(dir);
+  const server = await startProvider(material, material.ca);
+  const base = 'https://localhost:' + server.address().port + '/scim/v2';
+  const origin = base.replace(/\/scim\/v2$/, '');
+  sp.requireCert = true;
+  try {
+    const id = 'up-' + RUN;
+    const added = await addBasic(id, base, material.ca, {
+      tlsSource: 'uploaded', tlsCertificate: pair.cert,
+      tlsPrivateKey: pair.key });
+    const tested = await act({ action: 'test-connection', id: id });
+    t.check(added.ok && added.client.usable && tested.ok &&
+            sp.clientCertificate &&
+            /uploaded-client-/.test(JSON.stringify(
+              sp.clientCertificate.subject)),
+            'R1. an uploaded TLS client certificate is presented with Basic',
+            JSON.stringify(tested));
+    const shown = JSON.stringify(scimClients.view({ client: id }));
+    const keyBody = pair.key.replace(/-----[^-]+-----/g, '')
+      .replace(/\s+/g, '').slice(0, 40);
+    t.check(shown.indexOf(keyBody) < 0 && /"tlsPrivateKeySet":true/.test(
+      shown), 'R2. the uploaded private key is never shown, only that it ' +
+            'is set');
+    await act({ action: 'remove-client', id: id });
+    sp.auth = 'bearer';
+    sp.clientCertificate = null;
+    const oid = 'upo-' + RUN;
+    await act({ action: 'add-client', identifier: oid, baseUrl: base,
+      authMethod: 'oauth2', tokenEndpoint: origin + '/token',
+      oauthClientId: 'pusher-app', oauthClientSecret: OAUTH_SECRET,
+      tlsSource: 'uploaded', tlsCertificate: pair.cert,
+      tlsPrivateKey: pair.key, caCertificates: material.ca,
+      enabled: 'true' });
+    const count = sp.tokenRequests.length;
+    const again = await act({ action: 'test-connection', id: oid });
+    t.check(again.ok && sp.tokenRequests.length > count &&
+            !!sp.clientCertificate,
+            'R3. an uploaded TLS client certificate is presented with an ' +
+            'OAuth 2.0 token', JSON.stringify(again));
+    await act({ action: 'remove-client', id: oid });
+  } finally {
+    sp.auth = 'basic';
+    sp.requireCert = false;
+    server.close();
+  }
+  log.debug('Leaving uploaded().');
+}
+
 async function run(t) {
   log.debug('Entering run().');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scimc-'));
@@ -808,6 +1337,13 @@ async function run(t) {
       }) && /scim-client\.delivery/.test(shown),
               'K1. no view or audit row holds a credential');
       await act({ action: 'remove-client', id: 'basic-' + RUN });
+      await groupModes(t, base, material.ca);
+      await adoption(t, base, material.ca);
+      await resourceRules(t, base, material.ca);
+      await paging(t, base, material.ca);
+      await scheduled(t, base, material.ca);
+      await deleteStale(t, base, material.ca);
+      await uploaded(t, material, dir);
     });
   } finally {
     process.stdout.write = write;

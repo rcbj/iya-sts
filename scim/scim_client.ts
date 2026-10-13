@@ -71,14 +71,34 @@
 //   * a replace is a PUT of the whole owned state to a known id; a 404 there
 //     re-creates (section 3.5.1); PATCH only where `patch.supported`, else
 //     GET then PUT (section 3.5.2);
-//   * ETags where `etag.supported`: If-Match, and a 412 re-reads and tries
-//     again a bounded number of times (section 3.14);
+//   * ETags where `etag.supported`: If-Match on a PUT, a PATCH and a DELETE,
+//     and a 412 — or a 400 `invalidVers` — re-reads and tries again a
+//     bounded number of times (section 3.14);
 //   * a group's `members[].value` is the service provider's id, so a member
 //     goes in once that person is there (7643 section 4.2);
 //   * a DELETE answered 404 is done (7644 section 3.6);
-//   * only a network failure, a timeout, 408, 429, 500, 502, 503 and 504 are
-//     retried; every other answer, every scimType, is a dead letter (section
-//     3.12);
+//   * only a network failure, a timeout, 429, 500, 502, 503 and 504 are
+//     retried; every other answer is a dead letter carrying its scimType,
+//     read from the Error body whether its `status` is a string or a number
+//     (section 3.12). Three scimTypes CHANGE what the client does, and are
+//     the only ones that do: `tooMany` narrows the query (section 3.4.2),
+//     `uniqueness` on a create adopts (section 3.3; any other 409 is a dead
+//     letter), and `invalidVers` re-reads as a 412 does. `mutability` is
+//     deliberately a dead letter: the attribute it names is immutable THERE,
+//     and a re-read cannot change what this client would send;
+//   * a resource sent carries every extension /ResourceTypes marks
+//     `required` — the enterprise one, empty if need be, since RFC 7643
+//     section 4.3 makes none of its attributes required — and any other
+//     required extension, which this client has no values for, is a dead
+//     letter naming it (STS-SCIMC-0029);
+//   * a resource missing an attribute RFC 7643 requires (`userName`,
+//     `displayName`) is not sent (STS-SCIMC-0030), and a replace clears what
+//     this client sent before and the entry no longer has — `null`, or `[]`
+//     for a multi-valued attribute — rather than leaving the service
+//     provider to guess (section 3.5.1);
+//   * a list is read page by page from startIndex 1, and when the answer
+//     carries no `totalResults` the paging goes on until a page is empty or
+//     brings nothing new, rather than stopping after the first;
 //   * no credential, token or filter value is ever logged (section 7.5.2).
 // ===========================================================================
 
@@ -117,8 +137,18 @@ const MAX_PAGES = 10000;
 
 // THE STORES, per realm at their declarations (root CLAUDE.md's rule).
 // The deliveries — every client's rows, told apart by `clientId`.
+//
+// **NOT TOMBSTONED, unlike every other kind of the queue (2026-10-13).** A
+// tombstone ends a key for good — the persisted store refuses a later write
+// of it — which is right for the others' random ids and wrong here: a row's
+// key is `<client>|<type>|<uuid>`, a NAME written again every time that
+// resource changes. Tombstoned, a purged dead letter, a row removed by
+// retention or a removed client's rows would have ended the key, and the
+// next change to that person or group would have been refused at the flush.
+// realms.js says it in as many words: never for anything keyed by a name.
+// The merge by rank still orders two nodes' copies; and a row written again
+// under a key that was deleted starts at a NEW generation (enqueue()).
 const deliveries = realms.map({ persist: 'scimClient.deliveries',
-                                tombstone: true,
                                 mergeRow: outbound.mergeRow });
 // Which service provider resource each entry is, per client:
 // `<client>|<type>|<uuid>` -> { remoteId, etag, dn, name, inactive, at }.
@@ -845,10 +875,16 @@ class ScimClients {
     const held = this.delivery.liveRow(realmId, id);
     let row: Json;
     if (!held) {
+      // THE GENERATION IS THE CLOCK, not 1: the queue claims each attempt
+      // by (key, generation, attempt), and a key written again after its row
+      // was purged, expired or its client removed would otherwise ask for
+      // a claim its earlier row already took — and wait out the lease
+      // (scimClient.leaseMs) before anything was sent. Found by the audit's
+      // test of a change after purge-dead (2026-10-13).
       row = this.delivery.queue({ id: id, realm: realmId,
         clientId: c.identifier, type: type, uuid: uuid,
         name: String(name || ''), changedAt: at, uri: c.baseUrl,
-        nextAttemptAt: due }).row;
+        nextAttemptAt: due, generation: at }).row;
     } else if (held.state === 'pending') {
       row = this.delivery.writeRow(Object.assign(held, {
         changedAt: at, name: String(name || held.name || '') }));
@@ -1185,26 +1221,28 @@ class ScimClients {
         try {
           json = JSON.parse(answer.text);
         } catch (e) {
+          // Not JSON: an answer that is not SCIM, judged by its status alone.
+          log.debug("Caught in ScimClients.exchange(): " +
+                    ((e && e.message) || e));
           json = null;
         }
       }
       const status = Number(answer.status) || 0;
-      return { ok: status >= 200 && status < 300, kind: status >= 200 &&
-               status < 300 ? '' : 'status', status: status,
+      const ok = status >= 200 && status < 300;
+      // RFC 7644 section 3.12's Error body, read only on a failure: its
+      // `status` may be a string or a number, and its scimType is what three
+      // of the client's decisions turn on (tooMany, uniqueness, invalidVers).
+      const error = ok ? { status: 0, scimType: '' } : Rules.errorOf(json);
+      return { ok: ok, kind: ok ? '' : 'status', status: status,
                headers: answer.headers || {}, text: answer.text || '',
-               json: json, why: status >= 200 && status < 300 ? ''
-                 : 'HTTP ' + status + ScimClients.scimTypeOf(json) };
+               json: json, scimType: error.scimType,
+               errorStatus: error.status,
+               why: ok ? '' : 'HTTP ' + status +
+                 (error.scimType ? ' (scimType ' + error.scimType + ')'
+                                 : '') +
+                 (error.status && error.status !== status
+                   ? ' (the Error body says ' + error.status + ')' : '') };
     });
-  }
-
-  // The error schema's scimType and detail, for a sentence (RFC 7644
-  // section 3.12). Never a request's own values.
-  private static scimTypeOf(json: Json): string {
-    helpers.log.debug("Entering ScimClients.scimTypeOf().");
-    const type = json && typeof json === 'object' && json.scimType
-      ? ' (scimType ' + String(json.scimType).slice(0, 40) + ')' : '';
-    helpers.log.debug("Leaving ScimClients.scimTypeOf().");
-    return type;
   }
 
   /**
@@ -1534,6 +1572,134 @@ class ScimClients {
   }
 
   // =========================================================================
+  // WHAT A RESOURCE MUST CARRY, AND WHAT A REPLACE CLEARS.
+  // =========================================================================
+
+  /**
+   * Why a resource may not be sent to a client's service provider, as a
+   * failure the queue dead-letters, or null when it may: an attribute RFC
+   * 7643 requires is missing (STS-SCIMC-0030), or /ResourceTypes marks an
+   * extension `required` that this client has no values for
+   * (STS-SCIMC-0029). The enterprise extension is ADDED, empty where the
+   * entry has none of it: RFC 7643 section 4.3 makes none of its attributes
+   * required, so an empty one is a valid one.
+   *
+   * @param disc - the discovery
+   * @param type - `User` or `Group`
+   * @param body - the resource; the enterprise extension is added to it
+   * @returns null, or `{ ok: false, code, why }`
+   */
+  unsendable(disc: Json, type: string, body: Json): Json | null {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.unsendable(). " + type);
+    const missing = Rules.missingRequired(type, body);
+    if (missing.length) {
+      log.debug("Leaving ScimClients.unsendable(). Missing an attribute.");
+      return { ok: false, code: 'STS-SCIMC-0030',
+               why: 'the ' + type + ' has no ' + missing.join(' or ') +
+                    ', which RFC 7643 requires; nothing was sent' };
+    }
+    const required: string[] = (disc.requiredExtensions &&
+                                disc.requiredExtensions[type]) || [];
+    const unknown: string[] = [];
+    required.forEach(function (schema: string) {
+      if (body.schemas.indexOf(schema) >= 0) {
+        return;
+      }
+      if (type === 'User' && schema === ENTERPRISE_SCHEMA) {
+        body.schemas.push(ENTERPRISE_SCHEMA);
+        body[ENTERPRISE_SCHEMA] = body[ENTERPRISE_SCHEMA] || {};
+        return;
+      }
+      unknown.push(schema);
+    });
+    if (unknown.length) {
+      log.debug("Leaving ScimClients.unsendable(). A required extension.");
+      return { ok: false, code: 'STS-SCIMC-0029',
+               why: 'the service provider\'s ' + type + ' resource type ' +
+                    'requires the extension ' + unknown.join(', ') +
+                    ', which this client has no values for; nothing was ' +
+                    'sent' };
+    }
+    log.debug("Leaving ScimClients.unsendable(). Sendable.");
+    return null;
+  }
+
+  /**
+   * What a User this client sends OWNS there: each attribute it carries
+   * with a value, top-level or of the enterprise extension
+   * (`<urn>:<name>`), and whether it is multi-valued (`many`) or not
+   * (`one`). Kept on the link, so the next replace can clear what the
+   * entry no longer has.
+   *
+   * @param body - the resource sent
+   * @returns `{ name: 'one' | 'many' }`
+   */
+  static ownedOf(body: Json): Json {
+    helpers.log.debug("Entering ScimClients.ownedOf().");
+    const out: Json = {};
+    const note = function (key: string, value: Json): void {
+      if (value === null || value === undefined ||
+          (Array.isArray(value) && !value.length)) {
+        return;
+      }
+      out[key] = Array.isArray(value) ? 'many' : 'one';
+    };
+    Object.keys(body || {}).forEach(function (name) {
+      if (name === 'schemas' || name === 'externalId') {
+        return;
+      }
+      if (name === ENTERPRISE_SCHEMA) {
+        Object.keys(body[name] || {}).forEach(function (sub) {
+          note(ENTERPRISE_SCHEMA + ':' + sub, body[name][sub]);
+        });
+        return;
+      }
+      note(name, body[name]);
+    });
+    helpers.log.debug("Leaving ScimClients.ownedOf().");
+    return out;
+  }
+
+  /**
+   * A replace's body with every attribute this client sent before and the
+   * entry no longer has set to `null` — `[]` for a multi-valued one — so
+   * the service provider CLEARS it (RFC 7644 section 3.5.1: null and an
+   * empty array are how a PUT says "no value") rather than keeping a value
+   * this realm withdrew, which section 3.5.1 leaves it free to do for an
+   * attribute a PUT merely leaves out.
+   *
+   * @param body - the resource to send
+   * @param owned - the link's `owned`, or nothing
+   * @returns a copy of the body with the clears added
+   */
+  static withClears(body: Json, owned: Json): Json {
+    helpers.log.debug("Entering ScimClients.withClears().");
+    const out: Json = Object.assign({}, body,
+                                    { schemas: body.schemas.slice() });
+    Object.keys(owned || {}).forEach(function (key) {
+      const empty = owned[key] === 'many' ? [] : null;
+      if (key.indexOf(ENTERPRISE_SCHEMA + ':') === 0) {
+        const sub = key.slice(ENTERPRISE_SCHEMA.length + 1);
+        const ext = Object.assign({}, out[ENTERPRISE_SCHEMA] || {});
+        if (!(sub in ext)) {
+          ext[sub] = empty;
+          out[ENTERPRISE_SCHEMA] = ext;
+          if (out.schemas.indexOf(ENTERPRISE_SCHEMA) < 0) {
+            out.schemas.push(ENTERPRISE_SCHEMA);
+          }
+        }
+        return;
+      }
+      if (!(key in out)) {
+        out[key] = empty;
+      }
+    });
+    helpers.log.debug("Leaving ScimClients.withClears().");
+    return out;
+  }
+
+  // =========================================================================
   // ONE DELIVERY.
   // =========================================================================
 
@@ -1721,8 +1887,24 @@ class ScimClients {
     const query = '?filter=' +
       encodeURIComponent(Rules.eqFilter(attribute, value)) +
       '&attributes=' + encodeURIComponent('id,externalId,meta');
-    const answer = await this.request(c, 'GET', disc.endpoints[type] + query,
-                                      null);
+    let answer = await this.request(c, 'GET', disc.endpoints[type] + query,
+                                    null);
+    if (ScimClients.isTooMany(answer)) {
+      // NARROWED (RFC 7644 section 3.4.2: tooMany is "more results than the
+      // server is willing to calculate or process"): the filter is already
+      // one equality, so what is left to narrow is the page. Two are all
+      // this question needs — none, one, or more than one.
+      log.debug("ScimClients.findBy(): tooMany; asking for two.");
+      answer = await this.request(c, 'GET', disc.endpoints[type] + query +
+                                  '&startIndex=1&count=2', null);
+      if (ScimClients.isTooMany(answer)) {
+        log.debug("Leaving ScimClients.findBy(). tooMany, narrowed.");
+        return { ok: false, answer: answer, code: 'STS-SCIMC-0028',
+                 why: 'the service provider answered tooMany to an ' +
+                      'equality filter on ' + attribute + ', even for a ' +
+                      'page of two' };
+      }
+    }
     if (!answer.ok) {
       log.debug("Leaving ScimClients.findBy(). Failed.");
       return { ok: false, answer: answer };
@@ -1752,8 +1934,32 @@ class ScimClients {
     return String(header || meta || '');
   }
 
-  // A write to a known resource, with If-Match where the service provider
-  // keeps ETags; a 412 re-reads the version and tries again, bounded.
+  // Whether an answer is RFC 7644 section 3.4.2's tooMany: a 400 whose Error
+  // body says so.
+  private static isTooMany(answer: Json): boolean {
+    helpers.log.debug("Entering ScimClients.isTooMany().");
+    const answer2 = !!answer && answer.status === 400 &&
+                    answer.scimType === 'tooMany';
+    helpers.log.debug("Leaving ScimClients.isTooMany(). " + answer2);
+    return answer2;
+  }
+
+  // Whether an answer says the version sent is stale: 412 (RFC 7644 section
+  // 3.14), or a 400 `invalidVers` (section 3.12), which a service provider
+  // answers to an If-Match it no longer holds.
+  private static isStale(answer: Json): boolean {
+    helpers.log.debug("Entering ScimClients.isStale().");
+    const stale = !!answer && (answer.status === 412 ||
+      (answer.status === 400 && answer.scimType === 'invalidVers'));
+    helpers.log.debug("Leaving ScimClients.isStale(). " + stale);
+    return stale;
+  }
+
+  // A write to a known resource — PUT, PATCH or DELETE — with If-Match where
+  // the service provider keeps ETags; a stale version (412, or 400
+  // invalidVers) re-reads it and tries again, bounded. A re-read answered
+  // 404 is returned as it is: the caller decides what a resource that is
+  // gone means (a DELETE is done; a replace creates).
   private async writeKnown(c: Json, disc: Json, method: string,
                            path: string, body: Json, etag: string):
       Promise<Json> {
@@ -1767,7 +1973,9 @@ class ScimClients {
         extra['If-Match'] = version;
       }
       const answer = await this.request(c, method, path, body, extra);
-      if (answer.status !== 412 || !disc.etag) {
+      // Only where ETags are kept: without them no If-Match was sent, and a
+      // re-read would send the same request again.
+      if (!ScimClients.isStale(answer) || !disc.etag) {
         log.debug("Leaving ScimClients.writeKnown(). " + answer.status);
         return answer;
       }
@@ -1778,11 +1986,11 @@ class ScimClients {
       }
       version = ScimClients.etagOf(fresh);
     }
-    log.debug("Leaving ScimClients.writeKnown(). 412 too often.");
+    log.debug("Leaving ScimClients.writeKnown(). Stale too often.");
     return { ok: false, status: 412, kind: 'status',
              code: 'STS-SCIMC-0021',
-             why: 'HTTP 412 Precondition Failed after ' + (rounds + 1) +
-                  ' tries' };
+             why: 'the ' + method + ' was refused as stale (HTTP 412 or ' +
+                  'invalidVers) ' + (rounds + 1) + ' times' };
   }
 
   // Deactivates a user there: PATCH active false, or GET then PUT.
@@ -1849,7 +2057,11 @@ class ScimClients {
       return { ok: true, id: String(id), etag: ScimClients.etagOf(answer),
                created: true };
     }
-    if (answer.status !== 409) {
+    if (answer.status !== 409 || answer.scimType !== 'uniqueness') {
+      // A 409 WITHOUT `uniqueness` is not "it is already there" (RFC 7644
+      // section 3.12 gives 409 to uniqueness alone, but a service provider
+      // may answer it to a conflict of its own): nothing is adopted on a
+      // guess, and it is a dead letter carrying what it said.
       log.debug("Leaving ScimClients.create(). " + answer.status);
       return { ok: false, answer: answer };
     }
@@ -1900,8 +2112,9 @@ class ScimClients {
       }
       const path = disc.endpoints.User + '/' + encodeURIComponent(remote.id);
       if (c.deprovision === 'delete') {
-        const gone = await this.request(c, 'DELETE', path, null,
-          disc.etag && remote.etag ? { 'If-Match': remote.etag } : {});
+        // Through writeKnown(): If-Match, and a stale version re-read.
+        const gone = await this.writeKnown(c, disc, 'DELETE', path, null,
+                                           remote.etag || '');
         if (!gone.ok && gone.status !== 404) {
           log.debug("Leaving ScimClients.syncUser(). The delete failed.");
           return { ok: false, answer: gone };
@@ -1923,6 +2136,11 @@ class ScimClients {
       return { ok: true, status: off.status };
     }
     const body = this.outboundUser(c, entry);
+    const refused = this.unsendable(disc, 'User', body);
+    if (refused) {
+      log.debug("Leaving ScimClients.syncUser(). Not sendable.");
+      return refused;
+    }
     const remote = await this.remoteOf(c, disc, 'User', row.uuid);
     if (!remote.ok) {
       log.debug("Leaving ScimClients.syncUser(). The lookup failed.");
@@ -1931,8 +2149,10 @@ class ScimClients {
     let result: Json = null;
     if (remote.id) {
       const path = disc.endpoints.User + '/' + encodeURIComponent(remote.id);
-      const replaced = await this.writeKnown(c, disc, 'PUT', path, body,
-                                             remote.etag || '');
+      // What was sent before and is gone now is cleared, not left behind.
+      const replaced = await this.writeKnown(c, disc, 'PUT', path,
+        ScimClients.withClears(body, remote.link && remote.link.owned),
+        remote.etag || '');
       if (replaced.ok) {
         result = { ok: true, id: remote.id,
                    etag: ScimClients.etagOf(replaced) };
@@ -1951,8 +2171,13 @@ class ScimClients {
     }
     this.writeLink(c, 'User', row.uuid, { remoteId: result.id,
       etag: result.etag || '', inactive: body.active === false,
-      dn: entry.dn, name: String(body.userName || '') });
-    if (result.created && c.groupMode !== 'none') {
+      dn: entry.dn, name: String(body.userName || ''),
+      owned: ScimClients.ownedOf(body) });
+    // A person deactivated there and active again is a member again: a group
+    // leaves out a member whose link says inactive (syncGroup()).
+    const reactivated = !!(remote.link && remote.link.inactive) &&
+                        body.active !== false;
+    if ((result.created || reactivated) && c.groupMode !== 'none') {
       // NOW A MEMBER CAN BE NAMED (RFC 7643 section 4.2: a member's value
       // is the service provider's id): the person's groups go again.
       (dir.groupsOfUser(entry.dn).groups || []).forEach((group: Json) => {
@@ -1980,8 +2205,8 @@ class ScimClients {
       if (remote.id) {
         const path = disc.endpoints.Group + '/' +
           encodeURIComponent(remote.id);
-        const gone = await this.request(c, 'DELETE', path, null,
-          disc.etag && remote.etag ? { 'If-Match': remote.etag } : {});
+        const gone = await this.writeKnown(c, disc, 'DELETE', path, null,
+                                           remote.etag || '');
         if (!gone.ok && gone.status !== 404) {
           log.debug("Leaving ScimClients.syncGroup(). The delete failed.");
           return { ok: false, answer: gone };
@@ -2011,6 +2236,11 @@ class ScimClients {
         return { value: id, type: 'User' };
       })
     };
+    const refused = this.unsendable(disc, 'Group', body);
+    if (refused) {
+      log.debug("Leaving ScimClients.syncGroup(). Not sendable.");
+      return refused;
+    }
     let result: Json = null;
     if (remote.id) {
       const path = disc.endpoints.Group + '/' + encodeURIComponent(remote.id);
@@ -2094,7 +2324,23 @@ class ScimClients {
   // =========================================================================
 
   // Every resource of a type the service provider holds: `id` and
-  // `externalId`, page by page (RFC 7644 section 3.4.2.4).
+  // `externalId`, page by page from startIndex 1 (RFC 7644 section
+  // 3.4.2.4), TOLERANT OF INCONSISTENT PAGES:
+  //   * a page shorter than asked for is not the end — a service provider
+  //     may cap a page below `count` — and neither is a missing
+  //     `totalResults`: without one the paging goes on until a page is
+  //     empty or brings no id not already seen (until the audit of
+  //     2026-10-13 it stopped after page one, so a service provider that
+  //     omits the total was reconciled one page deep);
+  //   * with `totalResults`, it stops once startIndex passes it, or at an
+  //     empty page, whichever is first;
+  //   * a resource seen twice — the set moved under the paging — counts
+  //     once;
+  //   * a 400 `tooMany` NARROWS the query (section 3.4.2): the page is
+  //     halved and the same page asked again, down to one; then, where the
+  //     service provider filters, only resources with an externalId are
+  //     asked for (`externalId pr`), which are the only ones a
+  //     reconciliation reads. Past that it is a failure (STS-SCIMC-0028).
   private async listRemote(c: Json, disc: Json, type: string):
       Promise<Json> {
     const { log, config } = this.deps;
@@ -2103,23 +2349,53 @@ class ScimClients {
     if (disc.maxResults > 0) {
       count = Math.min(count, disc.maxResults);
     }
+    let filter = '';
     const out: Json[] = [];
+    const seen: Record<string, boolean> = {};
     let start = 1;
     for (let page = 0; page < MAX_PAGES; page++) {
       const answer = await this.request(c, 'GET', disc.endpoints[type] +
-        '?startIndex=' + start + '&count=' + count + '&attributes=' +
-        encodeURIComponent('id,externalId'), null);
+        '?startIndex=' + start + '&count=' + count +
+        (filter ? '&filter=' + encodeURIComponent(filter) : '') +
+        '&attributes=' + encodeURIComponent('id,externalId'), null);
+      if (ScimClients.isTooMany(answer)) {
+        if (count > 1) {
+          count = Math.max(1, Math.floor(count / 2));
+          log.debug("ScimClients.listRemote(): tooMany; " + count +
+                    " a page.");
+          continue;
+        }
+        if (!filter && disc.filter) {
+          filter = 'externalId pr';
+          log.debug("ScimClients.listRemote(): tooMany; externalId pr.");
+          continue;
+        }
+        log.debug("Leaving ScimClients.listRemote(). tooMany, narrowed.");
+        return { ok: false, answer: answer, code: 'STS-SCIMC-0028' };
+      }
       if (!answer.ok) {
         log.debug("Leaving ScimClients.listRemote(). Failed.");
         return { ok: false, answer: answer };
       }
       const found = ScimClients.resourcesOf(answer.json);
+      let fresh = 0;
       found.forEach(function (one: Json) {
+        const id = String((one && one.id) || '');
+        if (id && seen[id]) {
+          return;
+        }
+        if (id) {
+          seen[id] = true;
+        }
+        fresh++;
         out.push(one);
       });
-      const total = Number(answer.json && answer.json.totalResults) || 0;
+      const total = answer.json && answer.json.totalResults;
+      const hasTotal = total !== undefined && total !== null &&
+                       Number.isFinite(Number(total));
       start += found.length;
-      if (!found.length || start > total) {
+      if (!found.length || (hasTotal && start > Number(total)) ||
+          (!hasTotal && !fresh)) {
         break;
       }
     }
@@ -2174,7 +2450,10 @@ class ScimClients {
         if (!listed.ok) {
           result.ok = false;
           result.why = type + ' listing failed: ' +
-                       ((listed.answer && listed.answer.why) || 'unknown');
+                       (listed.code === 'STS-SCIMC-0028'
+                         ? 'tooMany, even narrowed to one a page'
+                         : ((listed.answer && listed.answer.why) ||
+                            'unknown'));
           continue;
         }
         listed.resources.forEach((one: Json) => {
@@ -2729,6 +3008,13 @@ class ScimClients {
       if (!before.usable) {
         log.debug("Leaving ScimClients.act(). Not usable.");
         return this.refusal('STS-SCIMC-0017', before.problems);
+      }
+      if (!before.enabled) {
+        // Every row it queued would be dead-lettered at the send
+        // (STS-SCIMC-0001): a disabled client sends nothing.
+        log.debug("Leaving ScimClients.act(). Disabled.");
+        return this.refusal('STS-SCIMC-0017', ['SCIM client ' +
+          before.identifier + ' is disabled; enable it to reconcile.']);
       }
       const result = await this.reconcile(before, actor || 'administrator');
       log.debug("Leaving ScimClients.act(). Reconciled.");
