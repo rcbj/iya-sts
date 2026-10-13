@@ -472,8 +472,8 @@
     "text": "full（#147），在每種模式下，雙向。作為 OP：依領域的 Claims Provider 登錄（主控台與 /admin-api），個人在 /portal/claim-sources 上以附 PKCE 的授權碼流程連結其中一個，其權杖密封存放於本人的項目上，並由排程器工作重新整理；宣告請求所指名而項目無法提供的宣告，會依提供者以彙總宣告（提供者已簽署的 UserInfo JWT，先依其金鑰驗證並確認為所連結的主體）或分散式宣告（端點與存取權杖）送出；claim_types_supported 列出全部三種。作為聯盟 RP：上游 OP 的 _claim_sources 會被解析，且只在來自此領域已註冊、並依其金鑰驗證的提供者時才予承認。「尚缺」：彙總的 verified_claims（Identity Assurance 第 6 節），以及 Claims Provider 角色（本服務已簽署的 UserInfo 可供另一個彙總者使用，那是草案中的 CP 端）。"
   },
   "stsmetadata.specs.oidc-provider-commands.coverage": {
-    "en": "32b1aab50678ec8c",
-    "text": "full（#151），作為 OpenID 提供者，在 oauth2.providerCommands 開啟時（預設關閉）：註冊 command_endpoint（DCR、主控台、API；https，不含片段）；類型為 command+jwt 的 Command Token，簽署方式與用戶端的 ID Token 相同，最長兩分鐘，依命令攜帶第 5 節的宣告（sub 只在帳戶命令中，metadata 只在 metadata 中，authentication_provider 只在 migrate 中，絕不含 nonce；tenant 為領域 id；aud_sub 會送出並學習）；全部十個帳戶命令及其 _async 變體，透過共用的持久對外佇列傳送，並讀取第 3 節的回應與錯誤；metadata 記錄每個依賴方所支援的內容；五個串流租用戶命令以 Server-Sent Events 讀取，並以 Last-Event-ID 繼續；用於非同步結果以及 metadata 與 audit_tenant 請求的回呼端點；每個依賴方的帳戶狀態登錄；在目錄變更與全域登出時自動執行 suspend、reactivate、delete、maintain 與 invalidate，僅限列出了該命令的依賴方。開發模式下由示範依賴方回應每個命令。「尚缺」：為另一個 OP 擔任依賴方。"
+    "en": "9521d7b5e2c47f3c",
+    "text": "full（#151），作為 OpenID 提供者，在 oauth2.providerCommands 開啟時（預設關閉）：註冊 command_endpoint（DCR、主控台、API；https，不含片段）；類型為 command+jwt 的 Command Token，簽署方式與用戶端的 ID Token 相同，最長兩分鐘，依命令攜帶第 5 節的宣告（sub 只在帳戶命令中，metadata 只在 metadata 中，authentication_provider 只在 migrate 中，絕不含 nonce；tenant 為領域 id；aud_sub 會送出並學習）；全部十個帳戶命令及其 _async 變體，透過共用的持久對外佇列傳送，並讀取第 3 節的回應與錯誤；metadata 記錄每個依賴方所支援的內容；五個串流租用戶命令以 Server-Sent Events 讀取，並以 Last-Event-ID 繼續；用於非同步結果以及 metadata 與 audit_tenant 請求的回呼端點；每個依賴方的帳戶狀態登錄；在目錄變更與全域登出時自動執行 suspend、reactivate、delete、maintain 與 invalidate，僅限列出了該命令的依賴方。測試對端（tests/peer/）扮演回應每個命令的依賴方。「尚缺」：為另一個 OP 擔任依賴方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
     "en": "a9d422b9ede39dbe",

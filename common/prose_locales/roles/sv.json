@@ -72,8 +72,8 @@
     "text": "En fjärransluten XACML Policy Enforcement Point: den som är medlem i gruppen som namnges av `roles.remotePepGroup` (standard \"remote-peps\"). Det är vad `/xacml/pep/register`, `/xacml/pep/policies` och `/xacml/pep/heartbeat` kräver, och parten som har den är normalt ett klientcertifikats DN snarare än en person — certifikatet säger VEM, och den här gruppen säger om de får."
   },
   "roles.builtIn.XACML_USER.what": {
-    "en": "b69f968df0f81f2e",
-    "text": "En anropare av den egentliga XACML-ytan: den som är medlem i gruppen som `roles.xacmlUserGroup` namnger (som standard \"xacml-users\"). Det är vad `GET /xacml`, `POST /xacml/pdp` och `GET /xacml/policies` kräver, och den som har den är normalt ett klientcertifikats DN — certifikatet säger VEM, och den här gruppen säger om de får. Den är med avsikt INTE REMOTE_PEPS: den rollen når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på demonstrationsytan tyst släpps in på dem också."
+    "en": "1b417a98ec7e824b",
+    "text": "En anropare av den egentliga XACML-ytan: den som är medlem i gruppen som `roles.xacmlUserGroup` namnger (som standard \"xacml-users\"). Det är vad `GET /xacml`, `POST /xacml/pdp` och `GET /xacml/policies` kräver, och den som har den är normalt ett klientcertifikats DN — certifikatet säger VEM, och den här gruppen säger om de får. Den är med avsikt INTE REMOTE_PEPS: den rollen når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

@@ -7496,8 +7496,8 @@
     "text": "Grupp som ger rollen XACML_USER"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "6256e6a60d3799e6",
-    "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på demonstrationsytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
+    "en": "d19a9234253beccc",
+    "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
@@ -7520,8 +7520,8 @@
     "text": "Policyn som utfärdandebeslut fattas med"
   },
   "xacml.issuancePolicy|description": {
-    "en": "b7864ae423459362",
-    "text": "Katalogpostnamnet för den policy som den INBÄDDADE PEP:en utvärderar för den här tjänstens egna utfärdandebeslut. Det är med avsikt INTE repositoryts rot: roten besvarar frågor om någon annans gräns — det är vad en PDP är till för och vad /xacml/pdp och varje fjärr-PEP frågar den — och den här besvarar en fråga om DEN HÄR tjänsten. Två frågor, två dokument, så att en ändring av demopolicyn inte kan ändra vem som får logga in och en begränsning av en roll inte kan ändra vad /xacml/pdp svarar. Policyn `role-issuance` är INBYGGD och läggs aldrig in i ou=policies: en repositorypost med det här namnet, skriven i en sfärs egna ou=policies, åsidosätter den för enbart den sfären, och att ta bort posten tar tillbaka den inbyggda."
+    "en": "7e89107ac8335d95",
+    "text": "Katalogpostnamnet för den policy som den INBÄDDADE PEP:en utvärderar för den här tjänstens egna utfärdandebeslut. Det är med avsikt INTE repositoryts rot: roten besvarar frågor om någon annans gräns — det är vad en PDP är till för och vad /xacml/pdp och varje fjärr-PEP frågar den — och den här besvarar en fråga om DEN HÄR tjänsten. Två frågor, två dokument, så att en ändring av rotpolicyn inte kan ändra vem som får logga in och en begränsning av en roll inte kan ändra vad /xacml/pdp svarar. Policyn `role-issuance` är INBYGGD och läggs aldrig in i ou=policies: en repositorypost med det här namnet, skriven i en sfärs egna ou=policies, åsidosätter den för enbart den sfären, och att ta bort posten tar tillbaka den inbyggda."
   },
   "audit.maxEvents|label": {
     "en": "e12ddec225bffa6c",

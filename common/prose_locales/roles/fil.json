@@ -72,8 +72,8 @@
     "text": "Isang remote XACML Policy Enforcement Point: sinumang miyembro ng group na pinangangalanan ng `roles.remotePepGroup` (default \"remote-peps\"). Ito ang kailangan ng `/xacml/pep/register`, `/xacml/pep/policies` at `/xacml/pep/heartbeat`, at ang party na may hawak nito ay karaniwang client-certificate DN at hindi tao — sinasabi ng certificate kung SINO, at sinasabi ng group na ito kung puwede sila."
   },
   "roles.builtIn.XACML_USER.what": {
-    "en": "b69f968df0f81f2e",
-    "text": "Isang tumatawag sa mismong XACML surface: sinumang miyembro ng grupong pinangalanan ng `roles.xacmlUserGroup` (default na \"xacml-users\"). Ito ang hinihingi ng `GET /xacml`, `POST /xacml/pdp` at `GET /xacml/policies`, at ang may hawak nito ay karaniwang isang client-certificate DN — sinasabi ng certificate kung SINO, at sinasabi ng grupong ito kung puwede sila. Sadya itong HINDI REMOTE_PEPS: naaabot ng role na iyon ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa demonstration surface."
+    "en": "1b417a98ec7e824b",
+    "text": "Isang tumatawag sa mismong XACML surface: sinumang miyembro ng grupong pinangalanan ng `roles.xacmlUserGroup` (default na \"xacml-users\"). Ito ang hinihingi ng `GET /xacml`, `POST /xacml/pdp` at `GET /xacml/policies`, at ang may hawak nito ay karaniwang isang client-certificate DN — sinasabi ng certificate kung SINO, at sinasabi ng grupong ito kung puwede sila. Sadya itong HINDI REMOTE_PEPS: naaabot ng role na iyon ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",
