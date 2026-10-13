@@ -9767,6 +9767,49 @@ class AdminViews {
     return out;
   }
 
+  // #609: the named passkey policies whose applications list names this
+  // application — by its identifier or a client_id, as a sign-in names it —
+  // in precedence order with the one that applies marked, for the Every
+  // protocol sub-tab's read-only card. Nothing is stored on the entry: the
+  // relation is the policies' `stsPasskeySelectApplication`. A view must
+  // still draw, so a policy that cannot be asked answers none.
+  /**
+   * The named passkey policies that name an application, and which applies.
+   *
+   * @param row - the application's registry row
+   * @returns `passkeyPolicy.forApplication()`'s answer, with `names` (what
+   *   the application was matched by) and `link` (the Policies page's tab)
+   */
+  applicationPasskeyPolicies(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationPasskeyPolicies().");
+    const fields = (row && row.fields) || {};
+    const names = [String((row && row.identifier) || '')]
+      .concat([].concat(fields.oauthClientId || []).map(String))
+      .filter(function (one, n, all) {
+        return one !== '' && all.indexOf(one) === n;
+      });
+    let out;
+    try {
+      out = require('../common/passkey_policy').forApplication(names);
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPasskeyPolicies(): " +
+                ((e && e.message) || e));
+      out = { policies: [], applies: 'default', groupPolicies: 0 };
+    }
+    log.debug("Leaving AdminViews.applicationPasskeyPolicies(). " +
+              out.policies.length + " policy(ies).");
+    // Each policy's own place on Directory > Policies, the named profile's
+    // heading on the Passkey policy tab's Named policies sub-tab.
+    const policies = out.policies.map(function (one) {
+      return Object.assign({}, one, {
+        link: '/admin/policies#passkey-profile-' + one.name });
+    });
+    return Object.assign({ names: names,
+                           link: '/admin/policies#passkey' }, out,
+                         { policies: policies });
+  }
+
   applicationPageData(req, row, states) {
     const { log, applications, mode, baseUrlOf } = this.deps;
     const self = this;
@@ -9835,6 +9878,9 @@ class AdminViews {
         // (#459): `applications` or `groups`.
         fieldSearches: applications.FIELD_SEARCHES || {}
       },
+      // #609: the named passkey policies naming this application, read-only
+      // on the Every protocol sub-tab.
+      passkeyPolicies: self.applicationPasskeyPolicies(row),
       cors: listOf('appCorsOrigin').map(function (stored) {
         return { stored: stored,
                  canonical: applications.corsOriginsOf(

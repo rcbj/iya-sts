@@ -788,5 +788,19 @@
   "ldif.import": "导入 LDIF",
   "owners.tab": "所有者",
   "owners.lead": "对此应用程序负责的人员和组。在下方查找一个并按 <strong>添加</strong>，或用 <strong>移除</strong> 删除一个：每次按下即刻保存。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。",
-  "owners.leadRead": "对此应用程序负责的人员和组，来自其 <code>appOwner</code> 值。所有者不授予任何权限。"
+  "owners.leadRead": "对此应用程序负责的人员和组，来自其 <code>appOwner</code> 值。所有者不授予任何权限。",
+  "passkey.heading": "通行密钥策略",
+  "passkey.lead": "有 {n} 个命名通行密钥策略在其应用程序列表中按标识符或 client_id 指定了此应用程序。此卡片为只读：策略的应用程序在<strong>目录 → 策略</strong>中编辑，此应用程序上不存储任何相关内容。",
+  "passkey.none": "没有命名通行密钥策略按标识符或 client_id 指定此应用程序。此卡片为只读：策略的应用程序在<strong>目录 → 策略</strong>中编辑。",
+  "passkey.policy": "策略",
+  "passkey.precedence": "优先级",
+  "passkey.namedAs": "指定为",
+  "passkey.groups": "同时选择的组",
+  "passkey.applies": "是否适用",
+  "passkey.appliesYes": "适用",
+  "passkey.appliesNo": "被优先",
+  "passkey.winner": "此应用程序的登录使用 <strong>{name}</strong> 策略：即指定它的策略中优先级数值最低的那个。",
+  "passkey.default": "此应用程序的登录使用 <strong>default</strong> 通行密钥策略。",
+  "passkey.open": "在目录 → 策略中打开",
+  "passkey.groupNote": "按组选择的命名策略仍可能对某个人生效：如果指定此人所在某个组的策略优先级数值更低，则对其适用该策略。此领域有 {n} 个按组选择的命名通行密钥策略。"
 }

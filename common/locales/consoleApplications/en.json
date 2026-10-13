@@ -788,5 +788,19 @@
   "ldif.import": "Import LDIF",
   "owners.tab": "Owners",
   "owners.lead": "The people and groups who answer for this application. Find one below and press <strong>Add</strong>, or take one off with <strong>Remove</strong>: each is saved the moment you press it. An owner grants nothing: nothing in this service reads it to decide anything.",
-  "owners.leadRead": "The people and groups who answer for this application, from its <code>appOwner</code> values. An owner grants nothing."
+  "owners.leadRead": "The people and groups who answer for this application, from its <code>appOwner</code> values. An owner grants nothing.",
+  "passkey.heading": "Passkey policy",
+  "passkey.lead": "{n} named passkey policy(ies) name this application in their applications list, by its identifier or a client_id. This card is read-only: a policy's applications are edited on <strong>Directory → Policies</strong>, and nothing about it is stored on this application.",
+  "passkey.none": "No named passkey policy names this application, by its identifier or a client_id. This card is read-only: a policy's applications are edited on <strong>Directory → Policies</strong>.",
+  "passkey.policy": "Policy",
+  "passkey.precedence": "Precedence",
+  "passkey.namedAs": "Named as",
+  "passkey.groups": "Also selects groups",
+  "passkey.applies": "Applies",
+  "passkey.appliesYes": "applies",
+  "passkey.appliesNo": "outranked",
+  "passkey.winner": "A sign-in for this application gets the <strong>{name}</strong> policy: the lowest precedence of those naming it.",
+  "passkey.default": "A sign-in for this application gets the <strong>default</strong> passkey policy.",
+  "passkey.open": "Open on Directory → Policies",
+  "passkey.groupNote": "A named policy selecting by group can still win for a given person: where a policy naming one of the person's groups has a lower precedence, it applies to them instead. This realm has {n} named passkey policy(ies) that select by group."
 }

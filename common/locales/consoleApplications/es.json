@@ -788,5 +788,19 @@
   "ldif.import": "Importar LDIF",
   "owners.tab": "Propietarios",
   "owners.lead": "Las personas y los grupos que responden por esta aplicación. Busque uno abajo y pulse <strong>Añadir</strong>, o quite uno con <strong>Quitar</strong>: cada cambio se guarda en cuanto lo pulsa. Un propietario no concede nada: nada en este servicio lo lee para decidir algo.",
-  "owners.leadRead": "Las personas y los grupos que responden por esta aplicación, de sus valores <code>appOwner</code>. Un propietario no concede nada."
+  "owners.leadRead": "Las personas y los grupos que responden por esta aplicación, de sus valores <code>appOwner</code>. Un propietario no concede nada.",
+  "passkey.heading": "Política de llaves de acceso",
+  "passkey.lead": "{n} política(s) de llaves de acceso con nombre incluyen esta aplicación en su lista de aplicaciones, por su identificador o un client_id. Esta tarjeta es de solo lectura: las aplicaciones de una política se editan en <strong>Directorio → Políticas</strong>, y nada de ello se guarda en esta aplicación.",
+  "passkey.none": "Ninguna política de llaves de acceso con nombre incluye esta aplicación, ni por su identificador ni por un client_id. Esta tarjeta es de solo lectura: las aplicaciones de una política se editan en <strong>Directorio → Políticas</strong>.",
+  "passkey.policy": "Política",
+  "passkey.precedence": "Precedencia",
+  "passkey.namedAs": "Nombrada como",
+  "passkey.groups": "También selecciona grupos",
+  "passkey.applies": "Se aplica",
+  "passkey.appliesYes": "se aplica",
+  "passkey.appliesNo": "superada",
+  "passkey.winner": "Un inicio de sesión para esta aplicación recibe la política <strong>{name}</strong>: la de menor precedencia entre las que la nombran.",
+  "passkey.default": "Un inicio de sesión para esta aplicación recibe la política de llaves de acceso <strong>default</strong>.",
+  "passkey.open": "Abrir en Directorio → Políticas",
+  "passkey.groupNote": "Una política con nombre que selecciona por grupo aún puede prevalecer para una persona concreta: si una política que nombra uno de los grupos de la persona tiene una precedencia menor, se le aplica esa. Este dominio tiene {n} política(s) de llaves de acceso con nombre que seleccionan por grupo."
 }

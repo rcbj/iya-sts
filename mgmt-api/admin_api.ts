@@ -13164,7 +13164,22 @@ class AdminApi {
                      'reply pages its attribute list under `attributesPage` ' +
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
-                     'one.\n\n**This reply carries credentials** — ' +
+                     'one.\n\n**The ?application= reply\'s ' +
+                     '`page.passkeyPolicies`** (#609) is what the console ' +
+                     'draws as the read-only Passkey policy card of the ' +
+                     'Every protocol sub-tab: every named passkey policy of ' +
+                     'this realm whose `stsPasskeySelectApplication` names ' +
+                     'the application — by its identifier or a client_id, ' +
+                     'trimmed and in any case, as a sign-in is matched — ' +
+                     'in precedence order, each with `name`, `dn`, ' +
+                     '`precedence`, `matched` (the values that named it), ' +
+                     '`selectGroups`, `applies` and `link`; `applies` (the ' +
+                     'policy a sign-in naming the application gets before ' +
+                     'any person is known: the lowest precedence naming it, ' +
+                     'else `default`); and `groupPolicies`, how many named ' +
+                     'policies select by group and could still win for a ' +
+                     'given person. Nothing about it is stored on the ' +
+                     'application.\n\n**This reply carries credentials** — ' +
                      '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
                      'opened. They are sealed at rest wherever the process ' +
                      'holds a durable key-encryption key, but anyone who ' +
