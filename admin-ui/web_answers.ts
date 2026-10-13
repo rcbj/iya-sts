@@ -65,6 +65,12 @@ const ROUND_TRIP_NAMES = ['grow', 'drop', 'switchview'];
 // `mirrors` to `set-service-account`.
 const SERVICE_ACCOUNT_PAGE = '/admin/users/service-account';
 
+// A GROUP'S OWNERS TAB (#603) posts to a route of its own for the same
+// reason: its Find, Previous and Next are told apart from the group page's
+// other forms, and its Add and Remove resolve through the groups action's
+// `mirrors` to `add-owner` and `remove-owner`.
+const GROUP_OWNERS_PAGE = '/admin/groups/owners';
+
 /**
  * Draws the answers a notice cannot carry.
  *
@@ -101,6 +107,7 @@ class WebAnswers {
    * The route a person's service account form posts to (#600).
    */
   static readonly SERVICE_ACCOUNT_PAGE = SERVICE_ACCOUNT_PAGE;
+  static readonly GROUP_OWNERS_PAGE = GROUP_OWNERS_PAGE;
 
   /**
    * Every non-empty value of a form field, in the order posted.
@@ -370,7 +377,7 @@ class WebAnswers {
    */
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
-            page === SERVICE_ACCOUNT_PAGE) &&
+            page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -667,6 +674,23 @@ class WebAnswers {
       draft.error = ok ? [] : (errors.length ? errors : ['Refused.']);
       draft.at = where;
       out.state = Object.assign({}, before, { serviceAccount: draft });
+      return { json: out, banner: '' };
+    }
+    // A GROUP'S OWNER ADDED OR TAKEN OFF (#603): the page drawn again in
+    // place, the group's owners as the answer holds them, the search kept
+    // so a second owner is one more press, and the sentence above the table.
+    if (page === GROUP_OWNERS_PAGE &&
+        (action === 'add-owner' || action === 'remove-owner')) {
+      const out = WebAnswers.copy(json);
+      const before = out.state || {};
+      const kept = before.groupOwners || {};
+      if (ok && Array.isArray(answer.owners) && out.group) {
+        out.group.owners = answer.owners;
+      }
+      out.state = Object.assign({}, before, { groupOwners: {
+        find: kept.find || null,
+        notice: ok ? String(answer.message || '') : '',
+        error: ok ? [] : (errors.length ? errors : ['Refused.']) } });
       return { json: out, banner: '' };
     }
     // A REFUSED SERVICE ACCOUNT SAVE (#600) keeps the table, the search and

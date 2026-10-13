@@ -4044,10 +4044,34 @@ class AdminActions {
       return result;
     }
 
+    // A GROUP'S OWNERS (#603): one added or taken off at a time, written at
+    // once — the group page's Owners tab, and its two operations. Who may
+    // be an owner and every refusal are ldap_server.js's.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const adding = action === 'add-owner';
+      const group = String(body.group || '').trim();
+      const owner = String(body.owner || '').trim();
+      const options = { origin: 'console', channel: 'console',
+                        actor: String(body.actor || '') };
+      const result: any = adding
+        ? groupWriter.addGroupOwner(group, owner, options)
+        : groupWriter.removeGroupOwner(group, owner, options);
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). " + action +
+                  " refused.");
+        return this.refusedBy(adding ? 'STS-ADMIN-0852' : 'STS-ADMIN-0853',
+                              result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). " + action + ": " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The two are: create, add-member. Removing ' +
+                                 'The four are: create, add-member, ' +
+                                 'add-owner, remove-owner. Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +
                                  'PATCH ' +

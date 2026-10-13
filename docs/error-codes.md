@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4292** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4299** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 96
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 27
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 230
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 232
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 92
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -2912,6 +2912,11 @@ Raised from: ldap/.
 | `STS-LDAP-0131` | A windowed worker's question to the store (#349) was refused by the database: the connection failed or the statement errored. The request is refused as for STS-LDAP-0130. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 | `STS-LDAP-0132` | The directory bridge's worker thread (#349) failed. The question it was answering timed out (STS-LDAP-0130); the next question starts a new thread. | none — logged |
 | `STS-LDAP-0133` | ldap.workerDirectory=postgres-lru (#349) was set where it cannot work: the store is not PostgreSQL (a memory or ldif store has nothing for a window to read), or the service is deployed as several cells (a person's entry may be in another cell's database). The service does not start. | none — fatal at startup |
+| `STS-LDAP-0134` | A group owner add named nobody: no `owner` was sent (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0135` | A group owner add named no person and no group of this realm (#603). An owner answers for the group, so unlike a member it may not dangle. | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0136` | A group owner add named the group itself (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0137` | A group owner add was refused: the group already names the most owners a group may (MAX_GROUP_OWNERS, 25) (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0138` | A group owner remove named a value the group does not list as an owner (#603). | HTTP 400 (API) or a refusal on the group page |
 
 ## STS-ATTR
 
@@ -4528,6 +4533,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0849` | An operator's rename of a person's passkey named nobody (#470). | HTTP 400 (API) |
 | `STS-ADMIN-0850` | An operator's rename of a person's passkey was refused: the name was not one, or no such key is registered for them (#470). | HTTP 400 (API) |
 | `STS-ADMIN-0851` | Registering a SAML 1.1 relying party was refused because no assertion consumer service URL was supplied. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0852` | Adding an owner to a group, on the group page or through POST /admin-api/groups/add-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-ADMIN-0853` | Taking an owner off a group, on the group page or through POST /admin-api/groups/remove-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
 
 ## STS-API
 

@@ -8560,7 +8560,11 @@ class AdminApi {
       // readings of what was sent.
       // -----------------------------------------------------------------------
       { method: 'POST', route: BASE + '/groups/:action', tag: 'Groups',
-        mirrors: 'POST /admin/groups',
+        // A SECOND CONSOLE PATH SINCE #603: the group page's Owners tab posts
+        // to /admin/groups/owners, so its Find and Add are told apart from the
+        // page's other forms; its Add and Remove reach `add-owner` and
+        // `remove-owner` here.
+        mirrors: 'POST /admin/groups and POST /admin/groups/owners',
         handler: function (req, res) {
           log.debug("Entering the management API groups action endpoint.");
           const body = parseBody(req);
@@ -8706,7 +8710,62 @@ class AdminApi {
             },
             responseDescription: 'Whether anything changed, the value ' +
                                  'written, and whether it resolves to an ' +
-                                 'entry this directory holds.' }
+                                 'entry this directory holds.' },
+
+          // A GROUP'S OWNERS (#603): what the group page's Owners tab saves
+          // the moment Add or Remove is pressed.
+          { action: 'add-owner', operationId: 'addGroupOwner',
+            summary: 'Add one owner to a group',
+            description: 'Adds a person or a group of this realm to the ' +
+                         'group\'s `owner` values (RFC 4519 section 2.23) ' +
+                         'and writes at once, keeping the other owners. ' +
+                         '`owner` is a username, a DN or a `urn:uuid:` ' +
+                         'subject for a person, a `cn` or DN for a group.' +
+                         '\n\n**Unlike a member, an owner must name ' +
+                         'somebody**: one that names no person and no group ' +
+                         'here is refused. A group may not own itself, and ' +
+                         'names at most 25 owners. An owner already listed ' +
+                         'is `ok` with `changed: false`.\n\n**AN OWNER ' +
+                         'GRANTS NOTHING**: nothing in this service reads ' +
+                         '`owner` to decide anything.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                group: { type: 'string',
+                         description: 'The group\'s `cn`, DN or SCIM id.' },
+                owner: { type: 'string',
+                         description: 'The person or group to add.' }
+              },
+              required: ['group', 'owner'],
+              examples: [{ group: 'developers', owner: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and the ' +
+                                 'group\'s owners as they now stand ' +
+                                 '(`owners`).' },
+          { action: 'remove-owner', operationId: 'removeGroupOwner',
+            summary: 'Take one owner off a group',
+            description: 'Takes one `owner` value off the group and writes ' +
+                         'at once (#603). `owner` is the DN the group ' +
+                         'lists; one it does not list is refused. The last ' +
+                         'owner may go: a group needs none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                group: { type: 'string',
+                         description: 'The group\'s `cn`, DN or SCIM id.' },
+                owner: { type: 'string',
+                         description: 'The owner\'s DN.' }
+              },
+              required: ['group', 'owner'],
+              examples: [{ group: 'developers',
+                           owner: 'uid=alice,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The group\'s owners as they now stand ' +
+                                 '(`owners`).' }
         ] },
 
       // --- The directory itself, entry by entry

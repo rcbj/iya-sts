@@ -1780,6 +1780,10 @@ class ConsoleRuntime extends SpaClient {
         await this.ownerSearch(fields);
         return;
       }
+      if (page === WebAnswers.GROUP_OWNERS_PAGE) {
+        await this.groupOwnerSearch(fields);
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -2027,6 +2031,45 @@ class ConsoleRuntime extends SpaClient {
     const doc = this.env.document;
     const refocus = function () {
       const box = doc.getElementById('fgq-' + kind);
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
+  // A GROUP'S OWNER SEARCH (#603): the service account's people-or-groups
+  // search on a group's Owners tab. The Users or the Groups list is asked for
+  // a page of five — a groups search leaving out the group's owners and the
+  // group itself — and the tab drawn again with the results, the focus back
+  // in the box. Nothing is written: the results' Add writes, as an act.
+  /**
+   * Runs a group owner search's Find, Previous or Next and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async groupOwnerSearch(fields: Json): Promise<void> {
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const before = (this.view.json && this.view.json.state) || {};
+    const group = (this.view.json && this.view.json.group) || {};
+    const held = (group.owners || []).map(function (one: Json) {
+      return String(one.dn);
+    }).concat(group.dn ? [String(group.dn)] : []);
+    const answer = await this.apiJson('GET',
+      WebAnswers.fieldSearchPath('owners', asked, held));
+    const found = WebAnswers.fieldSearchFound('owners', asked,
+      answer && answer.status === 200 ? answer.json : null);
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, {
+        groupOwners: { find: found, notice: '', error: [] } }) });
+    this.drawView(null, '');
+    const doc = this.env.document;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-owners');
       if (box && box.focus) {
         box.focus({ preventScroll: true });
       }

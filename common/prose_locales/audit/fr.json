@@ -1123,6 +1123,14 @@
     "en": "37da254923cef1b6",
     "text": "Un membre a été ajouté à un groupe"
   },
+  "audit.actions.group.add-owner.label": {
+    "en": "6ba2e67208b445ff",
+    "text": "Un propriétaire a été ajouté à un groupe"
+  },
+  "audit.actions.group.remove-owner.label": {
+    "en": "e5e65ad85891ab58",
+    "text": "Un propriétaire a été retiré d'un groupe"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Le keytab d’une personne a été créé à partir d’un mot de passe fourni"

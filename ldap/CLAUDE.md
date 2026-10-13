@@ -3141,3 +3141,30 @@ A home cell that cannot be asked is LDAP_UNAVAILABLE (52), `STS-CELL-0147`,
 fail-closed and not counted as a failed bind. LDAP writes act on this cell's
 residents only; the console's and `/admin-api`'s `?cell=` selector is the
 cross-cell door.
+
+## A GROUP'S OWNERS (#603, 2026-10-12)
+
+**A group's owners are its `owner` values** (RFC 4519 section 2.23), each a
+DN naming a person or a group of the realm, resolved by
+`resolveServiceAccountOwner()`, the rule a service account's owners follow
+(#600). `addGroupOwner()` and `removeGroupOwner()` add and take off one at a
+time, write through `writeGroupEntry()` keeping every other attribute (the
+members included), and record `group.add-owner` / `group.remove-owner`. They
+reach the console through the twelfth slot, `setGroupWriter()`, which carries
+four functions now and is still validated whole. Three things differ from a
+membership, each on purpose:
+
+* **An owner must name somebody** (`STS-LDAP-0135`): a dangling member is a
+  state `/admin/groups` exists to report, and an owner that names nobody
+  answers for nothing. One deleted since is kept and reported (`kind: ''`),
+  never dropped, because a delete elsewhere must not edit this entry.
+* **A group does not own itself** (`STS-LDAP-0136`), and names at most
+  `MAX_GROUP_OWNERS` (25, `STS-LDAP-0137`).
+* **The last owner may go**: a group needs none. A remove of a value the
+  group does not list is `STS-LDAP-0138`; no owner given is `STS-LDAP-0134`.
+
+`owner` is not in `directory_merge.js`'s MULTI list, because a device's
+`owner` is single-valued; a group's list of more than one is merged by value
+anyway, by the count rule. An owner grants nothing. `groupsFor()` answers
+`ownerCount` on each list row and `owners` with `maxOwners` on the group.
+

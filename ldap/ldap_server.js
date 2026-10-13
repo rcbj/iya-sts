@@ -7799,6 +7799,9 @@ function groupsFor(dn) {
       danglingCount: presence.danglingCount,
       // Off the one claims index (#352), not a walk of the realm per group.
       claimedCount: unlistedClaimsOf(entry.dn).length,
+      // How many `owner` values it names (#603); who they are is the
+      // drill-down's.
+      ownerCount: (entry.attributes.owner || []).length,
       attributeCount: Object.keys(entry.attributes).length
     };
     groups.push(row);
@@ -7869,7 +7872,10 @@ function groupsFor(dn) {
     memberCount: members.length,
     presentCount: members.filter(function (m) { return m.present; }).length,
     danglingCount: members.filter(function (m) { return !m.present; }).length,
-    claimed: claimedMembersOf(stored.dn)
+    claimed: claimedMembersOf(stored.dn),
+    // Its owners (#603), each resolved, and the most it may name.
+    owners: groupOwnersOf(stored),
+    maxOwners: MAX_GROUP_OWNERS
   };
   log.debug('Leaving groupsFor(). ' + stored.dn + ' has ' + members.length +
             ' member value(s), ' + out.group.danglingCount + ' of them ' +
@@ -8225,7 +8231,9 @@ if (typeof admin.setDirectoryWriter === 'function') {
 // without the slot costs a warning rather than a TypeError at require time.
 if (typeof admin.setGroupWriter === 'function') {
   admin.setGroupWriter({ createGroup: createGroup,
-                         addGroupMember: addGroupMember });
+                         addGroupMember: addGroupMember,
+                         addGroupOwner: addGroupOwner,
+                         removeGroupOwner: removeGroupOwner });
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
@@ -20802,6 +20810,244 @@ function addGroupMember(group, member, options) {
 }
 
 // ---------------------------------------------------------------------------
+// A GROUP'S OWNERS (#603, rcbj: "apply this same owner pattern to Groups").
+//
+// They are the group entry's `owner` values — RFC 4519 section 2.23's
+// attribute, a DN of "an object (e.g., a person) that has some
+// responsibility" for it — and each names a PERSON or a GROUP of this realm,
+// the rule a service account's owners follow (#600), resolved by the same
+// `resolveServiceAccountOwner()`. Three things differ from a membership and
+// each is deliberate:
+//
+//   * **AN OWNER MUST NAME SOMEBODY.** A member may dangle, because the
+//     dangling member is a state /admin/groups exists to report; an owner is
+//     a statement about who answers for the group, and one that names
+//     nobody answers for nothing. Refused at the door (`STS-LDAP-0135`), as a
+//     service account's is. An owner deleted SINCE is kept and reported
+//     (`kind: ''`), never dropped: a delete elsewhere must not edit this
+//     entry.
+//   * **A GROUP DOES NOT OWN ITSELF** (`STS-LDAP-0136`), for the service
+//     account's reason.
+//   * **AT MOST `MAX_GROUP_OWNERS`** (`STS-LDAP-0137`): a longer list is what a
+//     group is for — name one.
+//
+// AN OWNER GRANTS NOTHING, which is the sentence every group here carries:
+// nothing in this service reads `owner` to decide anything.
+// ---------------------------------------------------------------------------
+/** The most owners a group may name; for more, name a group. */
+const MAX_GROUP_OWNERS = 25;
+
+/**
+ * Describes a group's `owner` values: each resolved to a person or a group
+ * of this realm, or `kind: ''` where it names nobody now.
+ *
+ * @param stored - the stored group entry (lower-cased attribute names)
+ * @returns `[{ dn, kind, name, present }]`, in the order the entry holds them
+ */
+function groupOwnersOf(stored) {
+  log.debug('Entering groupOwnersOf().');
+  const values = ((stored && stored.attributes && stored.attributes.owner) ||
+                  []).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean);
+  const out = values.map(function (dn) {
+    const resolved = resolveServiceAccountOwner(dn);
+    return { dn: resolved.kind ? resolved.dn : dn, kind: resolved.kind,
+             name: resolved.name, present: !!resolved.kind };
+  });
+  log.debug('Leaving groupOwnersOf(). ' + out.length);
+  return out;
+}
+
+// The group a caller named, by its cn, its DN or its SCIM id — and the
+// refusal when it is not one, worded as addGroupMember() words it.
+function groupForOwners(group, caller) {
+  log.debug('Entering groupForOwners(). ' + caller);
+  const wanted = String(group == null ? '' : group).trim();
+  if (!wanted) {
+    log.debug('Leaving groupForOwners(). No group.');
+    return { refusal: coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] }) };
+  }
+  const dn = DN_SHAPED.test(wanted) ? wanted
+    : dnForResourceId(wanted) !== wanted ? dnForResourceId(wanted)
+      : groupDnFor(wanted);
+  const stored = getEntry(dnForResourceId(dn));
+  if (!stored || !groupRuleFor(stored)) {
+    log.debug('Leaving groupForOwners(). No such group.');
+    return { refusal: coded('STS-LDAP-0050', { ok: false, errors: [stored
+      ? 'There is an entry at ' + stored.dn + ' and it is not counted as a ' +
+        'group — it neither sits under ' + groupsDn() + ' nor carries a ' +
+        'group objectClass.'
+      : 'There is no group at ' + dn + '.'] }) };
+  }
+  log.debug('Leaving groupForOwners(). ' + stored.dn);
+  return { stored: stored };
+}
+
+// Writes a group's owner list, keeping every other attribute — the
+// addGroupMember() shape: the canonically spelled attributes back, minus the
+// operational ones, through writeGroupEntry().
+function writeGroupOwners(stored, owners, opts, action, summary, detail) {
+  log.debug('Entering writeGroupOwners().');
+  const object = entryObject(stored);
+  const attributes = {};
+  Object.keys(object.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0 ||
+        name.toLowerCase() === 'owner') {
+      return;
+    }
+    attributes[name] = object.attributes[name].slice(0);
+  });
+  if (owners.length) {
+    attributes.owner = owners.slice(0);
+  }
+  const written = writeGroupEntry(stored.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving writeGroupOwners(). The directory refused: ' +
+              written.reason);
+    return coded(errorCodes.codeOf(written), { ok: false,
+      reason: written.reason,
+      errors: ['The owners could not be written onto ' + stored.dn + ' (' +
+               written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: action,
+    actor: String(opts.actor || ''),
+    target: stored.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: summary,
+    detail: Object.assign({ ownersNow: owners.length }, detail)
+  });
+  log.debug('Leaving writeGroupOwners(). ' + owners.length + ' owner(s).');
+  return { ok: true, entry: written.entry };
+}
+
+/**
+ * Adds one owner to a group, writing at once (#603). An owner already listed
+ * answers ok with `changed: false`, the add-member rule.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @param owner - a person (username, DN or `urn:uuid:` subject) or a group
+ *   (cn or DN) of this realm
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ *   row
+ * @returns `{ ok: true, changed, dn, owner, owners }`, or a refusal marked
+ *   with its error code
+ */
+function addGroupOwner(group, owner, options) {
+  log.debug('Entering addGroupOwner(). group=' + group + ', owner=' + owner);
+  const opts = options || {};
+  const found = groupForOwners(group, 'addGroupOwner');
+  if (found.refusal) {
+    log.debug('Leaving addGroupOwner(). No group.');
+    return found.refusal;
+  }
+  const stored = found.stored;
+  const wanted = String(owner == null ? '' : owner).trim();
+  if (!wanted) {
+    log.debug('Leaving addGroupOwner(). No owner.');
+    return coded('STS-LDAP-0134', { ok: false, errors: ['Who? Send `owner` ' +
+      'with a person (a username or DN) or a group (its cn or DN) of this ' +
+      'realm.'] });
+  }
+  const resolved = resolveServiceAccountOwner(wanted);
+  if (!resolved.kind) {
+    log.debug('Leaving addGroupOwner(). Names nobody.');
+    return coded('STS-LDAP-0135', { ok: false, errors: ['"' +
+      wanted.slice(0, 128) + '" names no person and no group in this ' +
+      'realm. An owner answers for the group, so it must name somebody.'] });
+  }
+  if (normalizeDn(resolved.dn) === normalizeDn(stored.dn)) {
+    log.debug('Leaving addGroupOwner(). Itself.');
+    return coded('STS-LDAP-0136', { ok: false, errors: [stored.dn +
+      ' cannot own itself.'] });
+  }
+  const before = groupOwnersOf(stored);
+  const owners = before.map(function (one) {
+    return one.dn;
+  });
+  const already = owners.some(function (dn) {
+    return normalizeDn(dn) === normalizeDn(resolved.dn);
+  });
+  if (already) {
+    log.debug('Leaving addGroupOwner(). Already an owner.');
+    return { ok: true, changed: false, dn: stored.dn, owner: resolved.dn,
+             owners: before,
+             message: (resolved.name || resolved.dn) + ' was already an ' +
+                      'owner of ' + stored.dn + '.' };
+  }
+  if (owners.length >= MAX_GROUP_OWNERS) {
+    log.debug('Leaving addGroupOwner(). Too many.');
+    return coded('STS-LDAP-0137', { ok: false, errors: [stored.dn +
+      ' already names ' + owners.length + ' owners, the most a group may ' +
+      'name (' + MAX_GROUP_OWNERS + '). Name a group of them instead.'] });
+  }
+  owners.push(resolved.dn);
+  const done = writeGroupOwners(stored, owners, opts, 'group.add-owner',
+    resolved.dn + ' was made an owner of ' + stored.dn,
+    { owner: resolved.dn, kind: resolved.kind });
+  if (!done.ok) {
+    log.debug('Leaving addGroupOwner(). Not written.');
+    return done;
+  }
+  const now = getEntry(stored.dn) || stored;
+  log.debug('Leaving addGroupOwner(). Added.');
+  return { ok: true, changed: true, dn: stored.dn, owner: resolved.dn,
+           owners: groupOwnersOf(now),
+           message: (resolved.name || resolved.dn) + ' is now an owner of ' +
+                    stored.dn + '.' };
+}
+
+/**
+ * Takes one owner off a group, writing at once (#603). Refused for a value
+ * the group does not list (`STS-LDAP-0138`); the last owner may go, since a
+ * group needs none.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @param owner - the owner's DN, as the group lists it
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ *   row
+ * @returns `{ ok: true, changed: true, dn, owner, owners }`, or a refusal
+ *   marked with its error code
+ */
+function removeGroupOwner(group, owner, options) {
+  log.debug('Entering removeGroupOwner(). group=' + group + ', owner=' +
+            owner);
+  const opts = options || {};
+  const found = groupForOwners(group, 'removeGroupOwner');
+  if (found.refusal) {
+    log.debug('Leaving removeGroupOwner(). No group.');
+    return found.refusal;
+  }
+  const stored = found.stored;
+  const wanted = String(owner == null ? '' : owner).trim();
+  const values = ((stored.attributes.owner || []).map(String));
+  const kept = values.filter(function (dn) {
+    return normalizeDn(dn) !== normalizeDn(wanted);
+  });
+  if (!wanted || kept.length === values.length) {
+    log.debug('Leaving removeGroupOwner(). Not an owner.');
+    return coded('STS-LDAP-0138', { ok: false, errors: ['"' +
+      wanted.slice(0, 128) + '" is not one of ' + stored.dn + '\'s ' +
+      'owners.'] });
+  }
+  const done = writeGroupOwners(stored, kept, opts, 'group.remove-owner',
+    wanted + ' is no longer an owner of ' + stored.dn, { owner: wanted });
+  if (!done.ok) {
+    log.debug('Leaving removeGroupOwner(). Not written.');
+    return done;
+  }
+  const now = getEntry(stored.dn) || stored;
+  log.debug('Leaving removeGroupOwner(). Removed.');
+  return { ok: true, changed: true, dn: stored.dn, owner: wanted,
+           owners: groupOwnersOf(now),
+           message: wanted + ' is no longer an owner of ' + stored.dn + '.' };
+}
+
+// ---------------------------------------------------------------------------
 // GET /admin/ldap/spiffe — the SPIFFE containers, and their schema.
 //
 // The same page `/admin/ldap/applications` is, for the same reason: this
@@ -22156,6 +22402,10 @@ module.exports = {
   // console, which is where their refusals are asserted.
   createGroup: createGroup,
   addGroupMember: addGroupMember,
+  // A group's owners (#603), the same doors.
+  addGroupOwner: addGroupOwner,
+  removeGroupOwner: removeGroupOwner,
+  MAX_GROUP_OWNERS: MAX_GROUP_OWNERS,
   memberDnFor: memberDnFor,
   deleteGroupEntry: deleteGroupEntry,
   // The sweep, so that somebody provisioned over SCIM gets the same credential

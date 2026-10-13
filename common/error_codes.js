@@ -12664,6 +12664,25 @@ const CODES = [
       'several cells (a person\'s entry may be in another cell\'s ' +
       'database). The service does not start.',
     spec: 'none — fatal at startup' },
+  { code: 'STS-LDAP-0134',
+    summary: 'A group owner add named nobody: no `owner` was sent (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0135',
+    summary: 'A group owner add named no person and no group of this realm ' +
+      '(#603). An owner answers for the group, so unlike a member it may ' +
+      'not dangle.',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0136',
+    summary: 'A group owner add named the group itself (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0137',
+    summary: 'A group owner add was refused: the group already names the ' +
+      'most owners a group may (MAX_GROUP_OWNERS, 25) (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0138',
+    summary: 'A group owner remove named a value the group does not list as ' +
+      'an owner (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -19586,6 +19605,18 @@ const CODES = [
     summary: 'Registering a SAML 1.1 relying party was refused because no ' +
       'assertion consumer service URL was supplied.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0852',
+    summary: 'Adding an owner to a group, on the group page or through ' +
+      'POST /admin-api/groups/add-owner, was refused with no code of the ' +
+      'directory\'s own; where the directory gives one, that code is ' +
+      'recorded instead (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-ADMIN-0853',
+    summary: 'Taking an owner off a group, on the group page or through ' +
+      'POST /admin-api/groups/remove-owner, was refused with no code of ' +
+      'the directory\'s own; where the directory gives one, that code is ' +
+      'recorded instead (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

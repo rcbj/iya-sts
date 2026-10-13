@@ -2772,6 +2772,8 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
 // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
 // seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
 // each with its own Save) and the Credentials tab one per kind of credential.
+// A group's page (#603): Group, then Owners.
+const GROUP_TAB_IDS = ['gtab-group', 'gtab-owners'];
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
   'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
   'utab-signout'];
@@ -4537,7 +4539,7 @@ class AdminConsole {
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
         return 'cfg-' + g.id;
-      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS,
+      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS, GROUP_TAB_IDS,
       ['oauth-tab-metadata', 'oauth-tab-global-settings',
        'oauth-tab-authorization-servers',
        'oauth-tab-token-lifetimes', 'oauth-tab-claims',
@@ -9353,7 +9355,10 @@ let directoryWriter = null;
 // operations nobody asked for would be four more things for the two doors onto
 // it to disagree about.
 // ---------------------------------------------------------------------------
-const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember'];
+// AND SINCE #603 A GROUP'S OWNERS, added and taken off one at a time — the
+// group page's Owners tab writes each at once.
+const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember',
+                              'addGroupOwner', 'removeGroupOwner'];
 let groupWriter = null;
 
 // The rule cell, the caveat and the links both groups pages carry are

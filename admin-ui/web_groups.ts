@@ -441,8 +441,10 @@ class GroupsPage {
           kit.note(t.html('consoleGroups.detail.claimedNote'))
         : '';
 
-      inner = GroupsPage.directoryListenerWarning(t, info,
-        GroupsPage.GROUP_SUBJECT) +
+      // TWO TABS SINCE #603 (rcbj: "Call the primary tab group. Call this
+      // new tab owners"): Group — everything this page drew before — and
+      // Owners. The way back and the links stay under both.
+      const groupPanel =
         '<h2>' + kit.esc(GroupsPage.groupLabel(t, group)) +
         '</h2><table><tr><th>DN</th><th>' +
         t.html('consoleGroups.detail.thRule') + '</th><th>' +
@@ -530,10 +532,214 @@ class GroupsPage {
         '<h2>' + t.html('consoleGroups.detail.attributesHeading') + '</h2>' +
         GroupsPage.attributeTable(group, t) +
         kit.note(t.html('consoleGroups.detail.attributesNote')) +
-        GroupsPage.groupsCaveat(t, json.adminGroups) +
+        GroupsPage.groupsCaveat(t, json.adminGroups);
+      inner = GroupsPage.directoryListenerWarning(t, info,
+        GroupsPage.GROUP_SUBJECT) +
+        kit.tabbedPanels('grouptabs', [
+          { id: 'gtab-group', label: t.text('consoleGroups.detail.tabGroup'),
+            html: groupPanel },
+          { id: 'gtab-owners',
+            label: t.text('consoleGroups.detail.tabOwners'),
+            // The controls for a reader holding Admin Write, on a process
+            // whose directory can be written (`canWrite`).
+            html: GroupsPage.ownersSection(t, group,
+              !!json.canWrite && !!ctx.write,
+              kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {}),
+              json.state) }
+        ]) +
         back + GroupsPage.groupsLinks(t);
     }
     return inner;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A GROUP'S OWNERS (#603): the service account's owner pattern (#600,
+  // #602) on a group, where the group always exists, so every Add and
+  // Remove WRITES AT ONCE. The table is the group's (`group.owners`); each
+  // Remove is a small form of its own (`remove-owner`); the search is a form
+  // posting to the tab's own route, `/admin/groups/owners`, whose Find,
+  // Previous and Next the runtime answers in the browser from the Users or
+  // Groups list (rule 7), FIND_PER_PAGE to a page, and whose result's Add is a
+  // button named `owner` with a `formaction` naming `add-owner`. What the
+  // last press said, and the search, ride on the page's `state.groupOwners`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a group's Owners tab: its owners, and — for Admin Write — the
+   * search that adds one and the Remove beside each.
+   *
+   * @param t - the page's translator
+   * @param group - the group's view (`dn`, `owners`, `maxOwners`)
+   * @param write - whether the reader may write
+   * @param back - the list view to return to
+   * @param pageState - the page's state: `groupOwners` (`find`, `notice`,
+   *   `error`), after a press
+   * @returns the tab as HTML
+   */
+  static ownersSection(t, group, write, back, pageState?) {
+    const route = '/admin/groups/owners';
+    const anchor = '#group-owners';
+    const owners = group.owners || [];
+    const max = Number(group.maxOwners) || 25;
+    const drawn = (pageState && pageState.groupOwners) || {};
+    const lower = function (dn) {
+      return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
+    };
+    const kindOf = function (kind) {
+      return t.text('consoleGroups.owners.kind', { kind: kind || 'unknown' });
+    };
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+        kit.esc(value) + '">';
+    };
+    const who = hidden('group', group.dn) + hidden('back', back);
+    const button = function (name, value, label, tipText, cls?, off?,
+                             goes?) {
+      return '<button type="submit" class="secondary ' + (cls || '') +
+        '" name="' + name + '" value="' + kit.esc(value) +
+        '" formaction="' + kit.esc(goes || route + anchor) +
+        '" formnovalidate' + kit.tip(tipText) +
+        (off ? ' disabled' : '') + '>' + kit.esc(label) + '</button>';
+    };
+    const said = (drawn.error && drawn.error.length
+      ? kit.warn(kit.esc(drawn.error.join(' '))) : '') +
+      (drawn.notice ? kit.note(kit.esc(drawn.notice)) : '');
+    const removeOf = function (one) {
+      if (!write) {
+        return '';
+      }
+      return '<form method="post" class="inline" action="' +
+        kit.esc(route + anchor) + '">' + hidden('action', 'remove-owner') +
+        who + hidden('owner', one.dn) +
+        '<button type="submit" class="secondary danger"' +
+        kit.tip(t.text('consoleGroups.owners.removeTip',
+                       { name: one.name || one.dn })) + '>' +
+        t.html('consoleGroups.owners.remove') + '</button></form>';
+    };
+    const table = owners.length
+      ? '<table class="key sa-owners"><tr><th>' +
+        t.html('consoleGroups.owners.thKind') + '</th><th>' +
+        t.html('consoleGroups.owners.thName') + '</th><th>' +
+        t.html('consoleGroups.owners.thDn') + '</th>' +
+        (write ? '<th></th>' : '') + '</tr>' +
+        owners.map(function (one) {
+          return '<tr><td' + (one.kind ? ''
+            : kit.tip(t.text('consoleGroups.owners.notFoundTip'))) + '>' +
+            kit.esc(kindOf(one.kind)) + '</td><td>' + kit.esc(one.name) +
+            '</td><td>' + kit.shortened(one.dn, 60) + '</td>' +
+            (write ? '<td>' + removeOf(one) + '</td>' : '') + '</tr>';
+        }).join('') + '</table>'
+      : '<p class="state-none">' + t.html('consoleGroups.owners.none') +
+        '</p>';
+    const head = '<h3 id="group-owners">' +
+      t.html('consoleGroups.owners.heading') + '</h3>' +
+      kit.note((write ? t.html('consoleGroups.owners.lead')
+                      : t.html('consoleGroups.owners.leadRead')) + ' ' +
+               t.html('consoleGroups.owners.max', { max: String(max) })) +
+      said + table;
+    if (!write) {
+      return head +
+        kit.note(t.html('consoleGroups.owners.needsWrite'));
+    }
+    // THE SEARCH: people or groups, each result with an Add that writes —
+    // or why it has none: already an owner, this group itself, or an
+    // identity with no entry to name.
+    const found = drawn.find || null;
+    const which = found && found.which === 'groups' ? 'groups' : 'people';
+    const kindRadio = function (value, label, tipText) {
+      return '<label class="fg-radio"' + kit.tip(tipText) + '>' +
+        '<input type="radio" name="fgkind.owners" value="' + value + '"' +
+        (which === value ? ' checked' : '') + '>' + kit.esc(label) +
+        '</label>';
+    };
+    const ownerSet = {};
+    owners.forEach(function (one) {
+      ownerSet[lower(one.dn)] = true;
+    });
+    const full = owners.length >= max;
+    const pick = function (one) {
+      if (!one.value) {
+        return '<span class="state-none"' +
+          kit.tip(t.text('consoleKit.find.noEntry.tip')) + '>' +
+          t.html('consoleKit.find.noEntry') + '</span>';
+      }
+      if (ownerSet[lower(one.value)]) {
+        return '<span class="state-none"' +
+          kit.tip(t.text('consoleGroups.owners.isOwnerTip')) + '>' +
+          t.html('consoleGroups.owners.isOwner') + '</span>';
+      }
+      if (lower(one.value) === lower(group.dn)) {
+        return '<span class="state-none"' +
+          kit.tip(t.text('consoleGroups.owners.itselfTip')) + '>' +
+          t.html('consoleGroups.owners.itself') + '</span>';
+      }
+      return button('owner', one.value, t.text('consoleKit.find.add'),
+                    t.text('consoleGroups.owners.addTip',
+                           { value: one.value }), 'fg-add', full,
+                    route + '?action=add-owner' + anchor);
+    };
+    const pager = found && !found.failed && (found.pages || 1) > 1
+      ? '<div class="fg-pager">' +
+        button('fgsearch', 'owners|' + (found.page - 1),
+               t.text('consoleKit.find.previous'),
+               t.text('consoleKit.find.previous.tip',
+                      { n: kit.FIND_PER_PAGE }), 'fg-prev', found.page <= 1) +
+        '<span class="fg-pageof">' + t.html('consoleKit.find.pageOf', {
+          page: found.page, pages: found.pages, matched: found.matched }) +
+        '</span>' +
+        button('fgsearch', 'owners|' + (found.page + 1),
+               t.text('consoleKit.find.next'),
+               t.text('consoleKit.find.next.tip',
+                      { n: kit.FIND_PER_PAGE }), 'fg-next',
+               found.page >= found.pages) + '</div>'
+      : '';
+    const results = !found ? ''
+      : '<div class="fg-found" aria-live="polite">' +
+        hidden('fgpage.owners', String(found.page || 1)) +
+        (found.failed
+          // A FAILURE, and failures stay English (#539).
+          ? '<span class="state-none">The search could not be run: ' +
+            '/admin-api did not answer it.</span>'
+          : !found.rows.length
+            ? '<span class="state-none fg-none">' + (found.query
+              ? t.html('consoleKit.find.noMatches', { query: found.query })
+              : t.html('consoleGroups.owners.findHint', { which: which })) +
+              '</span>'
+            : found.rows.map(function (one) {
+              return '<div class="fg-hit"><span class="fg-hit-name">' +
+                '<span class="fg-hit-kind">' + kit.esc(kindOf(one.kind)) +
+                '</span> ' + kit.esc(one.label) +
+                (one.value ? ' ' + kit.shortened(one.value, 60) : '') +
+                '</span>' + pick(one) + '</div>';
+            }).join('')) + pager + '</div>';
+    const placeholder = t.text('consoleGroups.owners.findPlaceholder');
+    const findTip = t.text('consoleGroups.owners.findTip',
+                           { n: kit.FIND_PER_PAGE });
+    const search = '<h3 id="group-owners-find">' +
+      t.html('consoleGroups.owners.findHeading') + '</h3>' +
+      '<form method="post" action="' + kit.esc(route + anchor) +
+      '" class="sa-form">' + hidden('action', 'add-owner') + who +
+      // THE DEFAULT BUTTON, first in the form: Enter in the search box is a
+      // Find, never an Add.
+      '<button type="submit" class="default-submit" tabindex="-1" ' +
+      'aria-hidden="true" name="fgsearch" value="owners" formaction="' +
+      kit.esc(route + anchor) + '">' +
+      kit.esc(t.text('consoleKit.find.find')) + '</button>' +
+      '<div class="sa-find"><div class="fg-bool fg-kinds" role="radiogroup" ' +
+      'aria-label="' + kit.esc(t.text('consoleGroups.owners.findWhat')) +
+      '">' +
+      kindRadio('people', t.text('consoleKit.find.people'),
+                t.text('consoleGroups.owners.peopleTip')) +
+      kindRadio('groups', t.text('consoleGroups.owners.groups'),
+                t.text('consoleGroups.owners.groupsTip')) +
+      '</div><div class="fg-item fg-findrow"><input type="search" ' +
+      'id="fgq-owners" name="fgfind.owners" data-fg-find="owners" value="' +
+      kit.esc(found ? found.query : '') + '" placeholder="' +
+      kit.esc(placeholder) + '" aria-label="' + kit.esc(placeholder) + '"' +
+      kit.tip(findTip) + '>' +
+      button('fgsearch', 'owners', t.text('consoleKit.find.find'), findTip,
+             'fg-findbtn') +
+      '</div>' + results + '</div></form>';
+    return head + search;
   }
 
   // A member's link. To the group page when the member is itself a group, so

@@ -630,6 +630,25 @@ Three behaviours are the directory being consistent with itself:
 Removing a member is an `ldapmodify`, a SCIM `PATCH`, or **Admin roles** for
 the two role groups; deleting a group is an `ldapdelete` or a SCIM `DELETE`.
 
+**Owners.** A group's page has two tabs: **Group**, which is everything
+described above, and **Owners**. A group's owners are its `owner` values
+(RFC 4519), and each one names a person or a group in the realm. To add one:
+
+1. Choose **people** or **groups** and type part of a username or a group's
+   name.
+2. Press **Find**. The results show five at a time, with **Previous** and
+   **Next**.
+3. Press **Add** beside the one you want.
+
+**Add** and **Remove** save the change as soon as you press them, and the
+search results stay on the page so you can add several in a row. Unlike a
+member, an owner must name somebody who exists in the realm. A group cannot
+own itself, and it can name at most 25 owners; for more, name a group. An
+owner grants nothing, because nothing in this service reads `owner` to decide
+anything. `POST /admin-api/groups/add-owner` and
+`POST /admin-api/groups/remove-owner` are the same acts, and the group's
+answer from `GET /admin-api/groups?group=` carries its `owners`.
+
 **What counts as a group is two rules.** An entry under `ou=groups`, *or* an
 entry carrying a group `objectClass` (`groupOfNames`, `groupOfUniqueNames`,
 `posixGroup`, `groupOfURLs`) wherever it sits. The directory is schemaless, so

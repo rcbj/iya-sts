@@ -7786,3 +7786,34 @@ is one:
 `ownerSearch()` in the runtime serves both searches and both modes; on a
 service account what a groups search leaves out is what the account holds,
 since the form carries no `owner` rows.
+
+## A GROUP'S PAGE HAS AN OWNERS TAB (#603, 2026-10-12)
+
+rcbj: "apply this same owner pattern to Groups. Add an owner tab to
+Directory->Groups, groups tab, group page. Call the primary tab group. Call
+this new tab owners." The group drill-down (`?group=`) is two tabs now,
+`gtab-group` and `gtab-owners` (`GROUP_TAB_IDS` in the stylesheet's list):
+**Group** is everything the page drew before, **Owners** is
+`GroupsPage.ownersSection()`. It is #602's immediate pattern, with no staged
+mode, because a group always exists:
+
+* **The owners are the group's `owner` values**, each a person or a group of
+  the realm (`ldap/CLAUDE.md`, *A group's owners*), answered on the group's
+  view as `owners` with `maxOwners`.
+* **Each Remove is a small form of its own** (`remove-owner`); the search
+  is a form posting to the tab's route, `/admin/groups/owners`
+  (`WebAnswers.GROUP_OWNERS_PAGE`), which `isFieldSearch()` knows and the
+  groups action resource's `mirrors` names. Its Find, Previous and Next are
+  answered in the browser by `groupOwnerSearch()` from the Users or Groups
+  list, a groups search leaving out the owners and the group itself; a
+  result's Add is a button named `owner` with a `formaction` naming
+  `?action=add-owner`, and writes at once.
+* **`WebAnswers.redraw()` answers both acts in place**: the group's owners
+  from the answer's `owners`, the search kept and the sentence above the
+  table (`state.groupOwners`).
+* **The controls are drawn for Admin Write** (`ctx.write`) on a process whose
+  directory can be written (`canWrite`); a reader sees the table.
+
+`tests/group_owners.js` holds the directory, the acts, the helpers, the page
+and the stylesheet.
+
