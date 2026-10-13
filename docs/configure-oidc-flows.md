@@ -431,7 +431,9 @@ retried and, if it keeps failing, dead-lettered.
 `oauth2.backchannelLogoutOnExpiry` (default `true`). There are also tuning
 settings such as `…TokenTtlS` (120), `…Attempts` (3) and `…TimeoutMs` (5000).
 
-**Client** (from the in-process job `tests/backchannel_logout.js`):
+**Client** (from the in-process job `tests/backchannel_logout.js`; the job
+`sts_backchannel_logout.js` registers the same attributes through
+`/admin-api`):
 ```bash
 api applications/create '{"identifier":"bcl-ok","name":"bcl-ok","protocols":["oauth2","oidc"],
   "fields":{"oauthClientId":"bcl-ok","oauthClientSecret":"'"$SECRET"'",
@@ -443,7 +445,18 @@ api applications/create '{"identifier":"bcl-ok","name":"bcl-ok","protocols":["oa
 ```
 
 A public client cannot have an `http` back-channel URI, and product mode never
-sends to `http`. Failed deliveries are listed on **Sign-out**
+sends to `http`. **Product mode also never sends to an address on a private,
+loopback, link-local or reserved network**: the delivery is dead-lettered
+with `STS-OAUTH-0534` and nothing is dialled. A relying party on a private
+network is reached only from a development-mode realm.
+
+The job `sts_backchannel_logout.js` delivers to the test peer, which plays
+the relying party and verifies each Logout Token as section 2.6 asks (the
+signature, `typ: logout+jwt`, `iss`, `aud`, `iat`, `jti`, the event, `sub` or
+`sid`, no `nonce`, no replay). In a development realm, RP-initiated logout and
+the console's global logout each send one token, naming the ID Token's `sub`
+and `sid`. In a product realm the same sign-out sends nothing to the peer's
+private address and records `STS-OAUTH-0534`. Failed deliveries are listed on **Sign-out**
 (`/admin/logout`) → **Back-channel Logout Tokens**, which has a State filter
 and a **Retry** button on each dead row, and on **Outbound deliveries**
 (`/admin/deliveries`). The API equivalents are

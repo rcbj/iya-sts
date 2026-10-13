@@ -1444,6 +1444,12 @@ const JOBS = [
   // refusing a plain-http request_uri at registration, and the https flow
   // where a directory is shared with the service.
   { file: 'sts_jar_admin_client.js',     browser: false, local: true },
+  // #293 WP3 (2026-10-13): OpenID Connect Back-Channel Logout delivered to
+  // the test peer's `bcl` role (tests/peer/peer_bcl.js), which verifies each
+  // Logout Token as a relying party must; a product realm refusing the
+  // peer's private address (STS-OAUTH-0534). Needs the peer (`testPeer`).
+  { file: 'sts_backchannel_logout.js',   browser: false, local: true,
+    testPeer: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.

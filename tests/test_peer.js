@@ -50,6 +50,12 @@
 //      Last-Event-ID, a 503 for `?fail=1` once, and the refusals section 9
 //      names — another issuer, another typ, a nonce, a replayed jti, a
 //      signature that does not verify, a symmetric alg.
+//   H. THE BACK-CHANNEL LOGOUT RELYING PARTY (#293) over TLS: a Logout
+//      Token signed by the realm's key accepted 200 no-store, and the
+//      refusals OpenID Connect Back-Channel Logout 1.0 section 2.6 asks of a
+//      relying party — a replayed jti, another typ, a nonce, another aud or
+//      issuer, no event, neither sub nor sid, a bad signature, an encrypted
+//      token it holds no key for, a body that is not a form.
 //
 // IN PROCESS rather than a protocol job, because none of it is the service:
 // it is a test fixture's own correctness, and a stack is not needed to show
@@ -868,6 +874,75 @@ async function commandsSection(t, state, port, ca, view) {
   log.debug("Leaving commandsSection().");
 }
 
+// H. THE BACK-CHANNEL LOGOUT RELYING PARTY (#293): a Logout Token signed by
+// the realm's key accepted, and the refusals section 2.6 asks of a relying
+// party, each by its own fault.
+async function bclSection(t, state, port, ca, view) {
+  log.debug("Entering bclSection().");
+  const at = new URL(view.bcl.endpoint).pathname;
+  const now = Math.floor(Date.now() / 1000);
+  const EVENT = 'http://schemas.openid.net/event/backchannel-logout';
+  const token = function (header, claims) {
+    log.debug("Entering token().");
+    const events = {};
+    events[EVENT] = {};
+    log.debug("Leaving token().");
+    return jws(state.key, Object.assign({ alg: 'RS256', kid: 'k1',
+                                          typ: 'logout+jwt' }, header),
+               Object.assign({ iss: state.base, aud: 'rp-bcl', iat: now,
+                               jti: 'l' + nodeCrypto.randomBytes(6)
+                                 .toString('hex'),
+                               sub: 'alice', sid: 's-1', events: events },
+                             claims));
+  };
+  const send = function (compact, type) {
+    log.debug("Entering send().");
+    log.debug("Leaving send().");
+    return overTls(port, ca, 'POST', at, {
+      'Content-Type': type || 'application/x-www-form-urlencoded' },
+      Buffer.from('logout_token=' + encodeURIComponent(compact)), null);
+  };
+  const good = token({}, {});
+  let r = await send(good);
+  t.check(r.status === 200 &&
+          /no-store/.test(String(r.headers['cache-control'])),
+          'H. a Logout Token from the realm is accepted, 200 and no-store',
+          r.status + ' ' + r.text);
+  r = await send(good);
+  t.check(r.status === 400 && /seen before/.test(r.text),
+          'H. the same jti again is refused as a replay', r.text);
+  const refusals = [
+    ['a token not typed logout+jwt', token({ typ: 'JWT' }, {}), /typ/],
+    ['a token carrying a nonce', token({}, { nonce: 'n' }), /nonce/],
+    ['a token for another client', token({}, { aud: 'someone-else' }),
+     /aud/],
+    ['a token from another issuer', token({}, { iss: 'https://other.test' }),
+     /iss/],
+    ['a token without the event', token({}, { events: {} }), /events/],
+    ['a token naming neither sub nor sid',
+     token({}, { sub: undefined, sid: undefined }), /neither sub nor sid/]
+  ];
+  for (const [what, compact, why] of refusals) {
+    r = await send(compact);
+    t.check(r.status === 400 && r.json && r.json.error === 'invalid_request' &&
+            why.test(r.json.error_description || ''),
+            'H. ' + what + ' is refused', r.text);
+  }
+  const tampered = token({}, {}).split('.');
+  tampered[1] = b64u(JSON.stringify({ iss: state.base, aud: 'rp-bcl' }));
+  r = await send(tampered.join('.'));
+  t.check(r.status === 400 && /signature/.test(r.text),
+          'H. a token whose signature does not verify is refused', r.text);
+  r = await send('a.b.c.d.e');
+  t.check(r.status === 400 && /encrypted/.test(r.text),
+          'H. an encrypted token, which the peer cannot open, is refused',
+          r.text);
+  r = await send(token({}, {}), 'application/json');
+  t.check(r.status === 400 && /not a form/.test(r.text),
+          'H. a body that is not a form is refused', r.text);
+  log.debug("Leaving bclSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const caDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-peer-'));
@@ -905,7 +980,8 @@ async function run(t) {
         gnap: { type: TYPE },
         wsfed: { realm: 'urn:test:wsfed:one' },
         ssf: { authorizationHeader: 'Bearer push-secret',
-               audience: 'receiver-1' } }) });
+               audience: 'receiver-1' },
+        bcl: { clientId: 'rp-bcl' } }) });
     const view = r.json;
     t.check(r.status === 200 && view.ok && view.gnap.key.jwk &&
             !view.gnap.key.jwk.d && /BEGIN CERTIFICATE/.test(
@@ -919,6 +995,7 @@ async function run(t) {
     await saml11Section(t, state, view);
     await wsfedSection(t, state, view);
     await commandsSection(t, state, running.port, ca, view);
+    await bclSection(t, state, running.port, ca, view);
     let back = await call(peerBase + '/peer/tenants/one/received?role=ssf');
     t.check(back.status === 200 && back.json.events.length >= 7 &&
             back.json.events.every(function (row) {
@@ -949,7 +1026,8 @@ module.exports = {
   name: 'test_peer',
   describe: 'the test peer (#586) against a fake realm: the RFC 9470 and ' +
             'GNAP resource servers, the SSF receiver, the SAML 2.0 ' +
-            'service provider and the Provider Commands relying party, ' +
+            'service provider, the Provider Commands relying party and ' +
+            'the Back-Channel Logout relying party, ' +
             'each refusing what a real party would',
   run: run
 };
