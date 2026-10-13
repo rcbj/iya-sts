@@ -31,11 +31,13 @@
 //      refused here, never redirected (STS-OAUTH-0419); a pushed one signs
 //      the person in and ends in a code the token endpoint redeems; written
 //      FALSE again, the plain request reaches the sign-in screen.
-//   3. `id_token token` AND `code token` (RFC 9700 section 2.1.2): in the
-//      product realm each is answered at the client's redirect URI with
-//      unsupported_response_type (STS-OAUTH-0126); in the development realm,
-//      with RFC 9700 mode off there, the same request reaches the sign-in
-//      screen.
+//   3. `id_token token` AND `code token` (RFC 9700 section 2.1.2): the
+//      product realm advertises neither, and refuses each as
+//      unsupported_response_type (STS-OAUTH-0163, not the 0126 the docs
+//      inferred — section 3 says why): on a page with a link to the client
+//      when nobody is signed in, redirected to the client when somebody is.
+//      In the development realm, with RFC 9700 mode off there, the same
+//      request reaches the sign-in screen.
 //
 // Every refusal's code is read back from the realm's `/admin-api/audit` — a
 // code is recorded and never sent.
@@ -91,7 +93,7 @@ const DEVICE_APP = "acp-device-" + TAG;
 const NO_DEVICE_APP = "acp-nodevice-" + TAG;
 const PAR_APP = "acp-par-" + TAG;
 const TOKEN_TYPES_APP = "acp-types-" + TAG;
-const FLOOR = 20;
+const FLOOR = 25;
 
 let checks = 0;
 function check(what, fn) {
@@ -269,6 +271,14 @@ function sentToSignIn(r) {
     /\/authn\/login\?authn=/.test(r.location);
 }
 
+// RFC 9700 section 2.1.1: a nonce is transaction-specific, and product
+// refuses one an earlier redeemed code used.
+function freshNonce() {
+  log.debug("Entering freshNonce().");
+  log.debug("Leaving freshNonce().");
+  return "n-" + nodeCrypto.randomBytes(9).toString("base64url");
+}
+
 function pkce() {
   log.debug("Entering pkce().");
   const verifier = nodeCrypto.randomBytes(32).toString("base64url");
@@ -296,6 +306,13 @@ async function setUp() {
     await setting(realm, "oauth2.deviceAuthorization", true);
     await setting(realm, "oauth2.deviceCodeIntervalS", 1);
     await registry.ensurePerson(realmBase(realm), PERSON, PASSWORD);
+    // A realm's portal is reached at an address its seeded client does not
+    // hold, and product teaches an entry none, so it is registered here as an
+    // operator standing a realm up would (`sts_email_factor.js`'s reason).
+    await ok(api + "/applications/add",
+             { application: "sts-user-portal", attribute: "oauthRedirectUri",
+               value: realmBase(realm) + "/portal/callback" },
+             realm + ": registered the realm portal's callback");
     await ok(api + "/applications/create", {
       identifier: DEVICE_APP, name: "#293 device " + TAG,
       protocols: ["oauth2", "oidc"],
@@ -425,7 +442,7 @@ async function parPerClient(realm) {
   const plainParams = function (p) {
     return { response_type: "code", client_id: PAR_APP,
              redirect_uri: REDIRECT, scope: "openid", state: "st-" + TAG,
-             nonce: "n-" + TAG, code_challenge: p.challenge,
+             nonce: freshNonce(), code_challenge: p.challenge,
              code_challenge_method: "S256" };
   };
   let p = pkce();
@@ -483,28 +500,90 @@ async function parPerClient(realm) {
 }
 
 // RFC 9700 section 2.1.2: no access token from the authorization endpoint.
+//
+// WHAT REFUSES IT IN PRODUCT IS THE METADATA, NOT THE BCP CHECK (found by
+// this job's first run). RFC 9700 mode takes every token-bearing type out
+// of `response_types_supported`, and the authorization endpoint refuses a
+// type its own metadata does not advertise (STS-OAUTH-0163) before
+// `oauth2_bcp.js`'s section 2.1.2 check (STS-OAUTH-0126) is reached. The
+// error the client is owed is the same, unsupported_response_type; how it
+// is delivered depends on the browser: with nobody signed in it is SHOWN
+// on a page carrying a link to the client (RFC 9700 section 4.11.2: no
+// redirect before the user is authenticated), and on a signed-in browser
+// it is redirected.
+function authorizeTokenType(type) {
+  log.debug("Entering authorizeTokenType().");
+  log.debug("Leaving authorizeTokenType().");
+  return "/realm/" + PROD + "/oauth2/authorize?" +
+    form({ response_type: type, client_id: TOKEN_TYPES_APP,
+           redirect_uri: REDIRECT, scope: "openid", state: "st-" + TAG,
+           nonce: freshNonce() });
+}
+
+function assertRefusalAtClient(location) {
+  log.debug("Entering assertRefusalAtClient().");
+  assert.ok(location.indexOf(REDIRECT) === 0, location);
+  const back = returnedParams(location);
+  assert.strictEqual(back.get("error"), "unsupported_response_type",
+                     location);
+  assert.strictEqual(back.get("state"), "st-" + TAG, location);
+  assert.ok(!back.get("access_token") && !back.get("code") &&
+            !back.get("id_token"), location);
+  log.debug("Leaving assertRefusalAtClient().");
+}
+
 async function tokenBearingTypes() {
   log.debug("Entering tokenBearingTypes().");
   log.info("=== 3. id_token token and code token ===");
+  const metadata = await call("GET", realmBase(PROD) +
+                              "/.well-known/openid-configuration");
+  check("product: the realm's metadata advertises no response type that " +
+        "issues an access token", function () {
+    assert.strictEqual(metadata.status, 200, metadata.text.slice(0, 200));
+    const types = metadata.json.response_types_supported || [];
+    assert.ok(types.length > 0, JSON.stringify(types));
+    types.forEach(function (one) {
+      assert.ok(String(one).split(" ").indexOf("token") < 0,
+                "advertised: " + JSON.stringify(types));
+    });
+  });
+  // A browser signed in to the product realm, for the redirected half.
+  const signedIn = browser();
+  const p = pkce();
+  let r = await signedIn.go("GET", "/realm/" + PROD + "/oauth2/authorize?" +
+    form({ response_type: "code", client_id: PAR_APP,
+           redirect_uri: REDIRECT, scope: "openid", state: "st-" + TAG,
+           nonce: freshNonce(), code_challenge: p.challenge,
+           code_challenge_method: "S256" }));
+  assert.ok(sentToSignIn(r), "signing in for section 3: " + r.status + " " +
+            r.location);
+  await signInToCode(PROD, signedIn, r);
   for (const type of ["id_token token", "code token"]) {
-    const before = await codeCount(PROD, "STS-OAUTH-0126");
-    const b = browser();
-    const r = await b.go("GET", "/realm/" + PROD + "/oauth2/authorize?" +
-      form({ response_type: type, client_id: TOKEN_TYPES_APP,
-             redirect_uri: REDIRECT, scope: "openid", state: "st-" + TAG,
-             nonce: "n-" + TAG }));
-    const recorded = await newRowWith(PROD, "STS-OAUTH-0126", before);
-    check("product: response_type=" + type + " is answered at the client " +
-          "with unsupported_response_type (STS-OAUTH-0126)", function () {
-      assert.ok((r.status === 302 || r.status === 303) &&
-                r.location.indexOf(REDIRECT) === 0,
-                r.status + " " + r.location + " " + r.text.slice(0, 300));
-      const back = returnedParams(r.location);
-      assert.strictEqual(back.get("error"), "unsupported_response_type",
-                         r.location);
-      assert.strictEqual(back.get("state"), "st-" + TAG, r.location);
-      assert.ok(!back.get("access_token") && !back.get("code"), r.location);
-      assert.ok(recorded, "no audit row carries STS-OAUTH-0126");
+    let before = await codeCount(PROD, "STS-OAUTH-0163");
+    r = await browser().go("GET", authorizeTokenType(type));
+    let recorded = await newRowWith(PROD, "STS-OAUTH-0163", before);
+    const found = r.text.match(
+      /href="(https:\/\/rp\.acp\.example\.test\/cb[^"]*)"/);
+    const link = found ? found[1] : "";
+    check("product, nobody signed in: response_type=" + type + " is " +
+          "refused on a page, unsupported_response_type, its link to the " +
+          "client carrying the error (STS-OAUTH-0163)", function () {
+      assert.strictEqual(r.status, 400, r.status + " " + r.location);
+      assert.ok(/unsupported_response_type/.test(r.text),
+                r.text.slice(0, 300));
+      assertRefusalAtClient(link.replace(/&amp;/g, "&"));
+      assert.ok(recorded, "no audit row carries STS-OAUTH-0163");
+    });
+    before = await codeCount(PROD, "STS-OAUTH-0163");
+    r = await signedIn.go("GET", authorizeTokenType(type));
+    recorded = await newRowWith(PROD, "STS-OAUTH-0163", before);
+    check("product, signed in: response_type=" + type + " is redirected " +
+          "to the client as unsupported_response_type, with no token",
+          function () {
+      assert.ok(r.status === 302 || r.status === 303,
+                r.status + " " + r.text.slice(0, 300));
+      assertRefusalAtClient(r.location);
+      assert.ok(recorded, "no audit row carries STS-OAUTH-0163");
     });
   }
   const report = await call("GET", realmBase(DEV) + "/oauth2/rfc9700");
@@ -513,17 +592,16 @@ async function tokenBearingTypes() {
         (devStrict ? "ON (set for the whole service)" : "off"), function () {
     assert.strictEqual(report.status, 200, report.text.slice(0, 200));
   });
-  const b = browser();
-  const r = await b.go("GET", "/realm/" + DEV + "/oauth2/authorize?" +
+  r = await browser().go("GET", "/realm/" + DEV + "/oauth2/authorize?" +
     form({ response_type: "id_token token", client_id: TOKEN_TYPES_APP,
            redirect_uri: REDIRECT, scope: "openid", state: "st-" + TAG,
-           nonce: "n-" + TAG }));
+           nonce: freshNonce() }));
   if (devStrict) {
     // A stack that turns RFC 9700 mode on for the whole service turns it on
     // in this realm too; then the refusal is what holds.
     check("development, RFC 9700 mode on: the same refusal", function () {
-      assert.strictEqual(returnedParams(r.location).get("error"),
-                         "unsupported_response_type", r.location);
+      assert.ok(/unsupported_response_type/.test(r.text + r.location),
+                r.status + " " + r.location);
     });
   } else {
     check("development: response_type=id_token token reaches the sign-in " +
