@@ -63,7 +63,7 @@
   "detail.anEntry": "一個項目",
   "detail.claimedHeading": "宣告屬於此群組但未被此群組列出的項目",
   "detail.thUsersPage": "使用者頁面上",
-  "detail.claimedNote": "這些項目各自帶有指向此群組的 <code>memberOf</code>，而此群組自身的 <code>member</code> 並未反向列出它們。<strong>此處沒有任何機制維護 <code>memberOf</code></strong> &mdash; 它根本不是標準屬性（Microsoft 的目錄和 OpenLDAP 的 <code>memberof</code> 覆蓋層都會寫入它，由伺服器使其與 <code>member</code> 保持一致），而一個既不寫入也不檢查它的無結構描述模擬服務，允許用戶端透過一次 <code>modify</code> 就造成這種不一致。它們與上方的成員分開列出而不是合併，因為一個名稱來自不一致的哪一方，是它唯一值得關注的地方。",
+  "detail.claimedNote": "這些項目各自帶有指向此群組的 <code>memberOf</code>，而此群組自身的 <code>member</code> 並未反向列出它們。<strong>此處沒有任何機制維護 <code>memberOf</code></strong> &mdash; 它根本不是標準屬性（Microsoft 的目錄和 OpenLDAP 的 <code>memberof</code> 覆蓋層都會寫入它，由伺服器使其與 <code>member</code> 保持一致），而一個既不寫入也不檢查它的無結構描述目錄，允許用戶端透過一次 <code>modify</code> 就造成這種不一致。它們與上方的成員分開列出而不是合併，因為一個名稱來自不一致的哪一方，是它唯一值得關注的地方。",
   "detail.thRule": "被視為群組的原因",
   "detail.thCreated": "建立時間",
   "detail.timestamps": "這兩個時間戳記是<em>通用時間</em>（<code>YYYYMMDDHHMMSSZ</code>）格式，這是目錄顯示的格式 &mdash; 而不是本主控台其他地方使用的 ISO 8601 字串。繫結到 <code>ldap://&lt;host&gt;:{port}</code> 並讀取 <code>{dn}</code> 的 LDAP 用戶端看到的正是下面的物件，因為它<em>就是</em>那個物件，而不是副本。",

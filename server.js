@@ -299,7 +299,7 @@ function announce() {
   // number.
   log.info('iya-sts version ' + APP_VERSION.version + ' (' +
            version.buildInfo(APP_VERSION) + ').');
-  log.info('WS-Trust STS mock listening on ' + (useHttps ? 'https' : 'http') +
+  log.info('WS-Trust STS listening on ' + (useHttps ? 'https' : 'http') +
            '://' + HOST + ':' + PORT +
            ' (issuer ' +
            require('./common/issuer_names').issuer() +
@@ -346,7 +346,7 @@ function announce() {
   log.info('Authentication service at /authn/login (the sign-in screen every ' +
            'protocol here sends a person to) and /authn/webauthn (its second ' +
            'factor).');
-  log.info('Mock authorization server endpoints: /oauth2/authorize ' +
+  log.info('Authorization server endpoints: /oauth2/authorize ' +
            '(redirects to /authn/login when there is no session), ' +
            '/oauth2/token, /oauth2/userinfo, /oauth2/introspect, ' +
            '/oauth2/revoke, /oauth2/register, /oauth2/logout');

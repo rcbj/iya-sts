@@ -1909,7 +1909,7 @@ async function preAuthRequiredReply(client, request, fast, offer) {
                                               ', salt ' +
     JSON.stringify(client.salt) + ', s2kparams ' +
     (principals.s2kparamsMode() === 'send'
-      ? 'SENT (explicit 4096, the pre-2026-08 behaviour of this mock)'
+      ? 'SENT (explicit 4096, the pre-2026-08 behaviour of this service)'
       : 'OMITTED (as Active Directory does; the client must apply the RFC ' +
         '3962 default). Set KRB5_S2KPARAMS=send to advertise it explicitly.'));
   log.debug('Leaving preAuthRequiredReply().');
@@ -3706,7 +3706,8 @@ async function answerTgsReq(request, state) {
                'or registered on a different account' +
                (targetRealm ? ', or a trust with ' + targetRealm + ' that ' +
                    'does not exist' : '') +
-               '. This mock registers a service on first sight when its host ' +
+               '. In development mode this service registers a service on ' +
+               'first sight when its host ' +
                'matches ' +
                (principals.SERVICE_DOMAINS.join(', ') ||
                 '(nothing configured)') +

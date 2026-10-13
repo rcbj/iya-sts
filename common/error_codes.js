@@ -9174,10 +9174,10 @@ const CODES = [
       '(#151).',
     spec: 'none (a log line)' },
   { code: 'STS-OAUTH-0782',
-    summary: 'The mock relying party\'s command endpoint refused a ' +
+    summary: 'The demonstration relying party\'s command endpoint refused a ' +
       'command — the development test control answering as a relying party ' +
       'would (#151). ' +
-      'Retired 2026-10-12 (#596): the mock relying party was deleted; the ' +
+      'Retired 2026-10-12 (#596): the demonstration relying party was deleted; the ' +
       'test peer plays a Provider Commands relying party',
     spec: 'HTTP 400, 401 or 409 {error}', retired: true },
   { code: 'STS-OAUTH-0783',
@@ -9547,14 +9547,16 @@ const CODES = [
       'service could not decrypt, so the session was not ended.',
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0021',
-    summary: 'The mock SAML 2.0 service provider was handed an artifact that ' +
+    summary: 'The demonstration SAML 2.0 service provider was handed an ' +
+             'artifact that ' +
       'does not resolve (already resolved, expired or never issued).' +
-      ' Retired by #592: the mock relying parties were deleted.',
+      ' Retired by #592: the demonstration relying parties were deleted.',
     spec: '', retired: true },
   { code: 'STS-SAML-0022',
-    summary: 'A response delivered to the mock SAML 2.0 service provider ' +
+    summary: 'A response delivered to the demonstration SAML 2.0 service ' +
+             'provider ' +
       'failed at least one of its verification checks.' +
-      ' Retired by #592: the mock relying parties were deleted.',
+      ' Retired by #592: the demonstration relying parties were deleted.',
     spec: '', retired: true },
   { code: 'STS-SAML-0023',
     summary: 'A SAML 2.0 assertion could not be signed and was returned ' +
@@ -9644,14 +9646,16 @@ const CODES = [
       'included).',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0042',
-    summary: 'The mock SAML 1.1 relying party was handed an artifact that ' +
+    summary: 'The demonstration SAML 1.1 relying party was handed an ' +
+             'artifact that ' +
       'does not resolve (already resolved, expired or never issued).' +
-      ' Retired by #592: the mock relying parties were deleted.',
+      ' Retired by #592: the demonstration relying parties were deleted.',
     spec: '', retired: true },
   { code: 'STS-SAML-0043',
-    summary: 'A response delivered to the mock SAML 1.1 relying party failed ' +
+    summary: 'A response delivered to the demonstration SAML 1.1 relying ' +
+             'party failed ' +
       'at least one of its verification checks.' +
-      ' Retired by #592: the mock relying parties were deleted.',
+      ' Retired by #592: the demonstration relying parties were deleted.',
     spec: '', retired: true },
   { code: 'STS-SAML-0044',
     summary: 'A service provider metadata refresh named an application that ' +
@@ -10261,9 +10265,10 @@ const CODES = [
       'metadata document, and STS-SAML-0014 names its failure.',
     spec: '', retired: true },
   { code: 'STS-WSFED-0016',
-    summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
+    summary: 'The demonstration relying party at /wsfed/rp received a ' +
+             'sign-in ' +
       'response that failed one or more of its verification checks.' +
-      ' Retired by #592: the mock relying parties were deleted.',
+      ' Retired by #592: the demonstration relying parties were deleted.',
     spec: '', retired: true },
   { code: 'STS-WSFED-0017',
     summary: 'A WS-Federation sign-in reached a session whose sign-in ' +

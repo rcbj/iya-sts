@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — digital na diploma",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — digital na diploma",
+  "issuer.heading": "Example University",
   "issuer.intro": "Binabati ka sa iyong pagtatapos. Makukuha ang iyong diploma bilang digital na credential (<code>{configuration}</code>) na maitatago mo sa iyong wallet.",
   "issuer.request": "Hilingin ang iyong digital na diploma",
   "issuer.requestByReference": "Hilingin ito (offer sa pamamagitan ng reference)",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "Magpakita ng QR code (matatagalan ang pag-issue)",
   "issuer.meta": "Ito ang web page ng Credential Issuer sa OID4VCI Appendix H. Ang unang dalawang link ay gumagawa ng Credential Offer at ipinapadala ka sa iyong wallet sa <code>{wallet}</code> (H.1, parehong device). Ang dalawa pa ay iniaabot ang offer sa pamamagitan ng QR code at Transaction Code — H.2, at H.3 kapag kailangan ng issuer ng oras para gawin ang credential. Ang issuer ay <code>{issuer}</code>.",
   "offer.starting": "Inihahanda ang iyong Credential Offer…",
-  "offer.title": "Mock University — i-scan para matanggap ang iyong credential",
+  "offer.title": "Example University — i-scan para matanggap ang iyong credential",
   "offer.heading": "I-scan ito gamit ang iyong wallet",
   "offer.ready": "Handa nang kunin ang iyong digital na diploma.",
   "offer.readyDeferred": "Handa nang kunin ang iyong digital na diploma, pero matatagalan kami nang kaunti sa pag-issue nito kapag hiningi mo na.",

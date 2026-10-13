@@ -59,7 +59,7 @@
   "fed.counts": "{signIns} inloggning(ar)<br>{people} person(er)",
   "fed.intro": "{count} av högst {max} under <code>{container}</code>: de externa identitetsleverantörer vars intyg den här tjänsten tar emot, och de externa tjänsteleverantörer den utfärdar intyg till. En relation är en RIKTNING, så en partner i båda riktningarna är två poster.",
   "fed.tileRelationships": "Relationer",
-  "fed.warn": "<strong>En ldapmodify här är en säkerhetsändring, vilket inte gäller någon annan behållare i den här katalogen.</strong> <code>fedSigningCertificate</code> avgör vems intyg den här tjänsten tror på; <code>fedEnabled</code> slår på en partner. Överallt annars här ändrar en redigering vad tjänsten delar ut, och varje bindning till katalogen lyckas — så den här behållaren är exakt lika skyddad som resten, det vill säga inte alls. Det är det ärliga tillståndet för en simulering, och det är därför federation är den enda funktionen här som nekar som standard.",
+  "fed.warn": "<strong>En ldapmodify här är en säkerhetsändring, vilket inte gäller någon annan behållare i den här katalogen.</strong> <code>fedSigningCertificate</code> avgör vems intyg den här tjänsten tror på; <code>fedEnabled</code> slår på en partner. Överallt annars här ändrar en redigering vad tjänsten delar ut, och varje bindning till katalogen lyckas — så den här behållaren är exakt lika skyddad som resten, det vill säga inte alls. Det är det ärliga tillståndet för utvecklingsläget, och det är därför federation är den enda funktionen här som nekar som standard.",
   "fed.thRelationship": "Relation",
   "fed.placeholder": "ett id, ett DN, ett protokoll eller en riktning",
   "fed.thDirection": "Riktning",

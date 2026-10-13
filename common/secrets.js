@@ -173,7 +173,7 @@ function missingModule(pkg, provider, err) {
   return errorCodes.mark(new Error(
     'the "' + provider + '" key-encryption-key provider needs the ' + pkg +
     ' package and it is not installed. It is deliberately NOT a dependency ' +
-    'of this service — it is a mock first, and four cloud SDKs nobody uses ' +
+    'of this service — four cloud SDKs nobody uses ' +
     'would be carried by every install. Run `npm ' +
     'install ' + pkg + '` in this ' +
     'deployment, or use keys.kekProvider=file, which needs nothing. The ' +

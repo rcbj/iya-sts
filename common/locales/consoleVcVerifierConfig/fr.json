@@ -1,5 +1,5 @@
 {
-  "intro1": "Ce que le Verifier fictif à l’adresse ",
+  "intro1": "Ce que le Verifier de démonstration à l’adresse ",
   "intro2": " — les pages l’appellent <em>The Bar Door</em> — demande à un portefeuille, et dans quel format de credential. Cela part sur le réseau comme le <code>dcql_query</code> de la prochaine Authorization Request OID4VP, et c’est ce à quoi le Verifier confronte ensuite la présentation : une claim demandée mais non présentée échoue, nommément, au contrôle <em>Requested claims</em>.",
   "catalogue1": "Les claims viennent du même catalogue que celui à partir duquel ",
   "catalogue2": " remplit un credential, regroupées en <strong>claims</strong> plutôt que listées par type d’attribut. Un credential porte une Disclosure par claim de premier niveau, donc <code>address</code> est une seule unité de divulgation, quel que soit le nombre d’attributs LDAP qui l’alimentent — la demander donne ensemble la rue, la localité, la région, le code postal et le pays, et une page proposant six cases d’adresse proposerait un choix qui n’existe pas sur le réseau.",

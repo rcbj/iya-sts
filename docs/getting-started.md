@@ -5,7 +5,7 @@ nav_order: 2
 
 # Getting started
 
-> **Development mode only (#585):** `/krb5/principals` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/krb5/principals` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 ## Clone it with `--recursive`
 
@@ -51,7 +51,7 @@ shown as an environment variable is passed with `-e`.
 
 `CONFIG_FILE` selects a file in `env/` — `local.js`, `test.js` or
 `docker-tests.js`. At the default `debug` level every endpoint call and every
-artifact before and after signing is logged. That is the point of a mock, so
+artifact before and after signing is logged. That is the point of development mode, so
 resist quietening it; `env/test.js` is the quiet one if you need it — and it is
 what the three test launchers select for themselves, since a suite that passes
 throws its log away and the level is about half of this service's CPU. Ask any
@@ -477,7 +477,7 @@ its default `development` mode. There is no setting that opens the console;
 2.0 access token of its own.
 
 **SAML 2.0** needs a service provider of your own to drive end to end — there
-is no mock one in the service (#592); the test suite's is the test peer
+is no built-in one in the service (#592); the test suite's is the test peer
 (`tests/peer/`). `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its
 own for a service provider by that name, minted on the spot — in development mode

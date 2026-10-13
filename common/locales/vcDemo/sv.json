@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — digitalt examensbevis",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — digitalt examensbevis",
+  "issuer.heading": "Example University",
   "issuer.intro": "Grattis till examen. Ditt examensbevis finns som ett digitalt intyg (<code>{configuration}</code>) som du kan förvara i din plånbok.",
   "issuer.request": "Begär ditt digitala examensbevis",
   "issuer.requestByReference": "Begär det (erbjudande via referens)",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "Visa en QR-kod (utfärdandet tar en stund)",
   "issuer.meta": "Det här är intygsutfärdarens webbsida i OID4VCI bilaga H. De två första länkarna bygger ett intygserbjudande och skickar dig till din plånbok på <code>{wallet}</code> (H.1, samma enhet). De två andra lämnar i stället över erbjudandet med en QR-kod och en transaktionskod — H.2, och H.3 när utfärdaren behöver tid för att ta fram intyget. Utfärdaren är <code>{issuer}</code>.",
   "offer.starting": "Förbereder ditt intygserbjudande…",
-  "offer.title": "Mock University — skanna för att ta emot ditt intyg",
+  "offer.title": "Example University — skanna för att ta emot ditt intyg",
   "offer.heading": "Skanna detta med din plånbok",
   "offer.ready": "Ditt digitala examensbevis är redo att hämtas.",
   "offer.readyDeferred": "Ditt digitala examensbevis är redo att hämtas, men det tar oss en liten stund att utfärda det när du har bett om det.",

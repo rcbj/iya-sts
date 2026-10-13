@@ -1,6 +1,6 @@
 {
   "intro1": "位于 ",
-  "intro2": " 的模拟验证方（页面称之为 <em>The Bar Door</em>）向钱包索取什么，以及采用哪种凭证格式。它作为下一个 OID4VP Authorization Request 的 <code>dcql_query</code> 发送出去，验证方随后也据此检查出示内容：被索取但未出示的声明会在 <em>Requested claims</em> 检查中按名称判为失败。",
+  "intro2": " 的演示验证方（页面称之为 <em>The Bar Door</em>）向钱包索取什么，以及采用哪种凭证格式。它作为下一个 OID4VP Authorization Request 的 <code>dcql_query</code> 发送出去，验证方随后也据此检查出示内容：被索取但未出示的声明会在 <em>Requested claims</em> 检查中按名称判为失败。",
   "catalogue1": "这些声明与 ",
   "catalogue2": " 填充凭证所用的目录相同，但按<strong>声明</strong>分组，而不是按属性类型列出。凭证中每个顶层声明对应一个 Disclosure，因此无论有多少 LDAP 属性为其提供数据，<code>address</code> 都是一个披露单元——索取它会同时得到街道、地区、省份、邮政编码和国家；一个提供六个地址复选框的页面，提供的是线路上并不存在的选择。",
   "asks1": "<strong>这里只是索取，不会放任何人进入。</strong>向这扇门出示凭证不会启动会话、不会签发令牌，也不会授予访问权限——门只会说“是”，仅此而已。用钱包登录是另一扇门 <code>/authn/wallet</code>，它用自己的请求索取本领域签发的凭证，不在这里配置（",

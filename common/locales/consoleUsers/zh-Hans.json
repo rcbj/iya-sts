@@ -26,7 +26,7 @@
   "body.spiffeBefore": "<strong>本信任域只为其签发过证书的身份会出现在这里，其“已认证”列为<em>从未</em></strong> &mdash; 它计入“仅作为主体出现”。获得凭据并不等于出示凭据，而代理每半小时重新签发一次，所以把签发计为登录会让一个工作负载变成数百次登录。它还会在 <code>ou=users</code> 下获得一个目录条目，其中带有它当前持有的证书 &mdash; 请参阅",
   "body.theDirectory": "目录",
   "body.spiffeAnd": "和",
-  "body.oneRow": "<strong>一行就是一个本地名称，跨越所有协议。</strong>同一个人在登录界面以 <code>alice</code> 到达，在每个令牌中是她的 <code>urn:uuid:</code> 主体，作为 Kerberos 主体则是 <code>alice@STS.MOCK</code>，为此显示三行会比一行更糟——本服务的前提是，您输入的名称就是您在所有协议中的身份。代价是：两个 Kerberos 领域中两个不同的 <code>alice</code> 在这里是同一行。“领域”列让这一点可见。大小写从不合并，因为本服务中没有任何地方把 <code>Alice</code> 和 <code>alice</code> 视为同一个。",
+  "body.oneRow": "<strong>一行就是一个本地名称，跨越所有协议。</strong>同一个人在登录界面以 <code>alice</code> 到达，在每个令牌中是她的 <code>urn:uuid:</code> 主体，作为 Kerberos 主体则是 <code>alice@EXAMPLE.COM</code>，为此显示三行会比一行更糟——本服务的前提是，您输入的名称就是您在所有协议中的身份。代价是：两个 Kerberos 领域中两个不同的 <code>alice</code> 在这里是同一行。“领域”列让这一点可见。大小写从不合并，因为本服务中没有任何地方把 <code>Alice</code> 和 <code>alice</code> 视为同一个。",
   "body.nameContains": "名称包含",
   "body.authenticatedThrough": "认证方式",
   "body.secondFactor": "第二因素",

@@ -308,8 +308,8 @@
     "text": "partial: fyra blockchiffer och två nyckeltransporter, som omsluter ett element i taget. Det är inte den vendorerade implementationen, och det är ett avsiktligt undantag — utdata från de två är redan bytekompatibla, och det den här har som den andra saknar är DIAGNOSEN."
   },
   "crypto.standards.xmlenc.what": {
-    "en": "22b505560ceb8641",
-    "text": "Varje meddelande som detta medvetet säger högt: de två CBC-chiffren är INTE autentiserade och `rsa-1_5` är knäckt av Bleichenbacher. Båda erbjuds eftersom verkliga tjänsteleverantörer kräver dem, och en mock som bara erbjöd det säkra valet skulle inte kunna användas för att visa vad det osäkra gör."
+    "en": "88fff06d7d7b1664",
+    "text": "Varje meddelande som detta medvetet säger högt: de två CBC-chiffren är INTE autentiserade och `rsa-1_5` är knäckt av Bleichenbacher. Båda erbjuds eftersom verkliga tjänsteleverantörer kräver dem, och en tjänst som bara erbjöd det säkra valet skulle inte kunna användas för att visa vad det osäkra gör."
   },
   "crypto.standards.c14n.coverage": {
     "en": "dcdbea06a9c35da8",
@@ -320,8 +320,8 @@
     "text": "EXKLUSIV ÄR BÄRANDE OCH ÄR STANDARD ÖVERALLT HÄR. Ett intygande signeras fristående och bäddas sedan in i en RSTR, en Response eller en `wresult` som deklarerar egna prefix, så INKLUSIV c14n skulle dra in de förfädersdeklarationerna i sammanfattningen vid verifieringen — signaturen misslyckas då för varje förlitande part medan den verifieras perfekt här, vilket är den värsta sortens fel att jaga."
   },
   "crypto.standards.wss.coverage": {
-    "en": "08017a57e61d5832",
-    "text": "mock, och den här raden är den att läsa innan man ber om \"WS-Integrity\" eller \"WS-Encryption\" — inget av dem är ett dokument som finns. WSS är en specifikation vars integritetshalva är XML Signature över SOAP Body och Timestamp inuti ett `<wsse:Security>`-huvud och vars konfidentialitetshalva är XML Encryption tillämpad på samma sätt. DEN HÄR TJÄNSTEN GÖR INGET AV DEM. Den signerar inget SOAP-kuvert, krypterar ingen SOAP-body, producerar ingen Timestamp och verifierar ingen signatur på meddelandenivå i en begäran."
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal, och den här raden är den att läsa innan man ber om \"WS-Integrity\" eller \"WS-Encryption\" — inget av dem är ett dokument som finns. WSS är en specifikation vars integritetshalva är XML Signature över SOAP Body och Timestamp inuti ett `<wsse:Security>`-huvud och vars konfidentialitetshalva är XML Encryption tillämpad på samma sätt. DEN HÄR TJÄNSTEN GÖR INGET AV DEM. Den signerar inget SOAP-kuvert, krypterar ingen SOAP-body, producerar ingen Timestamp och verifierar ingen signatur på meddelandenivå i en begäran."
   },
   "crypto.standards.wss.what": {
     "en": "d6dcd66e6476aa91",
@@ -352,8 +352,8 @@
     "text": "CA-nyckeln är hierarkins, vald på /admin/pki (`pki.keyAlgorithm`, RSA 2048 som standard; SPIFFE:s utfärdande CA föredrar EC P-256); signeringsnyckeln är RSA 2048, och TLS-certifikatet är vad `tls.certificateAlgorithms` begär. `spiffe.x509KeyType` avgör nyckeln i varje SVID. SUBJECTALTNAME ÄR DET ENDA STÄLLE DÄR NAMNEN FINNS på TLS-certifikatet — RFC 6125 har sagt att CN ignoreras sedan 2011."
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock: nodes OpenSSL-standardvärden, utom där två inställningar begränsar dem på LDAPS 636 och huvudporten — `tls.minVersion` (TLS 1.2 som standard) och `tls.ciphers` (nodes lista när den är tom). Den här tjänsten väljer ingen kurva; det den i övrigt konfigurerar är vilka socketar som är TLS och vilket certifikat de serverar."
+    "en": "33822c9691deb784",
+    "text": "minimal: nodes OpenSSL-standardvärden, utom där två inställningar begränsar dem på LDAPS 636 och huvudporten — `tls.minVersion` (TLS 1.2 som standard) och `tls.ciphers` (nodes lista när den är tom). Den här tjänsten väljer ingen kurva; det den i övrigt konfigurerar är vilka socketar som är TLS och vilket certifikat de serverar."
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -1564,8 +1564,8 @@
     "text": "SPIFFE SVID-identitet"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "En `kid` namnger en NYCKEL och HÄRLEDS därför från nyckelns eget publika material. Den var en gång en konstant, så två instanser av den här simulatorn publicerade ett namn över två olika nycklar — en verifierare matchar kid exakt, provar den nyckeln och rapporterar en felaktig signatur."
+    "en": "c49939c25a7e8ccc",
+    "text": "En `kid` namnger en NYCKEL och HÄRLEDS därför från nyckelns eget publika material. Den var en gång en konstant, så två instanser av den här tjänsten publicerade ett namn över två olika nycklar — en verifierare matchar kid exakt, provar den nyckeln och rapporterar en felaktig signatur."
   },
   "crypto.hashing.fixed.7.where": {
     "en": "5a3cb59275a8e560",

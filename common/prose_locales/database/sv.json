@@ -100,8 +100,8 @@
     "text": "En rad per backend-process i den här databasen. En backend-process som tillhör en annan roll visas som en rad med sitt tillstånd och sin fråga undanhållna, vilket är vad en roll utan övervakningsbehörighet får se."
   },
   "postgres.probes.locks.what": {
-    "en": "9d8cff275d6437f5",
-    "text": "Lås som hålls och väntas på, per läge. Ett väntande lås i en mock är nästan alltid den här tjänsten som konkurrerar med sig själv över poolen av begärandearbetare."
+    "en": "b7988c9a1fc05949",
+    "text": "Lås som hålls och väntas på, per läge. Ett väntande lås här är nästan alltid den här tjänsten som konkurrerar med sig själv över poolen av begärandearbetare."
   },
   "postgres.probes.bgwriter.what": {
     "en": "169cdf45721570c1",

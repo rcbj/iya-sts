@@ -100,8 +100,8 @@
     "text": "Une ligne par backend sur cette base de données. Un backend appartenant à un autre rôle apparaît comme une ligne dont l’état et la requête sont masqués, ce qui est ce qu’on montre à un rôle sans droit de supervision."
   },
   "postgres.probes.locks.what": {
-    "en": "9d8cff275d6437f5",
-    "text": "Verrous détenus et attendus, par mode. Un verrou en attente sur une maquette est presque toujours ce service en concurrence avec lui-même à travers le pool de workers de requêtes."
+    "en": "b7988c9a1fc05949",
+    "text": "Verrous détenus et attendus, par mode. Un verrou en attente ici est presque toujours ce service en concurrence avec lui-même à travers le pool de workers de requêtes."
   },
   "postgres.probes.bgwriter.what": {
     "en": "169cdf45721570c1",

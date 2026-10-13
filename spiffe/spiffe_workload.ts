@@ -1271,7 +1271,8 @@ const WIT_MESSAGE =
   'Workload Identity Token\'s own format is not settled in a specification ' +
   'this service could implement against. Minting something JWS-shaped and ' +
   'calling it a WIT-SVID would be inventing a credential format, which is ' +
-  'the one thing a mock must not do: code written against the invention ' +
+  'the one thing this service must not do: code written against the ' +
+  'invention ' +
   'would work here and interoperate with nothing. X509-SVIDs and JWT-SVIDs ' +
   'are fully implemented.';
 

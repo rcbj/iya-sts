@@ -720,8 +720,8 @@
     "text": "只使用註冊在應用程式自身項目上的地址——而觀察絕不會新增地址。仍標記為觀察到的地址「不算」已註冊：那是開發模式放上去的，在營運者於應用程式頁面或以 POST /admin-api/applications/confirm-address 確認之前會被拒絕（STS-REG-0049）。在開始標記觀察之前記錄的地址沒有標記，在切換領域之前仍需檢閱。主控台與入口網站自己的回呼不會從請求的 Host 標頭學得（請設定 global.publicBaseUrl），而不符合主機的 WebAuthn RP ID 會拒絕該儀式，而不是退回使用主機。"
   },
   "mode.requirements.demo-endpoints.what": {
-    "en": "b3d5164c887fa785",
-    "text": "示範、模擬與測試控制端點存在"
+    "en": "47d4efed79e39044",
+    "text": "示範與測試控制端點存在"
   },
   "mode.requirements.demo-endpoints.development": {
     "en": "533d4ffebabb9b7b",

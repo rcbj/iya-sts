@@ -100,8 +100,8 @@
     "text": "Una fila por backend en esta base de datos. Un backend que pertenece a otro rol aparece como una fila con su estado y su consulta ocultos, que es lo que se muestra a un rol sin permisos de supervisión."
   },
   "postgres.probes.locks.what": {
-    "en": "9d8cff275d6437f5",
-    "text": "Bloqueos mantenidos y esperados, por modo. Un bloqueo en espera en un simulador es casi siempre este servicio compitiendo consigo mismo a través del grupo de workers de solicitudes."
+    "en": "b7988c9a1fc05949",
+    "text": "Bloqueos mantenidos y esperados, por modo. Un bloqueo en espera aquí es casi siempre este servicio compitiendo consigo mismo a través del grupo de workers de solicitudes."
   },
   "postgres.probes.bgwriter.what": {
     "en": "169cdf45721570c1",

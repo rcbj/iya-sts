@@ -4,7 +4,7 @@ title: OpenID4VP
 
 # OpenID for Verifiable Presentations, wallet sign-in and DIDs
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, `/oid4vp/result/…`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`, `/oid4vp/result/…`, `/did/generate` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts is a **Verifier** for
 [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
@@ -26,7 +26,7 @@ DID and settings.
 There are two ways into the Verifier, and they differ in what a presentation
 that verifies leads to.
 
-* **The bar door** at `/oid4vp/verifier` is a mock relying party's web page. A
+* **The bar door** at `/oid4vp/verifier` is a demonstration relying party's web page. A
   presentation there is verified, the verdict is shown, and nobody is signed
   in, because nobody there asked to be. The holder is still recorded on
   `/admin/users`, as every accepted credential is.

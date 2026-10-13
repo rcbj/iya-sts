@@ -1,6 +1,6 @@
 {
   "doesNot": "does not",
-  "familiesHeading": "The identity services this mock advertises",
+  "familiesHeading": "The identity services this service advertises",
   "familiesLead": "One row per protocol family on",
   "serviceMetadata": "Service metadata",
   "familiesLeadAfter": ", with what each does with cryptography. The four verbs are kept apart on purpose: signing is minting something a relying party will believe, verifying is a decision that can be got wrong, encrypting uses somebody else's key, and decrypting means holding a private key a caller can aim ciphertext at. Those are four different exposures and this service does a different amount of each.",
@@ -20,7 +20,7 @@
   "envelopes": "Envelopes",
   "doesNotDo": "<strong>What it deliberately does not do.</strong>",
   "keysHeading": "The key material this process holds",
-  "keysLead": "Every key here is generated at start and none of them is persisted, in any persistence mode. That is deliberate and two things depend on it: the <code>kid</code> is derived from the key material, so two instances of this mock cannot publish one name over two different keys, and every document that carries or describes a key is served <code>Cache-Control: no-store</code>. <strong>The signing keys are per trust realm; the TLS certificate and the SPIFFE authorities are not.</strong> This shows realm <code>{realm}</code>.",
+  "keysLead": "Every key here is generated at start and none of them is persisted, in any persistence mode. That is deliberate and two things depend on it: the <code>kid</code> is derived from the key material, so two instances of this service cannot publish one name over two different keys, and every document that carries or describes a key is served <code>Cache-Control: no-store</code>. <strong>The signing keys are per trust realm; the TLS certificate and the SPIFFE authorities are not.</strong> This shows realm <code>{realm}</code>.",
   "scopeRealm": "this realm",
   "scopeProcess": "the process",
   "thKey": "Key",
@@ -63,7 +63,7 @@
   "thDigest": "Digest",
   "thWhat": "What",
   "weakOnes": "The weak ones, and why they are here",
-  "weakNote": "<strong>None of these is an oversight and none is a recommendation.</strong> This service exists to exercise other people's clients, and a mock that offered only the safe choice could not be used to show what the unsafe one does. Each row says which installed base asks for it.",
+  "weakNote": "<strong>None of these is an oversight and none is a recommendation.</strong> This service exists to exercise other people's clients, and a service that offered only the safe choice could not be used to show what the unsafe one does. Each row says which installed base asks for it.",
   "thWhy": "Why",
   "yes": "yes",
   "no": "no",
@@ -143,7 +143,7 @@
   "drafts": "Drafts implemented",
   "whatRemains": "What remains",
   "standardsHeading": "The higher-level standards",
-  "standardsLead": "Knowing that this service signs with RSA-SHA256 does not say whether that signature is a JWS, an enveloped XMLDSIG, a detached signature over a query string or a <code>&lt;wsse:Security&gt;</code> header — four different documents with four different failure modes. This is that layer. <strong>Every coverage note starts <code>full</code>, <code>partial</code> or <code>mock</code></strong> and says what is missing, which is the rule",
+  "standardsLead": "Knowing that this service signs with RSA-SHA256 does not say whether that signature is a JWS, an enveloped XMLDSIG, a detached signature over a query string or a <code>&lt;wsse:Security&gt;</code> header — four different documents with four different failure modes. This is that layer. <strong>Every coverage note starts <code>full</code>, <code>partial</code> or <code>minimal</code></strong> and says what is missing, which is the rule",
   "standardsLeadAfter": "follows and which is worth more here: a page about cryptography that overstates what it implements is actively dangerous to somebody using it to learn.",
   "specifications": "Specifications",
   "coverage": "Coverage",
@@ -243,5 +243,5 @@
   "passwordHint": "required for PKCS#12; encrypts the private half of the rest",
   "downloadKey": "Download",
   "publicOnly": "<strong>The PUBLIC half only.</strong> RFC 9964 defines the public members of an AKP key and the private seed handling is still moving, so there is no interoperable private encoding to hand over. A file no library reads would be worse than saying so.",
-  "passwordNote": "<strong>A password is REQUIRED for PKCS#12 and optional for the other three</strong>, where it encrypts the private half (PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK). Leave it empty and the private key comes out in the clear, which is usually what you want from a mock and is never what you want anywhere else."
+  "passwordNote": "<strong>A password is REQUIRED for PKCS#12 and optional for the other three</strong>, where it encrypts the private half (PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK). Leave it empty and the private key comes out in the clear, which is usually what you want in development and is never what you want anywhere else."
 }

@@ -228,8 +228,8 @@
     "text": "LE CERTIFICAT DE SIGNATURE DU PARTENAIRE, en DER base64 — la même écriture que porte un ds:X509Certificate et la même qu’utilise samlSigningCertificate sur une entrée d’application ; un certificat a donc une seule écriture dans tout ce service. C’est avec lui que chaque assertion SAML et WS-Federation est vérifiée, et c’est l’unique attribut qui sépare ce service d’un point de terminaison auquel n’importe qui pourrait affirmer n’importe quoi."
   },
   "fed.schema.attributes.fedClientId.what": {
-    "en": "35f9f1eab89afb31",
-    "text": "LE client_id DE CE SERVICE CHEZ LE PARTENAIRE. Le nôtre, émis par lui — à ne pas confondre avec un oauthClientId sur une entrée d’application, qui est ici l’identifiant d’un client fictif."
+    "en": "d1b0b114250b58b6",
+    "text": "LE client_id DE CE SERVICE CHEZ LE PARTENAIRE. Le nôtre, émis par lui — à ne pas confondre avec un oauthClientId sur une entrée d’application, qui est ici l’identifiant d’un client."
   },
   "fed.schema.attributes.fedClientSecret.what": {
     "en": "627419de92206a62",

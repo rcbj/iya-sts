@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — diploma digital",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — diploma digital",
+  "issuer.heading": "Example University",
   "issuer.intro": "Enhorabuena por su graduación. Su diploma está disponible como credencial digital (<code>{configuration}</code>) que puede guardar en su billetera.",
   "issuer.request": "Solicitar su diploma digital",
   "issuer.requestByReference": "Solicitarlo (oferta por referencia)",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "Mostrar un código QR (la emisión tarda un poco)",
   "issuer.meta": "Esta es la página web del emisor de credenciales del apéndice H de OID4VCI. Los dos primeros enlaces crean una oferta de credencial y le envían a su billetera en <code>{wallet}</code> (H.1, mismo dispositivo). Los otros dos entregan la oferta mediante un código QR y un código de transacción — H.2, y H.3 cuando el emisor necesita tiempo para producir la credencial. El emisor es <code>{issuer}</code>.",
   "offer.starting": "Preparando su oferta de credencial…",
-  "offer.title": "Mock University — escanee para recibir su credencial",
+  "offer.title": "Example University — escanee para recibir su credencial",
   "offer.heading": "Escanee esto con su billetera",
   "offer.ready": "Su diploma digital está listo para reclamarse.",
   "offer.readyDeferred": "Su diploma digital está listo para reclamarse, aunque emitirlo nos llevará un poco de tiempo cuando lo pida.",

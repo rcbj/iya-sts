@@ -1496,16 +1496,16 @@
     "text": "模式"
   },
   "global.mode|description": {
-    "en": "abe4dc2a95f944df",
-    "text": "本服務是什麼。`development` 就是 2026-09-06 之前每個版本都是的模擬服務：任何協定都不檢查密碼，未知的使用者、應用程式、服務主體或授權伺服器在第一次被指名時就會建立，OAuth 用戶端不需要秘密，而且——在 adminApi.authRequired 關閉時——/admin-api 是開放的，讓測試能驅動它，也讓不持有任何角色的人能重新進入。`product` 執行「相同」的協定實作，但移除了寬鬆之處：出示的認證會與該人目錄項目上雜湊後的 `userPassword` 比對驗證，每個被參照的物件都必須事先建立，每個宣告了機密方法的 OAuth 2.0 與 OpenID Connect 應用程式都必須以該方法驗證（公開用戶端則改受 RFC 9700 約束），每個僅限開發的設定都會被忽略，而在 adminApi.authRequired 關閉時，/admin-api 要求與主控台相同的登入與角色（開啟時——兩種模式的預設——則要求存取權杖）。它可依信任領域設定，因此同一程序可同時提供兩者。GET /admin/mode 列出每項要求，並說明每種模式下各給予什麼答案。\n\n它可以在執行時變更，而變更時順序很重要：在 adminApi.authRequired 關閉時，/admin-api 一直到此值被設為 `product` 的那一刻都是開放的，因此請「先」佈建認證，再切換。在沒有任何人持有認證時切換的領域將無從進入——啟動時的初始化只在啟動時執行，而不在變更時執行，這是刻意的，因為每次設定變動就產生一個管理員的服務，會是一個擁有沒人要求之管理員的服務。"
+    "en": "72d5f41058477223",
+    "text": "本服務是什麼。`development` 就是 2026-09-06 之前每個版本的樣子：任何協定都不檢查密碼，未知的使用者、應用程式、服務主體或授權伺服器在第一次被指名時就會建立，OAuth 用戶端不需要秘密，而且——在 adminApi.authRequired 關閉時——/admin-api 是開放的，讓測試能驅動它，也讓不持有任何角色的人能重新進入。`product` 執行「相同」的協定實作，但移除了寬鬆之處：出示的認證會與該人目錄項目上雜湊後的 `userPassword` 比對驗證，每個被參照的物件都必須事先建立，每個宣告了機密方法的 OAuth 2.0 與 OpenID Connect 應用程式都必須以該方法驗證（公開用戶端則改受 RFC 9700 約束），每個僅限開發的設定都會被忽略，而在 adminApi.authRequired 關閉時，/admin-api 要求與主控台相同的登入與角色（開啟時——兩種模式的預設——則要求存取權杖）。它可依信任領域設定，因此同一程序可同時提供兩者。GET /admin/mode 列出每項要求，並說明每種模式下各給予什麼答案。\n\n它可以在執行時變更，而變更時順序很重要：在 adminApi.authRequired 關閉時，/admin-api 一直到此值被設為 `product` 的那一刻都是開放的，因此請「先」佈建認證，再切換。在沒有任何人持有認證時切換的領域將無從進入——啟動時的初始化只在啟動時執行，而不在變更時執行，這是刻意的，因為每次設定變動就產生一個管理員的服務，會是一個擁有沒人要求之管理員的服務。"
   },
   "global.logLevel|label": {
     "en": "886e60232b66c841",
     "text": "記錄層級"
   },
   "global.logLevel|description": {
-    "en": "062f644ae06c5e38",
-    "text": "對一個以展示自己做了什麼為職責的模擬服務而言，debug 是有用的層級：每次端點呼叫，以及每個權杖與斷言在簽署前後的內容。在此變更會在寫入下一行時生效，「但」八個隨附的 krb5_* 編解碼模組除外：它們是上層專案 common/krb5/* 檔案逐位元組相同的副本，無法加上一行來註冊其記錄器，因此會保持程序啟動時的層級。那是 ASN.1 與密碼學的追蹤，而不是本服務對其所作所為的記述。"
+    "en": "6172a46d84f39b6c",
+    "text": "對一個以展示自己做了什麼為職責的服務而言，debug 是有用的層級：每次端點呼叫，以及每個權杖與斷言在簽署前後的內容。在此變更會在寫入下一行時生效，「但」八個隨附的 krb5_* 編解碼模組除外：它們是上層專案 common/krb5/* 檔案逐位元組相同的副本，無法加上一行來註冊其記錄器，因此會保持程序啟動時的層級。那是 ASN.1 與密碼學的追蹤，而不是本服務對其所作所為的記述。"
   },
   "workers.startTimeoutMs|label": {
     "en": "d851097c61c3d64c",
@@ -4012,8 +4012,8 @@
     "text": "聯合使用者名稱的前置詞"
   },
   "federation.usernamePrefix|description": {
-    "en": "3783b4bfff228c17",
-    "text": "加在外部身分識別提供者所提供之每個使用者名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把模擬服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定使用者名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
+    "en": "cd17a5b59a5cf957",
+    "text": "加在外部身分識別提供者所提供之每個使用者名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把本服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定使用者名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4044,8 +4044,8 @@
     "text": "允許以 http:// 連線到夥伴（僅限開發）"
   },
   "federation.outboundAllowHttp|description": {
-    "en": "e9b0c89c7f07455a",
-    "text": "預設為關閉，這是此服務比一般模擬服務更嚴格的唯一一處：這些要求傳送的是用戶端密碼與授權碼，送往別人的服務。開啟時，在開發模式下接受 http:// 端點，這是與 localhost 上另一個模擬服務聯合所需要的，且每個這類要求都會被記錄。在產品模式下，無論此處如何設定，純 http 都會被拒絕（STS-FED-0112）。"
+    "en": "e815dfe7877e359e",
+    "text": "預設為關閉，這是此服務比開發模式通常更嚴格的唯一一處：這些要求傳送的是用戶端密碼與授權碼，送往別人的服務。開啟時，在開發模式下接受 http:// 端點，這是與 localhost 上另一個執行個體聯合所需要的，且每個這類要求都會被記錄。在產品模式下，無論此處如何設定，純 http 都會被拒絕（STS-FED-0112）。"
   },
   "federation.outboundSkipTlsVerification|label": {
     "en": "85253ab85556bf34",
@@ -4172,8 +4172,8 @@
     "text": "中繼資料 OrganizationName"
   },
   "saml.organizationName|description": {
-    "en": "40b17e36101b7803",
-    "text": "/saml2/metadata 與 /saml11/metadata 中的 <md:OrganizationName>。空白會省略整個 <md:Organization> 元素，兩種模式皆然，因為中繼資料結構描述要求名稱、顯示名稱與 URL 同時存在，而沒有名稱的組織就不成其為組織。產品部署會設定自己的值或將其清空；預設值為產品名稱 `sts`（在 2026-09-12 之前為 `mock-sts`）。"
+    "en": "86bfb411b4b415d9",
+    "text": "/saml2/metadata 與 /saml11/metadata 中的 <md:OrganizationName>。空白會省略整個 <md:Organization> 元素，兩種模式皆然，因為中繼資料結構描述要求名稱、顯示名稱與 URL 同時存在，而沒有名稱的組織就不成其為組織。產品部署會設定自己的值或將其清空；預設值為產品名稱 `sts`。"
   },
   "saml.organizationDisplayName|label": {
     "en": "88d52def3fcb1b6a",
@@ -4236,16 +4236,16 @@
     "text": "加密斷言"
   },
   "saml2.encryptAssertion|description": {
-    "en": "c0326691fb13cf15",
-    "text": "在 Response 內以 <saml:EncryptedAssertion> 包住 <saml:Assertion>。預設為關閉，因為它需要「收件者憑證」，而未提供憑證給此服務的服務提供者無法讀取傳回的內容。找不到憑證時，斷言會以「明文」傳送，原因會被記錄並顯示在 /admin/saml2 上——拒絕簽發會讓模擬服務停止回應，而一邊在頁面上寫著「已加密」一邊默默傳送明文，會比兩者都更糟。憑證依序取自其項目上的 samlEncryptionCertificate（採用其中繼資料時會寫入），然後是其註冊的 samlSigningCertificate，然後——僅限開發模式——從已簽署之 AuthnRequest 上「觀察到」的憑證，因此會簽署其要求的服務提供者在此不需要任何設定；產品模式只在營運者確認後才會對觀察到的憑證加密。斷言是「先簽署」再加密，這是每個服務提供者預期的順序：簽章位於密文內部，是解密後保留下來的部分。"
+    "en": "50d480ab245c0676",
+    "text": "在 Response 內以 <saml:EncryptedAssertion> 包住 <saml:Assertion>。預設為關閉，因為它需要「收件者憑證」，而未提供憑證給此服務的服務提供者無法讀取傳回的內容。找不到憑證時，斷言會以「明文」傳送，原因會被記錄並顯示在 /admin/saml2 上——拒絕簽發會讓服務停止回應，而一邊在頁面上寫著「已加密」一邊默默傳送明文，會比兩者都更糟。憑證依序取自其項目上的 samlEncryptionCertificate（採用其中繼資料時會寫入），然後是其註冊的 samlSigningCertificate，然後——僅限開發模式——從已簽署之 AuthnRequest 上「觀察到」的憑證，因此會簽署其要求的服務提供者在此不需要任何設定；產品模式只在營運者確認後才會對觀察到的憑證加密。斷言是「先簽署」再加密，這是每個服務提供者預期的順序：簽章位於密文內部，是解密後保留下來的部分。"
   },
   "saml2.encryptionAlgorithm|label": {
     "en": "5cb576de8c785eed",
     "text": "加密演算法"
   },
   "saml2.encryptionAlgorithm|description": {
-    "en": "3d74e433ce34b0c5",
-    "text": "每個加密元素所用的區塊加密演算法。兩個 GCM 演算法是「經過驗證的」：被竄改的密文會通不過其標記檢查而被拒絕。兩個 CBC 演算法「不是」，這不是此服務的缺陷——這是 CBC 本身的性質，真實的服務提供者要求它，而只提供安全選項的模擬服務將無法用來展示不安全選項的行為。此服務在「讀取」時對此的處理是剖析結果，並拒絕任何不是格式正確之 XML 的內容，這能攔下一般的損毀，但並非完整性保護。"
+    "en": "4427c176840cdf46",
+    "text": "每個加密元素所用的區塊加密演算法。兩個 GCM 演算法是「經過驗證的」：被竄改的密文會通不過其標記檢查而被拒絕。兩個 CBC 演算法「不是」，這不是此服務的缺陷——這是 CBC 本身的性質，真實的服務提供者要求它，而只提供安全選項的服務將無法用來展示不安全選項的行為。此服務在「讀取」時對此的處理是剖析結果，並拒絕任何不是格式正確之 XML 的內容，這能攔下一般的損毀，但並非完整性保護。"
   },
   "saml2.keyTransportAlgorithm|label": {
     "en": "5a90e136cc72666e",
@@ -4924,8 +4924,8 @@
     "text": "簽署認證所用的演算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 與 /did/generate 的 did:web 認證所使用的演算法。中繼資料的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，模擬 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
+    "en": "73a0a13f9f08d4aa",
+    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 與 /did/generate 的 did:web 認證所使用的演算法。中繼資料的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，本服務的 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5020,8 +5020,8 @@
     "text": "驗證器用戶端 ID"
   },
   "oid4vp.clientId|description": {
-    "en": "6052a4d1b56e8787",
-    "text": "模擬驗證器在其 Authorization Request 中提出的 client_id，也是 Key Binding JWT 必須指名的 `aud`。"
+    "en": "fad43765b51b8297",
+    "text": "本服務的驗證器在其 Authorization Request 中提出的 client_id，也是 Key Binding JWT 必須指名的 `aud`。"
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
@@ -5036,8 +5036,8 @@
     "text": "Request Object 憑證標頭"
   },
   "oid4vp.requestObjectCertificateHeader|description": {
-    "en": "7bae5787a6f84891",
-    "text": "模擬驗證器簽署的「Request Object」（RFC 9101，以參照傳遞的要求）是否指出簽署它之金鑰的憑證鏈。`x5u`（預設值）是此服務上該憑證鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張憑證的 CRL 發布點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，位址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得憑證的金鑰會加密任何內容。可依領域設定。"
+    "en": "9bbac75884284a52",
+    "text": "驗證器簽署的「Request Object」（RFC 9101，以參照傳遞的要求）是否指出簽署它之金鑰的憑證鏈。`x5u`（預設值）是此服務上該憑證鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的憑證鏈，葉憑證在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張憑證的 CRL 發布點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，位址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得憑證的金鑰會加密任何內容。可依領域設定。"
   },
   "oid4vp.kbMaxAgeS|label": {
     "en": "202136566ac3cacb",
@@ -5324,8 +5324,8 @@
     "text": "要求的宣告"
   },
   "oid4vp.claims|description": {
-    "en": "054137dd98eeec73",
-    "text": "模擬驗證器的「起始」要求，而且——這是值得知道的部分——是其「重設」所回到的目標。它不是即時清單：即時清單由 /admin/vc-verifier-config 擁有，並在啟動時複製此值。因此在這裡變更它，改變的是下一次重設產生的內容，而線路上的要求要等按下重設（或呼叫 POST /admin-api/verifier-request/reset）後才會改變。它刻意作為重設目標而非即時值：設定了此項的部署應從重設取回「自己的」清單，而不是目錄的預設值。要求此簽發者不會產生的宣告是合理的，這正是觸及「未滿足」路徑的方式。"
+    "en": "4591b11de4d5e5c7",
+    "text": "驗證器的「起始」要求，而且——這是值得知道的部分——是其「重設」所回到的目標。它不是即時清單：即時清單由 /admin/vc-verifier-config 擁有，並在啟動時複製此值。因此在這裡變更它，改變的是下一次重設產生的內容，而線路上的要求要等按下重設（或呼叫 POST /admin-api/verifier-request/reset）後才會改變。它刻意作為重設目標而非即時值：設定了此項的部署應從重設取回「自己的」清單，而不是目錄的預設值。要求此簽發者不會產生的宣告是合理的，這正是觸及「未滿足」路徑的方式。"
   },
   "oid4vp.presentationRequestTtlS|label": {
     "en": "1686a3d4983e6c6b",
@@ -5372,8 +5372,8 @@
     "text": "其他受信任的憑證簽發者（PEM）"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "b23af7aea67fb69a",
-    "text": "串接的 PEM 憑證，模擬驗證器除了此領域自己的簽發者「之外」，也接受以其金鑰所做的 SD-JWT VC 或 jwt_vc_json 憑證簽章。留空（預設值）只信任此簽發者，這是它一向的行為。憑證被當作「金鑰」使用：不建構憑證鏈，但在驗證憑證時會查詢其撤銷狀態（pki.revocationCheck，自 2026-09-12 起）。"
+    "en": "60a2c73b8c2c6aec",
+    "text": "串接的 PEM 憑證，本服務的驗證器除了此領域自己的簽發者「之外」，也接受以其金鑰所做的 SD-JWT VC 或 jwt_vc_json 憑證簽章。留空（預設值）只信任此簽發者，這是它一向的行為。憑證被當作「金鑰」使用：不建構憑證鏈，但在驗證憑證時會查詢其撤銷狀態（pki.revocationCheck，自 2026-09-12 起）。"
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5756,8 +5756,8 @@
     "text": "自動建立的服務密碼"
   },
   "krb5.autoServicePassword|description": {
-    "en": "71fd54a4160f0e2a",
-    "text": "每個隨需建立之服務共用的一個密碼，基於與使用者密碼相同的理由公開：它讓讀者能解密此模擬服務所簽發的服務票證，並讀取其中的 PAC。「已設定」的服務帳戶則保有各自獨立的密碼。"
+    "en": "0715018c29ee708a",
+    "text": "每個隨需建立之服務共用的一個密碼，基於與使用者密碼相同的理由公開：它讓讀者能解密本服務所簽發的服務票證，並讀取其中的 PAC。「已設定」的服務帳戶則保有各自獨立的密碼。"
   },
   "krb5.autoServicePassword|restartReason": {
     "en": "c8e4e57160c0d53d",
@@ -5928,8 +5928,8 @@
     "text": "傳送 s2kparams"
   },
   "krb5.s2kparams|description": {
-    "en": "f4cde78e622f2547",
-    "text": "PA-ETYPE-INFO2 是否攜帶 s2kparams。Windows Server 會省略它，而此模擬服務曾傳送它，這是擷取到的真實 DC 交換中發現的唯一差異；因此預設為 omit，並保留 send，以便演練會讀取它的用戶端。"
+    "en": "8377aa5576df5515",
+    "text": "PA-ETYPE-INFO2 是否攜帶 s2kparams。Windows Server 會省略它，而本服務曾傳送它，這是擷取到的真實 DC 交換中發現的唯一差異；因此預設為 omit，並保留 send，以便演練會讀取它的用戶端。"
   },
   "ldap.port|label": {
     "en": "94902c0432b688e5",
@@ -6576,8 +6576,8 @@
     "text": "推送端點允許清單"
   },
   "ssf.pushAllowedHosts|description": {
-    "en": "24d1d11741ad76ed",
-    "text": "此服務會推送至的主機名稱。「留空表示任何主機」，這是預設值，也是對外路徑中唯一刻意的寬鬆之處——這讓它能作為模擬服務使用。可被任何它不信任之人連到的部署會設定此清單，而其他每個主機都會在該串流自己的記錄中被「依名稱」拒絕。刻意採用主機而非 URL：接收端合理地會移動其端點路徑，但不會合理地移到另一部主機。"
+    "en": "fc66434cacb67fdc",
+    "text": "此服務會推送至的主機名稱。「留空表示任何主機」，這是預設值，也是對外路徑中唯一刻意的寬鬆之處——這讓它能用於測試。可被任何它不信任之人連到的部署會設定此清單，而其他每個主機都會在該串流自己的記錄中被「依名稱」拒絕。刻意採用主機而非 URL：接收端合理地會移動其端點路徑，但不會合理地移到另一部主機。"
   },
   "ssf.pushAllowHttp|label": {
     "en": "9954d6ecb250aab1",
@@ -6708,8 +6708,8 @@
     "text": "每個接收端的串流數"
   },
   "ssf.maxStreams|description": {
-    "en": "175775f7e47974e8",
-    "text": "一個「接收端」——一個已驗證的擁有者——在一個信任領域中可持有多少串流。在 2026-09-22（#144）之前它是以領域計算，這讓一個接收端能用光其他所有接收端的配額。超過時的建立會被拒絕並「指出此設定」，這正是在模擬服務上設定上限的意義：這裡的每個上限都是接收端原本無法演練的可觸及負面情境。此服務自己的兩個接收端串流不計入。"
+    "en": "06c569e74cb378cd",
+    "text": "一個「接收端」——一個已驗證的擁有者——在一個信任領域中可持有多少串流。在 2026-09-22（#144）之前它是以領域計算，這讓一個接收端能用光其他所有接收端的配額。超過時的建立會被拒絕並「指出此設定」，這正是在這裡設定上限的意義：這裡的每個上限都是接收端原本無法演練的可觸及負面情境。此服務自己的兩個接收端串流不計入。"
   },
   "ssf.inactivityTimeoutS|label": {
     "en": "b6bd6443319327f2",
@@ -7644,8 +7644,8 @@
     "text": "信任網域"
   },
   "spiffe.trustDomain|description": {
-    "en": "695de04a8f35c484",
-    "text": "此服務作為簽發授權單位的信任網域：它所產生的每個 SPIFFE ID 的授權部分，因此預設為 spiffe://example.org/…。必須為「小寫」，且只能包含字母、數字、點、連字號與底線——大寫的信任網域不是有效的 SPIFFE ID，也不是小寫網域的另一種寫法。在此建立的領域會以「其網域」作為信任網域——iyasec.io——就像它會獲得自己的 entityID 一樣，因為共用一個信任網域的兩個領域，就是宣稱同一名稱的兩個簽發授權單位，雙方產生的每個 SVID 便都有歧義。在領域上設定此值即可直接指定該領域的信任網域；刻意與另一領域共用信任網域的領域，正是值得能在模擬環境中建構的情境。"
+    "en": "a87c95b882ee7e67",
+    "text": "此服務作為簽發授權單位的信任網域：它所產生的每個 SPIFFE ID 的授權部分，因此預設為 spiffe://example.org/…。必須為「小寫」，且只能包含字母、數字、點、連字號與底線——大寫的信任網域不是有效的 SPIFFE ID，也不是小寫網域的另一種寫法。在此建立的領域會以「其網域」作為信任網域——iyasec.io——就像它會獲得自己的 entityID 一樣，因為共用一個信任網域的兩個領域，就是宣稱同一名稱的兩個簽發授權單位，雙方產生的每個 SVID 便都有歧義。在領域上設定此值即可直接指定該領域的信任網域；刻意與另一領域共用信任網域的領域，正是值得能為測試而建構的情境。"
   },
   "spiffe.trustDomain|restartReason": {
     "en": "ebdc38f401978d5b",
@@ -8436,8 +8436,8 @@
     "text": "初次見到時自動建立登錄項目"
   },
   "spiffe.autoCreateEntries|description": {
-    "en": "7944288e3f3984d1",
-    "text": "這是讓此服務成為模擬服務的設定。開啟時，向 Workload API 請求 SVID 但不符合任何登錄項目的工作負載，會為其建立一個項目並照樣簽發 SVID——不證明、無選擇器、不檢查任何東西——這與此處其他每個協定族的寬鬆態度相同。關閉時，未登錄的工作負載會以 PERMISSION_DENIED 拒絕，這是 Workload API 的規定，也是真正的 SPIRE 代理程式的做法，而且是演練用戶端「我沒有身分」路徑的「唯一」方式。兩種回應都值得擁有；兩者都不是安全的那一種。"
+    "en": "ff8fc38721bf6650",
+    "text": "這是讓 SPIFFE 變得寬鬆的設定。開啟時，向 Workload API 請求 SVID 但不符合任何登錄項目的工作負載，會為其建立一個項目並照樣簽發 SVID——不證明、無選擇器、不檢查任何東西——這與此處其他每個協定族的寬鬆態度相同。關閉時，未登錄的工作負載會以 PERMISSION_DENIED 拒絕，這是 Workload API 的規定，也是真正的 SPIRE 代理程式的做法，而且是演練用戶端「我沒有身分」路徑的「唯一」方式。兩種回應都值得擁有；兩者都不是安全的那一種。"
   },
   "spiffe.requireSecurityHeader|label": {
     "en": "25778a0e30ceae29",

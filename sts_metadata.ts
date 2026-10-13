@@ -215,13 +215,13 @@ interface Protocol {
 // The specifications this service implements, and how far.
 //
 // `coverage` is the honest part: "full" means a client conforming to that
-// document works against this mock; "partial" says what is missing; "mock"
-// means the shape is right and the enforcement is deliberately absent, which is
-// what a test double is for.
+// document works against this service; "partial" says what is missing;
+// "minimal" means the shape is right and the enforcement is deliberately
+// absent, which is what a test double is for.
 // ---------------------------------------------------------------------------
 /**
  * The specifications this service implements, each with its coverage (`full`,
- * `partial` or `mock`) and what is missing.
+ * `partial` or `minimal`) and what is missing.
  */
 const SPECS: Spec[] = [
   // The one specification on this page that is not a protocol this service
@@ -605,8 +605,9 @@ const SPECS: Spec[] = [
     where: 'Microsoft Open Specifications',
     url:
       'https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kkdcp/',
-    coverage: 'mock: POST /KdcProxy accepts a KDC-PROXY-MESSAGE and relays ' +
-              'it to the KDC in this process. Exists because a browser ' +
+    coverage: 'minimal: POST /KdcProxy accepts a KDC-PROXY-MESSAGE and ' +
+              'relays it to the KDC in this process. Exists because a ' +
+              'browser ' +
               'cannot open a raw socket to port 88.' },
   // --- SCIM 2.0 ------------------------------------------------------------
   //
@@ -850,8 +851,8 @@ const SPECS: Spec[] = [
               'a receiver that could not process an event will not process ' +
               'it next time and redelivering would poll-loop. NOT covered: ' +
               'long polling. returnImmediately is honoured as "yes" always, ' +
-              'which the specification permits and which keeps a mock from ' +
-              'holding a socket open to demonstrate nothing.' },
+              'which the specification permits and which keeps this service ' +
+              'from holding a socket open to demonstrate nothing.' },
 
   // --- GNAP (2026-09-12): the grant negotiation protocol, its resource
   //     server connections, and the two HTTP documents its preferred proof
@@ -950,7 +951,7 @@ const SPECS: Spec[] = [
                          'Requirements (RFC 7642)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc7642',
-    coverage: 'mock: this is the requirements-and-use-cases document and ' +
+    coverage: 'minimal: this is the requirements-and-use-cases document and ' +
               'defines no wire format, so there is nothing in it to ' +
               'implement. It is listed because it is what says what SCIM is ' +
               'FOR, and because the use case this service serves — an ' +
@@ -1132,8 +1133,9 @@ const SPECS: Spec[] = [
   { id: 'rfc4512', name: 'LDAP v3: directory information models (RFC 4512)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4512',
-    coverage: 'mock: the tree, the root DSE and namingContexts are real; THE ' +
-              'SCHEMA IS NOT THERE AT ALL. No objectClass is enforced, no ' +
+    coverage: 'minimal: the tree, the root DSE and namingContexts are ' +
+              'real; THE SCHEMA IS NOT THERE AT ALL. No objectClass is ' +
+              'enforced, no ' +
               'attribute is checked against a syntax or a matching rule, and ' +
               'there is no subschema subentry — so an entry may carry any ' +
               'attribute a client cares to send, which a real directory ' +
@@ -1200,7 +1202,7 @@ const SPECS: Spec[] = [
   { id: 'rfc4519', name: 'LDAP v3: schema for user applications (RFC 4519)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4519',
-    coverage: 'mock: this document is where the NAMES this directory uses ' +
+    coverage: 'minimal: this document is where the NAMES this directory uses ' +
               'come from — cn, sn, uid, mail, givenName, member, ' +
               'uniqueMember, and the groupOfNames and organizationalUnit ' +
               'classes the seeded tree is built out of. NOTHING IN IT IS ' +
@@ -1346,7 +1348,7 @@ const SPECS: Spec[] = [
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
     // Both modes' truth (#543 round 2): "No password is ever checked" was
     // unqualified, and product verifies it.
-    coverage: 'mock in development mode: a UsernameToken is accepted when ' +
+    coverage: 'minimal in development mode: a UsernameToken is accepted when ' +
               'both members are present and no password is checked, except ' +
               'that the literal "invalid" is refused so a negative test can ' +
               'force a failure. In product mode the password is verified — ' +
@@ -1784,8 +1786,9 @@ const SPECS: Spec[] = [
               'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; a resource ' +
               'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge are ' +
               'recorded for the resource server that is the application to ' +
-              'enforce. Mock: this service\'s sign-in produces three context classes; ' +
-              'any other acr value is met only by a federated sign-in ' +
+              'enforce. Limitation: this service\'s sign-in produces three ' +
+              'context classes; any other acr value is met only by a ' +
+              'federated sign-in ' +
               'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
   { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
       '(JAR)',
@@ -1817,7 +1820,7 @@ const SPECS: Spec[] = [
               'credential to the holder key whose possession was proved.' },
   { id: 'rfc9449', name: 'RFC 9449 — DPoP (Demonstrating Proof of Possession)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9449',
-    coverage: 'full for a mock: all twelve section 4.3 proof checks, cnf.jkt ' +
+    coverage: 'full: all twelve section 4.3 proof checks, cnf.jkt ' +
               'on access AND refresh tokens, token_type DPoP, the dpop_jkt ' +
               'authorization request parameter (section 10), jti replay ' +
               'detection, and the server-supplied nonce handshake in both ' +
@@ -2198,7 +2201,8 @@ const SPECS: Spec[] = [
     coverage: 'partial, AND OFF BY DEFAULT — it is a MODE (oauth2.rfc9700) ' +
               'rather than how this service behaves, because a client is ' +
               'exercised by both answers and every existing caller of this ' +
-              'mock uses an unregistered redirect_uri, no PKCE, the implicit ' +
+              'service uses an unregistered redirect_uri, no PKCE, the ' +
+              'implicit ' +
               'grant or the password grant. Turned on it covers the whole of ' +
               'section 2. 2.1: exact-string redirect URI matching with RFC ' +
               '8252\'s loopback port exception, no open redirector at the ' +
@@ -2227,7 +2231,7 @@ const SPECS: Spec[] = [
               'are DETECTED rather than enforced, because they are the ' +
               'client\'s to keep: reuse of a code_challenge or nonce across ' +
               'transactions (which a real server generally cannot see and a ' +
-              'mock that remembers can), an unbound access token (section ' +
+              'service that remembers can), an unbound access token (section ' +
               '2.2 is a SHOULD, so no mode requires a bound one; a realm ' +
               'can, with oauth2.accessTokenRequireDpop or ' +
               'oauth2.accessTokenRequireMtls), and symmetric client ' +
@@ -2490,7 +2494,8 @@ const SPECS: Spec[] = [
               'per relying party; automatic suspend, reactivate, delete, ' +
               'maintain and invalidate on directory changes and global ' +
               'sign-outs, only to a relying party that listed the command. ' +
-              'A mock relying party answers every command in development. ' +
+              'A demonstration relying party answers every command in ' +
+              'development. ' +
               'MISSING: acting as the relying party for another OP.' },
   { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
                                  '(draft 01)',
@@ -2595,7 +2600,8 @@ const SPECS: Spec[] = [
               'accepted step is stored on the enrolment and anything at or ' +
               'below it is refused by name. **CODES ARE CHECKED FOR REAL IN ' +
               'BOTH MODES**, which is the one place besides SPNEGO where ' +
-              'this mock verifies an end user\'s credential: a verifier that ' +
+              'this service verifies an end user\'s credential: a verifier ' +
+              'that ' +
               'accepted any six digits would not be a permissive RFC 6238, ' +
               'it would be a broken one. Enrolment is the Key Uri Format ' +
               '(otpauth://, Google\'s convention rather than any RFC) drawn ' +
@@ -3217,7 +3223,7 @@ const SPECS: Spec[] = [
                                     '(draft-ietf-acme-device-attest)',
     where: 'IETF (draft)',
     url: 'https://datatracker.ietf.org/doc/draft-ietf-acme-device-attest/',
-    coverage: 'mock: only the permanent-identifier identifier type, which ' +
+    coverage: 'minimal: only the permanent-identifier identifier type, which ' +
               'here names the account\'s own directory entry and becomes its ' +
               'urn:sts: subjectAltName. The device-attest-01 challenge and ' +
               'the WebAuthn attestation statement are not implemented.' },
@@ -6767,7 +6773,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/verifier-request', group: 'Management API',
     name: 'Verifier request (the bar door)',
     specs: ['oid4vp', 'sd-jwt-vc', 'vcdm', 'rfc4519'],
-    what: 'NON-SPEC. What the mock Verifier at /oid4vp/verifier asks a ' +
+    what: 'NON-SPEC. What the demonstration Verifier at /oid4vp/verifier ' +
+          'asks a ' +
           'wallet for, in which credential format, and the dcql_query they ' +
           'build — from the function that builds the real one, so it is the ' +
           'next Authorization Request rather than a description of it. Each ' +
@@ -7568,7 +7575,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'same acceptor /spnego/protected uses and with no protocol code of ' +
           'its own. The KDC behind it is still as permissive as the protocol ' +
           'allows (any username, one shared password, an account created on ' +
-          'first sight), which is what keeps the mock a mock — the ' +
+          'first sight), which is what keeps development mode permissive — ' +
+          'the ' +
           'verification is real, the account policy is not. It is AVAILABLE ' +
           'TO EVERY APPLICATION and registered for none: a button on ' +
           '/authn/login offers it for whatever flow is already in progress, ' +
@@ -8230,8 +8238,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/:as/oauth2/jwks', group: 'OAuth 2.0 / OIDC',
     name: 'JWKS (a named authorization server)', specs: ['rfc7515', 'rfc7519'],
     what: 'The same signing key. Every authorization server in this process ' +
-          'signs with it, which is a property of the mock rather than of the ' +
-          'model — they are separate issuers sharing one key, and a real ' +
+          'signs with it, which is a property of this implementation rather ' +
+          'than ' +
+          'of the model — they are separate issuers sharing one key, and a ' +
+          'real ' +
           'deployment would not do that.' },
   { path: '/oauth2/rfc9700', group: 'OAuth 2.0 / OIDC',
     name: 'RFC 9700 mode report (not a spec endpoint)', specs: ['rfc9700'],
@@ -8288,7 +8298,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'DIFFERENT audience (RFC 8707 `resource`) is refused. OIDC Core ' +
           'section 5.3, on GET and POST. The claims about whoever the access ' +
           'token was issued for, gated by its scope (section 5.4) — which is ' +
-          'the only place in this mock a scope changes the answer. THE ONE ' +
+          'the only place in this service a scope changes the answer. THE ' +
+          'ONE ' +
           'PROTECTED ENDPOINT HERE THAT REFUSES A TOKEN IT DID NOT ISSUE: it ' +
           'verifies the signature, the typ (so a refresh token or an ' +
           'id_token is refused), revocation and the openid scope, each with ' +
@@ -9247,7 +9258,7 @@ const PROTOCOLS: Protocol[] = [
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
             'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral',
             'oidc-provider-commands'],
-    what: 'A mock authorization server and OpenID Provider: all five grants, ' +
+    what: 'An authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
           'authorization servers as have been asked for. RFC 9700 mode ' +
@@ -9340,7 +9351,7 @@ const PROTOCOLS: Protocol[] = [
           'attributes are released to it.\n\n**IT IS THE ONE FEATURE HERE ' +
           'THAT REFUSES BY DEFAULT AND HAS TO BE CONFIGURED BEFORE IT WILL ' +
           'DO ANYTHING**, and that is not an omission to fix: "accept any ' +
-          'assertion" would not be a permissive mock of federation, it would ' +
+          'assertion" would not be a permissive form of federation, it would ' +
           'be an authentication bypass for every protocol in this process. A ' +
           'relationship is created disabled, at /admin/federation or POST ' +
           '/admin-api/federation/create.\n\n**A PARTNER\'S SIGN-OUT ENDS ' +
@@ -9449,7 +9460,7 @@ const PROTOCOLS: Protocol[] = [
           'optionally encrypted to the requestor\'s certificate.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
-    what: 'A mock KDC: AS-REQ / TGS-REQ, pre-authentication, four encryption ' +
+    what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four encryption ' +
           'types, a Microsoft PAC in the ticket, cross-realm referrals and ' +
           'constrained delegation. The rows on this page are its HTTP views ' +
           'and its MS-KKDCP proxy, which exists because a browser cannot ' +
@@ -9573,7 +9584,7 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6238', 'rfc4226'],
     what: 'The other second factor on the sign-in screen every protocol here ' +
           'sends a person to, and the only credential besides a Kerberos ' +
-          'ticket this mock really CHECKS: the code is computed from the ' +
+          'ticket this service really CHECKS: the code is computed from the ' +
           'shared secret and the clock and compared, in both modes, with RFC ' +
           '6238 section 5.2\'s accept-once rule enforced. Enrolment is a QR ' +
           'code this server drew, at /portal/mfa or while an activation link ' +

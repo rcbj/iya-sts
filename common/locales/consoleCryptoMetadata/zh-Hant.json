@@ -1,6 +1,6 @@
 {
   "doesNot": "不做",
-  "familiesHeading": "此模擬服務公布的身分服務",
+  "familiesHeading": "本服務公布的身分服務",
   "familiesLead": "每個協定族一列，對應",
   "serviceMetadata": "服務中繼資料",
   "familiesLeadAfter": "中的協定族，並列出各自如何使用密碼學。四個動詞刻意分開：簽章是產生信賴方會相信的東西，驗證是一個可能出錯的決定，加密使用的是別人的金鑰，解密則意味著持有一把呼叫端可以把密文對準的私密金鑰。這是四種不同的暴露面，本服務對每一種的涉及程度都不同。",
@@ -20,7 +20,7 @@
   "envelopes": "封裝",
   "doesNotDo": "<strong>它刻意不做的事。</strong>",
   "keysHeading": "此程序持有的金鑰材料",
-  "keysLead": "這裡的每個金鑰都在啟動時產生，無論哪種持久化模式都不會持久化。這是刻意的，有兩件事依賴於此：<code>kid</code> 由金鑰材料衍生，因此此模擬服務的兩個執行個體不可能為兩個不同的金鑰發布同一個名稱；而每個攜帶或描述金鑰的文件都以 <code>Cache-Control: no-store</code> 提供。<strong>簽章金鑰依信任領域區分；TLS 憑證與 SPIFFE 授權單位則不是。</strong>這裡顯示的是領域 <code>{realm}</code>。",
+  "keysLead": "這裡的每個金鑰都在啟動時產生，無論哪種持久化模式都不會持久化。這是刻意的，有兩件事依賴於此：<code>kid</code> 由金鑰材料衍生，因此本服務的兩個執行個體不可能為兩個不同的金鑰發布同一個名稱；而每個攜帶或描述金鑰的文件都以 <code>Cache-Control: no-store</code> 提供。<strong>簽章金鑰依信任領域區分；TLS 憑證與 SPIFFE 授權單位則不是。</strong>這裡顯示的是領域 <code>{realm}</code>。",
   "scopeRealm": "此領域",
   "scopeProcess": "程序",
   "thKey": "金鑰",
@@ -63,7 +63,7 @@
   "thDigest": "摘要",
   "thWhat": "內容",
   "weakOnes": "弱演算法，以及它們為何在這裡",
-  "weakNote": "<strong>這些都不是疏忽，也都不是建議。</strong>本服務的存在是為了檢驗別人的用戶端，一個只提供安全選項的模擬服務無法用來展示不安全的選項會怎樣。每一列都寫明了哪個已部署族群需要它。",
+  "weakNote": "<strong>這些都不是疏忽，也都不是建議。</strong>本服務的存在是為了檢驗別人的用戶端，一個只提供安全選項的服務無法用來展示不安全的選項會怎樣。每一列都寫明了哪個已部署族群需要它。",
   "thWhy": "原因",
   "yes": "是",
   "no": "否",
@@ -143,7 +143,7 @@
   "drafts": "已實作的草案",
   "whatRemains": "尚待完成",
   "standardsHeading": "更高層的標準",
-  "standardsLead": "知道本服務用 RSA-SHA256 簽章，並不能說明那個簽章是 JWS、封裝式 XMLDSIG、對查詢字串的分離簽章還是 <code>&lt;wsse:Security&gt;</code> 標頭 — 四種不同的文件，四種不同的失敗方式。這裡就是那一層。<strong>每則涵蓋說明都以 <code>full</code>、<code>partial</code> 或 <code>mock</code> 開頭</strong>，並說明缺少什麼，這是以下頁面遵循的規則：",
+  "standardsLead": "知道本服務用 RSA-SHA256 簽章，並不能說明那個簽章是 JWS、封裝式 XMLDSIG、對查詢字串的分離簽章還是 <code>&lt;wsse:Security&gt;</code> 標頭 — 四種不同的文件，四種不同的失敗方式。這裡就是那一層。<strong>每則涵蓋說明都以 <code>full</code>、<code>partial</code> 或 <code>minimal</code> 開頭</strong>，並說明缺少什麼，這是以下頁面遵循的規則：",
   "standardsLeadAfter": "在這裡它更有價值：一個誇大自身實作的密碼學頁面，對借它學習的人來說是實實在在的危險。",
   "specifications": "規格",
   "coverage": "涵蓋範圍",
@@ -243,5 +243,5 @@
   "passwordHint": "PKCS#12 必填；其他格式用於加密私密部分",
   "downloadKey": "下載",
   "publicOnly": "<strong>僅公開部分。</strong>RFC 9964 定義了 AKP 金鑰的公開成員，而私密種子的處理仍在變化，因此沒有可交出的互通私密編碼。一個沒有任何程式庫能讀取的檔案，比直說更糟。",
-  "passwordNote": "<strong>PKCS#12 必須設定密碼，其他三種可選</strong>，密碼用於加密私密部分（PEM 與 DER 使用 PKCS#8，JWK 以 PBES2 產生 .jwe）。留空則私密金鑰以明文匯出，這通常正是您對模擬服務的期望，在其他任何地方都絕不應如此。"
+  "passwordNote": "<strong>PKCS#12 必須設定密碼，其他三種可選</strong>，密碼用於加密私密部分（PEM 與 DER 使用 PKCS#8，JWK 以 PBES2 產生 .jwe）。留空則私密金鑰以明文匯出，這通常正是您在開發中的期望，在其他任何地方都絕不應如此。"
 }

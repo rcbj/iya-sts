@@ -5,7 +5,7 @@ nav_order: 16
 
 # Token samples
 
-> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/spnego/protected` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/oid4vp/start`, `/spnego/protected` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 One real example of every kind of token, assertion and certificate this
 service issues, decoded. They were captured from a running
@@ -1187,7 +1187,7 @@ this view.
   </md:AttributeAuthorityDescriptor>
   <md:Organization>
     <md:OrganizationName xml:lang="en">sts</md:OrganizationName>
-    <md:OrganizationDisplayName xml:lang="en">Mock security token service</md:OrganizationDisplayName>
+    <md:OrganizationDisplayName xml:lang="en">Security token service</md:OrganizationDisplayName>
     <md:OrganizationURL xml:lang="en">https://127.0.0.1:38081/</md:OrganizationURL>
   </md:Organization>
 </md:EntityDescriptor>
@@ -2469,7 +2469,7 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJr…5TwyyUHNDoTzk47sX
     ]
   },
   "client_metadata": {
-    "client_name": "Mock Verifier (bar door)",
+    "client_name": "OpenID4VP Verifier",
     "vp_formats_supported": {
       "dc+sd-jwt": {
         "sd-jwt_alg_values": [

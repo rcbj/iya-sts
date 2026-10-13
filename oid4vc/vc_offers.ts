@@ -1146,13 +1146,13 @@ class VcOffers {
     // the runtime draws each from `/vc-demo-api` and makes the offer there.
     app.get('/issuer', demoOnly, (req, res) => {
       log.debug("Entering the issuer web page.");
-      VcDemoShell.send(req, res, 'Mock University — digital diploma');
+      VcDemoShell.send(req, res, 'Example University — digital diploma');
       log.debug("Leaving the issuer web page.");
     });
 
     app.get('/issuer/offer', demoOnly, (req, res) => {
       log.debug("Entering the credential offer page.");
-      VcDemoShell.send(req, res, 'Mock University — your digital diploma');
+      VcDemoShell.send(req, res, 'Example University — your digital diploma');
       log.debug("Leaving the credential offer page.");
     });
 

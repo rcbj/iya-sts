@@ -1,6 +1,6 @@
 {
   "doesNot": "hindi ginagawa",
-  "familiesHeading": "Ang mga identity service na inaanunsyo ng mock na ito",
+  "familiesHeading": "Ang mga identity service na inaanunsyo ng serbisyong ito",
   "familiesLead": "Isang row kada protocol family sa",
   "serviceMetadata": "Service metadata",
   "familiesLeadAfter": ", kasama ang ginagawa ng bawat isa sa cryptography. Sadyang pinaghihiwalay ang apat na pandiwa: ang pagpirma ay paggawa ng bagay na paniniwalaan ng isang relying party, ang pag-verify ay desisyong puwedeng magkamali, ang pag-encrypt ay gumagamit ng key ng iba, at ang pag-decrypt ay nangangahulugang may hawak na private key na mapupuntiryahan ng ciphertext ng isang tumatawag. Apat na magkakaibang exposure iyan at magkakaiba ang dami ng ginagawa ng serbisyong ito sa bawat isa.",
@@ -20,7 +20,7 @@
   "envelopes": "Mga envelope",
   "doesNotDo": "<strong>Ang sadyang hindi nito ginagawa.</strong>",
   "keysHeading": "Ang key material na hawak ng prosesong ito",
-  "keysLead": "Bawat key dito ay ginagawa sa pag-start at walang naka-persist, sa anumang persistence mode. Sadya iyon at dalawang bagay ang umaasa rito: hinahango ang <code>kid</code> mula sa key material, kaya hindi makakapag-publish ang dalawang instance ng mock na ito ng iisang pangalan para sa dalawang magkaibang key, at bawat dokumentong may dala o naglalarawan ng key ay ibinibigay na may <code>Cache-Control: no-store</code>. <strong>Kada trust realm ang mga signing key; hindi ang TLS certificate at ang mga SPIFFE authority.</strong> Ipinapakita nito ang realm na <code>{realm}</code>.",
+  "keysLead": "Bawat key dito ay ginagawa sa pag-start at walang naka-persist, sa anumang persistence mode. Sadya iyon at dalawang bagay ang umaasa rito: hinahango ang <code>kid</code> mula sa key material, kaya hindi makakapag-publish ang dalawang instance ng serbisyong ito ng iisang pangalan para sa dalawang magkaibang key, at bawat dokumentong may dala o naglalarawan ng key ay ibinibigay na may <code>Cache-Control: no-store</code>. <strong>Kada trust realm ang mga signing key; hindi ang TLS certificate at ang mga SPIFFE authority.</strong> Ipinapakita nito ang realm na <code>{realm}</code>.",
   "scopeRealm": "ang realm na ito",
   "scopeProcess": "ang proseso",
   "thKey": "Key",
@@ -63,7 +63,7 @@
   "thDigest": "Digest",
   "thWhat": "Ano",
   "weakOnes": "Ang mahihina, at kung bakit narito sila",
-  "weakNote": "<strong>Wala sa mga ito ang pagkakamali at wala ang rekomendasyon.</strong> Umiiral ang serbisyong ito para subukin ang mga client ng ibang tao, at ang mock na nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas. Sinasabi ng bawat row kung aling installed base ang humihingi nito.",
+  "weakNote": "<strong>Wala sa mga ito ang pagkakamali at wala ang rekomendasyon.</strong> Umiiral ang serbisyong ito para subukin ang mga client ng ibang tao, at ang serbisyong nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas. Sinasabi ng bawat row kung aling installed base ang humihingi nito.",
   "thWhy": "Bakit",
   "yes": "oo",
   "no": "hindi",
@@ -143,7 +143,7 @@
   "drafts": "Mga draft na ipinatupad",
   "whatRemains": "Ang natitira",
   "standardsHeading": "Ang mga mas mataas na antas na standard",
-  "standardsLead": "Ang malaman na pumipirma ang serbisyong ito gamit ang RSA-SHA256 ay hindi nagsasabi kung ang pirmang iyon ay JWS, enveloped XMLDSIG, detached na pirma sa isang query string o header na <code>&lt;wsse:Security&gt;</code> — apat na magkakaibang dokumento na may apat na magkakaibang paraan ng pagpalya. Ito ang antas na iyon. <strong>Bawat coverage note ay nagsisimula sa <code>full</code>, <code>partial</code> o <code>mock</code></strong> at sinasabi kung ano ang kulang, na siyang patakarang sinusunod ng",
+  "standardsLead": "Ang malaman na pumipirma ang serbisyong ito gamit ang RSA-SHA256 ay hindi nagsasabi kung ang pirmang iyon ay JWS, enveloped XMLDSIG, detached na pirma sa isang query string o header na <code>&lt;wsse:Security&gt;</code> — apat na magkakaibang dokumento na may apat na magkakaibang paraan ng pagpalya. Ito ang antas na iyon. <strong>Bawat coverage note ay nagsisimula sa <code>full</code>, <code>partial</code> o <code>minimal</code></strong> at sinasabi kung ano ang kulang, na siyang patakarang sinusunod ng",
   "standardsLeadAfter": "at mas mahalaga rito: ang pahina tungkol sa cryptography na nagpapalabis sa ipinatutupad nito ay aktibong mapanganib sa sinumang gumagamit nito para matuto.",
   "specifications": "Mga specification",
   "coverage": "Saklaw",
@@ -243,5 +243,5 @@
   "passwordHint": "kailangan para sa PKCS#12; ine-encrypt ang private na kalahati ng iba",
   "downloadKey": "I-download",
   "publicOnly": "<strong>Ang PAMPUBLIKONG kalahati lang.</strong> Tinutukoy ng RFC 9964 ang mga pampublikong member ng isang AKP key at gumagalaw pa ang paghawak sa private seed, kaya walang interoperable na private encoding na maibibigay. Mas masama ang file na walang library na nakakabasa kaysa sa pagsasabi nito.",
-  "passwordNote": "<strong>KAILANGAN ang password para sa PKCS#12 at opsyonal para sa tatlong iba</strong>, kung saan ine-encrypt nito ang private na kalahati (PKCS#8 para sa PEM at DER, PBES2 bilang .jwe para sa JWK). Iwanan itong blangko at lalabas nang malinaw ang private key, na kadalasang gusto mo mula sa isang mock at hindi kailanman gusto mo saanman."
+  "passwordNote": "<strong>KAILANGAN ang password para sa PKCS#12 at opsyonal para sa tatlong iba</strong>, kung saan ine-encrypt nito ang private na kalahati (PKCS#8 para sa PEM at DER, PBES2 bilang .jwe para sa JWK). Iwanan itong blangko at lalabas nang malinaw ang private key, na kadalasang gusto mo sa development at hindi kailanman gusto mo saanman."
 }

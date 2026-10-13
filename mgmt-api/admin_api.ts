@@ -1927,7 +1927,7 @@ class AdminApi {
       { path: '/oid4vp-settings', console: '/admin/vc',
         settingsPage: '/admin/oid4vp', tag: 'OpenID4VP',
         operationId: 'getOid4vpSettings',
-        summary: 'The mock Verifier\'s own settings',
+        summary: 'The Verifier\'s own settings',
         description: 'The `oid4vp.*` settings: the client identifier ' +
                      'the verifier presents as, where it sends a holder to ' +
                      'present, the Key Binding JWT\'s maximum age, the ' +
@@ -2079,8 +2079,8 @@ class AdminApi {
         summary: 'The embedded directory\'s own settings',
         description: 'The six `ldap.*` settings: the two raw ports, the base ' +
                      'DN, whether a name seen for the first time gets an ' +
-                     'entry, and the two ceilings that keep a mock from ' +
-                     'being filled up.\n\nNOTHING HERE REFUSES A BIND, and ' +
+                     'entry, and the two ceilings that keep it from being ' +
+                     'filled up.\n\nNOTHING HERE REFUSES A BIND, and ' +
                      'no setting is missing: the MODE decides. In ' +
                      'development any DN with any password, and anonymous, ' +
                      'are accepted on 389 and 636 alike; in product only a ' +
@@ -2226,7 +2226,8 @@ class AdminApi {
       { path: '/wsfed', console: '/admin/wsfed', tag: 'WS-Federation',
         operationId: 'getWsFedSettings',
         summary: 'The passive requestor profile\'s own setting',
-        description: 'One setting — how long the mock relying party keeps ' +
+        description: 'One setting — how long the demonstration relying party ' +
+                     'keeps ' +
                      'a wctx. The entity ID this service names itself by ' +
                      'in the metadata and a sign-in response is the ' +
                      'realm\'s OAuth issuer, not a setting (#523).\n\nThe ' +
@@ -9118,7 +9119,7 @@ class AdminApi {
                          'DN they WILL be at (`uid=<name>,ou=users`) and ' +
                          'dangles until they first sign in or somebody ' +
                          'creates them, and the role counts from that ' +
-                         'moment. That is the interesting case for a mock ' +
+                         'moment. That is the interesting case for testing ' +
                          'and is deliberately reachable. What IS refused is ' +
                          'a name carrying a character RFC 4514 reserves in a ' +
                          'DN — the same refusal `POST ' +
@@ -9788,7 +9789,7 @@ class AdminApi {
             summary: 'Revoke everything for one identity, under every spelling',
             description: 'The users list\'s `key`, and every spelling of it ' +
                          '— `alice`, her `urn:uuid:<entryUUID>` subject and ' +
-                         '`alice@STS.MOCK` are one ' +
+                         '`alice@EXAMPLE.COM` are one ' +
                          'identity here, so revoking ' +
                          '"for alice" means all of them. Use ' +
                          '`revoke-subject` ' +
@@ -9977,7 +9978,7 @@ class AdminApi {
                          'ORDINARY settings on the realm: pass `overrides` ' +
                          'to choose your own, or unset them afterwards to go ' +
                          'back to sharing the process\'s name, which is a ' +
-                         'case worth being able to build on a mock.\n\nThe ' +
+                         'case worth being able to build for testing.\n\nThe ' +
                          'OAuth issuer is deliberately NOT seeded: it ' +
                          'defaults to naming the base URL a request arrived ' +
                          'on, and that already carries the realm prefix.',
@@ -10270,7 +10271,7 @@ class AdminApi {
             description: 'Returns the whole service to the configuration it ' +
                          'started with, without restarting it. This is what ' +
                          'a test should call to put the service back: the ' +
-                         'mock\'s admin state survives ' +
+                         'service\'s admin state survives ' +
                          'between jobs, so a setting left ' +
                          'changed here changes what every later job sees.',
             requestBodyRequired: false,
@@ -11110,7 +11111,7 @@ class AdminApi {
       { method: 'GET', path: BASE + '/verifier-request',
         tag: 'Verifier request',
         operationId: 'getVerifierRequest',
-        summary: 'What the mock OID4VP Verifier asks a wallet for',
+        summary: 'What the demonstration OID4VP Verifier asks a wallet for',
         description: 'The claims, the credential format, and the ' +
                      '`dcql_query` they build — from the function that ' +
                      'builds the real one, so this is the next Authorization ' +
@@ -12595,7 +12596,8 @@ class AdminApi {
                      'with what this service would publish, and the removals ' +
                      'that hide something real. A profile that lies is often ' +
                      'exactly what is wanted — it is how you find out ' +
-                     'whether a client reads the metadata — but a mock that ' +
+                     'whether a client reads the metadata — but a service ' +
+                     'that ' +
                      'let somebody publish a misleading document QUIETLY ' +
                      'would be a trap.\n\n`?profile=<id>` returns one of ' +
                      'them with every override, every removal and its drift.',
@@ -12931,7 +12933,8 @@ class AdminApi {
                      'service reads `appAllowedProtocol`: an application ' +
                      'declared for SAML 2.0 alone is still issued an access ' +
                      'token. It is a record of intent on the entry, and it ' +
-                     'is deliberately not a permission — a mock that refused ' +
+                     'is deliberately not a permission — a service that ' +
+                     'refused ' +
                      'a protocol would remove a test case rather ' +
                      'than add one. The configuration that DOES ' +
                      'take effect is in `editable`.',
@@ -16764,7 +16767,7 @@ class AdminApi {
                          'a transmitter that invented one would be inventing ' +
                          'a vocabulary. That changes with CAEP.\n\nA failed ' +
                          'push is NOT retried and the event stays on the ' +
-                         'queue. A mock that retried would make a ' +
+                         'queue. A service that retried would make a ' +
                          'receiver\'s one-shot failure invisible ' +
                          '— a client answering 500 then 202 ' +
                          'looks, from its own logs, like a client that works.',

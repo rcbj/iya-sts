@@ -72,8 +72,8 @@
     "text": "GET /admin/ldap/applications en JSON: una entrada por identificador bajo ou=applications con todos sus atributos, Y el vocabulario publicado: las clases de objeto y cada nombre de atributo con lo que lo establece. El vocabulario es la razón de que esto no sea GET /admin-api/applications, que son las mismas entradas tal como las gestiona la consola: este directorio no tiene esquema, así que una entrada con treinta nombres de atributo inventados sería de otro modo pura conjetura. Dos atributos guardan credenciales en claro. Solo lectura."
   },
   "stsmetadata.endpoints./admin-api/verifier-request.what": {
-    "en": "3264a8d2e2af1287",
-    "text": "NON-SPEC. Lo que el Verifier simulado en /oid4vp/verifier pide a una cartera, en qué formato de credencial, y el dcql_query que construyen, a partir de la función que construye el real, de modo que es la próxima Authorization Request y no una descripción de ella. Cada fila del catálogo dice además si el EMISOR acuña actualmente ese claim. Refleja GET /admin/vc-verifier-config."
+    "en": "2b65c93c64dbe5de",
+    "text": "NON-SPEC. Lo que el Verifier de demostración en /oid4vp/verifier pide a una cartera, en qué formato de credencial, y el dcql_query que construyen, a partir de la función que construye el real, de modo que es la próxima Authorization Request y no una descripción de ella. Cada fila del catálogo dice además si el EMISOR acuña actualmente ese claim. Refleja GET /admin/vc-verifier-config."
   },
   "stsmetadata.endpoints./admin-api/verifier-request/:action.what": {
     "en": "14068d9e59f94223",

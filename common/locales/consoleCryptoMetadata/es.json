@@ -1,6 +1,6 @@
 {
   "doesNot": "no",
-  "familiesHeading": "Los servicios de identidad que anuncia esta simulación",
+  "familiesHeading": "Los servicios de identidad que anuncia este servicio",
   "familiesLead": "Una fila por familia de protocolos de",
   "serviceMetadata": "Metadatos del servicio",
   "familiesLeadAfter": ", con lo que cada una hace con la criptografía. Los cuatro verbos se mantienen separados a propósito: firmar es producir algo que una parte que confía creerá; verificar es una decisión que se puede tomar mal; cifrar usa la clave de otro; y descifrar implica tener una clave privada contra la que un llamador puede apuntar texto cifrado. Son cuatro exposiciones distintas y este servicio hace una cantidad distinta de cada una.",
@@ -20,7 +20,7 @@
   "envelopes": "Sobres",
   "doesNotDo": "<strong>Lo que deliberadamente no hace.</strong>",
   "keysHeading": "El material de claves que tiene este proceso",
-  "keysLead": "Cada clave de aquí se genera al arrancar y ninguna se conserva, en ningún modo de persistencia. Es deliberado y dos cosas dependen de ello: el <code>kid</code> se deriva del material de la clave, así que dos instancias de esta simulación no pueden publicar un mismo nombre para dos claves distintas, y cada documento que lleva o describe una clave se sirve con <code>Cache-Control: no-store</code>. <strong>Las claves de firma son por dominio de confianza; el certificado TLS y las autoridades SPIFFE no.</strong> Esto muestra el dominio <code>{realm}</code>.",
+  "keysLead": "Cada clave de aquí se genera al arrancar y ninguna se conserva, en ningún modo de persistencia. Es deliberado y dos cosas dependen de ello: el <code>kid</code> se deriva del material de la clave, así que dos instancias de este servicio no pueden publicar un mismo nombre para dos claves distintas, y cada documento que lleva o describe una clave se sirve con <code>Cache-Control: no-store</code>. <strong>Las claves de firma son por dominio de confianza; el certificado TLS y las autoridades SPIFFE no.</strong> Esto muestra el dominio <code>{realm}</code>.",
   "scopeRealm": "este dominio",
   "scopeProcess": "el proceso",
   "thKey": "Clave",
@@ -63,7 +63,7 @@
   "thDigest": "Resumen",
   "thWhat": "Qué",
   "weakOnes": "Los débiles, y por qué están aquí",
-  "weakNote": "<strong>Ninguno es un descuido y ninguno es una recomendación.</strong> Este servicio existe para poner a prueba los clientes de otros, y una simulación que solo ofreciera la opción segura no serviría para mostrar lo que hace la insegura. Cada fila dice qué base instalada lo pide.",
+  "weakNote": "<strong>Ninguno es un descuido y ninguno es una recomendación.</strong> Este servicio existe para poner a prueba los clientes de otros, y un servicio que solo ofreciera la opción segura no serviría para mostrar lo que hace la insegura. Cada fila dice qué base instalada lo pide.",
   "thWhy": "Por qué",
   "yes": "sí",
   "no": "no",
@@ -143,7 +143,7 @@
   "drafts": "Borradores implementados",
   "whatRemains": "Lo que falta",
   "standardsHeading": "Los estándares de nivel superior",
-  "standardsLead": "Saber que este servicio firma con RSA-SHA256 no dice si esa firma es un JWS, un XMLDSIG envuelto, una firma separada sobre una cadena de consulta o una cabecera <code>&lt;wsse:Security&gt;</code> — cuatro documentos distintos con cuatro modos de fallo distintos. Esta es esa capa. <strong>Cada nota de cobertura empieza por <code>full</code>, <code>partial</code> o <code>mock</code></strong> y dice lo que falta, que es la regla que sigue",
+  "standardsLead": "Saber que este servicio firma con RSA-SHA256 no dice si esa firma es un JWS, un XMLDSIG envuelto, una firma separada sobre una cadena de consulta o una cabecera <code>&lt;wsse:Security&gt;</code> — cuatro documentos distintos con cuatro modos de fallo distintos. Esta es esa capa. <strong>Cada nota de cobertura empieza por <code>full</code>, <code>partial</code> o <code>minimal</code></strong> y dice lo que falta, que es la regla que sigue",
   "standardsLeadAfter": "y que aquí vale más: una página sobre criptografía que exagera lo que implementa es activamente peligrosa para quien la use para aprender.",
   "specifications": "Especificaciones",
   "coverage": "Cobertura",
@@ -243,5 +243,5 @@
   "passwordHint": "obligatoria para PKCS#12; cifra la mitad privada de los demás",
   "downloadKey": "Descargar",
   "publicOnly": "<strong>Solo la mitad PÚBLICA.</strong> RFC 9964 define los miembros públicos de una clave AKP y el tratamiento de la semilla privada aún está cambiando, así que no hay ninguna codificación privada interoperable que entregar. Un archivo que ninguna biblioteca lee sería peor que decirlo.",
-  "passwordNote": "<strong>La contraseña es OBLIGATORIA para PKCS#12 y opcional para los otros tres</strong>, donde cifra la mitad privada (PKCS#8 para PEM y DER, PBES2 como .jwe para JWK). Déjela vacía y la clave privada sale en claro, que suele ser lo que quiere de una simulación y nunca lo que quiere en ningún otro sitio."
+  "passwordNote": "<strong>La contraseña es OBLIGATORIA para PKCS#12 y opcional para los otros tres</strong>, donde cifra la mitad privada (PKCS#8 para PEM y DER, PBES2 como .jwe para JWK). Déjela vacía y la clave privada sale en claro, que suele ser lo que quiere en desarrollo y nunca lo que quiere en ningún otro sitio."
 }

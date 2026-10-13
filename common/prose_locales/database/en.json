@@ -24,7 +24,7 @@
   "postgres.probes.conflicts.what": "Queries cancelled by recovery conflicts. All zero on a server that is not a standby, which is the ordinary case here.",
   "postgres.probes.connections.what": "How many backends this database has, against the server's limit.",
   "postgres.probes.backends.what": "One row per backend on this database. A backend belonging to another role shows as a row with its state and its query withheld, which is what a non-monitoring role is shown.",
-  "postgres.probes.locks.what": "Locks held and waited for, by mode. A waiting lock on a mock is almost always this service contending with itself across the request-worker pool.",
+  "postgres.probes.locks.what": "Locks held and waited for, by mode. A waiting lock here is almost always this service contending with itself across the request-worker pool.",
   "postgres.probes.bgwriter.what": "The background writer. ELEVEN columns before PostgreSQL 17 and FOUR from 17, when the checkpoint counters moved out of it — which is why this asks for all of them rather than naming any.",
   "postgres.probes.checkpointer.what": "The checkpointer. A view of its own since PostgreSQL 17; before that these counters are the tail of pg_stat_bgwriter above.",
   "postgres.probes.wal.what": "Write-ahead log generation. PostgreSQL 14 and later.",

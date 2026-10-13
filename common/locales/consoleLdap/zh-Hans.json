@@ -59,7 +59,7 @@
   "fed.counts": "{signIns} 次登录<br>{people} 人",
   "fed.intro": "<code>{container}</code> 下共 {count} 个，最多 {max} 个：本服务接受其断言的外部身份提供方，以及本服务向其发出断言的外部服务提供方。一个关系对应一个方向，因此双向的合作方是两个条目。",
   "fed.tileRelationships": "关系",
-  "fed.warn": "<strong>在这里执行 ldapmodify 是一项安全变更，这一点对此目录中的其他任何容器都不成立。</strong><code>fedSigningCertificate</code> 决定本服务相信谁的断言；<code>fedEnabled</code> 用于启用合作方。在这里的其他地方，编辑只会改变本服务发放的内容，而且对此目录的每次绑定都会成功——所以这个容器和其他部分一样毫无保护。这是模拟服务的真实状态，也是为什么联合是这里唯一默认拒绝的功能。",
+  "fed.warn": "<strong>在这里执行 ldapmodify 是一项安全变更，这一点对此目录中的其他任何容器都不成立。</strong><code>fedSigningCertificate</code> 决定本服务相信谁的断言；<code>fedEnabled</code> 用于启用合作方。在这里的其他地方，编辑只会改变本服务发放的内容，而且对此目录的每次绑定都会成功——所以这个容器和其他部分一样毫无保护。这是开发模式的真实状态，也是为什么联合是这里唯一默认拒绝的功能。",
   "fed.thRelationship": "关系",
   "fed.placeholder": "ID、DN、协议或方向",
   "fed.thDirection": "方向",

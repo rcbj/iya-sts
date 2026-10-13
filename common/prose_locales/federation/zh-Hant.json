@@ -228,8 +228,8 @@
     "text": "「夥伴的簽署憑證」，base64 DER——與 ds:X509Certificate 攜帶的拼寫相同，也與應用程式項目上 samlSigningCertificate 所用的相同，因此一張憑證在本服務中只有一種拼寫。每個 SAML 與 WS-Federation 斷言都以它驗證，它是阻隔本服務成為任何人都能隨意斷言之端點的唯一屬性。"
   },
   "fed.schema.attributes.fedClientId.what": {
-    "en": "35f9f1eab89afb31",
-    "text": "「本服務在夥伴處的 client_id」。屬於我們、由他們簽發——不要與應用程式項目上的 oauthClientId 混淆，後者是此處模擬用戶端的 ID。"
+    "en": "d1b0b114250b58b6",
+    "text": "「本服務在夥伴處的 client_id」。屬於我們、由他們簽發——不要與應用程式項目上的 oauthClientId 混淆，後者是此處用戶端的 ID。"
   },
   "fed.schema.attributes.fedClientSecret.what": {
     "en": "627419de92206a62",

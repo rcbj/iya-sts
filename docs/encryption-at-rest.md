@@ -462,7 +462,7 @@ encrypt and decrypt), so a refusal anywhere else is the policy working.
 ## The database password comes from the same place, if you want it to
 
 `persistence.databaseUrl` carries its password in plain text
-— right for a throwaway database of mock identities, wrong for anything you
+— right for a throwaway database of invented identities, wrong for anything you
 would call a deployment — and **`persistence.databasePasswordProvider` reads it
 from a secret store instead**, using the same five providers and the same code
 as the key-encryption key above.

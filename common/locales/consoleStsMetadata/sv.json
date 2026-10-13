@@ -38,7 +38,7 @@
   "specs.heading": "Implementerade specifikationer",
   "specs.thSpec": "Specifikation",
   "specs.thWhere": "Publicerad av",
-  "specs.thCoverage": "Täckning i den här attrappen",
+  "specs.thCoverage": "Täckning i den här tjänsten",
   "machineReadable": "Maskinläsbart: <code>{base}/admin/sts-metadata?format=json</code>, vilket är vad knappen högst upp ger dig som fil. Det ligger bakom konsolens spärr precis som sidan, så ett program som hämtar det loggar först in på <code>/authn/login</code>, eller läser samma tjänst via <code>/admin-api</code>, som inte är spärrat. Det här dokumentet är inget specifikationsdefinierat upptäcktsdokument &mdash; för sådana, se <code>/.well-known/openid-configuration</code>, <code>/.well-known/oauth-authorization-server</code>, <code>/.well-known/openid-credential-issuer</code>, <code>/.well-known/jwt-vc-issuer</code>, <code>/.well-known/did.json</code> och <code>/.well-known/did-configuration.json</code>.",
   "reason.only": "endast {method}",
   "reason.noGet": "ingen GET ({methods})",

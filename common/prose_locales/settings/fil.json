@@ -1496,16 +1496,16 @@
     "text": "Mode"
   },
   "global.mode|description": {
-    "en": "abe4dc2a95f944df",
-    "text": "Kung ano ang serbisyong ito. Ang `development` ay ang mock na naging bawat release bago ang 2026-09-06: walang password na sinusuri sa anumang protocol, ang hindi kilalang user, application, service principal o authorization server ay ginagawa sa unang pagkakataong pangalanan ito, walang kailangang secret ang isang OAuth client, at — kapag naka-off ang adminApi.authRequired — bukas ang /admin-api para mapatakbo ito ng isang test at para makabalik ang taong walang hawak na role. Pinapatakbo ng `product` ang PAREHONG mga protocol implementation nang wala ang pagiging maluwag: vine-verify ang ipinakitang credential laban sa naka-hash na `userPassword` sa directory entry ng tao, bawat tinutukoy na object ay dapat nagawa na nang maaga, bawat OAuth 2.0 at OpenID Connect application na nagdeklara ng confidential na paraan ay dapat mag-authenticate gamit ito (ang public client ay sinusukat sa RFC 9700 sa halip), binabalewala ang bawat setting na para sa development lang, at ang /admin-api na naka-off ang adminApi.authRequired ay nangangailangan ng parehong sign-in at mga role na hinihingi ng console (kapag naka-on, ang default sa parehong mode, nangangailangan ito ng access token). Maitatakda ito bawat trust realm, kaya kayang ihain ng iisang process ang pareho nang sabay. Inililista ng GET /admin/mode ang bawat requirement at sinasabi kung anong sagot ang ibinibigay sa bawat isa sa bawat mode.\n\nMABABAGO ITO HABANG TUMATAKBO, at mahalaga ang pagkakasunod kapag ginawa: kapag naka-off ang adminApi.authRequired, bukas ang /admin-api hanggang sa mismong sandaling itakda ito sa `product`, kaya i-provision MUNA ang mga credential at saka mag-switch. Ang realm na na-switch nang walang sinumang may hawak ng credential ay walang daan papasok — tumatakbo ang startup bootstrap sa startup at hindi sa isang pagbabago, sinadya, dahil ang serbisyong gumagawa ng administrator tuwing gumagalaw ang isang setting ay magiging serbisyong may administrator na walang humiling."
+    "en": "72d5f41058477223",
+    "text": "Kung ano ang serbisyong ito. Ang `development` ay ang naging bawat release bago ang 2026-09-06: walang password na sinusuri sa anumang protocol, ang hindi kilalang user, application, service principal o authorization server ay ginagawa sa unang pagkakataong pangalanan ito, walang kailangang secret ang isang OAuth client, at — kapag naka-off ang adminApi.authRequired — bukas ang /admin-api para mapatakbo ito ng isang test at para makabalik ang taong walang hawak na role. Pinapatakbo ng `product` ang PAREHONG mga protocol implementation nang wala ang pagiging maluwag: vine-verify ang ipinakitang credential laban sa naka-hash na `userPassword` sa directory entry ng tao, bawat tinutukoy na object ay dapat nagawa na nang maaga, bawat OAuth 2.0 at OpenID Connect application na nagdeklara ng confidential na paraan ay dapat mag-authenticate gamit ito (ang public client ay sinusukat sa RFC 9700 sa halip), binabalewala ang bawat setting na para sa development lang, at ang /admin-api na naka-off ang adminApi.authRequired ay nangangailangan ng parehong sign-in at mga role na hinihingi ng console (kapag naka-on, ang default sa parehong mode, nangangailangan ito ng access token). Maitatakda ito bawat trust realm, kaya kayang ihain ng iisang process ang pareho nang sabay. Inililista ng GET /admin/mode ang bawat requirement at sinasabi kung anong sagot ang ibinibigay sa bawat isa sa bawat mode.\n\nMABABAGO ITO HABANG TUMATAKBO, at mahalaga ang pagkakasunod kapag ginawa: kapag naka-off ang adminApi.authRequired, bukas ang /admin-api hanggang sa mismong sandaling itakda ito sa `product`, kaya i-provision MUNA ang mga credential at saka mag-switch. Ang realm na na-switch nang walang sinumang may hawak ng credential ay walang daan papasok — tumatakbo ang startup bootstrap sa startup at hindi sa isang pagbabago, sinadya, dahil ang serbisyong gumagawa ng administrator tuwing gumagalaw ang isang setting ay magiging serbisyong may administrator na walang humiling."
   },
   "global.logLevel|label": {
     "en": "886e60232b66c841",
     "text": "Log level"
   },
   "global.logLevel|description": {
-    "en": "062f644ae06c5e38",
-    "text": "Ang debug ang kapaki-pakinabang na level para sa mock na ang trabaho ay ipakita ang ginawa nito: bawat endpoint call, at bawat token at assertion bago at pagkatapos itong pirmahan. Ang pagbabago nito rito ay may epekto sa susunod na linyang isusulat, MALIBAN sa walong vendored na krb5_* codec module: byte-identical na kopya ang mga iyon ng mga common/krb5/* file ng parent project at hindi mabibigyan ng linya para i-register ang kanilang logger, kaya pinananatili nila ang level na sinimulan ng process. ASN.1 at crypto tracing iyon sa halip na ulat ng serbisyong ito sa ginawa nito."
+    "en": "6172a46d84f39b6c",
+    "text": "Ang debug ang kapaki-pakinabang na level para sa serbisyong ang trabaho ay ipakita ang ginawa nito: bawat endpoint call, at bawat token at assertion bago at pagkatapos itong pirmahan. Ang pagbabago nito rito ay may epekto sa susunod na linyang isusulat, MALIBAN sa walong vendored na krb5_* codec module: byte-identical na kopya ang mga iyon ng mga common/krb5/* file ng parent project at hindi mabibigyan ng linya para i-register ang kanilang logger, kaya pinananatili nila ang level na sinimulan ng process. ASN.1 at crypto tracing iyon sa halip na ulat ng serbisyong ito sa ginawa nito."
   },
   "workers.startTimeoutMs|label": {
     "en": "d851097c61c3d64c",
@@ -4012,8 +4012,8 @@
     "text": "Prefix para sa mga federated username"
   },
   "federation.usernamePrefix|description": {
-    "en": "3783b4bfff228c17",
-    "text": "Inilalagay sa unahan ng bawat username na ibinibigay ng isang foreign identity provider, para dalawang entry ang federated na `alice` at ang lokal na `alice`. WALANG LAMAN bilang default, na nangangahulugang IISANG entry sila — at tunay na desisyon iyon sa halip na default na walang nag-isip. Tama ang walang laman para sa mock na itinuturo sa isang partner para makita kung ano ang bumabalik, dahil ang pangalang may prefix ay ginagawang hindi pamilyar ang bawat downstream na token at assertion. Itakda ito sa isang tulad ng `fed-` sa sandaling ang tanong ay kung naghahati ba sa namespace ang mga federated identity at mga lokal, na siyang tanong na dahilan ng pag-iral ng setting na ito. Inilalapat ito PAGKATAPOS mapili ang username, kaya hindi mababago ng pagbabago nito KUNG ALING papasok na value ang ginamit."
+    "en": "cd17a5b59a5cf957",
+    "text": "Inilalagay sa unahan ng bawat username na ibinibigay ng isang foreign identity provider, para dalawang entry ang federated na `alice` at ang lokal na `alice`. WALANG LAMAN bilang default, na nangangahulugang IISANG entry sila — at tunay na desisyon iyon sa halip na default na walang nag-isip. Tama ang walang laman para sa serbisyong itinuturo sa isang partner para makita kung ano ang bumabalik, dahil ang pangalang may prefix ay ginagawang hindi pamilyar ang bawat downstream na token at assertion. Itakda ito sa isang tulad ng `fed-` sa sandaling ang tanong ay kung naghahati ba sa namespace ang mga federated identity at mga lokal, na siyang tanong na dahilan ng pag-iral ng setting na ito. Inilalapat ito PAGKATAPOS mapili ang username, kaya hindi mababago ng pagbabago nito KUNG ALING papasok na value ang ginamit."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4044,8 +4044,8 @@
     "text": "Payagan ang http:// sa isang partner (development lang)"
   },
   "federation.outboundAllowHttp|description": {
-    "en": "e9b0c89c7f07455a",
-    "text": "NAKA-OFF bilang default, na siyang iisang lugar kung saan mas mahigpit ang serbisyong ito kaysa sa karaniwang mock: ang naglalakbay sa mga request na ito ay client secret at authorization code, sa serbisyo ng iba. Ang ON ay tumatanggap ng http:// endpoint sa DEVELOPMENT mode, na siyang kailangan sa pag-federate laban sa ibang mock sa localhost, at nilo-log ang bawat ganoong request. Sa product mode, tinatanggihan ang plain http anuman ang sabihin nito (STS-FED-0112)."
+    "en": "e815dfe7877e359e",
+    "text": "NAKA-OFF bilang default, na siyang iisang lugar kung saan mas mahigpit ang serbisyong ito kaysa sa karaniwang development mode: ang naglalakbay sa mga request na ito ay client secret at authorization code, sa serbisyo ng iba. Ang ON ay tumatanggap ng http:// endpoint sa DEVELOPMENT mode, na siyang kailangan sa pag-federate laban sa ibang instance sa localhost, at nilo-log ang bawat ganoong request. Sa product mode, tinatanggihan ang plain http anuman ang sabihin nito (STS-FED-0112)."
   },
   "federation.outboundSkipTlsVerification|label": {
     "en": "85253ab85556bf34",
@@ -4172,8 +4172,8 @@
     "text": "OrganizationName sa metadata"
   },
   "saml.organizationName|description": {
-    "en": "40b17e36101b7803",
-    "text": "Ang <md:OrganizationName> sa /saml2/metadata at /saml11/metadata. INAALIS NG WALANG LAMAN ANG BUONG <md:Organization> element, sa alinmang mode, dahil hinihingi ng metadata schema ang pangalan, display name at URL nang magkakasama at ang organisasyong walang pangalan ay hindi organisasyon. Itinatakda ng product deployment ang sarili nito o inaalisan ito ng laman; ang default ay ang pangalan ng produkto, `sts` (`mock-sts` ito hanggang 2026-09-12)."
+    "en": "86bfb411b4b415d9",
+    "text": "Ang <md:OrganizationName> sa /saml2/metadata at /saml11/metadata. INAALIS NG WALANG LAMAN ANG BUONG <md:Organization> element, sa alinmang mode, dahil hinihingi ng metadata schema ang pangalan, display name at URL nang magkakasama at ang organisasyong walang pangalan ay hindi organisasyon. Itinatakda ng product deployment ang sarili nito o inaalisan ito ng laman; ang default ay ang pangalan ng produkto, `sts`."
   },
   "saml.organizationDisplayName|label": {
     "en": "88d52def3fcb1b6a",
@@ -4236,16 +4236,16 @@
     "text": "I-encrypt ang assertion"
   },
   "saml2.encryptAssertion|description": {
-    "en": "c0326691fb13cf15",
-    "text": "Balutin ang <saml:Assertion> sa isang <saml:EncryptedAssertion> sa loob ng Response. NAKA-OFF bilang default, dahil nangangailangan ito ng RECIPIENT CERTIFICATE at hindi mababasa ng service provider na hindi nagbigay ng isa sa serbisyong ito ang bumabalik. Kung saan walang mahanap na certificate, ipinapadala ang assertion nang MALINAW (CLEAR) at nilo-log ang dahilan at ipinapakita sa /admin/saml2 — ang pagtangging mag-isyu ay magiging mock na tumigil sumagot, at ang tahimik na pagpapadala ng plaintext habang sinasabi ng isang pahina na \"encrypted\" ay mas masahol pa sa alinman. Kinukuha ang certificate mula sa samlEncryptionCertificate sa entry nito (na isinusulat ng pag-consume sa metadata nito), pagkatapos sa naka-register nitong samlSigningCertificate, pagkatapos — sa development mode lang — sa NAOBSERBAHANG certificate mula sa pinirmahang AuthnRequest, kaya ang service provider na pumipirma ng mga request nito ay hindi nangangailangan ng configuration doon; nag-e-encrypt lang ang product sa naobserbahang certificate kapag nakumpirma na ito ng operator. PINIPIRMAHAN MUNA ang assertion at saka ine-encrypt, na siyang pagkakasunod na inaasahan ng bawat service provider: nasa loob ng ciphertext ang pirma at iyon ang nananatili pagkatapos ng decryption."
+    "en": "50d480ab245c0676",
+    "text": "Balutin ang <saml:Assertion> sa isang <saml:EncryptedAssertion> sa loob ng Response. NAKA-OFF bilang default, dahil nangangailangan ito ng RECIPIENT CERTIFICATE at hindi mababasa ng service provider na hindi nagbigay ng isa sa serbisyong ito ang bumabalik. Kung saan walang mahanap na certificate, ipinapadala ang assertion nang MALINAW (CLEAR) at nilo-log ang dahilan at ipinapakita sa /admin/saml2 — ang pagtangging mag-isyu ay magiging serbisyong tumigil sumagot, at ang tahimik na pagpapadala ng plaintext habang sinasabi ng isang pahina na \"encrypted\" ay mas masahol pa sa alinman. Kinukuha ang certificate mula sa samlEncryptionCertificate sa entry nito (na isinusulat ng pag-consume sa metadata nito), pagkatapos sa naka-register nitong samlSigningCertificate, pagkatapos — sa development mode lang — sa NAOBSERBAHANG certificate mula sa pinirmahang AuthnRequest, kaya ang service provider na pumipirma ng mga request nito ay hindi nangangailangan ng configuration doon; nag-e-encrypt lang ang product sa naobserbahang certificate kapag nakumpirma na ito ng operator. PINIPIRMAHAN MUNA ang assertion at saka ine-encrypt, na siyang pagkakasunod na inaasahan ng bawat service provider: nasa loob ng ciphertext ang pirma at iyon ang nananatili pagkatapos ng decryption."
   },
   "saml2.encryptionAlgorithm|label": {
     "en": "5cb576de8c785eed",
     "text": "Encryption algorithm"
   },
   "saml2.encryptionAlgorithm|description": {
-    "en": "3d74e433ce34b0c5",
-    "text": "Ang block cipher na ginagamit sa pag-encrypt ng bawat naka-encrypt na element. AUTHENTICATED ang dalawang GCM: nabibigo sa tag nito ang binagong ciphertext at tinatanggihan. HINDI ganoon ang dalawang CBC, at hindi iyon depekto ng serbisyong ito — iyon ang katangian ng CBC, hinihingi ito ng mga tunay na service provider, at ang mock na nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas. Ang ginagawa ng serbisyong ito tungkol dito kapag NAGBABASA ay i-parse ang resulta at tanggihan ang anumang hindi well-formed na XML, na nakakahuli sa ordinaryong pagkasira at hindi integrity."
+    "en": "4427c176840cdf46",
+    "text": "Ang block cipher na ginagamit sa pag-encrypt ng bawat naka-encrypt na element. AUTHENTICATED ang dalawang GCM: nabibigo sa tag nito ang binagong ciphertext at tinatanggihan. HINDI ganoon ang dalawang CBC, at hindi iyon depekto ng serbisyong ito — iyon ang katangian ng CBC, hinihingi ito ng mga tunay na service provider, at ang serbisyong nag-aalok lang ng ligtas na pagpipilian ay hindi magagamit para ipakita ang ginagawa ng hindi ligtas. Ang ginagawa ng serbisyong ito tungkol dito kapag NAGBABASA ay i-parse ang resulta at tanggihan ang anumang hindi well-formed na XML, na nakakahuli sa ordinaryong pagkasira at hindi integrity."
   },
   "saml2.keyTransportAlgorithm|label": {
     "en": "5a90e136cc72666e",
@@ -4924,8 +4924,8 @@
     "text": "Algorithm na ipinipirma sa mga credential"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration at ng did:web credential ng /did/generate. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng mock Verifier. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito."
+    "en": "73a0a13f9f08d4aa",
+    "text": "Ang JWS algorithm na ipinipirma sa mga dc+sd-jwt at jwt_vc_json credential — kasama ang mga post-quantum — at ang ipinipirma sa mga status list ng realm na ito, at ang ginagamit ng Domain Linkage Credential ng DID Configuration at ng did:web credential ng /did/generate. Pinapangalanan ito ng credential_signing_alg_values_supported ng metadata, inilalathala ng /oauth2/jwks at /.well-known/did.json ang key, at chine-check ito ng Verifier ng serbisyong ito. Ang ldp_vc ay bbs-2023 at hindi apektado. Pinapanatili ng credential na naiisyu na ang algorithm na ipinirma rito."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5020,8 +5020,8 @@
     "text": "Client ID ng verifier"
   },
   "oid4vp.clientId|description": {
-    "en": "6052a4d1b56e8787",
-    "text": "Ang client_id na ipinapakita ng mock na Verifier sa Authorization Request nito, at ang `aud` na dapat pangalanan ng Key Binding JWT."
+    "en": "fad43765b51b8297",
+    "text": "Ang client_id na ipinapakita ng Verifier ng serbisyong ito sa Authorization Request nito, at ang `aud` na dapat pangalanan ng Key Binding JWT."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
@@ -5036,8 +5036,8 @@
     "text": "Certificate header ng Request Object"
   },
   "oid4vp.requestObjectCertificateHeader|description": {
-    "en": "7bae5787a6f84891",
-    "text": "Kung pinapangalanan ng pinirmahang REQUEST OBJECT ng mock na Verifier (RFC 9101, isang request by reference) ang certificate chain ng key na pumirma rito. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakalagay sa loob, leaf ang una at ang service Root ang huli, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na pirma, ay walang natatanggap na alinman. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi ang mahigpit na verifier na sundan ito. Hindi kailanman binibigyan nito ang mga JWE header — walang certified key ng serbisyong ito ang nag-e-encrypt ng anuman. Maitatakda kada realm."
+    "en": "9bbac75884284a52",
+    "text": "Kung pinapangalanan ng pinirmahang REQUEST OBJECT ng Verifier (RFC 9101, isang request by reference) ang certificate chain ng key na pumirma rito. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakalagay sa loob, leaf ang una at ang service Root ang huli, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang mga CRL distribution point, OCSP responder at caIssuers address ng bawat certificate. Ang key na hindi pa na-certify sa ilalim ng JOSE Issuing CA ng realm na ito, at ang HMAC na pirma, ay walang natatanggap na alinman. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pagkuha sa `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi ang mahigpit na verifier na sundan ito. Hindi kailanman binibigyan nito ang mga JWE header — walang certified key ng serbisyong ito ang nag-e-encrypt ng anuman. Maitatakda kada realm."
   },
   "oid4vp.kbMaxAgeS|label": {
     "en": "202136566ac3cacb",
@@ -5324,8 +5324,8 @@
     "text": "Mga hinihinging claim"
   },
   "oid4vp.claims|description": {
-    "en": "054137dd98eeec73",
-    "text": "Ang PANIMULANG request ng mock na Verifier, at — ito ang bahaging dapat malaman — ang target na binabalikan ng Reset nito. Hindi ito ang live na listahan: pagmamay-ari iyon ng /admin/vc-verifier-config, at kinokopya nito ito sa startup. Kaya ang pagbabago nito rito ay nagbabago sa kung ano ang ibubunga ng susunod na Reset, at ang request sa wire ay magbabago lang kapag pinindot na ang Reset na iyon (o tinawag ang POST /admin-api/verifier-request/reset). Sinadyang reset target ito sa halip na live value: ang deployment na nag-configure nito ay dapat makakuha pabalik ng SARILI NITONG listahan mula sa Reset at hindi ng mga default ng catalogue. Ang claim na hindi mini-mint ng issuer na ito ay lehitimong hingin at ito ang paraan para maabot ang \"not satisfied\" na path."
+    "en": "4591b11de4d5e5c7",
+    "text": "Ang PANIMULANG request ng Verifier, at — ito ang bahaging dapat malaman — ang target na binabalikan ng Reset nito. Hindi ito ang live na listahan: pagmamay-ari iyon ng /admin/vc-verifier-config, at kinokopya nito ito sa startup. Kaya ang pagbabago nito rito ay nagbabago sa kung ano ang ibubunga ng susunod na Reset, at ang request sa wire ay magbabago lang kapag pinindot na ang Reset na iyon (o tinawag ang POST /admin-api/verifier-request/reset). Sinadyang reset target ito sa halip na live value: ang deployment na nag-configure nito ay dapat makakuha pabalik ng SARILI NITONG listahan mula sa Reset at hindi ng mga default ng catalogue. Ang claim na hindi mini-mint ng issuer na ito ay lehitimong hingin at ito ang paraan para maabot ang \"not satisfied\" na path."
   },
   "oid4vp.presentationRequestTtlS|label": {
     "en": "1686a3d4983e6c6b",
@@ -5372,8 +5372,8 @@
     "text": "Ibang pinagkakatiwalaang credential issuer (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "b23af7aea67fb69a",
-    "text": "Mga PEM certificate, pinagdugtong, na ang mga key ay tinatanggap ng mock na Verifier para sa pirma ng SD-JWT VC o jwt_vc_json credential BUKOD PA sa sariling issuer ng realm na ito. Walang laman — ang default — ay ang issuer na ito lang ang pinagkakatiwalaan, gaya ng dati. Ginagamit ang certificate bilang KEY: walang chain na binubuo, pero kinokonsulta ang revocation nito kapag nagve-verify ito ng credential (pki.revocationCheck, mula 2026-09-12)."
+    "en": "60a2c73b8c2c6aec",
+    "text": "Mga PEM certificate, pinagdugtong, na ang mga key ay tinatanggap ng Verifier ng serbisyong ito para sa pirma ng SD-JWT VC o jwt_vc_json credential BUKOD PA sa sariling issuer ng realm na ito. Walang laman — ang default — ay ang issuer na ito lang ang pinagkakatiwalaan, gaya ng dati. Ginagamit ang certificate bilang KEY: walang chain na binubuo, pero kinokonsulta ang revocation nito kapag nagve-verify ito ng credential (pki.revocationCheck, mula 2026-09-12)."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5756,8 +5756,8 @@
     "text": "Password ng awtomatikong ginagawang service"
   },
   "krb5.autoServicePassword|description": {
-    "en": "71fd54a4160f0e2a",
-    "text": "Iisang password para sa bawat service na ginagawa on demand, at inilalathala ito sa parehong dahilan ng user password: ito ang nagpapahintulot sa isang mambabasa na i-decrypt ang service ticket na in-issue ng mock na ito at basahin ang PAC sa loob nito. Ang mga NAKA-CONFIGURE na service account ay may sariling hiwalay na mga password."
+    "en": "0715018c29ee708a",
+    "text": "Iisang password para sa bawat service na ginagawa on demand, at inilalathala ito sa parehong dahilan ng user password: ito ang nagpapahintulot sa isang mambabasa na i-decrypt ang service ticket na in-issue ng serbisyong ito at basahin ang PAC sa loob nito. Ang mga NAKA-CONFIGURE na service account ay may sariling hiwalay na mga password."
   },
   "krb5.autoServicePassword|restartReason": {
     "en": "c8e4e57160c0d53d",
@@ -5928,8 +5928,8 @@
     "text": "Ipadala ang s2kparams"
   },
   "krb5.s2kparams|description": {
-    "en": "f4cde78e622f2547",
-    "text": "Kung may dalang s2kparams ang PA-ETYPE-INFO2. Hindi ito isinasama ng Windows Server at ipinadala ito ng mock na ito, na siyang tanging pagkakaibang nakita sa na-capture na palitan sa tunay na DC; kaya omit ang default at pinanatili ang send para masubok ang client na nagbabasa nito."
+    "en": "8377aa5576df5515",
+    "text": "Kung may dalang s2kparams ang PA-ETYPE-INFO2. Hindi ito isinasama ng Windows Server at ipinadala ito ng serbisyong ito, na siyang tanging pagkakaibang nakita sa na-capture na palitan sa tunay na DC; kaya omit ang default at pinanatili ang send para masubok ang client na nagbabasa nito."
   },
   "ldap.port|label": {
     "en": "94902c0432b688e5",
@@ -6576,8 +6576,8 @@
     "text": "Allowlist ng push endpoint"
   },
   "ssf.pushAllowedHosts|description": {
-    "en": "24d1d11741ad76ed",
-    "text": "Mga host name na pinagpu-push-an ng serbisyong ito. ANG WALANG LAMAN AY NANGANGAHULUGANG KAHIT ALIN, na siyang default at ang tanging sinadyang kaluwagan sa outbound path — ito ang gumagawang magagamit ito bilang mock. Ang deployment na naaabot ng sinumang hindi nito pinagkakatiwalaan ay nagtatakda ng listahan, at tinatanggihan AYON SA PANGALAN ang bawat ibang host sa sariling log ng stream. Sinadyang mga host sa halip na mga URL: lehitimong inililipat ng receiver ang endpoint path nito at hindi lehitimong lumilipat sa ibang host."
+    "en": "fc66434cacb67fdc",
+    "text": "Mga host name na pinagpu-push-an ng serbisyong ito. ANG WALANG LAMAN AY NANGANGAHULUGANG KAHIT ALIN, na siyang default at ang tanging sinadyang kaluwagan sa outbound path — ito ang gumagawang magagamit ito para sa pagsubok. Ang deployment na naaabot ng sinumang hindi nito pinagkakatiwalaan ay nagtatakda ng listahan, at tinatanggihan AYON SA PANGALAN ang bawat ibang host sa sariling log ng stream. Sinadyang mga host sa halip na mga URL: lehitimong inililipat ng receiver ang endpoint path nito at hindi lehitimong lumilipat sa ibang host."
   },
   "ssf.pushAllowHttp|label": {
     "en": "9954d6ecb250aab1",
@@ -6708,8 +6708,8 @@
     "text": "Mga stream kada receiver"
   },
   "ssf.maxStreams|description": {
-    "en": "175775f7e47974e8",
-    "text": "Ilang stream ang maaaring hawakan ng isang RECEIVER — isang na-authenticate na may-ari — sa isang trust realm. Kada realm ito hanggang 2026-09-22 (#144), na nagpahintulot sa isang receiver na ubusin ang allowance ng bawat ibang receiver. Ang create na lumampas dito ay tinatanggihan NA PINAPANGALANAN ANG SETTING NA ITO, na siyang punto ng pagkakaroon ng limitasyon sa isang mock: ang bawat kisame dito ay naaabot na negative na hindi masusubok ng receiver sa ibang paraan. Hindi binibilang ang sariling dalawang receiver stream ng serbisyong ito."
+    "en": "06c569e74cb378cd",
+    "text": "Ilang stream ang maaaring hawakan ng isang RECEIVER — isang na-authenticate na may-ari — sa isang trust realm. Kada realm ito hanggang 2026-09-22 (#144), na nagpahintulot sa isang receiver na ubusin ang allowance ng bawat ibang receiver. Ang create na lumampas dito ay tinatanggihan NA PINAPANGALANAN ANG SETTING NA ITO, na siyang punto ng pagkakaroon ng limitasyon dito: ang bawat kisame dito ay naaabot na negative na hindi masusubok ng receiver sa ibang paraan. Hindi binibilang ang sariling dalawang receiver stream ng serbisyong ito."
   },
   "ssf.inactivityTimeoutS|label": {
     "en": "b6bd6443319327f2",
@@ -7644,8 +7644,8 @@
     "text": "Trust domain"
   },
   "spiffe.trustDomain|description": {
-    "en": "695de04a8f35c484",
-    "text": "Ang trust domain kung saan ang serbisyong ito ang issuing authority: ang authority na bahagi ng bawat SPIFFE ID na mini-mint nito, kaya spiffe://example.org/… bilang default. MALIIT NA TITIK, at mga titik, numero, tuldok, gitling at underscore lang — ang trust domain na may malalaking titik ay hindi valid na SPIFFE ID at hindi rin ibang baybay ng bersyong maliit ang titik. Ang realm na ginawa rito ay binibigyan ng SARILI NITONG DOMAIN bilang trust domain — iyasec.io — gaya ng pagbibigay dito ng sariling entityID, dahil ang dalawang realm na may iisang trust domain ay dalawang issuing authority na umaangkin sa iisang pangalan at ang bawat SVID na mini-mint ng alinman ay nagiging malabo. Itakda ito sa isang realm para tahasang pangalanan ang trust domain ng realm na iyon; ang realm na sadyang nakikihati sa trust domain ng iba ay isang bagay na sulit na mabuo sa isang mock."
+    "en": "a87c95b882ee7e67",
+    "text": "Ang trust domain kung saan ang serbisyong ito ang issuing authority: ang authority na bahagi ng bawat SPIFFE ID na mini-mint nito, kaya spiffe://example.org/… bilang default. MALIIT NA TITIK, at mga titik, numero, tuldok, gitling at underscore lang — ang trust domain na may malalaking titik ay hindi valid na SPIFFE ID at hindi rin ibang baybay ng bersyong maliit ang titik. Ang realm na ginawa rito ay binibigyan ng SARILI NITONG DOMAIN bilang trust domain — iyasec.io — gaya ng pagbibigay dito ng sariling entityID, dahil ang dalawang realm na may iisang trust domain ay dalawang issuing authority na umaangkin sa iisang pangalan at ang bawat SVID na mini-mint ng alinman ay nagiging malabo. Itakda ito sa isang realm para tahasang pangalanan ang trust domain ng realm na iyon; ang realm na sadyang nakikihati sa trust domain ng iba ay isang bagay na sulit na mabuo para sa pagsubok."
   },
   "spiffe.trustDomain|restartReason": {
     "en": "ebdc38f401978d5b",
@@ -8436,8 +8436,8 @@
     "text": "Gumawa ng registration entry sa unang pagkakita"
   },
   "spiffe.autoCreateEntries|description": {
-    "en": "7944288e3f3984d1",
-    "text": "ITO ANG SETTING NA GUMAGAWA RITO BILANG MOCK. Kapag naka-on, ang workload na humihingi ng SVID sa Workload API at walang katugmang registration entry ay ginagawan ng isa at iniisyuhan pa rin ng SVID — walang attestation, walang selector, walang sinusuri — na siyang parehong permissive na tindig ng bawat ibang family dito. Kapag naka-off, tinatanggihan ng PERMISSION_DENIED ang hindi nakarehistrong workload, na siyang sinasabi ng Workload API at ginagawa ng tunay na SPIRE agent, at ito ang TANGING paraan para subukan ang \"wala akong identity\" na path ng isang client. Sulit na magkaroon ng dalawang sagot; wala sa dalawa ang ligtas na pagpipilian."
+    "en": "ff8fc38721bf6650",
+    "text": "ITO ANG SETTING NA GUMAGAWANG MALUWAG SA SPIFFE. Kapag naka-on, ang workload na humihingi ng SVID sa Workload API at walang katugmang registration entry ay ginagawan ng isa at iniisyuhan pa rin ng SVID — walang attestation, walang selector, walang sinusuri — na siyang parehong permissive na tindig ng bawat ibang family dito. Kapag naka-off, tinatanggihan ng PERMISSION_DENIED ang hindi nakarehistrong workload, na siyang sinasabi ng Workload API at ginagawa ng tunay na SPIRE agent, at ito ang TANGING paraan para subukan ang \"wala akong identity\" na path ng isang client. Sulit na magkaroon ng dalawang sagot; wala sa dalawa ang ligtas na pagpipilian."
   },
   "spiffe.requireSecurityHeader|label": {
     "en": "25778a0e30ceae29",

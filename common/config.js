@@ -3384,8 +3384,8 @@ const SETTINGS = [
     // that `realmRuntime` has exactly the holders it names, which is how each
     // one stays a decision rather than a copied line.
     dflt: 'development', runtime: true,
-    description: 'What this service is. `development` is the mock every ' +
-                 'release before 2026-09-06 was: no password is checked in ' +
+    description: 'What this service is. `development` is what every release ' +
+                 'before 2026-09-06 was: no password is checked in ' +
                  'any protocol, an unknown user, application, service ' +
                  'principal or authorization server is created the first ' +
                  'time it is named, an OAuth client needs no secret, and — ' +
@@ -3420,7 +3420,8 @@ const SETTINGS = [
     path: 'logLevel', env: 'STS_LOG_LEVEL', type: 'enum',
     enumValues: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
     dflt: 'info', runtime: true,
-    description: 'debug is the useful level for a mock whose job is to show ' +
+    description: 'debug is the useful level for a service whose job is to ' +
+                 'show ' +
                  'what it did: every endpoint call, and every token and ' +
                  'assertion both before and after it was signed. Changing it ' +
                  'here takes effect on the next line written, EXCEPT in the ' +
@@ -8012,7 +8013,7 @@ const SETTINGS = [
                  'supplies, so a federated `alice` and the local `alice` are ' +
                  'two entries. EMPTY by default, which means they are ONE ' +
                  'entry — and that is a real decision rather than a default ' +
-                 'nobody thought about. Empty is right for a mock being ' +
+                 'nobody thought about. Empty is right for a service being ' +
                  'pointed at a partner to see what comes back, because a ' +
                  'prefixed name makes every downstream token and assertion ' +
                  'look unfamiliar. Set it to something like `fed-` the ' +
@@ -8089,11 +8090,13 @@ const SETTINGS = [
     env: 'STS_FEDERATION_OUTBOUND_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
     description: 'OFF by default, which is the one place this service is ' +
-                 'stricter than a mock would ordinarily be: what travels on ' +
+                 'stricter than development mode ordinarily is: what travels ' +
+                 'on ' +
                  'these requests is a client secret and an authorization ' +
                  'code, at somebody else\'s service. ON accepts an http:// ' +
                  'endpoint in DEVELOPMENT mode, which is what federating ' +
-                 'against another mock on localhost needs, and every such ' +
+                 'against another instance on localhost needs, and every ' +
+                 'such ' +
                  'request is logged. In product mode plain http is refused ' +
                  'whatever this says (STS-FED-0112).' },
   { key: 'federation.outboundSkipTlsVerification', group: 'Federation',
@@ -8377,12 +8380,12 @@ const SETTINGS = [
                  'requires a name, a display name and a URL together and an ' +
                  'organisation with no name is not one. A product deployment ' +
                  'sets its own or empties it; the default is the product ' +
-                 'name, `sts` (it was `mock-sts` until 2026-09-12).' },
+                 'name, `sts`.' },
 
   { key: 'saml.organizationDisplayName', group: 'SAML',
     label: 'Metadata OrganizationDisplayName',
     env: 'STS_SAML_ORGANIZATION_DISPLAY_NAME', type: 'string',
-    dflt: 'Mock security token service', runtime: true,
+    dflt: 'Security token service', runtime: true,
     description: 'The <md:OrganizationDisplayName> beside the name above. ' +
                  'Empty omits the element for the reason given there.' },
 
@@ -8496,7 +8499,8 @@ const SETTINGS = [
                  'given this service one cannot read what comes back. Where ' +
                  'no certificate can be found the assertion is sent in CLEAR ' +
                  'and the reason is logged and shown on /admin/saml2 — a ' +
-                 'refusal to issue would be a mock that stopped answering, ' +
+                 'refusal to issue would be a service that stopped ' +
+                 'answering, ' +
                  'and silently sending plaintext while a page said ' +
                  '"encrypted" would be worse than either. The certificate is ' +
                  'taken from samlEncryptionCertificate on its entry (which ' +
@@ -8521,7 +8525,8 @@ const SETTINGS = [
                  'ciphertext fails its tag and is refused. The two CBC ones ' +
                  'are NOT, and that is not a defect in this service — it is ' +
                  'the property CBC has, real service providers require it, ' +
-                 'and a mock that offered only the safe choice could not be ' +
+                 'and a service that offered only the safe choice could not ' +
+                 'be ' +
                  'used to show what the unsafe one does. What this service ' +
                  'does about it when READING is parse the result and refuse ' +
                  'anything that is not well-formed XML, which catches the ' +
@@ -9734,7 +9739,7 @@ const SETTINGS = [
                  'credential use. The metadata\'s ' +
                  'credential_signing_alg_values_supported names it, ' +
                  '/oauth2/jwks and /.well-known/did.json publish the key, ' +
-                 'and the mock Verifier checks against it. ldp_vc is ' +
+                 'and this service\'s Verifier checks against it. ldp_vc is ' +
                  'bbs-2023 and is not affected. A credential already issued ' +
                  'keeps the algorithm it was signed with.' },
 
@@ -9784,7 +9789,7 @@ const SETTINGS = [
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
     env: 'OID4VCI_ISSUER_DISPLAY_NAME', type: 'string',
-    dflt: 'IdP Tools Mock Credential Issuer', runtime: true,
+    dflt: 'IdP Tools Credential Issuer', runtime: true,
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +
@@ -9860,7 +9865,7 @@ const SETTINGS = [
   { key: 'oid4vp.clientId', group: 'OID4VP', label: 'Verifier client ID',
     env: 'OID4VP_CLIENT_ID', type: 'string', dflt: 'sts-verifier',
     runtime: true,
-    description: 'The client_id the mock Verifier presents in its ' +
+    description: 'The client_id this service\'s Verifier presents in its ' +
                  'Authorization Request, and the `aud` the Key Binding JWT ' +
                  'must name.' },
 
@@ -9879,7 +9884,7 @@ const SETTINGS = [
   certificateHeaderSetting('oid4vp.requestObjectCertificateHeader', 'OID4VP',
     'OID4VP_REQUEST_OBJECT_CERTIFICATE_HEADER',
     'Request Object certificate header',
-    'Whether the mock Verifier\'s signed REQUEST OBJECT (RFC 9101, a request ' +
+    'Whether the Verifier\'s signed REQUEST OBJECT (RFC 9101, a request ' +
     'by reference) names the certificate chain of the key that signed it.'),
 
   { key: 'oid4vp.kbMaxAgeS', group: 'OID4VP', label: 'Key Binding max age (s)',
@@ -10222,7 +10227,7 @@ const SETTINGS = [
   { key: 'oid4vp.claims', group: 'OID4VP', label: 'Requested claims',
     env: 'OID4VP_CLAIMS', type: 'csv', dflt: 'given_name,family_name',
     runtime: true,
-    description: 'The mock Verifier\'s STARTING request, and — this is the ' +
+    description: 'The Verifier\'s STARTING request, and — this is the ' +
                  'part worth knowing — the target its Reset returns to. It ' +
                  'is not the live list: /admin/vc-verifier-config owns that, ' +
                  'and copies this at startup. So changing it here changes ' +
@@ -10294,7 +10299,7 @@ const SETTINGS = [
     label: 'Other trusted credential issuers (PEM)',
     env: 'OID4VP_TRUSTED_ISSUER_CERTIFICATES', type: 'string', dflt: '',
     runtime: true,
-    description: 'PEM certificates, concatenated, whose keys the mock ' +
+    description: 'PEM certificates, concatenated, whose keys this service\'s ' +
                  'Verifier accepts an SD-JWT VC or jwt_vc_json credential ' +
                  'signature from IN ADDITION to this realm\'s own issuer. ' +
                  'Empty — the default — trusts this issuer alone, which is ' +
@@ -10890,7 +10895,8 @@ const SETTINGS = [
                    REALM_BUILDS_ITS_OWN,
     description: 'One password for every service created on demand, and it ' +
                  'is published for the same reason the user password is: it ' +
-                 'is what lets a reader decrypt a service ticket this mock ' +
+                 'is what lets a reader decrypt a service ticket this ' +
+                 'service ' +
                  'issued and read the PAC inside it. The CONFIGURED service ' +
                  'accounts keep their own separate passwords.' },
 
@@ -11190,7 +11196,7 @@ const SETTINGS = [
     env: 'KRB5_S2KPARAMS', type: 'enum', enumValues: ['omit', 'send'],
     dflt: 'omit', runtime: true,
     description: 'Whether PA-ETYPE-INFO2 carries s2kparams. Windows Server ' +
-                 'omits it and this mock sent it, which is the one ' +
+                 'omits it and this service sent it, which is the one ' +
                  'difference the captured real-DC exchange found; omit is ' +
                  'therefore the default and send is kept so a client that ' +
                  'reads it can be exercised.' },
@@ -12246,8 +12252,9 @@ const SETTINGS = [
     env: 'STS_SSF_PUSH_ALLOWED_HOSTS', type: 'csv', dflt: '', runtime: true,
     description: 'Host names this service will push to. EMPTY MEANS ANY, ' +
                  'which is the default and the one deliberate looseness in ' +
-                 'the outbound path — it is what makes this usable as a ' +
-                 'mock. A deployment reachable by anybody it does not trust ' +
+                 'the outbound path — it is what makes this usable for ' +
+                 'testing. A deployment reachable by anybody it does not ' +
+                 'trust ' +
                  'sets the list, and every other host is refused BY NAME on ' +
                  'the stream\'s own log. Hosts rather than URLs on purpose: ' +
                  'a receiver legitimately moves its endpoint path and does ' +
@@ -12451,7 +12458,7 @@ const SETTINGS = [
                  '2026-09-22 (#144), which let one receiver use up every ' +
                  'other receiver\'s allowance. A create past it is refused ' +
                  'NAMING THIS SETTING, which is the point of having a limit ' +
-                 'on a mock at all: every ceiling here is a reachable ' +
+                 'here at all: every ceiling here is a reachable ' +
                  'negative a receiver cannot otherwise exercise. This ' +
                  'service\'s own two receiver streams are not counted.' },
 
@@ -14130,7 +14137,8 @@ const SETTINGS = [
                  'authorities claiming one name and every SVID either mints ' +
                  'is then ambiguous. Set it on a realm to name that realm\'s ' +
                  'trust domain outright; a realm deliberately sharing ' +
-                 'another\'s is a thing worth being able to build on a mock.' },
+                 'another\'s is a thing worth being able to build for ' +
+                 'testing.' },
 
   { key: 'spiffe.x509KeyType', group: 'SPIFFE', label: 'X.509 authority key',
     env: 'STS_SPIFFE_X509_KEY_TYPE', type: 'enum',
@@ -15013,7 +15021,8 @@ const SETTINGS = [
     label: 'Invent a registration entry on first sight',
     env: 'STS_SPIFFE_AUTOCREATE_ENTRIES', type: 'bool', dflt: true,
     runtime: true,
-    description: 'THIS IS THE SETTING THAT MAKES THIS A MOCK. On, a workload ' +
+    description: 'THIS IS THE SETTING THAT MAKES SPIFFE PERMISSIVE. On, a ' +
+                 'workload ' +
                  'that asks the Workload API for an SVID and matches no ' +
                  'registration entry gets one created for it and is issued ' +
                  'an SVID anyway — no attestation, no selectors, nothing ' +

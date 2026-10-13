@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — 数字学位证书",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — 数字学位证书",
+  "issuer.heading": "Example University",
   "issuer.intro": "恭喜您毕业。您的学位证书可作为数字凭证（<code>{configuration}</code>）保存在您的钱包中。",
   "issuer.request": "申请您的数字学位证书",
   "issuer.requestByReference": "申请（通过引用传递要约）",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "显示二维码（签发需要一些时间）",
   "issuer.meta": "这是 OID4VCI 附录 H 中凭证签发方的网页。前两个链接会构建凭证要约，并将您发送到位于 <code>{wallet}</code> 的钱包（H.1，同一设备）。另外两个链接改用二维码和交易码传递要约——H.2，以及签发方需要时间生成凭证时的 H.3。签发方为 <code>{issuer}</code>。",
   "offer.starting": "正在准备您的凭证要约…",
-  "offer.title": "Mock University — 扫描以接收您的凭证",
+  "offer.title": "Example University — 扫描以接收您的凭证",
   "offer.heading": "用您的钱包扫描此码",
   "offer.ready": "您的数字学位证书已可领取。",
   "offer.readyDeferred": "您的数字学位证书已可领取，不过在您申请后，我们需要一点时间来签发。",

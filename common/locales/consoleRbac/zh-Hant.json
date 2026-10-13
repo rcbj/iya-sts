@@ -27,7 +27,7 @@
   "body.typedHeading": "授予給未列出的名稱",
   "body.name": "名稱",
   "body.typedPlaceholder": "對方登入時將使用的名稱",
-  "body.typedNote": "在該人員存在之前，此成員資格將處於懸空狀態——它指向此目錄尚未包含的 DN——角色自其首次登入時起生效。這正是模擬服務值得關注的情形，也是此表單存在的原因：授予並不要求該人員已被見過。包含 RFC 4514 在 DN 中保留之字元的名稱會被拒絕，與建立人員時的拒絕相同。",
+  "body.typedNote": "在該人員存在之前，此成員資格將處於懸空狀態——它指向此目錄尚未包含的 DN——角色自其首次登入時起生效。這正是測試中值得關注的情形，也是此表單存在的原因：授予並不要求該人員已被見過。包含 RFC 4514 在 DN 中保留之字元的名稱會被拒絕，與建立人員時的拒絕相同。",
   "body.readOnlyNote": "授予和撤銷需要 <strong>Admin Write</strong>。上表是您憑 <strong>Admin Read</strong> 可以看到的內容。",
   "body.person": "人員",
   "body.filterPlaceholder": "名稱的一部分",

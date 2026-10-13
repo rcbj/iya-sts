@@ -378,7 +378,7 @@ That last one is why `webauthn.js` must stay loadable on its own.
 
 **WS-Federation's tests are thin**, which is worth saying plainly.
 `sts_saml11.js` posts a sign-in response to the test peer's relying party,
-which verifies it (the mock relying party that once made the profile *look*
+which verifies it (the demonstration relying party that once made the profile *look*
 covered was deleted, #592), and `tests/wsfed_wauth_step_up.js` holds the
 `wauth` step-up and its refusals. What a real test would add is the other negatives: a `wctx` that
 came back altered, `wfresh` read as seconds, and an assertion whose signature

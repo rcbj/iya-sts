@@ -420,8 +420,8 @@
     "text": "輪替金鑰加密金鑰的方法：將 keys.kek* 指向「新」金鑰、此設定指向「舊」金鑰，然後啟動。仍以舊金鑰包裝的每把數據加密金鑰都會改以新金鑰重新包裝並寫回；所有節點都以這種方式啟動過之後，將此設定改回 none。儲存區本身不會重新加密。"
   },
   "global.mode|description": {
-    "en": "abe4dc2a95f944df",
-    "text": "本服務是什麼。`development` 就是 2026-09-06 之前每個版本都是的模擬服務：任何協定都不檢查密碼，未知的用戶、應用程式、服務主體或授權伺服器在第一次被指名時就會建立，OAuth 客戶端不需要秘密，而且——在 adminApi.authRequired 關閉時——/admin-api 是開放的，讓測試能驅動它，也讓不持有任何角色的人能重新進入。`product` 執行「相同」的協定實作，但移除了寬鬆之處：出示的認證會與該人目錄項目上雜湊後的 `userPassword` 比對驗證，每個被參照的物件都必須事先建立，每個宣告了機密方法的 OAuth 2.0 與 OpenID Connect 應用程式都必須以該方法驗證（公開客戶端則改受 RFC 9700 約束），每個僅限開發的設定都會被忽略，而在 adminApi.authRequired 關閉時，/admin-api 要求與主控台相同的登入與角色（開啟時——兩種模式的預設——則要求存取權杖）。它可依信任領域設定，因此同一程序可同時提供兩者。GET /admin/mode 列出每項要求，並說明每種模式下各給予什麼答案。\n\n它可以在執行時變更，而變更時順序很重要：在 adminApi.authRequired 關閉時，/admin-api 一直到此值被設為 `product` 的那一刻都是開放的，因此請「先」佈建認證，再切換。在沒有任何人持有認證時切換的領域將無從進入——啟動時的初始化只在啟動時執行，而不在變更時執行，這是刻意的，因為每次設定變動就產生一個管理員的服務，會是一個擁有沒人要求之管理員的服務。"
+    "en": "72d5f41058477223",
+    "text": "本服務是什麼。`development` 就是 2026-09-06 之前每個版本的樣子：任何協定都不檢查密碼，未知的用戶、應用程式、服務主體或授權伺服器在第一次被指名時就會建立，OAuth 客戶端不需要秘密，而且——在 adminApi.authRequired 關閉時——/admin-api 是開放的，讓測試能驅動它，也讓不持有任何角色的人能重新進入。`product` 執行「相同」的協定實作，但移除了寬鬆之處：出示的認證會與該人目錄項目上雜湊後的 `userPassword` 比對驗證，每個被參照的物件都必須事先建立，每個宣告了機密方法的 OAuth 2.0 與 OpenID Connect 應用程式都必須以該方法驗證（公開客戶端則改受 RFC 9700 約束），每個僅限開發的設定都會被忽略，而在 adminApi.authRequired 關閉時，/admin-api 要求與主控台相同的登入與角色（開啟時——兩種模式的預設——則要求存取權杖）。它可依信任領域設定，因此同一程序可同時提供兩者。GET /admin/mode 列出每項要求，並說明每種模式下各給予什麼答案。\n\n它可以在執行時變更，而變更時順序很重要：在 adminApi.authRequired 關閉時，/admin-api 一直到此值被設為 `product` 的那一刻都是開放的，因此請「先」佈建認證，再切換。在沒有任何人持有認證時切換的領域將無從進入——啟動時的初始化只在啟動時執行，而不在變更時執行，這是刻意的，因為每次設定變動就產生一個管理員的服務，會是一個擁有沒人要求之管理員的服務。"
   },
   "workers.startTimeoutMs|description": {
     "en": "d618aed19286a7b1",
@@ -1380,16 +1380,16 @@
     "text": "聯合用戶名稱的前置詞"
   },
   "federation.usernamePrefix|description": {
-    "en": "3783b4bfff228c17",
-    "text": "加在外部身分識別提供者所提供之每個用戶名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把模擬服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定用戶名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
+    "en": "cd17a5b59a5cf957",
+    "text": "加在外部身分識別提供者所提供之每個用戶名稱前面，讓聯合的 `alice` 與本機的 `alice` 成為兩個項目。預設為空白，表示它們是「同一個」項目——而這是一項真正的決定，而不是沒人想過的預設值。若是把本服務指向夥伴以觀察傳回的內容，空白是正確的，因為加了前置詞的名稱會讓下游的每個權杖與斷言看起來都很陌生。一旦問題變成聯合身分是否與本機身分共用命名空間——這正是此設定存在的目的——就將其設為類似 `fed-` 的值。它在選定用戶名稱「之後」才套用，因此變更它不會改變使用的是「哪個」傳入值。"
   },
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "等待夥伴回應多久後放棄。它比一般逾時更重要，因為瀏覽器正在「等待」它——聯合登入時，某人正看著空白分頁，而此服務在兌換代碼——因此它短到足以讓失效的夥伴產生錯誤頁面而不是卡住，且錯誤會指出逾時。在 2026-08-30 之前它是 5000，改變的是此處的夥伴「通常就是此程序」：信任領域是此服務的邏輯副本，而任何人向全新領域要求的第一樣東西就是其 JWKS——這會促使該領域的十一把後量子金鑰產生，其中一把是 SLH-DSA-SHAKE-128s 金鑰，產生約需五秒。5000 這個預算之所以能運作，只是因為此服務「過去在回應時會阻塞」：事件迴圈停止時，強制執行該預算的計時器要等到回應完成後才能觸發。現在金鑰在 libuv 的線程池上產生（common/pq_native.js），並在建立領域時預先產生，因此一般擷取只需數毫秒——此值是為領域仍在誕生時抵達的那次擷取所準備的預算。"
   },
   "federation.outboundAllowHttp|description": {
-    "en": "e9b0c89c7f07455a",
-    "text": "預設為關閉，這是此服務比一般模擬服務更嚴格的唯一一處：這些要求傳送的是客戶端密碼與授權碼，送往別人的服務。開啟時，在開發模式下接受 http:// 端點，這是與 localhost 上另一個模擬服務聯合所需要的，且每個這類要求都會被記錄。在產品模式下，無論此處如何設定，純 http 都會被拒絕（STS-FED-0112）。"
+    "en": "e815dfe7877e359e",
+    "text": "預設為關閉，這是此服務比開發模式通常更嚴格的唯一一處：這些要求傳送的是客戶端密碼與授權碼，送往別人的服務。開啟時，在開發模式下接受 http:// 端點，這是與 localhost 上另一個執行個體聯合所需要的，且每個這類要求都會被記錄。在產品模式下，無論此處如何設定，純 http 都會被拒絕（STS-FED-0112）。"
   },
   "federation.outboundSkipTlsVerification|description": {
     "en": "2f31a0a6708036ea",
@@ -1428,8 +1428,8 @@
     "text": "元數據 OrganizationName"
   },
   "saml.organizationName|description": {
-    "en": "40b17e36101b7803",
-    "text": "/saml2/metadata 與 /saml11/metadata 中的 <md:OrganizationName>。空白會省略整個 <md:Organization> 元素，兩種模式皆然，因為元數據結構描述要求名稱、顯示名稱與 URL 同時存在，而沒有名稱的組織就不成其為組織。產品部署會設定自己的值或將其清空；預設值為產品名稱 `sts`（在 2026-09-12 之前為 `mock-sts`）。"
+    "en": "86bfb411b4b415d9",
+    "text": "/saml2/metadata 與 /saml11/metadata 中的 <md:OrganizationName>。空白會省略整個 <md:Organization> 元素，兩種模式皆然，因為元數據結構描述要求名稱、顯示名稱與 URL 同時存在，而沒有名稱的組織就不成其為組織。產品部署會設定自己的值或將其清空；預設值為產品名稱 `sts`。"
   },
   "saml.organizationDisplayName|label": {
     "en": "88d52def3fcb1b6a",
@@ -1444,8 +1444,8 @@
     "text": "當 AuthnRequest 的 NameIDPolicy 未要求任何格式時，NameID 上的 Format——或者，當服務提供者已採用的元數據列出了 NameIDFormat 而此值不在其中時，則為此身分識別提供者所發佈之格式中的第一個。「有」指定格式的要求會以其指定的格式回應——任何格式皆可，包括此服務從未聽過的格式，因為讓服務提供者收到自己的格式是值得演練的行為——「除非」該服務提供者已採用的元數據宣告了其格式而此格式不在其中，此時會回應 InvalidNameIDPolicy（saml-core-2.0-os section 3.4.1.1）。"
   },
   "saml2.encryptAssertion|description": {
-    "en": "c0326691fb13cf15",
-    "text": "在 Response 內以 <saml:EncryptedAssertion> 包住 <saml:Assertion>。預設為關閉，因為它需要「收件者證書」，而未提供證書給此服務的服務提供者無法讀取傳回的內容。找不到證書時，斷言會以「明文」傳送，原因會被記錄並顯示在 /admin/saml2 上——拒絕簽發會讓模擬服務停止回應，而一邊在頁面上寫著「已加密」一邊默默傳送明文，會比兩者都更糟。證書依序取自其項目上的 samlEncryptionCertificate（採用其元數據時會寫入），然後是其註冊的 samlSigningCertificate，然後——僅限開發模式——從已簽署之 AuthnRequest 上「觀察到」的證書，因此會簽署其要求的服務提供者在此不需要任何設定；產品模式只在營運者確認後才會對觀察到的證書加密。斷言是「先簽署」再加密，這是每個服務提供者預期的順序：簽章位於密文內部，是解密後保留下來的部分。"
+    "en": "50d480ab245c0676",
+    "text": "在 Response 內以 <saml:EncryptedAssertion> 包住 <saml:Assertion>。預設為關閉，因為它需要「收件者證書」，而未提供證書給此服務的服務提供者無法讀取傳回的內容。找不到證書時，斷言會以「明文」傳送，原因會被記錄並顯示在 /admin/saml2 上——拒絕簽發會讓服務停止回應，而一邊在頁面上寫著「已加密」一邊默默傳送明文，會比兩者都更糟。證書依序取自其項目上的 samlEncryptionCertificate（採用其元數據時會寫入），然後是其註冊的 samlSigningCertificate，然後——僅限開發模式——從已簽署之 AuthnRequest 上「觀察到」的證書，因此會簽署其要求的服務提供者在此不需要任何設定；產品模式只在營運者確認後才會對觀察到的證書加密。斷言是「先簽署」再加密，這是每個服務提供者預期的順序：簽章位於密文內部，是解密後保留下來的部分。"
   },
   "saml2.keyTransportAlgorithm|description": {
     "en": "73d22fa4ae7f5489",
@@ -1776,8 +1776,8 @@
     "text": "開啟時，未要求加密回應（credential_response_encryption）的認證要求會被拒絕，且元數據會指出 encryption_required: true。"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 與 /did/generate 的 did:web 認證所使用的演算法。元數據的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，模擬 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
+    "en": "73a0a13f9f08d4aa",
+    "text": "簽署 dc+sd-jwt 與 jwt_vc_json 認證所用的 JWS 演算法——包括後量子演算法——也是此領域狀態清單的簽署演算法，以及 DID Configuration 的 Domain Linkage Credential 與 /did/generate 的 did:web 認證所使用的演算法。元數據的 credential_signing_alg_values_supported 會指出它，/oauth2/jwks 與 /.well-known/did.json 會發佈其金鑰，本服務的 Verifier 也據此檢查。ldp_vc 使用 bbs-2023，不受影響。已簽發的認證保留其簽署時所用的演算法。"
   },
   "oid4vci.credentialCertificateHeader|description": {
     "en": "91cae7f95584d095",
@@ -1812,8 +1812,8 @@
     "text": "Request Object 證書標頭"
   },
   "oid4vp.requestObjectCertificateHeader|description": {
-    "en": "7bae5787a6f84891",
-    "text": "模擬驗證器簽署的「Request Object」（RFC 9101，以參照傳遞的要求）是否指出簽署它之金鑰的證書鏈。`x5u`（預設值）是此服務上該證書鏈的地址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的證書鏈，葉證書在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張證書的 CRL 發布點、OCSP 回應程式與 caIssuers 地址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得證書的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，地址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得證書的金鑰會加密任何內容。可依領域設定。"
+    "en": "9bbac75884284a52",
+    "text": "驗證器簽署的「Request Object」（RFC 9101，以參照傳遞的要求）是否指出簽署它之金鑰的證書鏈。`x5u`（預設值）是此服務上該證書鏈的地址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的證書鏈，葉證書在前、服務 Root 在後，以 base64 DER 編碼，有數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種方式，這都是僅持有該權杖的信賴方取得每張證書的 CRL 發布點、OCSP 回應程式與 caIssuers 地址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得證書的金鑰，以及 HMAC 簽章，兩者都不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：若 global.https 關閉，地址會是 `http://`，嚴格的驗證器將拒絕跟隨。JWE 標頭永遠不會加上——此服務沒有任何已取得證書的金鑰會加密任何內容。可依領域設定。"
   },
   "oid4vp.clientIdPrefix|description": {
     "en": "2bc9c2d6babebcfb",
@@ -1956,8 +1956,8 @@
     "text": "此 KDC 拒絕隨需建立的用戶名稱，使 KDC_ERR_C_PRINCIPAL_UNKNOWN 仍可觸及。它是最值得刻意產生的錯誤之一，因為將它呈現為「密碼錯誤」的客戶端，會讓人去重設一個從來不是問題所在的密碼。"
   },
   "krb5.autoServicePassword|description": {
-    "en": "71fd54a4160f0e2a",
-    "text": "每個隨需建立之服務共用的一個密碼，基於與用戶密碼相同的理由公開：它讓讀者能解密此模擬服務所簽發的服務票證，並讀取其中的 PAC。「已設定」的服務帳戶則保有各自獨立的密碼。"
+    "en": "0715018c29ee708a",
+    "text": "每個隨需建立之服務共用的一個密碼，基於與用戶密碼相同的理由公開：它讓讀者能解密本服務所簽發的服務票證，並讀取其中的 PAC。「已設定」的服務帳戶則保有各自獨立的密碼。"
   },
   "krb5.autoServicePassword|restartReason": {
     "en": "c8e4e57160c0d53d",
@@ -2004,8 +2004,8 @@
     "text": "KDC 是否向不驗證任何人的客戶端簽發 RFC 8062 匿名票證——`kinit -n`——讓沒有主機 keytab 的機器擁有供 `kinit -T` 使用的 FAST armor。匿名票證只是此領域的 TGT，不指名任何人，也換不到任何其他票證：TGS 會拒絕它。需要 krb5.pkinit。"
   },
   "krb5.s2kparams|description": {
-    "en": "f4cde78e622f2547",
-    "text": "PA-ETYPE-INFO2 是否攜帶 s2kparams。Windows Server 會省略它，而此模擬服務曾傳送它，這是擷取到的真實 DC 交換中發現的唯一差異；因此預設為 omit，並保留 send，以便演練會讀取它的客戶端。"
+    "en": "8377aa5576df5515",
+    "text": "PA-ETYPE-INFO2 是否攜帶 s2kparams。Windows Server 會省略它，而本服務曾傳送它，這是擷取到的真實 DC 交換中發現的唯一差異；因此預設為 omit，並保留 send，以便演練會讀取它的客戶端。"
   },
   "ldap.tlsPort|description": {
     "en": "0ef8bace93984007",
@@ -2692,8 +2692,8 @@
     "text": "SPIRE 的 skip_kubelet_verification。警告——僅限開發模式（#171）：在產品模式下此設定會被忽略（STS-SPIFFE-0116，只記錄一次），kubelet 的證書會依據 spiffe.k8sKubeletCaFile 驗證，且無法設定此值（STS-CORE-0103）。"
   },
   "spiffe.autoCreateEntries|description": {
-    "en": "7944288e3f3984d1",
-    "text": "這是讓此服務成為模擬服務的設定。開啟時，向 Workload API 請求 SVID 但不符合任何登錄項目的工作負載，會為其建立一個項目並照樣簽發 SVID——不證明、無選擇器、不檢查任何東西——這與此處其他每個協定族的寬鬆態度相同。關閉時，未登錄的工作負載會以 PERMISSION_DENIED 拒絕，這是 Workload API 的規定，也是真正的 SPIRE 代理程式的做法，而且是演練客戶端「我沒有身分」路徑的「唯一」方式。兩種回應都值得擁有；兩者都不是安全的那一種。"
+    "en": "ff8fc38721bf6650",
+    "text": "這是讓 SPIFFE 變得寬鬆的設定。開啟時，向 Workload API 請求 SVID 但不符合任何登錄項目的工作負載，會為其建立一個項目並照樣簽發 SVID——不證明、無選擇器、不檢查任何東西——這與此處其他每個協定族的寬鬆態度相同。關閉時，未登錄的工作負載會以 PERMISSION_DENIED 拒絕，這是 Workload API 的規定，也是真正的 SPIRE 代理程式的做法，而且是演練客戶端「我沒有身分」路徑的「唯一」方式。兩種回應都值得擁有；兩者都不是安全的那一種。"
   },
   "spiffe.requireSecurityHeader|description": {
     "en": "45ec0ac631aca557",

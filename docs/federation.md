@@ -696,7 +696,7 @@ relationship refuses until it is filled.
   person leaving this service for a foreign identity provider is the moment a
   deliberate click is worth having, so federation adds no script to any page.
 * **Federated identities share the local namespace unless told otherwise.**
-  `federation.usernamePrefix` is empty so a mock pointed at a partner returns
+  `federation.usernamePrefix` is empty so a development service pointed at a partner returns
   familiar names; set it when the question is whether the two namespaces
   should meet.
 

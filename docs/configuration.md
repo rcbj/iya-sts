@@ -5,7 +5,7 @@ nav_order: 3
 
 # Configuration
 
-> **Development mode only (#585):** `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/did/generate` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is exactly one place a setting is read**, `common/config.js`, and one
 table inside it. That is not tidiness — it is what makes the next three sentences
@@ -169,7 +169,7 @@ and the mode honours a DPoP or RFC 8705 binding wherever a client offers one
 rather than refusing a client that offers none. The five settings under *Sender
 constraints* below are how an operator asks for more than that.
 
-**Off changes nothing.** Every existing caller of this mock uses an unregistered
+**Off changes nothing.** Every existing caller of this service uses an unregistered
 `redirect_uri`, no PKCE, or the implicit grant, and both answers exercise a
 client — so the flag has to be able to be off and the mode has to be complete.
 
@@ -663,7 +663,7 @@ takes a session and a role, and the Shared Signals endpoints take a credential.
 What `global.mode` decides is whether what they ask for is **checked**.
 `development` is the default and is every release of this service before that
 date: a presented password is not verified, anything named is created, and there
-are no public-client restrictions — which is what makes this a mock. `product`
+are no public-client restrictions — which is what makes this a test service. `product`
 runs the same protocol implementations with that permissiveness taken out, and
 additionally gates `/admin-api`. It is settable per trust realm, so one process
 can serve a development realm and a product realm at once.
@@ -728,7 +728,7 @@ which stops granting anything the moment the name changes.
 All four are process-wide: a trust realm cannot carry its own
 value, because they decide who administers the service.
 
-### The federation settings, and the one that is stricter than a mock usually is
+### The federation settings, and the one that is stricter than development mode usually is
 
 `federation.enabled` is ON, and that is safe in a way it would not be anywhere
 else here, because the endpoints do **nothing** without a relationship: a partner
@@ -739,7 +739,7 @@ one test run.
 
 `federation.usernamePrefix` is **empty by default, and that is a real decision
 rather than a default nobody thought about.** Empty means a federated `alice` and
-the local `alice` are ONE directory entry, which is right for a mock being
+the local `alice` are ONE directory entry, which is right for a service being
 pointed at a partner to see what comes back — a prefixed name makes every
 downstream token and assertion look unfamiliar. Set it to something like `fed-`
 the moment the question is whether federated identities share a namespace with
@@ -761,7 +761,7 @@ off or empty by default:
   mode only;
 * `federation.outboundSkipTlsVerification` accepts a certificate nothing here
   trusts — in development mode only, which is what federating against another
-  mock on localhost needs. Product ignores it and refuses to set it;
+  instance on localhost needs. Product ignores it and refuses to set it;
 * `federation.outboundCaFile` names a PEM file of CA certificates a partner may
   chain to, beside node's own store, which is how product reaches a partner
   certified by a private CA.
@@ -1059,7 +1059,7 @@ the rest of the `oauth2.*` rows on `/admin/oauth2`, and on a page of their own a
 expired. Both write through the same function — one store, two doors.
 
 Set one low and the next token dies on cue, which is the reason to point a client
-at a mock at all:
+at a test service at all:
 
 ```bash
 curl -s -X POST localhost:8081/admin-api/token-lifetimes/set \
@@ -1134,8 +1134,8 @@ count is the one to trust.
 
 At log level `debug` the service logs every endpoint call — path, request and
 response headers and bodies, status, elapsed time — and every assertion, JWT and
-SD-JWT VC both before and after signing or encryption, which is the point of a
-mock. The shipped appconfig files set `info`; `STS_LOG_LEVEL=debug` asks for the
+SD-JWT VC both before and after signing or encryption, which is the point of
+development mode. The shipped appconfig files set `info`; `STS_LOG_LEVEL=debug` asks for the
 whole record.
 
 ## Changing one at runtime
@@ -1369,7 +1369,7 @@ are refused at both ends.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is what makes it a mock: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application that declared a confidential method authenticates with it, every development-only setting is ignored, and `/admin-api` is gated. `GET /admin/mode` and `GET /admin-api/mode` list what it changes. The console, SCIM, the SPIRE Server API and Shared Signals are gated in BOTH modes, with no setting to open them — what the mode changes is whether the credential they ask for is CHECKED. |
+| `global.mode` | `STS_MODE` | `development` | yes — and it is **per trust realm**, so one process can serve a development realm and a product realm at once | What this service IS. `development` is what makes it a test service: no password is checked, anything named is created, and there are no public-client restrictions. `product` runs the SAME protocol implementations with the permissiveness taken out — a presented password is verified against the hashed `userPassword` on the person's own entry, nothing is created because it was named, every OAuth application that declared a confidential method authenticates with it, every development-only setting is ignored, and `/admin-api` is gated. `GET /admin/mode` and `GET /admin-api/mode` list what it changes. The console, SCIM, the SPIRE Server API and Shared Signals are gated in BOTH modes, with no setting to open them — what the mode changes is whether the credential they ask for is CHECKED. |
 | `global.host` | `STS_HOST` | `0.0.0.0` | **restart** — the listener is bound when the process starts | The address the HTTP listener binds. 0.0.0.0 is every interface, which is what a container needs; 127.0.0.1 confines this service to the machine it runs on. |
 | `global.port` | `STS_PORT` | `8081` | **restart** — the listener is bound when the process starts | The port everything HTTP here answers on: the protocol endpoints, the console and this API. The two TLS listeners are separate and are under TLS below. **Several nodes against one store must all use the same value**: the console's and portal's own Shared Signals receivers are seeded at `<loopback>:<global.port>` and every node pushes to that address on its own loopback (`ssf/CLAUDE.md`, *Several nodes*). |
 | `listeners.custom` | `STS_LISTENERS_CUSTOM` | *(empty)* | yes — every node binds, rebinds or closes the listeners at once | The service's custom HTTPS listeners (#472), a JSON array of `{ id, port, publicBaseUrl, hostnames, certificateFile, privateKeyFile, clientAuth, tls }`; they answer every realm. See [Listeners](listeners.md). |
@@ -1387,7 +1387,7 @@ are refused at both ends.
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | **restart** — installed on each listener when it binds | `v2` reads a HAProxy PROXY protocol version 2 header at the front of every connection to the main port, 389, 636, the KDC's TCP 88 (not UDP), the debugger and 8082 **before TLS**, so the client's address reaches the rate limiter, LDAP and the request workers while TLS and mutual TLS still terminate on the node. A connection from `global.trustedProxies` must carry a valid header (a `LOCAL` one — a health check — keeps the balancer's address); any other address is closed, except this host's own, which is served plain. Version 1 is refused; the SPIFFE gRPC listeners are not covered. See [Behind an L4 load balancer](#behind-an-l4-load-balancer--the-proxy-protocol) above. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `5000` | yes | How long a trusted proxy may take to send its complete header before the connection is closed. |
 | `global.corsOrigins` | `STS_CORS_ORIGINS` | *(empty)* | yes | Origins CORS treats as this deployment's OWN, comma-separated — allowed on every path whichever client a request names, beside this service's listeners, `global.publicBaseUrl` and the embedded debugger. **Empty adds none**; every other origin must be listed in an application's `appCorsOrigin`. A value that is not an origin is ignored and logged. |
-| `global.logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a mock whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
+| `global.logLevel` | `STS_LOG_LEVEL` | `info` | yes | debug is the useful level for a service whose job is to show what it did: every endpoint call, and every token and assertion both before and after it was signed. |
 | `workers.startTimeoutMs` | `STS_WORKERS_START_TIMEOUT_MS` | `60000` | no — a worker reads it when it starts | How long a request or surface worker may take to bring its state up (the store, the keys, the minted rows, coordination) before it reports it could not start. Three failures in a row and the pool stops forking and the process holding the sockets answers everything, on one thread. Raise it where starts are slow — a realm key set every start re-certifies, a cold database (#311). |
 | `workers.heapLimitMb` | `STS_WORKERS_HEAP_LIMIT_MB` | `0` (derive) | **restart** — V8 reads it when a process starts | The V8 old-space limit of the front thread (`--max-old-space-size`) and of every request worker thread (its `resourceLimits`); each is also given a 48 MiB young generation. `-1` turns it off: no limit is applied, but the memory report still works. A value above 0 is the old-space limit in MiB. `0` derives it from the container: (memory limit − 15 % headroom, at least 256 MiB) ÷ (1 + `workers.requestCount` + `workers.surfaceCount`) − 48 MiB, and never less than 192 MiB. The limit is read from cgroup v2, then cgroup v1, then the ECS task metadata endpoint, and with no visible limit nothing is set. The front process restarts itself with the flag before it loads anything. A worker that runs out of heap is reported as `STS-WORKER-0046`, and one the kernel's OOM killer ends as `STS-WORKER-0047`. |
 | `workers.startConcurrency` | `STS_WORKERS_START_CONCURRENCY` | `1` | **restart** — the pool forks its workers when the process starts | How many request workers, of the protocol and hosted-surface pools together, may be starting at the same time. The next is forked when one reports ready or fails. Each start loads the whole store into that worker's memory, so starting them together can put a node over its memory limit (#342). The listener binds once the first worker of each pool has settled. A replacement for a worker that died waits its turn the same way. |
@@ -1790,7 +1790,7 @@ what its api may dial.
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`. Inclusive c14n is not offered: an assertion is signed standalone and embedded, and inclusive c14n would fail at every relying party. |
 | `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service VERIFIES may use SHA-1 (SignatureMethod or any DigestMethod). Off in both modes: refused before any cryptography, on every path (SAML 2.0 and 1.1, federation, RFC 7522, WS-Trust, WS-Federation). On: verified and recorded `weak`. On is development mode only: product refuses SHA-1 whatever this says, and refuses turning it on (#181). |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in `/saml2/metadata` and `/saml11/metadata`. Empty omits the whole `<md:Organization>`, in either mode. |
-| `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Mock security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the element. |
+| `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the element. |
 | `saml.organizationUrl` | `STS_SAML_ORGANIZATION_URL` | *(empty)* | yes | `<md:OrganizationURL>`; empty means this service's own base URL. |
 
 ### SAML 2.0
@@ -1916,14 +1916,14 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | The content encryption algorithms credential_response_encryption advertises and accepts. Same rule as the request row: A128GCM and A256GCM are implemented and nothing else is advertised. The key transport is RSA-OAEP-256, which is the only one implemented and is not a setting. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | When on, a credential request that does not ask for an encrypted response (credential_response_encryption) is refused, and the metadata says encryption_required: true. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every credential this issuer mints is valid — the `exp` of a dc+sd-jwt and a jwt_vc_json credential and the `validUntil` of an ldp_vc one. Thirty days by default. |
-| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm dc+sd-jwt and jwt_vc_json credentials are signed with — the post-quantum ones (ML-DSA, SLH-DSA and the composites) included, signed in the worker pool — and the one this realm's status lists, the DID Configuration's Domain Linkage Credential and /did/generate's did:web credential use. The metadata's credential_signing_alg_values_supported names it, /oauth2/jwks and /.well-known/did.json publish the key, and the mock Verifier checks against it. ldp_vc is bbs-2023 and is not affected. A credential already issued keeps the algorithm it was signed with. |
+| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm dc+sd-jwt and jwt_vc_json credentials are signed with — the post-quantum ones (ML-DSA, SLH-DSA and the composites) included, signed in the worker pool — and the one this realm's status lists, the DID Configuration's Domain Linkage Credential and /did/generate's did:web credential use. The metadata's credential_signing_alg_values_supported names it, /oauth2/jwks and /.well-known/did.json publish the key, and this service's Verifier checks against it. ldp_vc is bbs-2023 and is not affected. A credential already issued keeps the algorithm it was signed with. |
 | `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` this realm's status lists carry, and the HTTP `max-age`: how long a verifier may keep one before fetching it again, and so how long a revocation can take to be seen elsewhere. |
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long after it is signed a Status List Token says it is valid (its `exp`), and a Bitstring Status List credential's `validUntil`. |
 | `oid4vci.keyAttestationRequired` | `OID4VCI_KEY_ATTESTATION_REQUIRED` | `false` | yes | Require a key attestation (OpenID4VCI Appendix D) of every credential request — in a `jwt` proof's `key_attestation` header, or as the `attestation` proof type — and advertise it. Off, an attestation that is sent is still verified and recorded; what it attests is what a wallet sign-in may claim (`hwk`, `acr "mfa"`). |
 | `oid4vci.keyAttestationTrustedCertificates` | `OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, of the Wallet Providers whose key attestations this issuer believes: one must verify against such a key, or be signed by a certificate (its `x5c`) one of them issued. Empty trusts none. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a wallet's openid4vci-proof+jwt `iat` may be from now, either way. The c_nonce is what makes a proof single use; this is what stops one minted long ago being used at all. |
 | `oid4vci.cNonceTtlS` | `OID4VCI_C_NONCE_TTL_S` | `300` | yes | How long a c_nonce from the Nonce Endpoint may be quoted in a proof; `c_nonce_expires_in` says the same number. |
-| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The `display.name` of the credential issuer metadata — what a wallet shows as who is offering the credential. The credential configurations' own display names and colours are part of the catalogue in oid4vc/vc_issuer.ts and are not settings. |
+| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Credential Issuer` | yes | The `display.name` of the credential issuer metadata — what a wallet shows as who is offering the credential. The credential configurations' own display names and colours are part of the catalogue in oid4vc/vc_issuer.ts and are not settings. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential at /.well-known/did-configuration.json says it is valid. It is signed per request, so this is the window a cached copy may be believed for. |
 | `oid4vci.generatedDidCredentialLifetimeS` | `OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S` | `3600` | yes | How long the SD-JWT VC that /did/generate signs with the DID it hands back is valid. |
 
@@ -1931,7 +1931,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `oid4vp.clientId` | `OID4VP_CLIENT_ID` | `sts-verifier` | yes | The client_id the mock Verifier presents in its Authorization Request, and the `aud` the Key Binding JWT must name. |
+| `oid4vp.clientId` | `OID4VP_CLIENT_ID` | `sts-verifier` | yes | The client_id this service's Verifier presents in its Authorization Request, and the `aud` the Key Binding JWT must name. |
 | `oid4vp.walletUrl` *(derived)* | `OID4VP_WALLET_URL` | `http://localhost:3000` | yes | Where the Verifier sends the holder to present. Falls back to the OID4VCI wallet URL, since it is the same wallet in every arrangement this service is used in. |
 | `oid4vp.kbMaxAgeS` | `OID4VP_KB_MAX_AGE_S` | `600` | yes | How old a Key Binding JWT's `iat` may be before the Verifier rejects the presentation as a replay. |
 | `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer "Sign in with a self-issued ID" (SIOPv2) on /authn/login and the enrolment on /portal/self-issued. It signs in only the person who ENROLLED the key, in every mode. |
@@ -1940,11 +1940,11 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.x509DnsName` | `OID4VP_X509_DNS_NAME` | *(empty)* | yes | The DNS name of the x509_san_dns Client Identifier, carried in the Verifier's certificate. It must be the Response URI's host. Empty: the host of `global.publicBaseUrl`; with neither, development takes the request's host and product refuses. |
 | `oid4vp.x509SigningAlgorithm` | `OID4VP_X509_SIGNING_ALGORITHM` | `ES256` | yes | The JWS algorithm of an x509_san_dns or x509_hash Request Object, and so the realm key the Verifier's certificate is over. |
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT whose `cnf` is this realm's request-signing key. Empty: with the verifier_attestation prefix this realm attests itself, which only a wallet that already trusts it accepts. |
-| `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The mock Verifier's STARTING request, and — this is the part worth knowing — the target its Reset returns to. It is not the live list: the Verifier request tab at `/admin/vc#vc-tab-verifier-request` owns that, and copies this at startup. |
+| `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The Verifier's STARTING request, and — this is the part worth knowing — the target its Reset returns to. It is not the live list: the Verifier request tab at `/admin/vc#vc-tab-verifier-request` owns that, and copies this at startup. |
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request — its nonce, state and Request Object — may wait for a wallet's response. |
 | `oid4vp.walletPresentationPath` | `OID4VP_WALLET_PRESENTATION_PATH` | `/vc-presentation-1.html` | yes | The page under the wallet URL a presentation request is handed to. The default is the debugger's own wallet page. |
 | `oid4vp.allowedWalletUrls` | `OID4VP_ALLOWED_WALLET_URLS` | `(empty)` | yes | IN PRODUCT MODE, the wallet URLs besides oid4vp.walletUrl that the `wallet` query parameter on the Verifier's start page may name; any other is refused as an open redirect. Development accepts any URL. |
-| `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, whose keys the mock Verifier accepts an SD-JWT VC or jwt_vc_json credential signature from IN ADDITION to this realm's own issuer. Empty — the default — trusts this issuer alone, which is what it always did. A certificate is used as a KEY: no chain is built and no revocation is checked. |
+| `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, whose keys this service's Verifier accepts an SD-JWT VC or jwt_vc_json credential signature from IN ADDITION to this realm's own issuer. Empty — the default — trusts this issuer alone, which is what it always did. A certificate is used as a KEY: no chain is built and no revocation is checked. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` the Verifier requires of a presented SD-JWT VC. The default is the type this issuer mints; set it to accept a credential another issuer mints under its own type. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request tab at `/admin/vc#vc-tab-verifier-request` lets the Verifier's request name. |
 | `oid4vp.signIn` | `OID4VP_SIGN_IN` | `true` | yes | Offer "Sign in with a wallet" on /authn/login and answer /authn/wallet: a verified presentation of a credential this realm issued — in any format `oid4vp.signInFormats` names, with a fresh holder proof — starts a session for the directory entry the credential was issued for. Any other credential still verifies and signs nobody in. See *Signing in with a wallet*. |
@@ -1999,7 +1999,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `krb5.userPassword` | `KRB5_USER_PASSWORD` | `password!` | **restart** — every user's long-term keys are derived from it at startup | The password every user account here has. It is PUBLISHED by GET /krb5/principals on purpose: a debugger whose accounts are unusable without reading the source is worse than one that says what they are. |
 | `krb5.unknownUsers` | `KRB5_UNKNOWN_USERS` | `nosuchuser,nobody` | yes | Usernames this KDC refuses to create on demand, so KDC_ERR_C_PRINCIPAL_UNKNOWN stays reachable. |
 | `krb5.serviceDomains` *(derived)* | `KRB5_SERVICE_DOMAINS` | `example.com,localhost,sts,127.0.0.1` | **restart** — the service accounts are created at startup | The host domains a service principal is created on demand for. Setting it to an empty string creates nothing, which is the behaviour this service had before the setting existed. |
-| `krb5.autoServicePassword` | `KRB5_AUTO_SERVICE_PASSWORD` | `auto-service-password` | **restart** — those accounts' long-term keys are derived from it at startup | One password for every service created on demand, and it is published for the same reason the user password is: it is what lets a reader decrypt a service ticket this mock issued and read the PAC inside it. |
+| `krb5.autoServicePassword` | `KRB5_AUTO_SERVICE_PASSWORD` | `auto-service-password` | **restart** — those accounts' long-term keys are derived from it at startup | One password for every service created on demand, and it is published for the same reason the user password is: it is what lets a reader decrypt a service ticket this service issued and read the PAC inside it. |
 | `krb5.krbtgtPassword` | `KRB5_KRBTGT_PASSWORD` | `krbtgt-mock-password` | **restart** — the krbtgt keys are derived from it at startup | DEVELOPMENT MODE ONLY: the password the key that seals every Ticket-Granting Ticket is derived from. Product mode keys `krbtgt` at random, keeps it sealed on the directory entry `krbtgt/<REALM>@<REALM>` and ignores this setting (#169). |
 | `krb5.domainSid` | `KRB5_DOMAIN_SID` | `S-1-5-21-1004336348-1177238915-682003330` | **restart** — every principal's PAC identity is built at startup | The domain SID every account's PAC is built under. A Kerberos ticket says who you are; a Windows service authorizes on the SIDs in the PAC. |
 | `krb5.trustedRealm` | `KRB5_TRUSTED_REALM` | `PARTNER.COM` | **restart** — the second realm and the trust between them are built at startup | The second realm, for cross-realm referrals. A trust is not a flag: it is a shared key held by one principal in each realm. |
@@ -2008,7 +2008,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `krb5.trustedKrbtgtPassword` | `KRB5_TRUSTED_KRBTGT_PASSWORD` | `partner-krbtgt-password` | **restart** — that realm's krbtgt keys are derived from it at startup | The krbtgt password of the trusted realm. |
 | `krb5.spnegoAuthentication` | `KRB5_SPNEGO_AUTHENTICATION` | `true` | yes | Whether `/authn/spnego` turns a Kerberos ticket into a browser session — integrated authentication, available to every application and registered for none. With it off that endpoint answers 403 saying which setting it was, and `/spnego/protected` still performs the whole handshake and shows both halves of it; what it will not do is give you a session. An application or a federation relationship naming the `spnego` mechanism while this is off is REPORTED on the sign-in screen rather than meeting a 403 halfway through a flow. |
 | `krb5.spnegoLoginButton` | `KRB5_SPNEGO_LOGIN_BUTTON` | `true` | yes | Show a "Sign in with Kerberos" button on `/authn/login`, so a ticket can satisfy any flow already in progress — an authorization request, a `wsignin1.0`, an `AuthnRequest`, the console. Same reason `federation.loginButtons` exists, and it needs no registration at all: whether somebody can use a ticket is a fact about their machine, not about the relying party. Withheld from a request that demanded two factors, and it says so. |
-| `krb5.s2kparams` | `KRB5_S2KPARAMS` | `omit` | yes | Whether PA-ETYPE-INFO2 carries s2kparams. Windows Server omits it and this mock sent it, which is the one difference the captured real-DC exchange found; omit is therefore the default and send is kept so a client that reads it can be exercised. |
+| `krb5.s2kparams` | `KRB5_S2KPARAMS` | `omit` | yes | Whether PA-ETYPE-INFO2 carries s2kparams. Windows Server omits it and this service sent it, which is the one difference the captured real-DC exchange found; omit is therefore the default and send is kept so a client that reads it can be exercised. |
 | `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | **restart** — the service account's long-term keys are derived from it at startup | The password of the account `krb5.servicePrincipal` names — the keytab equivalent. The account is built FROM that setting. **Product mode refuses the published default**: the account is not created, the acceptor and `/authn/spnego` accept no ticket, and `GET /krb5/service` says why. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | **restart** — the service account's long-term keys are derived from it at startup | The string-to-key salt for that account. Empty means this service's convention (`EXAMPLE.COMHTTPweb`); an account in a real Active Directory is salted with its sAMAccountName, so an acceptor for a real KDC's tickets needs it set. |
 | `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | **restart** — every principal's supported encryption types are fixed at startup | The encryption types the KDC and acceptor use at all, strongest first. **Warning:** `23` (rc4-hmac) is deprecated by RFC 8429 and is in the default for **development mode only**, so an RC4 client can be exercised; removing it is what a hardened domain does. **In product mode `23` is always removed** (#182): the list is read without it (`STS-CORE-0106`, said once), a write naming it is refused (`STS-CORE-0103`), no RC4 key is derived, stored or put in a keytab, and a request offering only RC4 is refused `KDC_ERR_ETYPE_NOSUPP`. A number the codec does not implement stops the service at startup. |
@@ -2251,7 +2251,7 @@ What it lacks there is ATTESTATION, not authentication, and no mode changes it.
 | `spiffe.caSubject` | `STS_SPIFFE_CA_SUBJECT` | `CN=sts SPIFFE {kind} ({trustDomain}),O=sts` | yes | The subject of a CA this service builds for SPIFFE itself — the self-signed fallback authority and every downstream CA. `{kind}` is `CA` or `downstream CA`. A realm under the certificate authority takes its Issuing CA's subject from `/admin/pki`. |
 | `spiffe.retainedAuthorities` | `STS_SPIFFE_RETAINED_AUTHORITIES` | `4` | yes | How many authorities a rotation keeps published (self-signed X.509 and JWT), the new one included. At least 2. |
 | `spiffe.agentSvidTtl` | `STS_SPIFFE_AGENT_SVID_TTL` | `0` | yes | The lifetime of an agent's X509-SVID from AttestAgent and RenewAgent. `0` means `spiffe.svidTtl`. |
-| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | THIS IS THE SETTING THAT MAKES THIS A MOCK. |
+| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | THIS IS THE SETTING THAT MAKES SPIFFE PERMISSIVE. |
 | `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | The Workload Endpoint specification says a client MUST send `workload.spiffe.io: true` on every call and a server MUST refuse one without it. Off is development mode only: product always requires the header and refuses turning it off (#181). |
 | `spiffe.trustLocalSocket` | `STS_SPIFFE_TRUST_LOCAL_SOCKET` | `true` | yes | A real SPIRE server trusts its private Unix socket outright — the access control is the socket's filesystem permissions — and a caller there is the `local` entity, which may do everything an admin may and two things an admin may not. In product mode the boundary is VERIFIED per connection: a 0600 socket in a private directory, and a caller whose kernel uid is the service's own. |
 | `spiffe.adminIds` | `STS_SPIFFE_ADMIN_IDS` | *(empty)* | yes | SPIFFE IDs whose holders are administrators of the SPIRE Server API, separated by commas or spaces — SPIRE's own `admin_ids`, and like SPIRE's it needs NO registration entry behind it. |

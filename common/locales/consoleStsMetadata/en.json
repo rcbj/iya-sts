@@ -38,7 +38,7 @@
   "specs.heading": "Specifications implemented",
   "specs.thSpec": "Specification",
   "specs.thWhere": "Published by",
-  "specs.thCoverage": "Coverage in this mock",
+  "specs.thCoverage": "Coverage in this service",
   "machineReadable": "Machine-readable: <code>{base}/admin/sts-metadata?format=json</code>, which is what the button at the top hands you as a file. It is behind the console gate like the page, so a program fetching it signs in at <code>/authn/login</code> first, or reads the same service through <code>/admin-api</code>, which is not gated. This document is not a specification-defined discovery document &mdash; for those, see <code>/.well-known/openid-configuration</code>, <code>/.well-known/oauth-authorization-server</code>, <code>/.well-known/openid-credential-issuer</code>, <code>/.well-known/jwt-vc-issuer</code>, <code>/.well-known/did.json</code> and <code>/.well-known/did-configuration.json</code>.",
   "reason.only": "{method} only",
   "reason.noGet": "no GET ({methods})",

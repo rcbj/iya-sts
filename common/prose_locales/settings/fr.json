@@ -1496,16 +1496,16 @@
     "text": "Mode"
   },
   "global.mode|description": {
-    "en": "abe4dc2a95f944df",
-    "text": "Ce qu’est ce service. `development` est le service fictif qu’était chaque version antérieure au 2026-09-06 : aucun mot de passe n’est vérifié dans aucun protocole, un utilisateur, une application, un principal de service ou un serveur d’autorisation inconnu est créé la première fois qu’il est nommé, un client OAuth n’a besoin d’aucun secret, et — avec adminApi.authRequired désactivé — /admin-api est ouverte afin qu’un test puisse la piloter et que quelqu’un qui ne détient aucun rôle puisse revenir. `product` exécute les MÊMES implémentations de protocoles sans la permissivité : un identifiant présenté est vérifié par rapport au `userPassword` haché de l’entrée d’annuaire de la personne, chaque objet référencé doit avoir été créé à l’avance, chaque application OAuth 2.0 et OpenID Connect ayant déclaré une méthode confidentielle doit s’authentifier avec elle (un client public est soumis à RFC 9700 à la place), chaque paramètre réservé au développement est ignoré, et /admin-api avec adminApi.authRequired désactivé exige la même connexion et les mêmes rôles que la console (avec ce paramètre activé, la valeur par défaut dans les deux modes, elle exige un jeton d’accès). Il est réglable par domaine de confiance, si bien qu’un même processus peut servir les deux à la fois. GET /admin/mode liste chaque exigence et indique la réponse qui lui est donnée dans chaque mode.\n\nIL PEUT ÊTRE MODIFIÉ EN COURS D’EXÉCUTION, et l’ordre compte dans ce cas : avec adminApi.authRequired désactivé, /admin-api reste ouverte jusqu’au moment précis où ce paramètre passe à `product` ; provisionnez donc d’ABORD les identifiants et basculez ensuite. Un domaine basculé alors que personne ne détient d’identifiant n’a aucun moyen d’entrée — l’amorçage s’exécute au démarrage et non lors d’une modification, délibérément, car un service qui créerait un administrateur chaque fois qu’un paramètre change serait un service doté d’un administrateur que personne n’a demandé."
+    "en": "72d5f41058477223",
+    "text": "Ce qu’est ce service. `development` est ce qu’était chaque version antérieure au 2026-09-06 : aucun mot de passe n’est vérifié dans aucun protocole, un utilisateur, une application, un principal de service ou un serveur d’autorisation inconnu est créé la première fois qu’il est nommé, un client OAuth n’a besoin d’aucun secret, et — avec adminApi.authRequired désactivé — /admin-api est ouverte afin qu’un test puisse la piloter et que quelqu’un qui ne détient aucun rôle puisse revenir. `product` exécute les MÊMES implémentations de protocoles sans la permissivité : un identifiant présenté est vérifié par rapport au `userPassword` haché de l’entrée d’annuaire de la personne, chaque objet référencé doit avoir été créé à l’avance, chaque application OAuth 2.0 et OpenID Connect ayant déclaré une méthode confidentielle doit s’authentifier avec elle (un client public est soumis à RFC 9700 à la place), chaque paramètre réservé au développement est ignoré, et /admin-api avec adminApi.authRequired désactivé exige la même connexion et les mêmes rôles que la console (avec ce paramètre activé, la valeur par défaut dans les deux modes, elle exige un jeton d’accès). Il est réglable par domaine de confiance, si bien qu’un même processus peut servir les deux à la fois. GET /admin/mode liste chaque exigence et indique la réponse qui lui est donnée dans chaque mode.\n\nIL PEUT ÊTRE MODIFIÉ EN COURS D’EXÉCUTION, et l’ordre compte dans ce cas : avec adminApi.authRequired désactivé, /admin-api reste ouverte jusqu’au moment précis où ce paramètre passe à `product` ; provisionnez donc d’ABORD les identifiants et basculez ensuite. Un domaine basculé alors que personne ne détient d’identifiant n’a aucun moyen d’entrée — l’amorçage s’exécute au démarrage et non lors d’une modification, délibérément, car un service qui créerait un administrateur chaque fois qu’un paramètre change serait un service doté d’un administrateur que personne n’a demandé."
   },
   "global.logLevel|label": {
     "en": "886e60232b66c841",
     "text": "Niveau de journalisation"
   },
   "global.logLevel|description": {
-    "en": "062f644ae06c5e38",
-    "text": "debug est le niveau utile pour un service fictif dont le rôle est de montrer ce qu’il a fait : chaque appel de point de terminaison, et chaque jeton et chaque assertion avant et après leur signature. Le modifier ici prend effet à la prochaine ligne écrite, SAUF dans les huit modules de codec krb5_* vendorisés : ce sont des copies à l’octet près des fichiers common/krb5/* du projet parent, auxquelles on ne peut pas ajouter une ligne pour enregistrer leur journaliseur ; ils conservent donc le niveau avec lequel le processus a démarré. Il s’agit de traces ASN.1 et cryptographiques plutôt que du compte rendu par ce service de ce qu’il a fait."
+    "en": "6172a46d84f39b6c",
+    "text": "debug est le niveau utile pour un service dont le rôle est de montrer ce qu’il a fait : chaque appel de point de terminaison, et chaque jeton et chaque assertion avant et après leur signature. Le modifier ici prend effet à la prochaine ligne écrite, SAUF dans les huit modules de codec krb5_* vendorisés : ce sont des copies à l’octet près des fichiers common/krb5/* du projet parent, auxquelles on ne peut pas ajouter une ligne pour enregistrer leur journaliseur ; ils conservent donc le niveau avec lequel le processus a démarré. Il s’agit de traces ASN.1 et cryptographiques plutôt que du compte rendu par ce service de ce qu’il a fait."
   },
   "workers.startTimeoutMs|label": {
     "en": "d851097c61c3d64c",
@@ -4012,8 +4012,8 @@
     "text": "Préfixe des noms d’utilisateur fédérés"
   },
   "federation.usernamePrefix|description": {
-    "en": "3783b4bfff228c17",
-    "text": "Placé devant chaque nom d’utilisateur fourni par un fournisseur d’identité étranger, afin qu’un `alice` fédéré et le `alice` local soient deux entrées. VIDE par défaut, ce qui signifie qu’ils forment UNE seule entrée — et c’est une vraie décision plutôt qu’une valeur par défaut à laquelle personne n’a pensé. Vide convient à un mock pointé vers un partenaire pour voir ce qui revient, car un nom préfixé rend inhabituel chaque jeton et chaque assertion en aval. Définissez-le à quelque chose comme `fed-` dès que la question est de savoir si les identités fédérées partagent un espace de noms avec les identités locales, question pour laquelle ce paramètre existe. Il est appliqué APRÈS le choix du nom d’utilisateur : le modifier ne peut donc pas changer QUELLE valeur entrante a été utilisée."
+    "en": "cd17a5b59a5cf957",
+    "text": "Placé devant chaque nom d’utilisateur fourni par un fournisseur d’identité étranger, afin qu’un `alice` fédéré et le `alice` local soient deux entrées. VIDE par défaut, ce qui signifie qu’ils forment UNE seule entrée — et c’est une vraie décision plutôt qu’une valeur par défaut à laquelle personne n’a pensé. Vide convient à un service pointé vers un partenaire pour voir ce qui revient, car un nom préfixé rend inhabituel chaque jeton et chaque assertion en aval. Définissez-le à quelque chose comme `fed-` dès que la question est de savoir si les identités fédérées partagent un espace de noms avec les identités locales, question pour laquelle ce paramètre existe. Il est appliqué APRÈS le choix du nom d’utilisateur : le modifier ne peut donc pas changer QUELLE valeur entrante a été utilisée."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4044,8 +4044,8 @@
     "text": "Autoriser http:// vers un partenaire (développement uniquement)"
   },
   "federation.outboundAllowHttp|description": {
-    "en": "e9b0c89c7f07455a",
-    "text": "DÉSACTIVÉ par défaut, le seul endroit où ce service est plus strict qu’un mock ne le serait ordinairement : ce qui transite par ces requêtes, c’est un secret client et un code d’autorisation, vers le service de quelqu’un d’autre. ACTIVÉ accepte un point de terminaison http:// en mode DÉVELOPPEMENT, ce qu’exige une fédération avec un autre mock sur localhost, et chaque requête de ce type est journalisée. En mode produit, le http simple est refusé quoi qu’indique ce paramètre (STS-FED-0112)."
+    "en": "e815dfe7877e359e",
+    "text": "DÉSACTIVÉ par défaut, le seul endroit où ce service est plus strict que le mode développement ne l’est ordinairement : ce qui transite par ces requêtes, c’est un secret client et un code d’autorisation, vers le service de quelqu’un d’autre. ACTIVÉ accepte un point de terminaison http:// en mode DÉVELOPPEMENT, ce qu’exige une fédération avec une autre instance sur localhost, et chaque requête de ce type est journalisée. En mode produit, le http simple est refusé quoi qu’indique ce paramètre (STS-FED-0112)."
   },
   "federation.outboundSkipTlsVerification|label": {
     "en": "85253ab85556bf34",
@@ -4172,8 +4172,8 @@
     "text": "OrganizationName des métadonnées"
   },
   "saml.organizationName|description": {
-    "en": "40b17e36101b7803",
-    "text": "Le <md:OrganizationName> de /saml2/metadata et /saml11/metadata. VIDE OMET L’ÉLÉMENT <md:Organization> ENTIER, dans les deux modes, car le schéma des métadonnées exige ensemble un nom, un nom d’affichage et une URL, et une organisation sans nom n’en est pas une. Un déploiement en mode produit définit le sien ou le vide ; la valeur par défaut est le nom du produit, `sts` (c’était `mock-sts` jusqu’au 2026-09-12)."
+    "en": "86bfb411b4b415d9",
+    "text": "Le <md:OrganizationName> de /saml2/metadata et /saml11/metadata. VIDE OMET L’ÉLÉMENT <md:Organization> ENTIER, dans les deux modes, car le schéma des métadonnées exige ensemble un nom, un nom d’affichage et une URL, et une organisation sans nom n’en est pas une. Un déploiement en mode produit définit le sien ou le vide ; la valeur par défaut est le nom du produit, `sts`."
   },
   "saml.organizationDisplayName|label": {
     "en": "88d52def3fcb1b6a",
@@ -4236,16 +4236,16 @@
     "text": "Chiffrer l’assertion"
   },
   "saml2.encryptAssertion|description": {
-    "en": "c0326691fb13cf15",
-    "text": "Envelopper la <saml:Assertion> dans une <saml:EncryptedAssertion> à l’intérieur de la Response. DÉSACTIVÉ par défaut, car cela exige un CERTIFICAT DE DESTINATAIRE et un fournisseur de services qui n’en a pas donné à ce service ne peut pas lire ce qui revient. Lorsqu’aucun certificat ne peut être trouvé, l’assertion est envoyée EN CLAIR et la raison est journalisée et affichée sur /admin/saml2 — refuser d’émettre ferait un mock qui cesse de répondre, et envoyer discrètement du texte en clair pendant qu’une page indiquerait « chiffré » serait pire que l’un ou l’autre. Le certificat est pris dans samlEncryptionCertificate sur son entrée (qu’écrit la consommation de ses métadonnées), puis dans son samlSigningCertificate enregistré, puis — en mode développement seulement — dans le certificat OBSERVÉ sur une AuthnRequest signée, de sorte qu’un fournisseur de services qui signe ses requêtes n’a besoin d’aucune configuration de ce côté ; le mode produit ne chiffre pour un certificat observé qu’une fois qu’un opérateur l’a confirmé. L’assertion est d’abord SIGNÉE puis chiffrée, ordre qu’attend chaque fournisseur de services : la signature se trouve dans le texte chiffré et c’est elle qui survit au déchiffrement."
+    "en": "50d480ab245c0676",
+    "text": "Envelopper la <saml:Assertion> dans une <saml:EncryptedAssertion> à l’intérieur de la Response. DÉSACTIVÉ par défaut, car cela exige un CERTIFICAT DE DESTINATAIRE et un fournisseur de services qui n’en a pas donné à ce service ne peut pas lire ce qui revient. Lorsqu’aucun certificat ne peut être trouvé, l’assertion est envoyée EN CLAIR et la raison est journalisée et affichée sur /admin/saml2 — refuser d’émettre ferait un service qui cesse de répondre, et envoyer discrètement du texte en clair pendant qu’une page indiquerait « chiffré » serait pire que l’un ou l’autre. Le certificat est pris dans samlEncryptionCertificate sur son entrée (qu’écrit la consommation de ses métadonnées), puis dans son samlSigningCertificate enregistré, puis — en mode développement seulement — dans le certificat OBSERVÉ sur une AuthnRequest signée, de sorte qu’un fournisseur de services qui signe ses requêtes n’a besoin d’aucune configuration de ce côté ; le mode produit ne chiffre pour un certificat observé qu’une fois qu’un opérateur l’a confirmé. L’assertion est d’abord SIGNÉE puis chiffrée, ordre qu’attend chaque fournisseur de services : la signature se trouve dans le texte chiffré et c’est elle qui survit au déchiffrement."
   },
   "saml2.encryptionAlgorithm|label": {
     "en": "5cb576de8c785eed",
     "text": "Algorithme de chiffrement"
   },
   "saml2.encryptionAlgorithm|description": {
-    "en": "3d74e433ce34b0c5",
-    "text": "Le chiffrement par blocs avec lequel chaque élément chiffré est chiffré. Les deux GCM sont AUTHENTIFIÉS : un texte chiffré altéré échoue à la vérification de son étiquette et est refusé. Les deux CBC ne le sont PAS, et ce n’est pas un défaut de ce service — c’est la propriété de CBC, de vrais fournisseurs de services l’exigent, et un mock qui ne proposerait que le choix sûr ne pourrait pas servir à montrer ce que fait le choix dangereux. Ce que fait ce service à ce sujet en LECTURE, c’est analyser le résultat et refuser tout ce qui n’est pas du XML bien formé, ce qui détecte la corruption ordinaire mais ne constitue pas une garantie d’intégrité."
+    "en": "4427c176840cdf46",
+    "text": "Le chiffrement par blocs avec lequel chaque élément chiffré est chiffré. Les deux GCM sont AUTHENTIFIÉS : un texte chiffré altéré échoue à la vérification de son étiquette et est refusé. Les deux CBC ne le sont PAS, et ce n’est pas un défaut de ce service — c’est la propriété de CBC, de vrais fournisseurs de services l’exigent, et un service qui ne proposerait que le choix sûr ne pourrait pas servir à montrer ce que fait le choix dangereux. Ce que fait ce service à ce sujet en LECTURE, c’est analyser le résultat et refuser tout ce qui n’est pas du XML bien formé, ce qui détecte la corruption ordinaire mais ne constitue pas une garantie d’intégrité."
   },
   "saml2.keyTransportAlgorithm|label": {
     "en": "5a90e136cc72666e",
@@ -4924,8 +4924,8 @@
     "text": "Algorithme de signature des justificatifs"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilisent le Domain Linkage Credential de la DID Configuration et le justificatif did:web de /did/generate. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur fictif s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé."
+    "en": "73a0a13f9f08d4aa",
+    "text": "L’algorithme JWS avec lequel sont signés les justificatifs dc+sd-jwt et jwt_vc_json — algorithmes post-quantiques compris — ainsi que les listes d’état de ce domaine, et celui qu’utilisent le Domain Linkage Credential de la DID Configuration et le justificatif did:web de /did/generate. Le credential_signing_alg_values_supported des métadonnées le nomme, /oauth2/jwks et /.well-known/did.json publient la clé, et le vérificateur de ce service s’y réfère. ldp_vc utilise bbs-2023 et n’est pas concerné. Un justificatif déjà émis conserve l’algorithme avec lequel il a été signé."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5020,8 +5020,8 @@
     "text": "Identifiant client du vérificateur"
   },
   "oid4vp.clientId|description": {
-    "en": "6052a4d1b56e8787",
-    "text": "Le client_id que le vérificateur fictif présente dans sa requête d’autorisation, et le `aud` que le Key Binding JWT doit nommer."
+    "en": "fad43765b51b8297",
+    "text": "Le client_id que le vérificateur de ce service présente dans sa requête d’autorisation, et le `aud` que le Key Binding JWT doit nommer."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
@@ -5036,8 +5036,8 @@
     "text": "En-tête de certificat du Request Object"
   },
   "oid4vp.requestObjectCertificateHeader|description": {
-    "en": "7bae5787a6f84891",
-    "text": "Indique si l’OBJET DE REQUÊTE signé du vérificateur fictif (RFC 9101, une requête par référence) désigne la chaîne de certificats de la clé qui l’a signé. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, environ cent octets ; `x5c` est la chaîne en ligne, le certificat feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans tous les cas, c’est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée sous l’autorité émettrice JOSE de ce domaine, ainsi qu’une signature HMAC, n’obtiennent ni l’un ni l’autre. La section 4.1.5 de RFC 7515 exige que la récupération de `x5u` passe par TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
+    "en": "9bbac75884284a52",
+    "text": "Indique si l’OBJET DE REQUÊTE signé du vérificateur (RFC 9101, une requête par référence) désigne la chaîne de certificats de la clé qui l’a signé. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, environ cent octets ; `x5c` est la chaîne en ligne, le certificat feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans tous les cas, c’est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée sous l’autorité émettrice JOSE de ce domaine, ainsi qu’une signature HMAC, n’obtiennent ni l’un ni l’autre. La section 4.1.5 de RFC 7515 exige que la récupération de `x5u` passe par TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
   },
   "oid4vp.kbMaxAgeS|label": {
     "en": "202136566ac3cacb",
@@ -5324,8 +5324,8 @@
     "text": "Revendications demandées"
   },
   "oid4vp.claims|description": {
-    "en": "054137dd98eeec73",
-    "text": "La requête DE DÉPART du vérificateur fictif et — c’est la partie à retenir — la cible à laquelle son Reset revient. Ce n’est pas la liste active : /admin/vc-verifier-config en est propriétaire, et copie celle-ci au démarrage. La modifier ici change donc ce que produira le prochain Reset, et ne change la requête transmise qu’une fois ce Reset effectué (ou POST /admin-api/verifier-request/reset appelé). C’est délibérément une cible de réinitialisation plutôt qu’une valeur active : un déploiement qui a configuré ce paramètre doit retrouver SA liste avec Reset et non les valeurs par défaut du catalogue. Une revendication que cet émetteur ne produit pas est une demande légitime, et c’est ainsi qu’on atteint le cas « non satisfait »."
+    "en": "4591b11de4d5e5c7",
+    "text": "La requête DE DÉPART du vérificateur et — c’est la partie à retenir — la cible à laquelle son Reset revient. Ce n’est pas la liste active : /admin/vc-verifier-config en est propriétaire, et copie celle-ci au démarrage. La modifier ici change donc ce que produira le prochain Reset, et ne change la requête transmise qu’une fois ce Reset effectué (ou POST /admin-api/verifier-request/reset appelé). C’est délibérément une cible de réinitialisation plutôt qu’une valeur active : un déploiement qui a configuré ce paramètre doit retrouver SA liste avec Reset et non les valeurs par défaut du catalogue. Une revendication que cet émetteur ne produit pas est une demande légitime, et c’est ainsi qu’on atteint le cas « non satisfait »."
   },
   "oid4vp.presentationRequestTtlS|label": {
     "en": "1686a3d4983e6c6b",
@@ -5372,8 +5372,8 @@
     "text": "Autres émetteurs d’attestations de confiance (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "b23af7aea67fb69a",
-    "text": "Des certificats PEM, concaténés, dont le vérificateur fictif accepte les clés pour une signature d’attestation SD-JWT VC ou jwt_vc_json EN PLUS de l’émetteur propre à ce domaine. Vide — la valeur par défaut — ne fait confiance qu’à cet émetteur, comme toujours. Un certificat est utilisé comme une CLÉ : aucune chaîne n’est construite, mais sa révocation est consultée lorsqu’il vérifie une attestation (pki.revocationCheck, depuis le 2026-09-12)."
+    "en": "60a2c73b8c2c6aec",
+    "text": "Des certificats PEM, concaténés, dont le vérificateur de ce service accepte les clés pour une signature d’attestation SD-JWT VC ou jwt_vc_json EN PLUS de l’émetteur propre à ce domaine. Vide — la valeur par défaut — ne fait confiance qu’à cet émetteur, comme toujours. Un certificat est utilisé comme une CLÉ : aucune chaîne n’est construite, mais sa révocation est consultée lorsqu’il vérifie une attestation (pki.revocationCheck, depuis le 2026-09-12)."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5756,8 +5756,8 @@
     "text": "Mot de passe des services créés automatiquement"
   },
   "krb5.autoServicePassword|description": {
-    "en": "71fd54a4160f0e2a",
-    "text": "Un seul mot de passe pour chaque service créé à la demande, publié pour la même raison que le mot de passe des utilisateurs : c’est ce qui permet à un lecteur de déchiffrer un ticket de service émis par ce service fictif et d’en lire le PAC. Les comptes de service CONFIGURÉS conservent leurs propres mots de passe distincts."
+    "en": "0715018c29ee708a",
+    "text": "Un seul mot de passe pour chaque service créé à la demande, publié pour la même raison que le mot de passe des utilisateurs : c’est ce qui permet à un lecteur de déchiffrer un ticket de service émis par ce service et d’en lire le PAC. Les comptes de service CONFIGURÉS conservent leurs propres mots de passe distincts."
   },
   "krb5.autoServicePassword|restartReason": {
     "en": "c8e4e57160c0d53d",
@@ -5928,8 +5928,8 @@
     "text": "Envoyer s2kparams"
   },
   "krb5.s2kparams|description": {
-    "en": "f4cde78e622f2547",
-    "text": "Indique si PA-ETYPE-INFO2 porte s2kparams. Windows Server l’omet et ce service fictif l’envoyait, ce qui est la seule différence relevée par l’échange capturé avec un véritable contrôleur de domaine ; omit est donc la valeur par défaut, et send est conservé afin de pouvoir exercer un client qui le lit."
+    "en": "8377aa5576df5515",
+    "text": "Indique si PA-ETYPE-INFO2 porte s2kparams. Windows Server l’omet et ce service l’envoyait, ce qui est la seule différence relevée par l’échange capturé avec un véritable contrôleur de domaine ; omit est donc la valeur par défaut, et send est conservé afin de pouvoir exercer un client qui le lit."
   },
   "ldap.port|label": {
     "en": "94902c0432b688e5",
@@ -6576,8 +6576,8 @@
     "text": "Liste d’hôtes autorisés pour le push"
   },
   "ssf.pushAllowedHosts|description": {
-    "en": "24d1d11741ad76ed",
-    "text": "Les noms d’hôte vers lesquels ce service poussera. VIDE SIGNIFIE N’IMPORTE LEQUEL, ce qui est la valeur par défaut et la seule souplesse délibérée du chemin sortant — c’est ce qui le rend utilisable comme service fictif. Un déploiement joignable par des parties auxquelles il ne fait pas confiance définit la liste, et tout autre hôte est refusé NOMMÉMENT dans le journal propre du flux. Des hôtes plutôt que des URL à dessein : un récepteur déplace légitimement le chemin de son endpoint, mais ne déménage pas légitimement vers un autre hôte."
+    "en": "fc66434cacb67fdc",
+    "text": "Les noms d’hôte vers lesquels ce service poussera. VIDE SIGNIFIE N’IMPORTE LEQUEL, ce qui est la valeur par défaut et la seule souplesse délibérée du chemin sortant — c’est ce qui le rend utilisable pour les tests. Un déploiement joignable par des parties auxquelles il ne fait pas confiance définit la liste, et tout autre hôte est refusé NOMMÉMENT dans le journal propre du flux. Des hôtes plutôt que des URL à dessein : un récepteur déplace légitimement le chemin de son endpoint, mais ne déménage pas légitimement vers un autre hôte."
   },
   "ssf.pushAllowHttp|label": {
     "en": "9954d6ecb250aab1",
@@ -6708,8 +6708,8 @@
     "text": "Flux par récepteur"
   },
   "ssf.maxStreams|description": {
-    "en": "175775f7e47974e8",
-    "text": "Le nombre de flux qu’un RÉCEPTEUR — un propriétaire authentifié — peut détenir dans un domaine de confiance. C’était par domaine jusqu’au 2026-09-22 (#144), ce qui permettait à un récepteur d’épuiser l’allocation de tous les autres. Une création au-delà est refusée EN NOMMANT CE PARAMÈTRE, ce qui est tout l’intérêt d’une limite sur un service fictif : chaque plafond ici est un cas négatif atteignable qu’un récepteur ne peut exercer autrement. Les deux flux récepteurs propres à ce service ne sont pas comptés."
+    "en": "06c569e74cb378cd",
+    "text": "Le nombre de flux qu’un RÉCEPTEUR — un propriétaire authentifié — peut détenir dans un domaine de confiance. C’était par domaine jusqu’au 2026-09-22 (#144), ce qui permettait à un récepteur d’épuiser l’allocation de tous les autres. Une création au-delà est refusée EN NOMMANT CE PARAMÈTRE, ce qui est tout l’intérêt d’une limite ici : chaque plafond ici est un cas négatif atteignable qu’un récepteur ne peut exercer autrement. Les deux flux récepteurs propres à ce service ne sont pas comptés."
   },
   "ssf.inactivityTimeoutS|label": {
     "en": "b6bd6443319327f2",
@@ -7644,8 +7644,8 @@
     "text": "Domaine de confiance"
   },
   "spiffe.trustDomain|description": {
-    "en": "695de04a8f35c484",
-    "text": "Le domaine de confiance pour lequel ce service est l’autorité émettrice : la partie autorité de chaque SPIFFE ID qu’il émet, donc spiffe://example.org/… par défaut. EN MINUSCULES, et uniquement des lettres, des chiffres, des points, des tirets et des tirets bas — un domaine de confiance en majuscules n’est pas un SPIFFE ID valide et n’est pas non plus une autre graphie du même en minuscules. Un domaine créé ici reçoit SON DOMAINE DNS comme domaine de confiance — iyasec.io — de la même façon qu’il reçoit un entityID propre, car deux domaines partageant un domaine de confiance sont deux autorités émettrices revendiquant un même nom, et chaque SVID émis par l’une ou l’autre devient alors ambigu. Définissez-le sur un domaine pour nommer explicitement le domaine de confiance de ce domaine ; un domaine qui partage délibérément celui d’un autre est une chose qu’il vaut la peine de pouvoir construire sur un service de simulation."
+    "en": "a87c95b882ee7e67",
+    "text": "Le domaine de confiance pour lequel ce service est l’autorité émettrice : la partie autorité de chaque SPIFFE ID qu’il émet, donc spiffe://example.org/… par défaut. EN MINUSCULES, et uniquement des lettres, des chiffres, des points, des tirets et des tirets bas — un domaine de confiance en majuscules n’est pas un SPIFFE ID valide et n’est pas non plus une autre graphie du même en minuscules. Un domaine créé ici reçoit SON DOMAINE DNS comme domaine de confiance — iyasec.io — de la même façon qu’il reçoit un entityID propre, car deux domaines partageant un domaine de confiance sont deux autorités émettrices revendiquant un même nom, et chaque SVID émis par l’une ou l’autre devient alors ambigu. Définissez-le sur un domaine pour nommer explicitement le domaine de confiance de ce domaine ; un domaine qui partage délibérément celui d’un autre est une chose qu’il vaut la peine de pouvoir construire pour les tests."
   },
   "spiffe.trustDomain|restartReason": {
     "en": "ebdc38f401978d5b",
@@ -8436,8 +8436,8 @@
     "text": "Inventer une entrée d’enregistrement à la première rencontre"
   },
   "spiffe.autoCreateEntries|description": {
-    "en": "7944288e3f3984d1",
-    "text": "C’EST LE PARAMÈTRE QUI FAIT DE CE SERVICE UNE SIMULATION. Activé, une charge de travail qui demande un SVID à la Workload API et ne correspond à aucune entrée d’enregistrement se voit créer une entrée et reçoit tout de même un SVID — aucune attestation, aucun sélecteur, rien de vérifié — ce qui est la même posture permissive que toutes les autres familles ici. Désactivé, une charge de travail non enregistrée est refusée avec PERMISSION_DENIED, ce que dit la Workload API et ce que fait un véritable agent SPIRE, et c’est la SEULE façon d’éprouver le chemin « je n’ai pas d’identité » d’un client. Les deux réponses valent d’être disponibles ; aucune n’est la plus sûre."
+    "en": "ff8fc38721bf6650",
+    "text": "C’EST LE PARAMÈTRE QUI REND SPIFFE PERMISSIF. Activé, une charge de travail qui demande un SVID à la Workload API et ne correspond à aucune entrée d’enregistrement se voit créer une entrée et reçoit tout de même un SVID — aucune attestation, aucun sélecteur, rien de vérifié — ce qui est la même posture permissive que toutes les autres familles ici. Désactivé, une charge de travail non enregistrée est refusée avec PERMISSION_DENIED, ce que dit la Workload API et ce que fait un véritable agent SPIRE, et c’est la SEULE façon d’éprouver le chemin « je n’ai pas d’identité » d’un client. Les deux réponses valent d’être disponibles ; aucune n’est la plus sûre."
   },
   "spiffe.requireSecurityHeader|label": {
     "en": "25778a0e30ceae29",

@@ -340,7 +340,7 @@ what the signature protected.
 recorded on the entry as *observed*; an operator **confirms** it (it becomes a
 registered certificate) or **discards** it on `/admin/saml2`. No certificate is
 trusted implicitly: the one exception there was, this service's own key for its
-own mock service provider, went with that mock (#592).
+own demonstration service provider, went with it (#592).
 
 ### Consuming service provider metadata
 
@@ -431,7 +431,7 @@ The recipient certificate is taken, most specific first, from:
    its requests needs no configuration there; product encrypts to it only once
    an operator confirms it;
 5. nothing: the assertion goes out **in clear** with a WARN in development — a
-   mock that stopped issuing when a key was missing is useless exactly when
+   service that stopped issuing when a key was missing is useless exactly when
    somebody is setting it up — and product refuses.
 
 Encryption happens when `saml2.encryptAssertion` (or the application's
@@ -574,7 +574,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml.canonicalizationAlgorithm` | `STS_SAML_CANONICALIZATION_ALGORITHM` | `exclusive` | yes | `exclusive` or `exclusive-with-comments`; inclusive c14n is not offered. |
 | `saml.allowSha1Signatures` | `STS_SAML_ALLOW_SHA1_SIGNATURES` | `false` | yes | Whether an XML signature this service verifies may use SHA-1; if allowed it is recorded as weak. On is development mode only: product refuses SHA-1 whatever this says, and refuses turning it on (#181). |
 | `saml.organizationName` | `STS_SAML_ORGANIZATION_NAME` | `sts` | yes | `<md:OrganizationName>` in the SAML metadata; empty omits `<md:Organization>`. |
-| `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Mock security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the organisation. |
+| `saml.organizationDisplayName` | `STS_SAML_ORGANIZATION_DISPLAY_NAME` | `Security token service` | yes | `<md:OrganizationDisplayName>`; empty omits the organisation. |
 | `saml.organizationUrl` | `STS_SAML_ORGANIZATION_URL` | *(empty)* | yes | `<md:OrganizationURL>`; empty means this service's base URL. |
 
 ### SAML 2.0
@@ -638,7 +638,7 @@ changed on those pages or with `POST /admin-api/config/set`.
   `RequestedAuthnContext` and a cancellation are answered with a status after
   one attempt rather than looping.
 * **Encryption without a key is a mode.** Development sends plaintext and says
-  so, because a mock that stops issuing is useless while it is being set up;
+  so, because a service that stops issuing is useless while it is being set up;
   product refuses, because plaintext is what encryption was asked to prevent.
 * **Broken algorithms are offered on purpose — in development.** `rsa-1_5`,
   CBC and `rsa-sha1` exist because deployed service providers demand them, and

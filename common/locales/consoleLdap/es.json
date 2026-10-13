@@ -59,7 +59,7 @@
   "fed.counts": "{signIns} inicio(s) de sesión<br>{people} persona(s)",
   "fed.intro": "{count} de un máximo de {max} bajo <code>{container}</code>: los proveedores de identidad externos cuyas aserciones consume este servicio y los proveedores de servicios externos a los que emite aserciones. Una relación es una DIRECCIÓN, así que un socio en ambas son dos entradas.",
   "fed.tileRelationships": "Relaciones",
-  "fed.warn": "<strong>Un ldapmodify aquí es un cambio de seguridad, cosa que no ocurre en ningún otro contenedor de este directorio.</strong> <code>fedSigningCertificate</code> decide de quién se creerá las aserciones este servicio; <code>fedEnabled</code> activa a un socio. En todo lo demás, una edición cambia lo que este servicio entrega, y todo bind a este directorio tiene éxito — así que este contenedor está exactamente tan protegido como el resto, es decir, nada. Es el estado honesto de una simulación, y por eso la federación es la única función de aquí que rechaza por defecto.",
+  "fed.warn": "<strong>Un ldapmodify aquí es un cambio de seguridad, cosa que no ocurre en ningún otro contenedor de este directorio.</strong> <code>fedSigningCertificate</code> decide de quién se creerá las aserciones este servicio; <code>fedEnabled</code> activa a un socio. En todo lo demás, una edición cambia lo que este servicio entrega, y todo bind a este directorio tiene éxito — así que este contenedor está exactamente tan protegido como el resto, es decir, nada. Es el estado honesto del modo de desarrollo, y por eso la federación es la única función de aquí que rechaza por defecto.",
   "fed.thRelationship": "Relación",
   "fed.placeholder": "un id, un DN, un protocolo o una dirección",
   "fed.thDirection": "Dirección",

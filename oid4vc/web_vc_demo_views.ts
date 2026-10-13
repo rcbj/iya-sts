@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // THE OPENID4VC DEMONSTRATION'S PAGES, DRAWN IN THE BROWSER (#582).
 //
-// The demonstration issuer ("Mock University") and verifier ("The Bar
+// The demonstration issuer ("Example University") and verifier ("The Bar
 // Door") were pages `vc_offers.ts` and `vc_verifier.ts` drew until #582;
 // these are their renderers, moved with their markup and their element ids,
 // over the views `/vc-demo-api` answers (`vc_demo_api.ts`):

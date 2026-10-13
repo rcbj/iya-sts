@@ -1238,7 +1238,7 @@ class WsFederation {
             : (mode.acceptsUnregisteredAddresses()
                 ? 'none was sent, so the response goes to this service\'s ' +
                   'own ' +
-                  'mock relying party.'
+                  'demonstration relying party.'
                 : 'none was sent, so the response goes to the address ' +
                   'registered on the realm\'s entry.') },
         { label: 'wctx', value: String(params.wctx || '(none)'),

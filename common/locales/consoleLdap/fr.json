@@ -59,7 +59,7 @@
   "fed.counts": "{signIns} connexion(s)<br>{people} personne(s)",
   "fed.intro": "{count} sur un maximum de {max} sous <code>{container}</code> : les fournisseurs d’identité externes dont ce service consomme les assertions, et les fournisseurs de services externes auxquels il en émet. Une relation correspond à un SENS : un partenaire dans les deux sens fait donc deux entrées.",
   "fed.tileRelationships": "Relations",
-  "fed.warn": "<strong>Un ldapmodify ici est une modification de sécurité, ce qui n’est vrai d’aucun autre conteneur de cet annuaire.</strong> <code>fedSigningCertificate</code> décide des assertions que ce service croira ; <code>fedEnabled</code> active un partenaire. Partout ailleurs ici, une modification change ce que ce service distribue, et toute liaison à cet annuaire réussit — ce conteneur est donc exactement aussi protégé que le reste, c’est-à-dire pas du tout. C’est l’état honnête d’une simulation, et c’est pourquoi la fédération est ici la seule fonctionnalité qui refuse par défaut.",
+  "fed.warn": "<strong>Un ldapmodify ici est une modification de sécurité, ce qui n’est vrai d’aucun autre conteneur de cet annuaire.</strong> <code>fedSigningCertificate</code> décide des assertions que ce service croira ; <code>fedEnabled</code> active un partenaire. Partout ailleurs ici, une modification change ce que ce service distribue, et toute liaison à cet annuaire réussit — ce conteneur est donc exactement aussi protégé que le reste, c’est-à-dire pas du tout. C’est l’état honnête du mode développement, et c’est pourquoi la fédération est ici la seule fonctionnalité qui refuse par défaut.",
   "fed.thRelationship": "Relation",
   "fed.placeholder": "un identifiant, un DN, un protocole ou un sens",
   "fed.thDirection": "Sens",

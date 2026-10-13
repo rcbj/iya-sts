@@ -37,7 +37,7 @@
   "ianTip": "Noms alternatifs de l’émetteur. Même syntaxe que subjectAltName.",
   "ianCriticalTip": "Ne devrait normalement pas être critique.",
   "ianSyntax": "La même syntaxe que subjectAltName ci-dessus.",
-  "cdpTip": "Où récupérer la CRL qui révoquerait ce certificat. NOTEZ que ce service n’en publie aucune : l’extension est une URL que vous affirmez, pas une promesse que tient cette maquette.",
+  "cdpTip": "Où récupérer la CRL qui révoquerait ce certificat. NOTEZ que ce service n’en publie aucune : l’extension est une URL que vous affirmez, pas une promesse que tient ce service.",
   "rarelyCritical": "Rarement critique.",
   "urlsPerLine": "URL, une par ligne",
   "cdpUrlsTip": "Où est publiée la CRL qui révoquerait ce certificat.",

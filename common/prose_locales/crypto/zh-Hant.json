@@ -308,8 +308,8 @@
     "text": "partial：四種區塊加密法與兩種金鑰傳輸，一次包裝一個元素。它不是內嵌的實作，這是刻意的例外——兩者的輸出已經在位元組層級相容，而這一個具備、另一個沒有的，是「診斷」。"
   },
   "crypto.standards.xmlenc.what": {
-    "en": "22b505560ceb8641",
-    "text": "這裡刻意明說的每一則訊息：兩種 CBC 加密法「未」經驗證，而 `rsa-1_5` 已被 Bleichenbacher 攻破。兩者之所以提供，是因為實際的服務提供者要求它們，而一個只提供安全選項的模擬服務，無法用來展示不安全的選項會造成什麼。"
+    "en": "88fff06d7d7b1664",
+    "text": "這裡刻意明說的每一則訊息：兩種 CBC 加密法「未」經驗證，而 `rsa-1_5` 已被 Bleichenbacher 攻破。兩者之所以提供，是因為實際的服務提供者要求它們，而一個只提供安全選項的服務，無法用來展示不安全的選項會造成什麼。"
   },
   "crypto.standards.c14n.coverage": {
     "en": "dcdbea06a9c35da8",
@@ -320,8 +320,8 @@
     "text": "排他式正規化是關鍵所在，而且在此處各處都是預設值。斷言是獨立簽署後再內嵌到 RSTR、Response 或 `wresult` 之中，而這些都宣告了自己的前置詞，因此包含式 c14n 會在驗證時把那些祖先宣告拉進摘要裡——簽章於是對每個信賴方都失敗，卻在此處完美通過驗證，這是最難追查的一種錯誤。"
   },
   "crypto.standards.wss.coverage": {
-    "en": "08017a57e61d5832",
-    "text": "mock，而在要求「WS-Integrity」或「WS-Encryption」之前，應該先讀這一列——兩者都不是實際存在的文件。WSS 是一份規格，其完整性的一半是在 `<wsse:Security>` 標頭內對 SOAP Body 與 Timestamp 套用 XML Signature，而機密性的一半是以相同方式套用 XML Encryption。本服務兩者都不做。它不簽署任何 SOAP 封套、不加密任何 SOAP 本文、不產生 Timestamp，也不驗證請求上任何訊息層級的簽章。"
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal，而在要求「WS-Integrity」或「WS-Encryption」之前，應該先讀這一列——兩者都不是實際存在的文件。WSS 是一份規格，其完整性的一半是在 `<wsse:Security>` 標頭內對 SOAP Body 與 Timestamp 套用 XML Signature，而機密性的一半是以相同方式套用 XML Encryption。本服務兩者都不做。它不簽署任何 SOAP 封套、不加密任何 SOAP 本文、不產生 Timestamp，也不驗證請求上任何訊息層級的簽章。"
   },
   "crypto.standards.wss.what": {
     "en": "d6dcd66e6476aa91",
@@ -352,8 +352,8 @@
     "text": "CA 金鑰屬於階層，於 /admin/pki 選擇（`pki.keyAlgorithm`，預設為 RSA 2048；SPIFFE Issuing CA 偏好 EC P-256）；簽章金鑰為 RSA 2048，而 TLS 憑證則依 `tls.certificateAlgorithms` 的要求而定。`spiffe.x509KeyType` 決定每個 SVID 中的金鑰。在 TLS 憑證上，SUBJECTALTNAME 是名稱出現的唯一位置——RFC 6125 自 2011 年起就規定 CN 會被忽略。"
   },
   "crypto.standards.tls.coverage": {
-    "en": "e67c709b3dc8eb62",
-    "text": "mock：node 的 OpenSSL 預設值，唯在 LDAPS 636 與主要連接埠上有兩項設定將其縮限——`tls.minVersion`（預設為 TLS 1.2）與 `tls.ciphers`（空白時使用 node 的清單）。本服務不選擇曲線；它另外設定的是哪些通訊端使用 TLS，以及它們提供哪張憑證。"
+    "en": "33822c9691deb784",
+    "text": "minimal：node 的 OpenSSL 預設值，唯在 LDAPS 636 與主要連接埠上有兩項設定將其縮限——`tls.minVersion`（預設為 TLS 1.2）與 `tls.ciphers`（空白時使用 node 的清單）。本服務不選擇曲線；它另外設定的是哪些通訊端使用 TLS，以及它們提供哪張憑證。"
   },
   "crypto.standards.tls.what": {
     "en": "a3c8abc13508c6c3",
@@ -1564,8 +1564,8 @@
     "text": "SPIFFE SVID 身分"
   },
   "crypto.hashing.fixed.7.what": {
-    "en": "4109d5d9978212ae",
-    "text": "`kid` 指名的是一把「金鑰」，因此由金鑰自身的公開資料「衍生」而來。它曾經是常數，因此這個模擬服務的兩個執行個體會以同一個名稱發布兩把不同的金鑰——驗證者會精確比對 kid、嘗試那把金鑰，然後回報簽章錯誤。"
+    "en": "c49939c25a7e8ccc",
+    "text": "`kid` 指名的是一把「金鑰」，因此由金鑰自身的公開資料「衍生」而來。它曾經是常數，因此這個服務的兩個執行個體會以同一個名稱發布兩把不同的金鑰——驗證者會精確比對 kid、嘗試那把金鑰，然後回報簽章錯誤。"
   },
   "crypto.hashing.fixed.7.where": {
     "en": "5a3cb59275a8e560",

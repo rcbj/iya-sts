@@ -1,5 +1,5 @@
 {
-  "intro1": "What the mock Verifier at ",
+  "intro1": "What the demonstration Verifier at ",
   "intro2": " — the pages call it <em>The Bar Door</em> — asks a wallet for, and in which credential format. It reaches the wire as the <code>dcql_query</code> of the next OID4VP Authorization Request, and it is what the Verifier then checks the presentation against: a claim asked for and not presented fails the <em>Requested claims</em> check by name.",
   "catalogue1": "The claims are the same catalogue ",
   "catalogue2": " fills a credential from, grouped into <strong>claims</strong> rather than listed as attribute types. A credential carries one Disclosure per top-level claim, so <code>address</code> is one unit of disclosure however many LDAP attributes feed it — asking for it gets the street, the locality, the region, the postal code and the country together, and a page offering six address checkboxes would be offering a choice that does not exist on the wire.",

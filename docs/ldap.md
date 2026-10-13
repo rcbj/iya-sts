@@ -4,7 +4,7 @@ title: LDAP
 
 # LDAP
 
-> **Development mode only (#585):** `/oid4vp/verifier`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/oid4vp/verifier`, `/did/generate` are demonstration, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 iya-sts runs an **embedded LDAP v3 directory**
 ([RFC 4511](https://www.rfc-editor.org/rfc/rfc4511)) on two raw sockets: TCP
@@ -354,7 +354,7 @@ changes one, and a runtime setting can be set per trust realm. See
   as well as by name. Putting the realm in the base DN makes
   `ldapsearch -b "dc=acme,dc=example,dc=com"` mean what it says, and new realms
   are reachable at once.
-* **Every bind succeeds in development, except `invalid`.** A mock that checked
+* **Every bind succeeds in development, except `invalid`.** A development service that checked
   passwords could not be pointed at by a client that has none. The reserved
   value keeps `invalidCredentials` (49) reachable, and 49 is the code an LDAP
   client's error handling is built around: a directory that could not produce
@@ -430,7 +430,7 @@ Two identities are skipped on purpose:
 
 ### One entry per person, however they get in
 
-`rcbj` at the sign-in screen, `urn:uuid:<entryUUID>` in a token, `rcbj@STS.MOCK`
+`rcbj` at the sign-in screen, `urn:uuid:<entryUUID>` in a token, `rcbj@EXAMPLE.COM`
 in a Kerberos AS-REQ and `rcbj` on a WS-Security `UsernameToken` are one entry.
 The subject is resolved through the directory, and the realm (and the legacy
 `urn:sts:user:` prefix an older token may carry) is stripped first, so every

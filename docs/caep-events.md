@@ -5,7 +5,7 @@ nav_order: 11
 
 # The eight CAEP events, and what makes each one fire
 
-> **Development mode only (#585):** `/issuer/offer` is a demonstration — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer` is a demonstration, test-control or diagnostic endpoint. A realm in product mode neither serves nor lists it, and answers it as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 This service is a **CAEP transmitter**. The Continuous Access Evaluation Profile
 1.0 (final, 2 September 2025) is a vocabulary about **sessions** spoken over
@@ -457,7 +457,7 @@ rather than a language map.
 
 Two things are **carried with a warning** rather than refused, and both are
 deliberate: an **open** enum's unlisted value, because refusing would make this
-service unable to carry a vendor's own type — precisely what a mock is for — and
+service unable to carry a vendor's own type — precisely what a test service is for — and
 a member the event does not define, because an event vocabulary extends and a
 receiver is expected to ignore what it does not know.
 

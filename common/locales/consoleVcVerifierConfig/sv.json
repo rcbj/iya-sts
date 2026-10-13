@@ -1,5 +1,5 @@
 {
-  "intro1": "Vad den simulerade Verifiern på ",
+  "intro1": "Vad demonstrationens Verifier på ",
   "intro2": " — sidorna kallar den <em>The Bar Door</em> — ber en plånbok om, och i vilket credential-format. Det går ut på nätet som <code>dcql_query</code> i nästa OID4VP Authorization Request, och det är vad Verifiern sedan kontrollerar presentationen mot: en claim som efterfrågas men inte presenteras fallerar kontrollen <em>Requested claims</em> med namn.",
   "catalogue1": "Claimsen är samma katalog som ",
   "catalogue2": " fyller ett credential från, grupperade i <strong>claims</strong> i stället för listade som attributtyper. Ett credential bär en Disclosure per claim på toppnivå, så <code>address</code> är en enda enhet för utlämnande hur många LDAP-attribut som än matar den — att be om den ger gata, ort, region, postnummer och land tillsammans, och en sida som erbjöd sex adresskryssrutor skulle erbjuda ett val som inte finns på nätet.",

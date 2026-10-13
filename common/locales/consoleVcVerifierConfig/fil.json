@@ -1,5 +1,5 @@
 {
-  "intro1": "Kung ano ang hinihingi sa isang wallet ng mock Verifier sa ",
+  "intro1": "Kung ano ang hinihingi sa isang wallet ng demonstration Verifier sa ",
   "intro2": " — tinatawag itong <em>The Bar Door</em> ng mga pahina — at sa anong credential format. Lumalabas ito sa wire bilang <code>dcql_query</code> ng susunod na OID4VP Authorization Request, at ito ang pinagbabatayan ng Verifier sa pagsuri ng presentation: ang claim na hiningi pero hindi ipinakita ay bumabagsak sa <em>Requested claims</em> check ayon sa pangalan.",
   "catalogue1": "Ang mga claim ay mula sa parehong catalogue na pinagkukunan ng ",
   "catalogue2": " sa pagpuno ng credential, naka-grupo bilang <strong>mga claim</strong> sa halip na nakalista bilang mga attribute type. Isang Disclosure bawat top-level claim ang dala ng credential, kaya iisang unit ng disclosure ang <code>address</code> gaano man karami ang LDAP attribute na nagpapakain dito — kapag hiningi ito, sabay-sabay na makukuha ang kalye, lokalidad, rehiyon, postal code at bansa, at ang pahinang nag-aalok ng anim na checkbox ng address ay nag-aalok ng pagpipiliang wala naman sa wire.",

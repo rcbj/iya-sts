@@ -1,6 +1,6 @@
 {
-  "issuer.title": "Mock University — digital diploma",
-  "issuer.heading": "Mock University",
+  "issuer.title": "Example University — digital diploma",
+  "issuer.heading": "Example University",
   "issuer.intro": "Congratulations on your graduation. Your diploma is available as a digital credential (<code>{configuration}</code>) that you can keep in your wallet.",
   "issuer.request": "Request your digital diploma",
   "issuer.requestByReference": "Request it (offer by reference)",
@@ -9,7 +9,7 @@
   "issuer.qrLater": "Show a QR code (issuance takes a while)",
   "issuer.meta": "This is the Credential Issuer's web page in OID4VCI Appendix H. The first two links build a Credential Offer and send you to your wallet at <code>{wallet}</code> (H.1, same device). The other two hand the offer over by QR code and a Transaction Code instead — H.2, and H.3 where the issuer needs time to produce the credential. The issuer is <code>{issuer}</code>.",
   "offer.starting": "Preparing your Credential Offer…",
-  "offer.title": "Mock University — scan to receive your credential",
+  "offer.title": "Example University — scan to receive your credential",
   "offer.heading": "Scan this with your wallet",
   "offer.ready": "Your digital diploma is ready to be claimed.",
   "offer.readyDeferred": "Your digital diploma is ready to be claimed, though issuing it will take us a little time once you ask.",

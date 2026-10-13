@@ -23,7 +23,7 @@
 //      phase 2; a dropped one loses a value, an invented one draws braces),
 //      every HTML tag and entity (some prose is drawn as markup), and every
 //      `**` (a renderer strips them in pairs) — and a coverage note's
-//      leading `full`, `partial` or `mock`, which a consumer parses.
+//      leading `full`, `partial` or `minimal`, which a consumer parses.
 //   C. Every catalog is CURRENT (rcbj, 2026-10-12): a base catalog holds a
 //      translation of every English message, made from the English the
 //      source says NOW; an overlay holds only current translations; and no
@@ -57,12 +57,12 @@ const DIRECTORY = path.join(ROOT, 'common', 'prose_locales');
 // The MARKS of a text a translation must keep — its `code spans`, its
 // {{placeholders}}, its HTML tags and entities, and its ** — sorted, as one
 // string.
-// A COVERAGE NOTE's first word — `full`, `partial` or `mock` — which
+// A COVERAGE NOTE's first word — `full`, `partial` or `minimal` — which
 // `tests/vendored/sts_metadata.js` reads from the answer and a consumer may
 // parse: a translation keeps it verbatim, first (phase 3).
 function coverageOf(text) {
   log.debug("Entering coverageOf().");
-  const m = /^(full|partial|mock)\b/.exec(String(text));
+  const m = /^(full|partial|minimal)\b/.exec(String(text));
   log.debug("Leaving coverageOf().");
   return m ? m[1] : '';
 }

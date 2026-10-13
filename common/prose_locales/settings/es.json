@@ -1496,16 +1496,16 @@
     "text": "Modo"
   },
   "global.mode|description": {
-    "en": "abe4dc2a95f944df",
-    "text": "Qué es este servicio. `development` es el simulador que fue cada versión anterior al 2026-09-06: no se comprueba ninguna contraseña en ningún protocolo, un usuario, una aplicación, un principal de servicio o un servidor de autorización desconocidos se crean la primera vez que se nombran, un cliente OAuth no necesita secreto y — con adminApi.authRequired desactivado — /admin-api está abierta para que una prueba pueda manejarla y para que alguien sin ningún rol pueda volver a entrar. `product` ejecuta las MISMAS implementaciones de protocolo sin la permisividad: una credencial presentada se verifica contra el `userPassword` con hash de la entrada de directorio de la persona, cada objeto referenciado debe haberse creado de antemano, cada aplicación OAuth 2.0 y OpenID Connect que declaró un método confidencial debe autenticarse con él (a un cliente público se le aplica RFC 9700 en su lugar), cada ajuste solo de desarrollo se ignora, y /admin-api con adminApi.authRequired desactivado exige el mismo inicio de sesión y los mismos roles que la consola (con él activado, el valor predeterminado en ambos modos, exige un token de acceso). Se puede definir por dominio de confianza, así que un proceso puede servir ambos a la vez. GET /admin/mode enumera cada requisito e indica qué respuesta recibe cada uno en cada modo.\n\nSE PUEDE CAMBIAR EN EJECUCIÓN, y el orden importa cuando se hace: con adminApi.authRequired desactivado, /admin-api está abierta justo hasta el momento en que esto se pone en `product`, así que aprovisione PRIMERO las credenciales y cambie después. Un dominio cambiado sin que nadie tenga una credencial no tiene forma de entrar — el arranque inicial se ejecuta al arrancar y no ante un cambio, a propósito, porque un servicio que creara un administrador cada vez que se moviera un ajuste sería un servicio con un administrador que nadie pidió."
+    "en": "72d5f41058477223",
+    "text": "Qué es este servicio. `development` es lo que fue cada versión anterior al 2026-09-06: no se comprueba ninguna contraseña en ningún protocolo, un usuario, una aplicación, un principal de servicio o un servidor de autorización desconocidos se crean la primera vez que se nombran, un cliente OAuth no necesita secreto y — con adminApi.authRequired desactivado — /admin-api está abierta para que una prueba pueda manejarla y para que alguien sin ningún rol pueda volver a entrar. `product` ejecuta las MISMAS implementaciones de protocolo sin la permisividad: una credencial presentada se verifica contra el `userPassword` con hash de la entrada de directorio de la persona, cada objeto referenciado debe haberse creado de antemano, cada aplicación OAuth 2.0 y OpenID Connect que declaró un método confidencial debe autenticarse con él (a un cliente público se le aplica RFC 9700 en su lugar), cada ajuste solo de desarrollo se ignora, y /admin-api con adminApi.authRequired desactivado exige el mismo inicio de sesión y los mismos roles que la consola (con él activado, el valor predeterminado en ambos modos, exige un token de acceso). Se puede definir por dominio de confianza, así que un proceso puede servir ambos a la vez. GET /admin/mode enumera cada requisito e indica qué respuesta recibe cada uno en cada modo.\n\nSE PUEDE CAMBIAR EN EJECUCIÓN, y el orden importa cuando se hace: con adminApi.authRequired desactivado, /admin-api está abierta justo hasta el momento en que esto se pone en `product`, así que aprovisione PRIMERO las credenciales y cambie después. Un dominio cambiado sin que nadie tenga una credencial no tiene forma de entrar — el arranque inicial se ejecuta al arrancar y no ante un cambio, a propósito, porque un servicio que creara un administrador cada vez que se moviera un ajuste sería un servicio con un administrador que nadie pidió."
   },
   "global.logLevel|label": {
     "en": "886e60232b66c841",
     "text": "Nivel de registro"
   },
   "global.logLevel|description": {
-    "en": "062f644ae06c5e38",
-    "text": "debug es el nivel útil para un simulador cuyo trabajo es mostrar lo que hizo: cada llamada a un endpoint, y cada token y cada aserción tanto antes como después de firmarse. Cambiarlo aquí surte efecto en la siguiente línea escrita, SALVO en los ocho módulos de códec krb5_* incluidos: son copias idénticas byte a byte de los archivos common/krb5/* del proyecto padre y no se les puede añadir una línea para registrar su logger, así que conservan el nivel con el que arrancó el proceso. Eso es trazado de ASN.1 y criptografía, no el relato de este servicio sobre lo que hizo."
+    "en": "6172a46d84f39b6c",
+    "text": "debug es el nivel útil para un servicio cuyo trabajo es mostrar lo que hizo: cada llamada a un endpoint, y cada token y cada aserción tanto antes como después de firmarse. Cambiarlo aquí surte efecto en la siguiente línea escrita, SALVO en los ocho módulos de códec krb5_* incluidos: son copias idénticas byte a byte de los archivos common/krb5/* del proyecto padre y no se les puede añadir una línea para registrar su logger, así que conservan el nivel con el que arrancó el proceso. Eso es trazado de ASN.1 y criptografía, no el relato de este servicio sobre lo que hizo."
   },
   "workers.startTimeoutMs|label": {
     "en": "d851097c61c3d64c",
@@ -4012,8 +4012,8 @@
     "text": "Prefijo para nombres de usuario federados"
   },
   "federation.usernamePrefix|description": {
-    "en": "3783b4bfff228c17",
-    "text": "Se antepone a todo nombre de usuario que proporcione un proveedor de identidad externo, para que un `alice` federado y el `alice` local sean dos entradas. VACÍO de forma predeterminada, lo que significa que son UNA sola entrada — y eso es una decisión real y no un predeterminado en el que nadie pensó. Vacío es lo correcto para un mock al que se apunta a un socio para ver qué devuelve, porque un nombre con prefijo hace que todo token y aserción posteriores parezcan desconocidos. Defínalo como algo del estilo de `fed-` en cuanto la pregunta sea si las identidades federadas comparten espacio de nombres con las locales, que es la pregunta para la que existe este ajuste. Se aplica DESPUÉS de elegir el nombre de usuario, así que cambiarlo no puede cambiar QUÉ valor entrante se usó."
+    "en": "cd17a5b59a5cf957",
+    "text": "Se antepone a todo nombre de usuario que proporcione un proveedor de identidad externo, para que un `alice` federado y el `alice` local sean dos entradas. VACÍO de forma predeterminada, lo que significa que son UNA sola entrada — y eso es una decisión real y no un predeterminado en el que nadie pensó. Vacío es lo correcto para un servicio al que se apunta a un socio para ver qué devuelve, porque un nombre con prefijo hace que todo token y aserción posteriores parezcan desconocidos. Defínalo como algo del estilo de `fed-` en cuanto la pregunta sea si las identidades federadas comparten espacio de nombres con las locales, que es la pregunta para la que existe este ajuste. Se aplica DESPUÉS de elegir el nombre de usuario, así que cambiarlo no puede cambiar QUÉ valor entrante se usó."
   },
   "federation.loginButtons|label": {
     "en": "712a94d0c664c839",
@@ -4044,8 +4044,8 @@
     "text": "Permitir http:// hacia un socio (solo desarrollo)"
   },
   "federation.outboundAllowHttp|description": {
-    "en": "e9b0c89c7f07455a",
-    "text": "DESACTIVADO de forma predeterminada, que es el único lugar en que este servicio es más estricto de lo que normalmente sería un mock: lo que viaja en estas solicitudes es un secreto de cliente y un código de autorización, hacia el servicio de otra persona. ACTIVADO acepta un endpoint http:// en modo de DESARROLLO, que es lo que necesita federarse contra otro mock en localhost, y cada una de esas solicitudes se registra. En modo producto el http plano se rechaza diga lo que diga este ajuste (STS-FED-0112)."
+    "en": "e815dfe7877e359e",
+    "text": "DESACTIVADO de forma predeterminada, que es el único lugar en que este servicio es más estricto de lo que normalmente es el modo de desarrollo: lo que viaja en estas solicitudes es un secreto de cliente y un código de autorización, hacia el servicio de otra persona. ACTIVADO acepta un endpoint http:// en modo de DESARROLLO, que es lo que necesita federarse contra otra instancia en localhost, y cada una de esas solicitudes se registra. En modo producto el http plano se rechaza diga lo que diga este ajuste (STS-FED-0112)."
   },
   "federation.outboundSkipTlsVerification|label": {
     "en": "85253ab85556bf34",
@@ -4172,8 +4172,8 @@
     "text": "OrganizationName de los metadatos"
   },
   "saml.organizationName|description": {
-    "en": "40b17e36101b7803",
-    "text": "El <md:OrganizationName> en /saml2/metadata y /saml11/metadata. VACÍO OMITE TODO EL ELEMENTO <md:Organization>, en cualquier modo, porque el esquema de metadatos exige un nombre, un nombre para mostrar y una URL juntos, y una organización sin nombre no lo es. Una implementación en modo producto define el suyo o lo vacía; el predeterminado es el nombre del producto, `sts` (era `mock-sts` hasta el 2026-09-12)."
+    "en": "86bfb411b4b415d9",
+    "text": "El <md:OrganizationName> en /saml2/metadata y /saml11/metadata. VACÍO OMITE TODO EL ELEMENTO <md:Organization>, en cualquier modo, porque el esquema de metadatos exige un nombre, un nombre para mostrar y una URL juntos, y una organización sin nombre no lo es. Una implementación en modo producto define el suyo o lo vacía; el predeterminado es el nombre del producto, `sts`."
   },
   "saml.organizationDisplayName|label": {
     "en": "88d52def3fcb1b6a",
@@ -4236,16 +4236,16 @@
     "text": "Cifrar la aserción"
   },
   "saml2.encryptAssertion|description": {
-    "en": "c0326691fb13cf15",
-    "text": "Envuelve el <saml:Assertion> en un <saml:EncryptedAssertion> dentro del Response. DESACTIVADO de forma predeterminada, porque necesita un CERTIFICADO DEL DESTINATARIO y un proveedor de servicios que no se lo haya dado a este servicio no puede leer lo que recibe. Donde no se encuentra ningún certificado, la aserción se envía EN CLARO y el motivo se registra y se muestra en /admin/saml2 — negarse a emitir sería un mock que deja de responder, y enviar texto plano en silencio mientras una página dice «cifrado» sería peor que cualquiera de las dos cosas. El certificado se toma de samlEncryptionCertificate en su entrada (que escribe el consumo de sus metadatos), luego de su samlSigningCertificate registrado, y luego — solo en modo de desarrollo — del certificado OBSERVADO en un AuthnRequest firmado, así que un proveedor de servicios que firma sus solicitudes no necesita configuración allí; el modo producto cifra para un certificado observado solo una vez que un operador lo confirma. La aserción se FIRMA PRIMERO y luego se cifra, que es el orden que espera todo proveedor de servicios: la firma está dentro del texto cifrado y es lo que sobrevive al descifrado."
+    "en": "50d480ab245c0676",
+    "text": "Envuelve el <saml:Assertion> en un <saml:EncryptedAssertion> dentro del Response. DESACTIVADO de forma predeterminada, porque necesita un CERTIFICADO DEL DESTINATARIO y un proveedor de servicios que no se lo haya dado a este servicio no puede leer lo que recibe. Donde no se encuentra ningún certificado, la aserción se envía EN CLARO y el motivo se registra y se muestra en /admin/saml2 — negarse a emitir sería un servicio que deja de responder, y enviar texto plano en silencio mientras una página dice «cifrado» sería peor que cualquiera de las dos cosas. El certificado se toma de samlEncryptionCertificate en su entrada (que escribe el consumo de sus metadatos), luego de su samlSigningCertificate registrado, y luego — solo en modo de desarrollo — del certificado OBSERVADO en un AuthnRequest firmado, así que un proveedor de servicios que firma sus solicitudes no necesita configuración allí; el modo producto cifra para un certificado observado solo una vez que un operador lo confirma. La aserción se FIRMA PRIMERO y luego se cifra, que es el orden que espera todo proveedor de servicios: la firma está dentro del texto cifrado y es lo que sobrevive al descifrado."
   },
   "saml2.encryptionAlgorithm|label": {
     "en": "5cb576de8c785eed",
     "text": "Algoritmo de cifrado"
   },
   "saml2.encryptionAlgorithm|description": {
-    "en": "3d74e433ce34b0c5",
-    "text": "El cifrado por bloques con el que se cifra todo elemento cifrado. Los dos GCM son AUTENTICADOS: un texto cifrado alterado no supera su etiqueta y se rechaza. Los dos CBC NO lo son, y eso no es un defecto de este servicio — es la propiedad que tiene CBC, proveedores de servicios reales lo exigen, y un mock que solo ofreciera la opción segura no podría usarse para mostrar lo que hace la insegura. Lo que este servicio hace al respecto al LEER es analizar el resultado y rechazar todo lo que no sea XML bien formado, lo que detecta la corrupción ordinaria y no es integridad."
+    "en": "4427c176840cdf46",
+    "text": "El cifrado por bloques con el que se cifra todo elemento cifrado. Los dos GCM son AUTENTICADOS: un texto cifrado alterado no supera su etiqueta y se rechaza. Los dos CBC NO lo son, y eso no es un defecto de este servicio — es la propiedad que tiene CBC, proveedores de servicios reales lo exigen, y un servicio que solo ofreciera la opción segura no podría usarse para mostrar lo que hace la insegura. Lo que este servicio hace al respecto al LEER es analizar el resultado y rechazar todo lo que no sea XML bien formado, lo que detecta la corrupción ordinaria y no es integridad."
   },
   "saml2.keyTransportAlgorithm|label": {
     "en": "5a90e136cc72666e",
@@ -4924,8 +4924,8 @@
     "text": "Algoritmo de firma de las credenciales"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "604f6101dd1263ca",
-    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usan la Domain Linkage Credential de la DID Configuration y la credencial did:web de /did/generate. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier mock comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó."
+    "en": "73a0a13f9f08d4aa",
+    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usan la Domain Linkage Credential de la DID Configuration y la credencial did:web de /did/generate. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier de este servicio comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5020,8 +5020,8 @@
     "text": "ID de cliente del verificador"
   },
   "oid4vp.clientId|description": {
-    "en": "6052a4d1b56e8787",
-    "text": "El client_id que el verificador simulado presenta en su Authorization Request, y el `aud` que debe nombrar el Key Binding JWT."
+    "en": "fad43765b51b8297",
+    "text": "El client_id que el verificador de este servicio presenta en su Authorization Request, y el `aud` que debe nombrar el Key Binding JWT."
   },
   "oid4vp.walletUrl|label": {
     "en": "35334515c27079db",
@@ -5036,8 +5036,8 @@
     "text": "Cabecera de certificado del Request Object"
   },
   "oid4vp.requestObjectCertificateHeader|description": {
-    "en": "7bae5787a6f84891",
-    "text": "Si el REQUEST OBJECT firmado del verificador simulado (RFC 9101, una solicitud por referencia) nombra la cadena de certificados de la clave que lo firmó. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la Root del servicio, DER en base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que una parte que confía que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. A las cabeceras JWE nunca se les da una — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+    "en": "9bbac75884284a52",
+    "text": "Si el REQUEST OBJECT firmado del verificador (RFC 9101, una solicitud por referencia) nombra la cadena de certificados de la clave que lo firmó. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la Root del servicio, DER en base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que una parte que confía que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. A las cabeceras JWE nunca se les da una — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
   },
   "oid4vp.kbMaxAgeS|label": {
     "en": "202136566ac3cacb",
@@ -5324,8 +5324,8 @@
     "text": "Claims solicitados"
   },
   "oid4vp.claims|description": {
-    "en": "054137dd98eeec73",
-    "text": "La solicitud INICIAL del verificador simulado y — esto es lo que conviene saber — el objetivo al que vuelve su Reset. No es la lista vigente: /admin/vc-verifier-config es dueña de esa, y copia esta al arrancar. Así que cambiarla aquí cambia lo que produce el próximo Reset, y la solicitud que se envía solo una vez pulsado ese Reset (o llamado POST /admin-api/verifier-request/reset). Es un objetivo de restablecimiento y no un valor vigente a propósito: un despliegue que configuró esto debe recuperar SU lista con Reset y no los valores predeterminados del catálogo. Un claim que este emisor no acuña es algo legítimo de pedir y es como se llega a la ruta «not satisfied»."
+    "en": "4591b11de4d5e5c7",
+    "text": "La solicitud INICIAL del verificador y — esto es lo que conviene saber — el objetivo al que vuelve su Reset. No es la lista vigente: /admin/vc-verifier-config es dueña de esa, y copia esta al arrancar. Así que cambiarla aquí cambia lo que produce el próximo Reset, y la solicitud que se envía solo una vez pulsado ese Reset (o llamado POST /admin-api/verifier-request/reset). Es un objetivo de restablecimiento y no un valor vigente a propósito: un despliegue que configuró esto debe recuperar SU lista con Reset y no los valores predeterminados del catálogo. Un claim que este emisor no acuña es algo legítimo de pedir y es como se llega a la ruta «not satisfied»."
   },
   "oid4vp.presentationRequestTtlS|label": {
     "en": "1686a3d4983e6c6b",
@@ -5372,8 +5372,8 @@
     "text": "Otros emisores de credenciales de confianza (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "b23af7aea67fb69a",
-    "text": "Certificados PEM, concatenados, de cuyas claves el verificador simulado acepta una firma de credencial SD-JWT VC o jwt_vc_json ADEMÁS de la del emisor propio de este dominio. Vacío — el predeterminado — confía solo en este emisor, que es lo que siempre hizo. Un certificado se usa como CLAVE: no se construye ninguna cadena, aunque su revocación se consulta cuando verifica una credencial (pki.revocationCheck, desde 2026-09-12)."
+    "en": "60a2c73b8c2c6aec",
+    "text": "Certificados PEM, concatenados, de cuyas claves el verificador de este servicio acepta una firma de credencial SD-JWT VC o jwt_vc_json ADEMÁS de la del emisor propio de este dominio. Vacío — el predeterminado — confía solo en este emisor, que es lo que siempre hizo. Un certificado se usa como CLAVE: no se construye ninguna cadena, aunque su revocación se consulta cuando verifica una credencial (pki.revocationCheck, desde 2026-09-12)."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5756,8 +5756,8 @@
     "text": "Contraseña de servicio creada automáticamente"
   },
   "krb5.autoServicePassword|description": {
-    "en": "71fd54a4160f0e2a",
-    "text": "Una sola contraseña para todo servicio creado bajo demanda, y se publica por la misma razón que la contraseña de usuario: es lo que permite a un lector descifrar un ticket de servicio que emitió este simulador y leer el PAC que contiene. Las cuentas de servicio CONFIGURADAS conservan sus propias contraseñas separadas."
+    "en": "0715018c29ee708a",
+    "text": "Una sola contraseña para todo servicio creado bajo demanda, y se publica por la misma razón que la contraseña de usuario: es lo que permite a un lector descifrar un ticket de servicio que emitió este servicio y leer el PAC que contiene. Las cuentas de servicio CONFIGURADAS conservan sus propias contraseñas separadas."
   },
   "krb5.autoServicePassword|restartReason": {
     "en": "c8e4e57160c0d53d",
@@ -5928,8 +5928,8 @@
     "text": "Enviar s2kparams"
   },
   "krb5.s2kparams|description": {
-    "en": "f4cde78e622f2547",
-    "text": "Si PA-ETYPE-INFO2 lleva s2kparams. Windows Server lo omite y este simulador lo enviaba, que es la única diferencia que encontró el intercambio capturado con un DC real; por eso omit es el predeterminado y send se mantiene para poder ejercitar un cliente que lo lea."
+    "en": "8377aa5576df5515",
+    "text": "Si PA-ETYPE-INFO2 lleva s2kparams. Windows Server lo omite y este servicio lo enviaba, que es la única diferencia que encontró el intercambio capturado con un DC real; por eso omit es el predeterminado y send se mantiene para poder ejercitar un cliente que lo lea."
   },
   "ldap.port|label": {
     "en": "94902c0432b688e5",
@@ -6576,8 +6576,8 @@
     "text": "Lista de permitidos de endpoints push"
   },
   "ssf.pushAllowedHosts|description": {
-    "en": "24d1d11741ad76ed",
-    "text": "Nombres de host a los que este servicio enviará push. VACÍO SIGNIFICA CUALQUIERA, que es el predeterminado y la única holgura deliberada en la ruta saliente — es lo que lo hace utilizable como simulador. Un despliegue alcanzable por cualquiera en quien no confíe define la lista, y todo otro host se rechaza POR NOMBRE en el propio registro del flujo. Hosts y no URL a propósito: un receptor cambia legítimamente la ruta de su endpoint y no se traslada legítimamente a otro host."
+    "en": "fc66434cacb67fdc",
+    "text": "Nombres de host a los que este servicio enviará push. VACÍO SIGNIFICA CUALQUIERA, que es el predeterminado y la única holgura deliberada en la ruta saliente — es lo que lo hace utilizable para pruebas. Un despliegue alcanzable por cualquiera en quien no confíe define la lista, y todo otro host se rechaza POR NOMBRE en el propio registro del flujo. Hosts y no URL a propósito: un receptor cambia legítimamente la ruta de su endpoint y no se traslada legítimamente a otro host."
   },
   "ssf.pushAllowHttp|label": {
     "en": "9954d6ecb250aab1",
@@ -6708,8 +6708,8 @@
     "text": "Flujos por receptor"
   },
   "ssf.maxStreams|description": {
-    "en": "175775f7e47974e8",
-    "text": "Cuántos flujos puede tener un RECEPTOR — un propietario autenticado — en un dominio de confianza. Era por dominio hasta 2026-09-22 (#144), lo que permitía a un receptor agotar la cuota de todos los demás receptores. Una creación que lo supere se rechaza NOMBRANDO ESTE AJUSTE, que es la razón misma de tener un límite en un simulador: todo techo aquí es un caso negativo alcanzable que un receptor no puede ejercitar de otro modo. Los dos flujos de receptor propios de este servicio no se cuentan."
+    "en": "06c569e74cb378cd",
+    "text": "Cuántos flujos puede tener un RECEPTOR — un propietario autenticado — en un dominio de confianza. Era por dominio hasta 2026-09-22 (#144), lo que permitía a un receptor agotar la cuota de todos los demás receptores. Una creación que lo supere se rechaza NOMBRANDO ESTE AJUSTE, que es la razón misma de tener un límite aquí: todo techo aquí es un caso negativo alcanzable que un receptor no puede ejercitar de otro modo. Los dos flujos de receptor propios de este servicio no se cuentan."
   },
   "ssf.inactivityTimeoutS|label": {
     "en": "b6bd6443319327f2",
@@ -7644,8 +7644,8 @@
     "text": "Trust domain (SPIFFE)"
   },
   "spiffe.trustDomain|description": {
-    "en": "695de04a8f35c484",
-    "text": "El trust domain del que este servicio es la autoridad emisora: la parte de autoridad de cada SPIFFE ID que acuña, así que spiffe://example.org/… por defecto. En MINÚSCULAS, y solo letras, dígitos, puntos, guiones y guiones bajos — un trust domain en mayúsculas no es un SPIFFE ID válido ni tampoco otra grafía del que está en minúsculas. A un dominio creado aquí se le da SU DOMINIO DNS como trust domain —iyasec.io—, igual que se le da un entityID propio, porque dos dominios que comparten un trust domain son dos autoridades emisoras que reclaman un mismo nombre, y cada SVID que acuñe cualquiera de ellas resulta entonces ambiguo. Defínalo en un dominio para nombrar directamente el trust domain de ese dominio; un dominio que comparte deliberadamente el de otro es algo que conviene poder construir en un mock."
+    "en": "a87c95b882ee7e67",
+    "text": "El trust domain del que este servicio es la autoridad emisora: la parte de autoridad de cada SPIFFE ID que acuña, así que spiffe://example.org/… por defecto. En MINÚSCULAS, y solo letras, dígitos, puntos, guiones y guiones bajos — un trust domain en mayúsculas no es un SPIFFE ID válido ni tampoco otra grafía del que está en minúsculas. A un dominio creado aquí se le da SU DOMINIO DNS como trust domain —iyasec.io—, igual que se le da un entityID propio, porque dos dominios que comparten un trust domain son dos autoridades emisoras que reclaman un mismo nombre, y cada SVID que acuñe cualquiera de ellas resulta entonces ambiguo. Defínalo en un dominio para nombrar directamente el trust domain de ese dominio; un dominio que comparte deliberadamente el de otro es algo que conviene poder construir para pruebas."
   },
   "spiffe.trustDomain|restartReason": {
     "en": "ebdc38f401978d5b",
@@ -8436,8 +8436,8 @@
     "text": "Inventar una entrada de registro al primer contacto"
   },
   "spiffe.autoCreateEntries|description": {
-    "en": "7944288e3f3984d1",
-    "text": "ESTE ES EL AJUSTE QUE HACE DE ESTO UN MOCK. Activado, a una carga de trabajo que pide un SVID a la Workload API y no coincide con ninguna entrada de registro se le crea una y se le emite un SVID de todos modos — sin atestación, sin selectores, sin comprobar nada —, que es la misma postura permisiva que tienen todas las demás familias aquí. Desactivado, una carga de trabajo no registrada se rechaza con PERMISSION_DENIED, que es lo que dice la Workload API y lo que hace un agente SPIRE real, y es la ÚNICA forma de ejercitar la ruta \"no tengo identidad\" de un cliente. Ambas respuestas valen la pena; ninguna es la segura."
+    "en": "ff8fc38721bf6650",
+    "text": "ESTE ES EL AJUSTE QUE HACE PERMISIVO A SPIFFE. Activado, a una carga de trabajo que pide un SVID a la Workload API y no coincide con ninguna entrada de registro se le crea una y se le emite un SVID de todos modos — sin atestación, sin selectores, sin comprobar nada —, que es la misma postura permisiva que tienen todas las demás familias aquí. Desactivado, una carga de trabajo no registrada se rechaza con PERMISSION_DENIED, que es lo que dice la Workload API y lo que hace un agente SPIRE real, y es la ÚNICA forma de ejercitar la ruta \"no tengo identidad\" de un cliente. Ambas respuestas valen la pena; ninguna es la segura."
   },
   "spiffe.requireSecurityHeader|label": {
     "en": "25778a0e30ceae29",

@@ -235,7 +235,8 @@ const KINDS = [
     what: 'An AppliesTo from a RequestSecurityToken — the service the token ' +
           'is for.' },
   { kind: 'oid4vp-verifier', label: 'OpenID4VP verifier',
-    what: 'The client_id the mock Verifier presents in an Authorization ' +
+    what: 'The client_id this service\'s Verifier presents in an ' +
+          'Authorization ' +
           'Request.' },
   { kind: 'federation-identity-provider', label: 'Federated identity provider',
     what: 'A FOREIGN identity service this instance federates with as a ' +
@@ -1122,7 +1123,7 @@ const SCHEMA = {
             'for a URL that nothing else in the register mentions. It is a ' +
             'LOOKUP and not a permission: an audience nobody registered is ' +
             'exchanged for exactly as before and recorded verbatim, because ' +
-            'a mock that refused would remove a test case rather than add ' +
+            'a service that refused would remove a test case rather than add ' +
             'one.' },
     { name: 'oauthClientSecret', kind: 'multi', from: 'POST /oauth2/register',
       sensitive: true,
@@ -3095,7 +3096,7 @@ const SCHEMA = {
     // says so in the log. That is this service's rule everywhere a directory
     // value is read back: an `ldapmodify` can put any string on any attribute,
     // and an identity provider that refused to issue because somebody typed
-    // "yes" instead of "true" would be a mock that stopped answering.
+    // "yes" instead of "true" would be a service that stopped answering.
     { name: 'saml2CustomAttributes', kind: 'single',
       from: 'the console\'s Custom SAML attributes section',
       what: 'THIS SERVICE PROVIDER\'S OWN SAML 2.0 ATTRIBUTES, as a JSON array ' +
@@ -3256,7 +3257,7 @@ const SCHEMA = {
             'addresses, so a WS-Federation application appeared to have a ' +
             'SAML ACS it had never named. Two facts, two attributes. Like ' +
             'the SAML one beside it this is CHECKED IN PRODUCT MODE ONLY: ' +
-            'development refuses no wreply, because a mock that refused ' +
+            'development refuses no wreply, because a service that refused ' +
             'would remove a test case rather than add one; product posts ' +
             'only to an address on this list and a sighting never adds one. ' +
             'A wreply development recorded is marked on ' +
@@ -3453,7 +3454,7 @@ const SCHEMA = {
       identifierName: 'client_id',
       what: 'THE VERIFIER\'S CLIENT_ID in an Authorization Request asking ' +
             'for a presentation — OpenID4VP\'s identifier attribute. This ' +
-            'service\'s own mock Verifier takes its from configuration ' +
+            'service\'s own Verifier takes its from configuration ' +
             '(oid4vp.clientId) rather than from a caller, so that record ' +
             'appears the first time a presentation is verified; a value ' +
             'declared here is a FOREIGN verifier somebody is configuring.' },
@@ -17223,7 +17224,7 @@ function lookedUp(mapName, wanted, attribute) {
 //
 // **A value that will not parse is IGNORED and logged, never thrown.** An
 // `ldapmodify` can put "yes" on `saml2SignAssertion`, and an identity provider
-// that stopped issuing because of it would be a mock that stopped answering.
+// that stopped issuing because of it would be a service that stopped answering.
 // The setting's own value is used and the log names the entry, the attribute
 // and the reason, which is the only way somebody finds out that the exception
 // they typed is not in force.

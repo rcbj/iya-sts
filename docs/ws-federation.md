@@ -9,7 +9,7 @@ Profile of
 [WS-Federation 1.2](https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html)
 (section 13) — sign-in, sign-out and sign-out cleanup — with signed federation
 metadata at the path AD FS publishes it. Every trust realm has its own, with
-its own entityID and signing key. There is no mock relying party (#592): a
+its own entityID and signing key. There is no built-in relying party (#592): a
 test that needs one uses the test peer (`tests/peer/`).
 
 A relying party redirects a browser to `/wsfed?wa=wsignin1.0`; the person signs
@@ -244,7 +244,7 @@ changed on `/admin/wsfed`, `/admin/saml-assertions` or with
 ## Design decisions
 
 * **SAML 1.1 is the default token.** AD FS issues SAML 1.1 to a WS-Federation
-  relying party unless told otherwise, and a mock defaulting to the rarer type
+  relying party unless told otherwise, and a service defaulting to the rarer type
   would exercise the wrong half of those clients.
 * **The February 2005 RSTR by default, ws-sx on request.** It is what AD FS
   emits; a relying party that has only ever seen one shape has usually
@@ -268,7 +268,7 @@ changed on `/admin/wsfed`, `/admin/saml-assertions` or with
   providers cannot loop.
 * **The metadata's name and the assertion's issuer are separate settings, and
   disagreement is reported rather than reconciled.**
-* **There is no mock relying party (#592).** One shipped until then, as the
+* **There is no built-in relying party (#592).** One shipped until then, as the
   default `wreply` and a page that verified the response check by check; it
   was demonstration code in the runtime, and the test peer plays the relying
   party a test needs.
