@@ -1763,7 +1763,7 @@ class NodeHealthAdmin {
       : Promise.resolve({ asked: [], answers: {} });
     const rows: Json[] = [];
     if (target === 'all' || target === 'front') {
-      rows.push(Object.assign({ kind: 'process', pid: pid, threadId: 0,
+      rows.push(Object.assign({ kind: 'process', pid: pid, threadId: null,
                                 role: say('roleFront') }, collectHere()));
     }
     const got = await asking;

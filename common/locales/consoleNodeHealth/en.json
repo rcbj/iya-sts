@@ -56,7 +56,7 @@
   "ecsCpuWhy": "{pct} of the task's vCPUs, between the agent's last two samples",
   "na": "n/a",
   "tileResident": "Resident, all processes",
-  "about": "The container's CPU and memory are read from its cgroup (v2), each process's and worker thread's from the process or thread itself, when the page is drawn; nothing is kept but the previous CPU sample. This page changes nothing.",
+  "about": "The container's CPU and memory are read from its cgroup (v2), each process's and worker thread's from the process or thread itself, when the page is drawn; nothing is kept but the previous CPU sample. Its one control runs a full garbage collection on demand; nothing else here changes anything.",
   "whatThisPageIs": "What this page is",
   "headMachine": "The machine, not the container",
   "loadAverage": "Load average",
@@ -74,5 +74,17 @@
   "thState": "State",
   "thAge": "Age",
   "thisNode": "(this node)",
-  "nodeNamed": "Node {name}"
+  "nodeNamed": "Node {name}",
+  "thCollect": "Garbage collection",
+  "collect": "Collect",
+  "collectAll": "Collect garbage in every process and worker thread",
+  "notCollectable": "not this node’s front process or a worker thread of it",
+  "gcWarning": "A full garbage collection stops the thread it runs in until it finishes, and in the front process that pauses every listener of this node. It is a diagnostic: V8 collects on its own schedule, and memory a forced collection does not free is held, not garbage. Each press is audited.",
+  "gcResultHead": "Garbage collected",
+  "gcResultSummary": "{n} isolate(s) collected, {freed} freed in all, the longest pause {pause} ms. The table below was read before the collection; reload the page to read it again.",
+  "thIsolate": "Isolate",
+  "thHeapBefore": "Heap before",
+  "thHeapAfter": "Heap after",
+  "thFreed": "Freed",
+  "thPause": "Pause"
 }

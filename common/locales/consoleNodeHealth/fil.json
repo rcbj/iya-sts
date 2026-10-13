@@ -56,7 +56,7 @@
   "ecsCpuWhy": "{pct} ng mga vCPU ng task, sa pagitan ng huling dalawang sample ng agent",
   "na": "n/a",
   "tileResident": "Resident, lahat ng proseso",
-  "about": "Binabasa ang CPU at memory ng container mula sa cgroup nito (v2), at ang sa bawat proseso at worker thread mula sa proseso o thread mismo, kapag iginuhit ang pahina; walang itinatago maliban sa nakaraang CPU sample. Walang binabago ang pahinang ito.",
+  "about": "Binabasa ang CPU at memory ng container mula sa cgroup nito (v2), at ang sa bawat proseso at worker thread mula sa proseso o thread mismo, kapag iginuhit ang pahina; walang itinatago maliban sa nakaraang CPU sample. Ang iisang kontrol nito ay nagpapatakbo ng buong garbage collection kapag hiniling; walang ibang bagay dito na nagbabago ng anuman.",
   "whatThisPageIs": "Ano ang pahinang ito",
   "headMachine": "Ang makina, hindi ang container",
   "loadAverage": "Load average",
@@ -74,5 +74,17 @@
   "thState": "Kalagayan",
   "thAge": "Edad",
   "thisNode": "(ang node na ito)",
-  "nodeNamed": "Node {name}"
+  "nodeNamed": "Node {name}",
+  "thCollect": "Garbage collection",
+  "collect": "Kolektahin",
+  "collectAll": "Kolektahin ang garbage sa bawat proseso at worker thread",
+  "notCollectable": "hindi ang front process ng node na ito o isang worker thread nito",
+  "gcWarning": "Pinahihinto ng buong garbage collection ang thread na pinagtatakbuhan nito hanggang matapos, at sa front process ay pinahihinto nito ang bawat listener ng node na ito. Isa itong diagnostic: nangongolekta ang V8 ayon sa sarili nitong iskedyul, at ang memory na hindi napalaya ng sapilitang collection ay hawak pa, hindi garbage. Ina-audit ang bawat pindot.",
+  "gcResultHead": "Nakolektang garbage",
+  "gcResultSummary": "{n} isolate ang nakolekta, {freed} ang napalaya sa kabuuan, ang pinakamahabang pause ay {pause} ms. Binasa ang talahanayan sa ibaba bago ang collection; i-reload ang pahina para basahin itong muli.",
+  "thIsolate": "Isolate",
+  "thHeapBefore": "Heap bago",
+  "thHeapAfter": "Heap pagkatapos",
+  "thFreed": "Napalaya",
+  "thPause": "Pause"
 }
