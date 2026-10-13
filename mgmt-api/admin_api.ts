@@ -25215,6 +25215,13 @@ interface OwnerOperation {
   target: (query: any, body: any) => string;
   project?: (answer: any) => any;
 }
+// The application attributes an owner's read answers: the access-control
+// template's default `ownerApplicationAttributes`, which are what the portal
+// draws a form for. A realm whose policy lists fewer refuses the write.
+const OWNER_APPLICATION_FIELDS = ['appName', 'appHomePageUrl', 'appCorsOrigin',
+  'oauthRedirectUri', 'oauthPostLogoutRedirectUri',
+  'oauthFrontchannelLogoutUri', 'oauthBackchannelLogoutUri',
+  'samlAssertionConsumerService', 'samlSingleLogoutService'];
 const OWNER_OPERATIONS: OwnerOperation[] = [
   { method: 'GET', kind: 'role', path: '/roles',
     target: function target(query) {
@@ -25227,17 +25234,48 @@ const OWNER_OPERATIONS: OwnerOperation[] = [
       log.debug("Leaving project().");
       return { role: answer && answer.role };
     } },
+  // The group alone: the drill-down's answer also carries every group in
+  // the realm (the list the console draws beside it).
   { method: 'GET', kind: 'group', path: '/groups',
     target: function target(query) {
       log.debug("Entering target().");
       log.debug("Leaving target().");
       return String(query.group || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      const group = (answer && answer.group) || null;
+      log.debug("Leaving project().");
+      return { found: !!(answer && answer.found), group: group && {
+        dn: group.dn, cn: group.cn, description: group.description,
+        members: group.members, memberCount: group.memberCount,
+        owners: group.owners, maxOwners: group.maxOwners },
+        membersPaging: answer && answer.membersPaging };
     } },
+  // The application's own facts and the attributes an owner may write: the
+  // drill-down's answer also carries what the console draws its tabs from —
+  // other applications' permissions among them.
   { method: 'GET', kind: 'application', path: '/applications',
     target: function target(query) {
       log.debug("Entering target().");
       log.debug("Leaving target().");
       return String(query.application || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      const a = answer || {};
+      const fields: Record<string, unknown> = {};
+      OWNER_APPLICATION_FIELDS.forEach(function (name) {
+        if (a.fields && a.fields[name] !== undefined) {
+          fields[name] = a.fields[name];
+        }
+      });
+      log.debug("Leaving project().");
+      return { found: !!a.found, identifier: a.identifier, name: a.name,
+               description: a.description, kinds: a.kinds,
+               protocols: a.protocols, fields: fields,
+               owners: (a.page && a.page.owners) || [],
+               maxOwners: a.page && a.page.maxOwners };
     } },
   { method: 'GET', kind: 'service-account', path: '/service-accounts',
     target: function target(query) {

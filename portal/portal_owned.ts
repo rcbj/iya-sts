@@ -22,9 +22,13 @@
 // membership is the directory's own answer (`groupsOfUser()`), direct and
 // through `memberOf`.
 //
-// **READ-ONLY, AND IT GRANTS NOTHING.** An owner grants nothing anywhere in
-// this service, so these pages list and say so; changing a resource is the
-// console's.
+// **IT LISTS; THE CHANGES ARE `/admin-api`'s (#607).** Since #607 an owner
+// may administer what they own, through the management API with the
+// portal's owner token, and whether they may is the access-control policy's
+// owner rule — never this file, which only lists. Each row carries the name
+// its page asks the management API by (`id`), and whether the object is
+// closed to its owners (`closed`, `common/ownership.ts`), so the list does
+// not offer a page the rule would refuse.
 //
 // **THE IDENTITY IS THE TOKEN'S** — the portal's rule (portal/CLAUDE.md): no
 // parameter names whose resources are listed.
@@ -52,7 +56,14 @@ interface PortalOwnedDeps {
   roles: () => Json;
   applications: () => Json;
   serviceAccounts: () => Json;
+  ownership: () => Json;
 }
+
+// The ownership register's kind for each of this module's (#607).
+const OWNERSHIP_KIND: Record<string, string> = {
+  'roles': 'role', 'groups': 'group', 'service-accounts': 'service-account',
+  'applications': 'application'
+};
 
 /**
  * The four kinds of resource, in the order the column lists them.
@@ -118,6 +129,11 @@ class PortalOwned {
         helpers.log.debug("Entering serviceAccounts().");
         helpers.log.debug("Leaving serviceAccounts().");
         return require('../common/service_accounts');
+      },
+      ownership: function ownership() {
+        helpers.log.debug("Entering ownership().");
+        helpers.log.debug("Leaving ownership().");
+        return require('../common/ownership');
       }
     };
   }
@@ -191,7 +207,7 @@ class PortalOwned {
       if (kind === 'roles') {
         rows = self.deps.roles().all().map(function (role: Json): Json {
           const via = self.viaOf(role.owners, who);
-          return via ? { name: role.name, dn: role.dn || '',
+          return via ? { name: role.name, id: role.name, dn: role.dn || '',
                          detail: role.displayName || role.description || '',
                          via: via } : null;
         });
@@ -200,15 +216,15 @@ class PortalOwned {
           return one.dn;
         })).filter(Boolean);
         rows = self.deps.ldap().groupsOwnedBy(dns).map(function (g: Json) {
-          return { name: g.cn || g.dn, dn: g.dn, detail: g.description,
-                   via: self.viaOf(g.ownedAs, who) };
+          return { name: g.cn || g.dn, id: g.dn, dn: g.dn,
+                   detail: g.description, via: self.viaOf(g.ownedAs, who) };
         });
       } else if (kind === 'service-accounts') {
         rows = self.deps.serviceAccounts().list().map(function (one: Json) {
           const via = self.viaOf((one.owners || []).map(function (o: Json) {
             return o.dn;
           }), who);
-          return via ? { name: one.username, dn: one.dn,
+          return via ? { name: one.username, id: one.username, dn: one.dn,
                          detail: one.destination ? one.secretName || '' : '',
                          via: via } : null;
         });
@@ -218,6 +234,7 @@ class PortalOwned {
             .map(String);
           const via = self.viaOf(values, who);
           return via ? { name: app.name || app.identifier,
+                         id: app.identifier,
                          dn: app.dn || '', detail: app.identifier,
                          via: via } : null;
         });
@@ -248,9 +265,26 @@ class PortalOwned {
     const all = this.owned(kind, who);
     const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
     const at = Math.min(pages, Math.max(1, Number(wanted) || 1));
+    const shown = all.slice((at - 1) * PER_PAGE, at * PER_PAGE);
+    // WHETHER EACH IS CLOSED TO ITS OWNERS (#607): the fact the owner rule
+    // refuses on, so the page says it rather than offering a page that
+    // would be refused. Asked of the rows on this page only.
+    const self = this;
+    shown.forEach(function (row: Json) {
+      let reasons: string[] = [];
+      try {
+        reasons = self.deps.ownership()
+          .protectionOf(OWNERSHIP_KIND[kind] || '', row.id);
+      } catch (e) {
+        // Not knowing is closed: the owner rule's own reading.
+        log.debug("Caught in PortalOwned.view(): " + ((e && e.message) || e));
+        reasons = ['unknown'];
+      }
+      row.closed = reasons.length > 0;
+    });
     log.debug("Leaving PortalOwned.view(). " + all.length + " row(s).");
     return { kind: kind,
-             rows: all.slice((at - 1) * PER_PAGE, at * PER_PAGE),
+             rows: shown,
              paging: { page: at, pages: pages, per: PER_PAGE,
                        total: all.length } };
   }

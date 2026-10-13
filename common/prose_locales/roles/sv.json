@@ -44,8 +44,12 @@
     "text": "Vad rollen är till för, för nästa person."
   },
   "roles.schema.attributes.owner.what": {
-    "en": "f9204b7066943eb5",
-    "text": "En person eller grupp i den här realmen som ansvarar för rollen (#604), med DN — attributet i RFC 4519 avsnitt 2.23, som en grupps ägare (#603). Flervärt, högst 25. En ägare GER INGENTING: inget i den här tjänsten läser den för att besluta något. Användarportalen listar vad en person äger."
+    "en": "3acf4a1763f7388c",
+    "text": "En person eller en grupp i den här sfären som ansvarar för rollen (#604), med DN — attributet i RFC 4519 avsnitt 2.23, som en grupps ägare (#603). Flervärt, högst 25. Sedan #607 kan en ägare ADMINISTRERA rollen via /admin-api med owner:read och owner:write (OWNER_READ, OWNER_WRITE), inom det som ägarregeln i policyn access-control tillåter; en ägare innehar själva rollen bara genom att vara medlem. Användarportalen listar vad en person äger."
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE: rollens ägare får inte administrera den via /admin-api (#607), vad de än äger — en administratörs markering, som ägarregeln i policyn access-control läser som urn:sts:xacml:object-protected. Saknas betyder FALSE."
   },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
@@ -78,6 +82,14 @@
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",
     "text": "En anropare av den egentliga XACML-ytan: den som är medlem i gruppen som `roles.xacmlUserGroup` namnger (som standard \"xacml-users\"). Det är vad `GET /xacml`, `POST /xacml/pdp` och `GET /xacml/policies` kräver, och den som har den är normalt ett klientcertifikats DN — certifikatet säger VEM, och den här gruppen säger om de får. Den är med avsikt INTE REMOTE_PEPS: den rollen når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också."
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "En ÄGARE (#607): den som en roll, en grupp, ett tjänstekonto eller en applikation i den här sfären anger som ägare, direkt eller genom en grupp hen är medlem i. Ger behörigheten owner:read: att via /admin-api läsa de objekt hen äger och inget annat. Beräknas när ett beslut fattas."
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "En ÄGARE (#607), som OWNER_READ. Ger behörigheten owner:write: att via /admin-api ändra de objekt hen äger, inom de åtgärder som ägarregeln i policyn access-control tillåter för varje slag — aldrig skapa, ta bort eller byta namn på ett, och aldrig ett objekt som är skyddat mot sina ägare."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

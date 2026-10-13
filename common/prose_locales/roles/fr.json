@@ -44,8 +44,12 @@
     "text": "À quoi sert le rôle, pour la personne suivante."
   },
   "roles.schema.attributes.owner.what": {
-    "en": "f9204b7066943eb5",
-    "text": "Une personne ou un groupe de ce royaume qui répond du rôle (#604), par DN — l'attribut de la section 2.23 du RFC 4519, comme les propriétaires d'un groupe (#603). Multivalué, au plus 25. Un propriétaire N'ACCORDE RIEN : rien dans ce service ne le lit pour décider quoi que ce soit. Le portail utilisateur liste ce que possède une personne."
+    "en": "3acf4a1763f7388c",
+    "text": "Une personne ou un groupe de ce domaine qui répond du rôle (#604), par DN — l’attribut de la section 2.23 du RFC 4519, comme les propriétaires d’un groupe (#603). Multivalué, 25 au plus. Depuis #607, un propriétaire peut ADMINISTRER le rôle via /admin-api avec owner:read et owner:write (OWNER_READ, OWNER_WRITE), dans les limites de ce que permet la règle des propriétaires de la politique access-control ; un propriétaire ne détient le rôle lui-même qu’en étant membre. Le portail utilisateur liste ce dont une personne est propriétaire."
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE : les propriétaires du rôle ne peuvent pas l’administrer via /admin-api (#607), quoi qu’ils possèdent — une marque de l’administrateur, que la règle des propriétaires de la politique access-control lit comme urn:sts:xacml:object-protected. Absent vaut FALSE."
   },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
@@ -78,6 +82,14 @@
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",
     "text": "Un appelant de la surface XACML proprement dite : quiconque est membre du groupe nommé par `roles.xacmlUserGroup` (par défaut « xacml-users »). C’est ce qu’exigent `GET /xacml`, `POST /xacml/pdp` et `GET /xacml/policies`, et la partie qui le détient est normalement un DN de certificat client — le certificat dit QUI, et ce groupe dit s’il en a le droit. Ce n’est délibérément PAS REMOTE_PEPS : ce rôle donne accès aux trois points de terminaison /xacml/pep, qui délivrent les documents au moyen desquels ce service contrôle ses propres accès, et un groupe accordant les deux ferait qu’admettre un appelant sur la surface XACML proprement dite l’admettrait silencieusement sur ceux-ci."
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "Un PROPRIÉTAIRE (#607) : quiconque un rôle, un groupe, un compte de service ou une application de ce domaine nomme comme propriétaire, directement ou par un groupe dont il est membre. Autorise la permission owner:read : lire, via /admin-api, les objets dont il est propriétaire et rien d’autre. Calculé au moment de la décision."
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "Un PROPRIÉTAIRE (#607), comme OWNER_READ. Autorise la permission owner:write : modifier, via /admin-api, les objets dont il est propriétaire, dans les actions que la règle des propriétaires de la politique access-control permet pour chaque type — sans jamais en créer, en supprimer ni en renommer un, ni toucher un objet protégé de ses propriétaires."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

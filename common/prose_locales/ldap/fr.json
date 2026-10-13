@@ -568,8 +568,12 @@
     "text": "UNE PORTÉE AU SUJET DE LAQUELLE PERSONNE N’EST INTERROGÉ LORS DE LA CONNEXION À CETTE APPLICATION. Une valeur par portée, écrite exactement comme un client la place dans un paramètre `scope` — `openid`, `profile`, ou un identifiant complet de permission déléguée tel que `https://example.com/write`.\n\n**C’est une DÉROGATION et non un enregistrement.** Avec `oauth2.consentRequired` activé (la valeur par défaut), le point de terminaison d’autorisation affiche /oauth2/consent pour toute portée à laquelle cette personne n’a pas consenti pour cette application ; une portée nommée ici est ignorée pour TOUT LE MONDE, et rien n’est écrit sur l’entrée de qui que ce soit. Retirer une valeur interroge donc à nouveau tout le monde — y compris ceux qui auraient dit oui — alors que retirer l’`oauthConsent` propre à une personne n’interroge qu’elle.\n\n**Elle est indexée sur la paire et non sur la seule portée.** Consentir à `read` ici y consent pour CETTE application ; une application enregistrée cinq minutes plus tard qui écrit le même mot sera tout de même interrogée.\n\nUne valeur qui ne nomme aucune permission définie par une application n’est pas une erreur et n’est pas masquée — la plupart des portées ne sont pas des permissions. Elle doit être un jeton de portée RFC 6749 section 3.3 valide, car une valeur contenant une espace ne pourrait jamais correspondre à une portée ; un `ldapmodify` atteint cet attribut comme tous les autres et n’est pas vérifié, et /admin/consent montre ce qu’il y a placé."
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "Une personne ou un groupe de ce royaume qui répond de l'application (#604), par DN, comme les propriétaires d'un groupe et d'un rôle. Multivalué, au plus 25. Un propriétaire N'ACCORDE RIEN : rien dans ce service ne le lit pour décider quoi que ce soit. Le portail utilisateur liste ce que possède une personne."
+    "en": "9c53dd774f6667e3",
+    "text": "Une personne ou un groupe de ce domaine qui répond de l’application (#604), par DN, comme les propriétaires d’un groupe et d’un rôle. Multivalué, 25 au plus. Depuis #607, un propriétaire peut ADMINISTRER l’application via /admin-api avec owner:read et owner:write, dans les limites de ce que permet la règle des propriétaires de la politique access-control. Le portail utilisateur liste ce dont une personne est propriétaire."
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE : les propriétaires de l’application ne peuvent pas l’administrer via /admin-api (#607) — une marque de l’administrateur, que la règle des propriétaires de la politique access-control lit comme urn:sts:xacml:object-protected. Absent vaut FALSE."
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",

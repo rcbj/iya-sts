@@ -44,8 +44,12 @@
     "text": "该角色的用途，留给下一个人看。"
   },
   "roles.schema.attributes.owner.what": {
-    "en": "f9204b7066943eb5",
-    "text": "对该角色负责的本领域人员或组（#604），以 DN 表示——RFC 4519 第 2.23 节的属性，与组的所有者相同（#603）。多值，最多 25 个。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。用户门户列出一个人所拥有的内容。"
+    "en": "3acf4a1763f7388c",
+    "text": "对该角色负责的本领域中的某个人或某个组（#604），以 DN 表示——即 RFC 4519 第 2.23 节的属性，与组的所有者相同（#603）。多值，最多 25 个。自 #607 起，所有者可以通过 /admin-api 使用 owner:read 和 owner:write（OWNER_READ、OWNER_WRITE）管理该角色，范围以 access-control 策略的所有者规则所允许的为限；所有者只有作为成员才持有该角色本身。用户门户会列出一个人拥有的内容。"
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE：该角色的所有者不能通过 /admin-api 管理它（#607），无论他们拥有什么——这是管理员的标记，access-control 策略的所有者规则将其读作 urn:sts:xacml:object-protected。缺省为 FALSE。"
   },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
@@ -78,6 +82,14 @@
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",
     "text": "XACML 界面本身的调用方：由 `roles.xacmlUserGroup`（默认 \"xacml-users\"）指明的组的任何成员。`GET /xacml`、`POST /xacml/pdp` 和 `GET /xacml/policies` 要求的就是它，持有它的一方通常是客户端证书 DN——证书说明是谁，该组说明他们是否可以。它被有意地设计为不是 REMOTE_PEPS：那个角色可以访问三个 /xacml/pep 端点，它们分发本服务用来执行自身访问控制的文档；如果一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许它访问那些端点。"
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "所有者（#607）：本领域中的角色、组、服务账号或应用将其列为所有者的任何人，无论是直接列出还是通过其所在的组。授权 owner:read 权限：通过 /admin-api 读取其拥有的对象，仅此而已。在作出决定时计算。"
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "所有者（#607），同 OWNER_READ。授权 owner:write 权限：通过 /admin-api 更改其拥有的对象，范围以 access-control 策略的所有者规则对每种类型允许的操作为限——绝不创建、删除或重命名对象，也绝不涉及对所有者受保护的对象。"
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

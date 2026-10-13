@@ -568,8 +568,12 @@
     "text": "UN ÁMBITO SOBRE EL QUE NO SE PREGUNTA A NADIE CUANDO INICIA SESIÓN EN ESTA APLICACIÓN. Un valor por ámbito, escrito exactamente como un cliente lo pone en un parámetro `scope` — `openid`, `profile`, o un identificador completo de permiso delegado como `https://example.com/write`.\n\n**Es una ANULACIÓN y no un registro.** Con `oauth2.consentRequired` activado (que es el valor predeterminado), el endpoint de autorización dibuja /oauth2/consent para cualquier ámbito que esta persona no haya aceptado para esta aplicación; un ámbito nombrado aquí se omite para TODOS, y no se escribe nada en la entrada de nadie. Así que quitar un valor vuelve a preguntar a todos — incluidas las personas que habrían dicho que sí —, mientras que quitar el `oauthConsent` propio de una persona solo le pregunta a ella.\n\n**Se indexa por el par y no solo por el ámbito.** Dar consentimiento a `read` aquí lo da para ESTA aplicación; a una aplicación registrada cinco minutos después que escriba la misma palabra se le sigue preguntando.\n\nUn valor que no nombra ningún permiso que defina alguna aplicación no es un error y no se oculta — la mayoría de los ámbitos no son permisos. Debe ser un token de ámbito válido según RFC 6749 sección 3.3, porque un valor con un espacio nunca podría coincidir con un ámbito; un `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba, y /admin/consent muestra lo que puso allí."
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "Una persona o un grupo de este dominio que responde por la aplicación (#604), por DN, como los propietarios de un grupo y de un rol. Multivalor, como máximo 25. Un propietario NO CONCEDE NADA: nada en este servicio lo lee para decidir algo. El portal de usuario lista lo que posee una persona."
+    "en": "9c53dd774f6667e3",
+    "text": "Una persona o un grupo de este dominio que responde de la aplicación (#604), por DN, como los propietarios de un grupo y de un rol. Multivalor, como máximo 25. Desde #607 un propietario puede ADMINISTRAR la aplicación a través de /admin-api con owner:read y owner:write, dentro de lo que permite la regla de propietarios de la política access-control. El portal de usuario lista lo que posee una persona."
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE: los propietarios de la aplicación no pueden administrarla a través de /admin-api (#607) — una marca del administrador, que la regla de propietarios de la política access-control lee como urn:sts:xacml:object-protected. Ausente es FALSE."
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",

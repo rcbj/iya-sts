@@ -568,8 +568,12 @@
     "text": "ISANG SCOPE NA WALANG TINATANONG KAPAG NAG-SIGN IN SILA SA APPLICATION NA ITO. Isang value bawat scope, isinulat nang eksakto gaya ng paglalagay ng client sa isang `scope` parameter — `openid`, `profile`, o isang buong delegated permission identifier gaya ng `https://example.com/write`.\n\n**OVERRIDE ito at hindi record.** Kapag naka-on ang `oauth2.consentRequired` (na siyang default), iginuguhit ng authorization endpoint ang /oauth2/consent para sa anumang scope na hindi pa pinayagan ng taong ito para sa application na ito; ang scope na pinangalanan dito ay nilalaktawan para sa LAHAT, at walang isinusulat sa entry ng sinuman. Kaya ang pag-alis ng value ay nagtatanong muli sa lahat — kasama ang mga taong papayag sana — samantalang ang pag-alis ng sariling `oauthConsent` ng isang tao ay siya lang ang tinatanong.\n\n**Naka-key ito sa pares at hindi sa scope lang.** Ang pag-consent sa `read` dito ay nag-consent dito para sa application NA ITO; ang application na nairehistro limang minuto pagkatapos na bumabaybay ng parehong salita ay tinatanong pa rin.\n\nAng value na walang pinangangalanang permission na dine-define ng anumang application ay hindi error at hindi itinatago — karamihan ng scope ay hindi permission. Dapat legal na RFC 6749 section 3.3 scope token ito, dahil ang value na may space ay hindi kailanman tutugma sa iisang scope; naaabot ng isang `ldapmodify` ang attribute na ito gaya ng iba at hindi sinusuri, at ipinapakita ng /admin/consent kung ano ang inilagay nito roon."
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "Isang tao o grupo ng realm na ito na nananagot para sa application (#604), ayon sa DN, gaya ng mga may-ari ng isang grupo at isang role. Maraming value, hanggang 25. WALANG IBINIBIGAY ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya. Inililista ng user portal ang pag-aari ng isang tao."
+    "en": "9c53dd774f6667e3",
+    "text": "Isang tao o isang grupo ng realm na ito na nananagot para sa application (#604), ayon sa DN, gaya ng mga may-ari ng isang grupo at ng isang role. Maraming value, hanggang 25. Mula #607, maaaring PANGASIWAAN ng isang may-ari ang application sa pamamagitan ng /admin-api gamit ang owner:read at owner:write, sa loob ng pinapayagan ng owner rule ng access-control policy. Inililista ng user portal ang pag-aari ng isang tao."
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE: hindi maaaring pangasiwaan ng mga may-ari ng application ito sa pamamagitan ng /admin-api (#607) — isang marka ng administrator, na binabasa ng owner rule ng access-control policy bilang urn:sts:xacml:object-protected. Kapag wala, FALSE."
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",

@@ -119,8 +119,13 @@ function childMain() {
       const BASE = '/portal';
       const refused = registered && registered.ok === false;
       const there = elsewhere || {};
+      // `data-sts-api` since #607: the management API, which an owner's
+      // pages call, where it is on another listener — between the two the
+      // shell always had, in the order the console draws the same three.
       const data = (there.oauth ? ' data-sts-oauth="' + kit.esc(there.oauth) +
                                   '"' : '') +
+                   (there.api ? ' data-sts-api="' + kit.esc(there.api) +
+                                '"' : '') +
                    (there.authn ? ' data-sts-authn="' + kit.esc(there.authn) +
                                   '"' : '');
       return '<!DOCTYPE html>\n<html lang="en"' + data + '><head>' +
