@@ -487,7 +487,7 @@ class PortalKit {
   // other parameter the reader is carrying rides along, except the two a
   // callback or a form brought back (`notice`, `problem`), which belong to
   // the moment they were said and not to the list. Nothing is drawn when
-  // the list fits on one page.
+  // the list fits on one page, unless the page asks for it `always`.
   /**
    * The Previous / Page n of m / Next control under a paged list.
    *
@@ -496,13 +496,14 @@ class PortalKit {
    * @param paging - the list's `paging` from its answer
    * @param param - the query parameter the list moves on
    * @param t - the translator
-   * @returns the HTML, '' for one page
+   * @param always - true draws it for one page too
+   * @returns the HTML, '' for one page unless `always`
    */
   static pageNav(path: string, query: Json, paging: Json, param: string,
-                 t: Json): string {
+                 t: Json, always?: boolean): string {
     const at = Number(paging && paging.page) || 1;
     const pages = Number(paging && paging.pages) || 1;
-    if (pages <= 1) {
+    if (pages <= 1 && always !== true) {
       return '';
     }
     const carried: Json = {};

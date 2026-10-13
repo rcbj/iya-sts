@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4313** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4316** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 236
-* [Management API (`STS-API`)](#sts-api) — 81
+* [Management API (`STS-API`)](#sts-api) — 84
 * [User portal (`STS-PORTAL`)](#sts-portal) — 92
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
@@ -4633,6 +4633,9 @@ Raised from: mgmt-api/.
 | `STS-API-0129` | A management API operation whose drawing is the admin console's was asked for format=svg; the drawing is its console twin's under /admin-api/console (#454). | HTTP 400 |
 | `STS-API-0130` | An unknown action was asked at a management API address whose form helpers moved to /admin-api/console (#454); the refusal names the actions the address still declares. | HTTP 400 |
 | `STS-API-0131` | A management API request to change the Kerberos PAC claim set was refused (#493); the refusal's own code names why when it has one. | HTTP 400 |
+| `STS-API-0132` | A management API request carrying only an owner's scopes (owner:read, owner:write) reached an operation that is not one an owner may ask: an owner token reaches only the operations on one object of the four kinds it may own (#607). | HTTP 403 |
+| `STS-API-0133` | The access-control policy's owner rule refused a management API request made with an owner's token (#607): the caller does not own the object, the object is closed to its owners, the action is not one an owner may take on its kind, or it would remove the last owner. | HTTP 403 |
+| `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 
 ## STS-PORTAL
 

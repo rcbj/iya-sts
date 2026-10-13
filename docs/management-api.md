@@ -277,6 +277,74 @@ The refusals are in the `STS-API-*` rows of [error codes](error-codes.md).
 The code is recorded in the audit log and the service log, and is never sent
 to the caller.
 
+## Owners
+
+A person who owns a role, group, service account or application can read and
+change it through this API, within limits. The user portal does this for them;
+any client can, if an administrator declares the two scopes on it.
+
+| Scope | Lets the token |
+|---|---|
+| `owner:read` | read one object the person owns |
+| `owner:write` | change one object the person owns |
+
+The authorization server issues these scopes only to a person who owns
+something, in the realm that issues the token, directly or through a group.
+They are checked again on every call, so a person who stops owning anything is
+refused at once.
+
+**What an owner's token reaches.** It reaches one named object only:
+
+* reads: `GET /admin-api/roles?role=`, `/groups?group=`,
+  `/applications?application=` and `/service-accounts?account=`;
+* changes: `POST /admin-api/roles/{action}`, `/groups/{action}`,
+  `/applications/{action}` and `/users/{action}`, naming the object in the
+  body.
+
+A list, or any other operation, is refused with 403 (`STS-API-0132`). A read
+answers the one object, not the register around it.
+
+**The access-control policy decides.** Its owner rule permits a call only when
+all of these hold:
+
+* the object names the person, or a group they are in, as an owner;
+* the object is not closed to its owners;
+* the action is one an owner may take on that kind of object;
+* for an application, every attribute written is one an owner may write;
+* the call does not remove the object's last owner.
+
+Otherwise the answer is 403 (`STS-API-0133`). The actions and attributes are
+parameters of the built-in `access-control` policy, so a realm can narrow or
+widen them with an override on `/admin/xacml`.
+
+| Kind | Actions an owner may take by default |
+|---|---|
+| Role | `describe-role`, `add-member`, `remove-member`, `add-owner`, `remove-owner` |
+| Group | `add-member`, `add-owner`, `remove-owner` |
+| Service account | `add-service-account-owner`, `remove-service-account-owner`, `set-service-account-destination`, `rotate-password` |
+| Application | `set`, `add`, `remove` and `update-fields` (on `appName`, `description`, `appHomePageUrl`, `appCorsOrigin`, `oauthRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthBackchannelLogoutUri`, `samlAssertionConsumerService`, `samlSingleLogoutService`), `add-owner`, `remove-owner`, `regenerate-secret`, `rotate-secret`, `add-secret`, `remove-secret` |
+
+**Closed to its owners.** Some objects are closed to their owners, whoever
+they are:
+
+* the built-in and native roles;
+* any role that authorizes one of this service's own permissions;
+* the groups this service grants something through by name (the console's
+  administrator groups, the remote PEP and XACML user groups), and any group
+  that is a member of a protected role;
+* this service's own applications;
+* any application that is a member of a protected role, or that declares one
+  of this service's protected scopes;
+* any service account that holds a protected role.
+
+An administrator can also close any object:
+`POST /admin-api/ownership/set-protected` with `kind`, `name` and `protected`,
+or `stsOwnerProtected: TRUE` on the entry. `GET /admin-api/ownership?kind=&name=`
+says whether an object is closed and why.
+
+A call made with an owner's token is recorded in the audit log as made "as an
+owner".
+
 ## Who a call is recorded as
 
 Every call is written to the audit log, and the row names **the subject of the

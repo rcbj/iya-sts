@@ -140,9 +140,34 @@ portal through single sign-on, with no screen.
 
 **Resources I own** is a section of the portal's column with four pages. Each
 lists the roles, groups, service accounts or applications whose owners name
-the person, or a group the person is in, and says which. The pages are
-read-only: an owner answers for a resource but gains no access through it, and
-an administrator sets owners on the console's Owners tabs.
+the person, or a group the person is in, and says which, twenty to a page with
+a pager under the list. An administrator sets owners on the console's Owners
+tabs.
+
+**An owner can change what they own.** Each name opens that object's page,
+where an owner can:
+
+| Kind | What an owner can change |
+|---|---|
+| Role | its display name and description; its members (people, groups, applications); its owners |
+| Group | its members (add); its owners |
+| Service account | where its rotated password is pushed; rotate the password now; its owners |
+| Application | its name, home page, CORS origins, redirect and logout addresses, SAML endpoints; a new client secret (shown once); its owners |
+
+An owner can add and remove other owners, but not the last one; an
+administrator can. Nobody can create, delete or rename an object here.
+
+The page reads and writes through the [management API](management-api.md#owners)
+with a second access token the portal gets from the same sign-in. The
+access-control policy decides every read and change, so the page refuses
+whatever the policy refuses and says why. A person who owns nothing is not
+issued that token.
+
+**Some objects are closed to their owners**, and their row says so. These are
+the service's own roles, the console's administrator groups, the service's own
+applications, anything that holds or grants one of the service's own
+permissions, and anything an administrator has marked. An administrator
+changes those.
 
 ## The admin console
 

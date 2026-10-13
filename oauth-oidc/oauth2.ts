@@ -8512,8 +8512,36 @@ class OAuth2Server {
     // connect to this request. The same plan mints the implicit and hybrid
     // token below, and tokenSet() asks it again when the code is redeemed. In
     // every mode — see `jwt_access_token.ts`'s header.
-    const audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
-                                         resources, authorizationDetails);
+    //
+    // **SEVERAL RESOURCES ON A CODE, AND THE TOKEN REQUEST PICKS ONE (#607,
+    // 2026-10-13).** RFC 8707 section 2 lets an authorization request name
+    // more than one resource, and section 2.2 lets each Token Request name
+    // the one its access token is for; RFC 9068 section 3's "MUST NOT
+    // issue" is about the token, not the grant. So where this endpoint
+    // mints no access token itself (no `token` in the response type) and
+    // the request names several resources, it is refused only when NO one of
+    // them could be issued a token unambiguously — the user portal's two,
+    // `/account-api` and `/admin-api`, are each fine alone and ambiguous
+    // together. The code's exchange, and every refresh, is planned against
+    // the resource it names, by `tokenSet()`, which still refuses a request
+    // naming none or several. Implicit and hybrid mint here, so they keep
+    // the whole request's plan.
+    let audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
+                                            resources, authorizationDetails);
+    if (audiencePlan.refusal && types.indexOf('token') < 0 &&
+        resources.length > 1) {
+      const one = resources.map(function (resource: string) {
+        return self.accessTokenPlan(base, scope, query.client_id, [resource],
+                                    authorizationDetails);
+      }).filter(function (plan: Json) {
+        return !plan.refusal;
+      })[0];
+      if (one) {
+        log.debug("OAuth2Server.issueAuthorizationResponse(): several " +
+                  "resources, each issuable alone; the token request picks.");
+        audiencePlan = one;
+      }
+    }
     if (audiencePlan.refusal) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). RFC 9068 " +
                 "refused the audience.");
@@ -14710,6 +14738,20 @@ class OAuth2Server {
         // Onto the refresh token as well as into the access token's audience,
         // so that a refresh cannot widen what this grant authorized.
         resources: forResources,
+        // AND THE REFRESH TOKEN KEEPS EVERY RESOURCE THE AUTHORIZATION
+        // REQUEST NAMED (#607, rcbj 2026-10-13), as the refresh grant's
+        // `grantResources` always kept them: a Token Request naming one of
+        // them picks the AUDIENCE of the access token it mints, and the
+        // grant behind the refresh token is still the one the person
+        // approved. Until then a code redeemed for one resource left a
+        // refresh token for that one alone, so a client that asked for two
+        // could never be issued a token for the second — the user portal,
+        // which holds a token for `/account-api` and one for `/admin-api`
+        // off one sign-in. It still cannot widen: the refresh grant refuses
+        // a resource the grant does not carry (STS-OAUTH-0217). Only where
+        // the request named resources: a grant whose audience a scope
+        // derived keeps `tokenSet()`'s own reading.
+        ...(granted.length ? { grantResources: granted } : {}),
         user: record.user, client_id: record.client_id, scope: record.scope,
         nonce: record.nonce, auth_time: record.auth_time, amr: record.amr,
         acr: record.acr,
@@ -17962,8 +18004,24 @@ class OAuth2Server {
     // RFC 9396: details whose type belongs to one API beside a scope or
     // resource naming another are refused here, at the push, rather than when
     // the request_uri is used.
-    const plan = self.accessTokenPlan(base, scope, clientId,
-                                      resources.resources, details.details);
+    let plan = self.accessTokenPlan(base, scope, clientId,
+                                    resources.resources, details.details);
+    // SEVERAL RESOURCES ON A CODE (#607): the authorization endpoint's rule
+    // (`issueAuthorizationResponse()`) — refused only where no one of them
+    // could be issued a token alone, because the token request picks one.
+    const pushedTypes = String(q.response_type || '').split(/\s+/);
+    if (plan.refusal && pushedTypes.indexOf('token') < 0 &&
+        resources.resources.length > 1) {
+      const one = resources.resources.map(function (resource: string) {
+        return self.accessTokenPlan(base, scope, clientId, [resource],
+                                    details.details);
+      }).filter(function (each: Json) {
+        return !each.refusal;
+      })[0];
+      if (one) {
+        plan = one;
+      }
+    }
     if (plan.refusal) {
       log.debug("Leaving OAuth2Server.parRequest(). RFC 9068 refused the " +
                 "audience.");

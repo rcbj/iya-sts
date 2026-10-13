@@ -568,8 +568,12 @@
     "text": "人们登录此应用时不会被询问的作用域。每个作用域一个值，完全按照客户端放入 `scope` 参数的形式书写——`openid`、`profile`，或完整的委托权限标识符，例如 `https://example.com/write`。\n\n**它是覆盖项而不是记录。**当 `oauth2.consentRequired` 开启时（这是默认值），对于此人尚未就此应用同意过的任何作用域，授权端点都会绘制 /oauth2/consent；在这里指明的作用域对所有人都会跳过，并且不会向任何人的条目写入任何内容。因此移除一个值会再次询问所有人——包括本会同意的人——而移除某人自己的 `oauthConsent` 只会询问此人。\n\n**它以配对为键，而不仅以作用域为键。**在这里同意 `read` 是为此应用同意它；五分钟后注册的、拼写相同单词的另一个应用仍会被询问。\n\n不指明任何应用所定义权限的值不是错误，也不会被隐藏——大多数作用域都不是权限。它必须是合法的 RFC 6749 第 3.3 节作用域令牌，因为带空格的值永远无法匹配一个作用域；`ldapmodify` 与对其他属性一样也能访问此属性，并且不会被检查，/admin/consent 会显示它写入了什么。"
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "对该应用程序负责的本领域人员或组（#604），以 DN 表示，与组和角色的所有者相同。多值，最多 25 个。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。用户门户列出一个人所拥有的内容。"
+    "en": "9c53dd774f6667e3",
+    "text": "对该应用负责的本领域中的某个人或某个组（#604），以 DN 表示，与组和角色的所有者相同。多值，最多 25 个。自 #607 起，所有者可以通过 /admin-api 使用 owner:read 和 owner:write 管理该应用，范围以 access-control 策略的所有者规则所允许的为限。用户门户会列出一个人拥有的内容。"
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE：该应用的所有者不能通过 /admin-api 管理它（#607）——这是管理员的标记，access-control 策略的所有者规则将其读作 urn:sts:xacml:object-protected。缺省为 FALSE。"
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",

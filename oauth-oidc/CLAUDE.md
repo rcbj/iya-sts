@@ -143,6 +143,19 @@ so must `admin-ui/admin.ts`.
    not carry is `invalid_target`. The same shape as the scope check one field
    over.
 
+   **AND IT CARRIES ALL OF THEM, WHICHEVER ONE A TOKEN REQUEST NAMED (#607,
+   2026-10-13).** A Token Request naming one of the grant's resources picks
+   the AUDIENCE of the access token it mints (RFC 8707 section 2.2); the
+   refresh token keeps every resource the authorization request named — the
+   refresh grant's `grantResources` always did, and the code exchange now
+   passes the code's too. Until then a code redeemed for one resource left a
+   refresh token for that one alone, so a client that asked for two could
+   never be issued a token for the second: the user portal, which holds one
+   for `/account-api` and one for `/admin-api` off one sign-in. Nothing
+   widens — a resource the grant does not carry is still `invalid_target`
+   (STS-OAUTH-0206, 0217) — and a grant whose audience a scope derived keeps
+   `tokenSet()`'s own reading.
+
    **THE IDLE TIMEOUT IS ON THE FAMILY AND REFUSES RATHER THAN REVOKING.**
    `lastUsedAt` lives on the family and is touched at `noteRefreshRotated()` —
    at the SUCCESSFUL redemption, so a run of refused attempts cannot keep a

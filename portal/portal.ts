@@ -229,20 +229,25 @@ class Portal {
   // `consoleServersElsewhere()`. `/account-api` is the portal's application
   // (`common/hosted_applications.js`), so it is always beside it.
   /**
-   * The bases of the authorization server and the sign-in service when either
-   * is on another listener.
+   * The bases of the authorization server, the sign-in service and the
+   * management API when any is on another listener.
    *
    * @param req - the request for the shell
-   * @returns `{ oauth, authn }`, each '' where it is here
+   * @returns `{ oauth, authn, api }`, each '' where it is here
    */
   serversElsewhere(req: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Portal.serversElsewhere().");
-    const out = { oauth: '', authn: '' };
+    const out = { oauth: '', authn: '', api: '' };
     if (!listenerMap.isTrivial()) {
       const at = listenerMap.listenerOf(req);
       if (!listenerMap.admits(at, 'oauth-oidc')) {
         out.oauth = helpers.baseUrlOf(req, 'oauth-oidc');
+      }
+      // THE MANAGEMENT API (#607): what an owner administers what they own
+      // through, called by the runtime with its second token.
+      if (!listenerMap.admits(at, 'management-api')) {
+        out.api = helpers.baseUrlOf(req, 'management-api');
       }
       if (!listenerMap.admits(at, 'authn')) {
         out.authn = helpers.baseUrlOf(req, 'authn');
@@ -270,6 +275,7 @@ class Portal {
     const html = ShellDocument.document({
       title: 'Your account — IYA STS',
       attributes: [['data-sts-oauth', there.oauth || ''],
+                   ['data-sts-api', there.api || ''],
                    ['data-sts-authn', there.authn || '']],
       viewport: 'width=device-width,initial-scale=1',
       stylesheets: [BASE + '/portal.css'],
@@ -395,7 +401,7 @@ class Portal {
       // prefix on its links as on every page (`ShellDocument.serve()`).
       ShellDocument.serve(app, req, res,
                           self.shellDocument(registered, elsewhere), {
-        connect: ShellDocument.originsOf([elsewhere.oauth]),
+        connect: ShellDocument.originsOf([elsewhere.oauth, elsewhere.api]),
         // A QR code is a server-drawn SVG in a `data:` image.
         csp: { 'img-src': "'self' data:" }
       });

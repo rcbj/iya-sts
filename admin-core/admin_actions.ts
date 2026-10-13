@@ -9514,6 +9514,9 @@ export = {
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),
+  // The attributes an `update-fields` body writes, for the management API's
+  // gate (#607): the owner rule is asked about every one of them.
+  fieldsCoveredBy: slot.forward('fieldsCoveredBy'),
   APPLICATION_ACTIONS: APPLICATION_ACTIONS,
   applicationsAction: slot.forward('applicationsAction'),
   asAction: slot.forward('asAction'),
