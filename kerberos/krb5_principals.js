@@ -4297,3 +4297,23 @@ module.exports = {
   });
 });
 
+// THE HOSTS A CLIENT'S OWN SPN GUESS IS HONOURED FOR, as a page or a header
+// may ADVERTISE them (2026-10-12). `SERVICE_DOMAINS` is the list the KDC
+// registers an `HTTP/<host>` principal for on first sight — and it does that
+// only where `mode.autoCreates()` (see the S_PRINCIPAL_UNKNOWN branch and
+// `krb5_kdc.js`'s `serviceHosts`). In product mode the KDC knows exactly the
+// one SPN `krb5.servicePrincipal` names, so advertising the list there sent a
+// browser at `https://localhost` to ask for `HTTP/localhost`, which it was
+// refused with nothing on the page saying why. A getter rather than a
+// require of `common/mode` in `spnego.js` and `spnego_exchange.js`, which are
+// in the parent project's COPY closure: this module already asks the mode.
+// Named through a variable, as the properties above are, so the type checker
+// reads it as the same kind of computed property rather than a second export.
+const ADVERTISED_HOSTS_KEY = 'ADVERTISED_SERVICE_HOSTS';
+Object.defineProperty(module.exports, ADVERTISED_HOSTS_KEY, {
+  enumerable: true,
+  get: function () {
+    return mode.autoCreates() ? current().SERVICE_DOMAINS.slice() : [];
+  }
+});
+

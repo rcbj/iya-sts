@@ -260,7 +260,8 @@ function advertisement() {
     // a client's own guess works. NOTHING IN SPNEGO CARRIES THIS: it is an
     // affordance of the mock, published so a debugger can show what a real
     // deployment would make you look up in DNS and in the account's keytab.
-    acceptsAnySpnForHosts: principals.SERVICE_DOMAINS,
+    // Empty in product mode, where the KDC registers no SPN on sight.
+    acceptsAnySpnForHosts: principals.ADVERTISED_SERVICE_HOSTS,
     spnHostRule: 'a host matches when it IS one of acceptsAnySpnForHosts ' +
       'or ends with a dot and one of them',
     mechanisms: SUPPORTED_MECHS.map(function (oid) {
