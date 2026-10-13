@@ -285,7 +285,10 @@ jobs:
     # 150 since 2026-09-27: on a runner with no layer cache the build took
     # nineteen minutes, and the instrumented suite had reached 386 of its jobs
     # when 90 cancelled it.
-    timeout-minutes: 150
+    # 210 since 2026-10-13: on main 8fe81efa the suite took 6,312s after the
+    # build (about 128 minutes in all), and on develop d2221e6f 150 cancelled
+    # it — the suite grew by #591-#607 in a day.
+    timeout-minutes: 210
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out
