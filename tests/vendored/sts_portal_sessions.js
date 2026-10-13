@@ -723,11 +723,25 @@ async function oneUserCannotReachAnother(owner) {
   // is the one place this service records who a change was attributed to.
   // The form's operation, `POST /account-api/password`, with the owner's
   // name in every member a handler might read beside the three it takes.
-  const wrote = await b.portal.act("/portal/password",
+  // SINCE 2026-10-12 THE ACCOUNT API REFUSES A FIELD AN OPERATION DOES NOT
+  // TAKE, so naming somebody is refused outright (400) and writes nothing;
+  // the same change with only its three fields is then made, and the audit
+  // row below is that change's — attributed to the token's person.
+  const named = await b.portal.act("/portal/password",
     { username: OWNER, user: OWNER, current: PASSWORD,
       next: "IntruderChosen123!", confirm: "IntruderChosen123!" });
-  check("a password change naming somebody else is accepted or refused, but " +
-        "either way it answers — it is not a crash", function () {
+  check("a password change naming somebody else is refused 400, naming the " +
+        "fields it does not take", function () {
+      assert.strictEqual(named.status, 400,
+        "unexpected " + named.status + " " + named.text.slice(0, 200));
+      assert.ok(/username/.test(named.text) && /user\b/.test(named.text),
+        "the refusal does not name the fields: " + named.text.slice(0, 200));
+    });
+  const wrote = await b.portal.act("/portal/password",
+    { current: PASSWORD, next: "IntruderChosen123!",
+      confirm: "IntruderChosen123!" });
+  check("the same change with only its own fields answers — it is not a " +
+        "crash", function () {
       assert.ok(wrote.status === 200 || wrote.status === 400 ||
                 wrote.status === 403,
         "unexpected " + wrote.status + " " + wrote.text.slice(0, 200));
