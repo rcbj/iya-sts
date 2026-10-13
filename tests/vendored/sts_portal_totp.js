@@ -810,6 +810,16 @@ async function oneUserCannotEnrolForAnother() {
     assert.ok(r.status === 400, "it answered " + r.status);
   });
 
+  // The same act with only the fields it takes: what a request naming
+  // somebody amounted to before the bodies were strict (the names were
+  // dropped and the enrolment began). It begins the INTRUDER'S OWN, which is
+  // what makes their name the one on the page below.
+  const own = await b.portal.act("/portal/mfa", { action: "start" });
+  check("the same act without the names begins the caller's own enrolment",
+        function () {
+    assert.strictEqual(own.status, 200, "it answered " + own.status);
+  });
+
   page = await pageOf(b, "/portal/mfa");
   check("and the page that comes back is the INTRUDER'S OWN — their name on " +
         "it, and not the person they named", function () {
