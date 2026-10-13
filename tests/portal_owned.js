@@ -124,19 +124,25 @@ async function theOwnership(t) {
             views.applications.rows[0].via.groups.join() === 'po-team',
             'A4. an application owned through a group is theirs',
             JSON.stringify(views.applications));
-    t.check(views.roles.groups.indexOf('po-team') >= 0 &&
+    // THE PERSON'S GROUPS ARE NOT LISTED (rcbj, 2026-10-13): each row's
+    // `via` already names the group that makes it theirs.
+    t.check(views.roles.groups === undefined &&
             views.roles.paging.total === 1,
-            'A5. the view names the person\'s groups and counts the rows',
-            JSON.stringify(views.roles));
+            'A5. the view counts the rows and does not list the person\'s ' +
+            'groups', JSON.stringify(views.roles));
     const html = OwnedPages.render(views.groups,
       { t: kit.context().t, query: {} });
-    const none = OwnedPages.render({ kind: 'roles', rows: [], groups: [],
+    const none = OwnedPages.render({ kind: 'roles', rows: [],
                                      paging: { page: 1, pages: 1 } },
                                    { t: kit.context().t, query: {} });
     t.check(html.indexOf('po-other') >= 0 && html.indexOf('po-team') >= 0 &&
             html.indexOf('<table>') >= 0 && none.indexOf('<table>') < 0,
             'B1. a page draws a table of what is owned and how; none says so',
             html.slice(0, 300));
+    t.check(html.indexOf('class="pagenav"') >= 0 &&
+            none.indexOf('class="pagenav"') >= 0,
+            'B2. every page draws its pager, one page or many (rcbj, ' +
+            '2026-10-13)', none);
   });
   log.debug('Leaving theOwnership().');
 }
