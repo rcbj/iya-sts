@@ -492,8 +492,8 @@
     "text": "DER，`application/pkix-cert`。這是該授權單位所簽署的每張證書中授權資訊存取（Authority Information Access）擴充欄位的 `caIssuers` 地址，讓收到不完整鏈的客戶端能完成鏈的建立。接受 `.cer` 後綴並予以忽略。這是本服務唯一以快取標頭而非 `no-store` 發布證書的地方：CA 證書本質上是持久的——改變了的授權單位會是一個名稱不同的另一個授權單位——而 `caIssuers` 擷取本來就只應發生一次。在任何範圍中都無法透過它取得私密金鑰。"
   },
   "stsmetadata.endpoints./pki/chain/:scope/:certificate.what": {
-    "en": "7e1cc8b6d4142b39",
-    "text": "RFC 7515 第 4.1.5 節：簽署 JWS 之金鑰的 X.509 鏈，PEM 格式，葉憑證在前、服務 Root 在後，以 `application/pem-certificate-chain` 提供。本服務以經認證金鑰簽署的每個 JWT——存取權杖、ID Token、重新整理權杖內的 JWS、已簽署的 UserInfo、兩份 signed_metadata 文件、OpenID4VCI 憑證、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 與 GNAP JWT 存取權杖——都可依其協定頁面上自己的設定攜帶指向此處的 `x5u`（預設為 `x5u`，或內嵌的 `x5c`、`both` 或 `none`），讓只持有權杖的依賴方也能取得鏈中所指名的每個 CRL 發布點、OCSP 回應程式與 caIssuers 地址。{scope} 為 `default` 或領域 id，置於路徑中的理由與 CRL 相同；{certificate} 是葉憑證的 SHA-256 十六進位值，可帶選用的 `.pem` 後綴，與登錄比對而非解析。以憑證而非金鑰命名，因此一個 URL 永遠指名同一張憑證：權杖簽署後已輪替的金鑰會得到 404，而不是另一把金鑰的鏈。與每份發布本服務金鑰數據的文件一樣為 `no-store`。不設閘門，因為它傳回的內容早已由權杖指名。"
+    "en": "a2406b55a956eeb5",
+    "text": "RFC 7515 第 4.1.5 節：簽署 JWS 之金鑰的 X.509 鏈，PEM 格式，葉憑證在前、服務 Root 在後，以 `application/pem-certificate-chain` 提供。本服務以經認證金鑰簽署的每個 JWT——存取權杖、ID Token、重新整理權杖內的 JWS、已簽署的 UserInfo、兩份 signed_metadata 文件、OpenID4VCI 憑證、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 與 GNAP JWT 存取權杖——都可依其協定頁面上自己的設定攜帶指向此處的 `x5u`（預設為 `x5u`，或內嵌的 `x5c`、`both` 或 `none`），讓只持有權杖的依賴方也能取得鏈中所指名的每個 CRL 發布點、OCSP 回應程式與 caIssuers 地址。{scope} 為 `default` 或領域 id，置於路徑中的理由與 CRL 相同；{certificate} 是葉憑證的 SHA-256 十六進位值，可帶選用的 `.pem` 後綴，與登錄比對而非解析。以憑證而非金鑰命名，因此一個 URL 永遠指名同一張憑證，絕不會是另一把金鑰的鏈。槽位不再持有的憑證——在同一金鑰上重新簽發，或其金鑰已輪替——仍會連同簽發時的鏈一併提供，直至到期（#318；每個槽位最新的八張）；之後會得到 404。與每份發布本服務金鑰數據的文件一樣為 `no-store`。不設閘門，因為它傳回的內容早已由權杖指名。"
   },
   "stsmetadata.endpoints./crypto/metadata.what": {
     "en": "13e4dff652360fb0",
