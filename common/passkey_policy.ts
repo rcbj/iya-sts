@@ -30,6 +30,21 @@
 //                            user verification required and checked. It
 //                            REPLACES the setting `webauthn.usernameless`
 //                            (retired, no shim; `REPLACED_SETTINGS`).
+//   requireUsernameless      FALSE (#608, rcbj 2026-10-13). On, and only
+//                            for an application whose appAuthnMechanism is
+//                            `webauthn` and nothing else, the sign-in
+//                            screen asks for no username: *Sign in with a
+//                            passkey* is the way in, and a sign-in that
+//                            names somebody is refused (STS-AUTHN-0333).
+//                            It needs allowUsernameless, and a save
+//                            asking for one without the other is refused.
+//                            THE `default` PROFILE DOES NOT HOLD THE ADMIN
+//                            CONSOLE, THE DEBUGGER OR THE PORTAL TO IT
+//                            (rcbj): those three are held only by a named
+//                            profile that selects the application itself
+//                            — `authn.ts`'s `usernamelessRequired()`
+//                            decides, because the application's mechanisms
+//                            and the hosted surfaces are not this leaf's.
 //   securityKeyResidentKey   `required`. What *Use a security key* (and an
 //                            enrolment that names no kind) asks for WHILE
 //                            usernameless is ON. While it is OFF the answer
@@ -299,6 +314,9 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'verification required)',
   noUsernameless: 'every sign-in names the person first: no passkey ' +
     'sign-in without a username',
+  requireUsernameless: 'an application that signs in with a passkey alone ' +
+    'asks for no username: a passkey sign-in with no username is the only ' +
+    'way in',
   createPasskey: '"Create a passkey" asks for a discoverable credential ' +
     '(residentKey required)',
   securityKeyRequired: '"Use a security key" asks residentKey {{value}}, so ' +
@@ -439,6 +457,17 @@ const FIELDS: PolicyField[] = [
           'account its user handle names, with user verification required ' +
           'and checked. Off, neither is offered and a sign-in always names ' +
           'the person first. Replaces the setting webauthn.usernameless.' },
+  { key: 'requireUsernameless', attribute: 'stsPasskeyRequireUsernameless',
+    type: 'bool', dflt: false,
+    label: 'Require a passkey sign-in with no username',
+    what: 'OFF BY DEFAULT. On, an application whose authentication ' +
+          'mechanism is a passkey and nothing else (appAuthnMechanism ' +
+          '`webauthn` alone) gets a sign-in screen with no username field: ' +
+          '*Sign in with a passkey* is the way in, and a sign-in that names ' +
+          'a person is refused. It needs the row above. The realm\'s ' +
+          '`default` profile does not apply it to the admin console, the ' +
+          'debugger or the user portal; a named profile selecting that ' +
+          'application does.' },
   { key: 'securityKeyResidentKey',
     attribute: 'stsPasskeySecurityKeyResidentKey', type: 'enum',
     values: RESIDENT_KEY_VALUES.slice(), dflt: 'required',
@@ -1160,6 +1189,25 @@ class PasskeyPolicy {
   }
 
   /**
+   * Says whether this profile requires a passkey sign-in with no username
+   * (#608) — the row, which needs `allowUsernameless`. Whether it holds a
+   * given sign-in is `authn.ts`'s `usernamelessRequired()`: only an
+   * application signing in with a passkey alone, and never a hosted surface
+   * through the `default` profile.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns true where both rows are on
+   */
+  requiresUsernameless(profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.requiresUsernameless().");
+    const rules = profile || this.read();
+    log.debug("Leaving PasskeyPolicy.requiresUsernameless().");
+    return rules.requireUsernameless === true &&
+           rules.allowUsernameless === true;
+  }
+
+  /**
    * Returns the `residentKey` an enrolment through *Use a security key* (or
    * one naming no kind) asks for: `required` while usernameless sign-in is
    * off (rcbj's answer 1 on #527), and the policy's `securityKeyResidentKey`
@@ -1761,6 +1809,8 @@ class PasskeyPolicy {
       rules.allowUsernameless === true
         ? SENTENCES.usernameless
         : SENTENCES.noUsernameless,
+      ...(this.requiresUsernameless(rules)
+        ? [SENTENCES.requireUsernameless] : []),
       SENTENCES.createPasskey,
       fill(securityKey === 'required' ? SENTENCES.securityKeyRequired
                                       : SENTENCES.securityKeyOther,
@@ -1914,6 +1964,16 @@ class PasskeyPolicy {
       }
       values[field.key] = parsed.value;
     });
+    // REQUIRED WITHOUT BEING ALLOWED (#608): a screen with no username
+    // field and no passkey sign-in without one would sign nobody in.
+    if (values.requireUsernameless === true &&
+        values.allowUsernameless === false) {
+      problems.push('`requireUsernameless` (' +
+                    FIELD_BY_KEY.requireUsernameless.label + ') needs ' +
+                    '`allowUsernameless` on: a sign-in screen with no ' +
+                    'username field signs in only with a passkey that ' +
+                    'names its own account.');
+    }
     // HINTS THAT CONTRADICT THE ATTACHMENT THE SAME REQUEST SENDS (#531).
     this.hintProblems(values).forEach(function (one) {
       problems.push(one);
@@ -2075,6 +2135,7 @@ export = {
   save: slot.forward('save'),
   reset: slot.forward('reset'),
   allowsUsernameless: slot.forward('allowsUsernameless'),
+  requiresUsernameless: slot.forward('requiresUsernameless'),
   securityKeyResidentKey: slot.forward('securityKeyResidentKey'),
   refusesBackupEligible: slot.forward('refusesBackupEligible'),
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),

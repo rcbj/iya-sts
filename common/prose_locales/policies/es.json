@@ -963,6 +963,14 @@
     "en": "474a843b37cbf2dc",
     "text": "ACTIVADO DE FORMA PREDETERMINADA. Activado, la pantalla de inicio de sesión ofrece *Iniciar sesión con una llave de acceso* y el autocompletado del campo de nombre de usuario, que piden al navegador cualquier credencial detectable de este dominio (WebAuthn Level 3 sección 5.4, `allowCredentials` vacío) e inician sesión en la cuenta que indica su identificador de usuario (user handle), con la verificación de usuario exigida y comprobada. Desactivado, no se ofrece ninguno de los dos y un inicio de sesión siempre indica primero a la persona. Reemplaza la configuración webauthn.usernameless."
   },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Exigir iniciar sesión con llave de acceso sin nombre de usuario"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una aplicación cuyo mecanismo de autenticación es una llave de acceso y nada más (appAuthnMechanism `webauthn` solo) recibe una pantalla de inicio de sesión sin campo de nombre de usuario: *Iniciar sesión con una llave de acceso* es la forma de entrar, y se rechaza un inicio de sesión que indica a una persona. Necesita la fila anterior. El perfil `default` del dominio no lo aplica a la consola de administración, al depurador ni al portal de usuario; un perfil con nombre que seleccione esa aplicación sí lo hace."
+  },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
     "text": "Qué pide \"Usar una llave de seguridad\" mientras el inicio de sesión sin nombre de usuario está activado"
@@ -1087,6 +1095,10 @@
     "en": "474a843b37cbf2dc",
     "text": "ACTIVADO DE FORMA PREDETERMINADA. Activado, la pantalla de inicio de sesión ofrece *Iniciar sesión con una llave de acceso* y el autocompletado del campo de nombre de usuario, que piden al navegador cualquier credencial detectable de este dominio (WebAuthn Level 3 sección 5.4, `allowCredentials` vacío) e inician sesión en la cuenta que indica su identificador de usuario (user handle), con la verificación de usuario exigida y comprobada. Desactivado, no se ofrece ninguno de los dos y un inicio de sesión siempre indica primero a la persona. Reemplaza la configuración webauthn.usernameless."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una aplicación cuyo mecanismo de autenticación es una llave de acceso y nada más (appAuthnMechanism `webauthn` solo) recibe una pantalla de inicio de sesión sin campo de nombre de usuario: *Iniciar sesión con una llave de acceso* es la forma de entrar, y se rechaza un inicio de sesión que indica a una persona. Necesita la fila anterior. El perfil `default` del dominio no lo aplica a la consola de administración, al depurador ni al portal de usuario; un perfil con nombre que seleccione esa aplicación sí lo hace."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",
     "text": "El `residentKey` que envía un registro mediante *Usar una llave de seguridad* (o uno que no indica tipo) MIENTRAS el inicio de sesión sin nombre de usuario está ACTIVADO. Mientras está desactivado, el botón siempre pide `required`, así que crea una credencial detectable como lo hace *Crear una llave de acceso* (que siempre pide `required`). `discouraged` o `preferred` ahorran las pocas ranuras residentes de una llave de seguridad, a costa de una llave que necesita el nombre de usuario para iniciar sesión. Reemplaza la configuración webauthn.residentKey."
@@ -1178,6 +1190,10 @@
   "passkey.sentences.noUsernameless": {
     "en": "1152c46cd0b86b19",
     "text": "cada inicio de sesión indica primero a la persona: no hay inicio de sesión con llave de acceso sin nombre de usuario"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "una aplicación que inicia sesión solo con una llave de acceso no pide nombre de usuario: iniciar sesión con una llave de acceso sin nombre de usuario es la única forma de entrar"
   },
   "passkey.sentences.createPasskey": {
     "en": "69c8c2e4b8f32675",

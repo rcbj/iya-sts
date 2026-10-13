@@ -963,6 +963,14 @@
     "en": "474a843b37cbf2dc",
     "text": "NAKA-ON BILANG DEFAULT. Kapag naka-on, iniaalok ng sign-in screen ang *Sign in with a passkey* at ang autofill ng username field, na humihingi sa browser ng anumang discoverable credential ng realm na ito (WebAuthn Level 3 section 5.4, walang laman ang `allowCredentials`) at nagsa-sign in sa account na pinangangalanan ng user handle nito, na kailangan at sinusuri ang user verification. Kapag naka-off, wala sa dalawa ang iniaalok at palaging pinangangalanan muna ng pag-sign in ang tao. Pinapalitan ang setting na webauthn.usernameless."
   },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Hingin ang pag-sign in gamit ang passkey nang walang username"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (appAuthnMechanism `webauthn` lamang) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
+  },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
     "text": "Ang hinihingi ng \"Use a security key\" habang naka-on ang usernameless na pag-sign in"
@@ -1087,6 +1095,10 @@
     "en": "474a843b37cbf2dc",
     "text": "NAKA-ON BILANG DEFAULT. Kapag naka-on, iniaalok ng sign-in screen ang *Sign in with a passkey* at ang autofill ng username field, na humihingi sa browser ng anumang discoverable credential ng realm na ito (WebAuthn Level 3 section 5.4, walang laman ang `allowCredentials`) at nagsa-sign in sa account na pinangangalanan ng user handle nito, na kailangan at sinusuri ang user verification. Kapag naka-off, wala sa dalawa ang iniaalok at palaging pinangangalanan muna ng pag-sign in ang tao. Pinapalitan ang setting na webauthn.usernameless."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (appAuthnMechanism `webauthn` lamang) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",
     "text": "Ang `residentKey` na ipinapadala ng pag-enroll sa pamamagitan ng *Use a security key* (o ng pag-enroll na walang pinangalanang uri) HABANG NAKA-ON ang usernameless na pag-sign in. Habang naka-off ito, palaging `required` ang hinihingi ng button, kaya gumagawa ito ng discoverable credential gaya ng *Create a passkey* (na palaging `required` ang hinihingi). Ang `discouraged` o `preferred` ay nagtitipid sa kakaunting resident slot ng security key, kapalit ng key na kailangan ang username para mag-sign in. Pinapalitan ang setting na webauthn.residentKey."
@@ -1178,6 +1190,10 @@
   "passkey.sentences.noUsernameless": {
     "en": "1152c46cd0b86b19",
     "text": "pinangangalanan muna ng bawat pag-sign in ang tao: walang pag-sign in gamit ang passkey nang walang username"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "ang application na nagsa-sign in gamit lamang ang passkey ay hindi humihingi ng username: ang pag-sign in gamit ang passkey nang walang username ang tanging paraan ng pagpasok"
   },
   "passkey.sentences.createPasskey": {
     "en": "69c8c2e4b8f32675",

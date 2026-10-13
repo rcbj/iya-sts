@@ -763,6 +763,7 @@ async function syncedPasskeys(deviceBound) {
   });
   const set = await call("POST", "/policies/save-passkey-policy",
                          { allowUsernameless: true,
+                           requireUsernameless: false,
                            securityKeyResidentKey: "required",
                            backupEligibility: "disallow",
                            enforcePinLength: false, minPinLength: 4,
@@ -826,6 +827,7 @@ async function test() {
   const savePolicy = async function (allow) {
   const set = await call("POST", "/policies/save-passkey-policy",
                          { allowUsernameless: allow,
+                           requireUsernameless: false,
                            securityKeyResidentKey: "required",
                            backupEligibility: "allow",
                            enforcePinLength: false, minPinLength: 4,

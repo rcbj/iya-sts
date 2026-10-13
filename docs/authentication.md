@@ -307,6 +307,7 @@ row says `disallow`. See [XACML](xacml.md).
 | Field | Default | What it does |
 |---|---|---|
 | `allowUsernameless` | on | Offers a passkey sign-in with **no username**, described below. |
+| `requireUsernameless` | off | Makes a passkey sign-in with no username the **only** way in, for an application that signs in with a passkey alone (below). Needs `allowUsernameless`. |
 | `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
 | `backupEligibility` | `allow` | `disallow` accepts only **device-bound** passkeys, refusing a synced one at registration and at sign-in (below). |
 | `enforcePinLength` | off | Requires a minimum **security-key PIN length**, as the key reports it (below). |
@@ -539,6 +540,23 @@ service, the user handle it returns names the account, and:
 
 The button is a real submit button; without JavaScript it explains that a
 passkey needs it, and the password form works as before.
+
+**Requiring it** (the passkey policy's `requireUsernameless`, off by
+default). Where it is on, an application whose `appAuthnMechanism` is
+`webauthn` and nothing else gets a sign-in screen with **no username
+field** and no *Sign In*: *Sign in with a passkey* is the way in, and the
+second-step box is greyed out. A sign-in that names a person anyway is
+refused (`STS-AUTHN-0333`), so the screen's shape is not the only thing
+that enforces it. Three things hold it back:
+
+* an application with any other mechanism beside `webauthn` (or none
+  declared) keeps its screen as it was;
+* a save that turns it on with `allowUsernameless` off is refused;
+* the `default` profile **never applies it to the admin console, the
+  embedded debugger or the user portal** (`sts-admin-console`,
+  `sts-debugger-ui`, `sts-user-portal`). To hold one of them to it, create a
+  named profile that selects that application and turn it on there — and set
+  the application's `appAuthnMechanism` to `webauthn` alone.
 
 ### TOTP MFA
 
