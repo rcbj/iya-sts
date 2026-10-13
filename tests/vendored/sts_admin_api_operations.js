@@ -1124,6 +1124,23 @@ async function everyReadAnswersAboutThisRealm(doc) {
       await aKeysCertificateChain();
       continue;
     }
+    // AND SO DOES THE OPENID4VCI NOTIFICATION READ (#594): GET
+    // /oid4vci/notifications takes the `notification_id` a Credential
+    // Response carried, and this realm has issued none, so it is driven by
+    // its documented refusal — an id this issuer did not issue is a JSON 404
+    // (STS-VC-0024) — rather than held to a 200 it cannot have.
+    if (path === "/oid4vci/notifications") {
+      const unknown = await get(path + "?id=" +
+                                encodeURIComponent("no-such-notification"));
+      assert.strictEqual(unknown.status, 404,
+        "GET " + api + path + " for an id this issuer did not issue should " +
+        "answer 404; it answered " + unknown.status + " " +
+        String(unknown.raw).slice(0, 200));
+      assert.strictEqual(typeof unknown.body, "object",
+        "GET " + api + path + "'s 404 should be a JSON object; it was " +
+        String(unknown.raw).slice(0, 200));
+      continue;
+    }
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
       "GET " + api + path + " should answer 200; it answered " + reply.status +
