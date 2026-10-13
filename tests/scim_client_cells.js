@@ -39,6 +39,11 @@
 //   E. WITHOUT PATCH: the owner PUTs every cell's share merged, the other
 //      cell never writes the group, and nothing is PUT while a cell cannot
 //      be asked.
+//   F. THE SHARED PAUSE: a 503 one cell sees pauses both; one probe goes
+//      for the whole service and the other cell waits for it, taking it
+//      over only once the probing cell has been silent past the pause; the
+//      concurrency budget is scimClient.concurrency split across the cells
+//      that push, and the queue holds a cell to it.
 //   Z. NOTHING A SERVICE PROVIDER SEES NAMES A CELL, and a service that is
 //      one cell asks no transfer question.
 // ===========================================================================
@@ -82,7 +87,8 @@ function freshProvider() {
   log.debug('Entering freshProvider().');
   log.debug('Leaving freshProvider().');
   return { users: {}, groups: {}, seq: 0, patch: true, requests: [],
-           fail: [], hideSearch: 0 };
+           fail: [], hideSearch: 0, delayMs: 0, inFlight: {},
+           maxInFlight: {} };
 }
 
 let sp = freshProvider();
@@ -601,7 +607,20 @@ function makeCell(cellId) {
       }
     },
     transport: function (options, text) {
-      return provider(cellId, options, text);
+      if (!sp.delayMs) {
+        return provider(cellId, options, text);
+      }
+      // A SLOW PROVIDER, for the concurrency budget: requests overlap, and
+      // the most in flight at once from each cell is counted.
+      sp.inFlight[cellId] = (sp.inFlight[cellId] || 0) + 1;
+      sp.maxInFlight[cellId] = Math.max(sp.maxInFlight[cellId] || 0,
+                                        sp.inFlight[cellId]);
+      return new Promise(function (resolve) {
+        setTimeout(resolve, sp.delayMs);
+      }).then(function () {
+        sp.inFlight[cellId] -= 1;
+        return provider(cellId, options, text);
+      });
     }
   });
   const instance = new scimClient.ScimClients(deps);
@@ -1011,6 +1030,113 @@ async function groupsWithoutPatch(t, a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// F. THE SHARED PAUSE AND THE CONCURRENCY BUDGET.
+// ---------------------------------------------------------------------------
+function pauseRow() {
+  log.debug('Entering pauseRow().');
+  log.debug('Leaving pauseRow().');
+  return world.pauses.realmMap(realms.currentId()).get('pusher-' + RUN) ||
+         null;
+}
+
+function writesSince(mark) {
+  log.debug('Entering writesSince().');
+  const out = sp.requests.slice(mark).filter(function (r) {
+    return r.method !== 'GET';
+  });
+  log.debug('Leaving writesSince().');
+  return out;
+}
+
+async function sharedPause(t, a, b) {
+  log.debug('Entering sharedPause().');
+  setClient();
+  a.dir.add('kim');
+  b.dir.add('lee');
+  sp.fail.push({ from: 'cella', method: 'POST', path: '/Users',
+                 status: 503 });
+  changed(a, 'kim');
+  await drain([a]);
+  const paused = pauseRow();
+  t.check(!!paused && paused.failures === 1 &&
+          paused.pausedUntil > world.t && /^cella#/.test(paused.probe),
+          'F1. a 503 at cell A writes the client\'s pause to the shared ' +
+          '(global) store, cell A\'s row the probe', paused);
+  const mark = sp.requests.length;
+  changed(b, 'lee');
+  await drain([b]);
+  t.check(!sp.requests.slice(mark).some(function (r) {
+    return r.from === 'cellb';
+  }) && rowsOf(b, 'pending').some(function (row) {
+    return row.uuid === uuidFor('lee');
+  }), 'F2. a 503 seen by one cell pauses both: cell B sends nothing');
+  // Past the pause, and past the probe's own retry, which was set a moment
+  // after the pause was.
+  world.t = paused.pausedUntil + 1000;
+  const mark2 = sp.requests.length;
+  await drain([b]);
+  t.check(writesSince(mark2).length === 0,
+          'F3. the pause over, cell B still waits for cell A\'s probe');
+  await drain([a]);
+  const probes = writesSince(mark2);
+  t.check(probes.length === 1 && probes[0].from === 'cella' &&
+          !pauseRow().failures,
+          'F4. one probe goes for the whole service, and its success ends ' +
+          'the pause', probes.map(function (r) {
+            return r.from + ' ' + r.method + ' ' + r.path;
+          }));
+  await drain([b]);
+  t.check(!!userThere('lee'), 'F5. then cell B sends');
+
+  // Cell A probes and goes silent: cell B takes the probe over, once.
+  a.dir.add('mia');
+  b.dir.add('ned');
+  sp.fail.push({ from: 'cella', method: 'POST', path: '/Users',
+                 status: 503 });
+  changed(a, 'mia');
+  await drain([a]);
+  changed(b, 'ned');
+  const again = pauseRow();
+  world.t = again.pausedUntil + 1000;
+  await drain([b]);
+  t.check(!userThere('ned'),
+          'F6. within the grace after the pause cell B leaves the probe to ' +
+          'cell A');
+  world.t = again.pausedUntil + 130000;
+  await drain([b]);
+  t.check(!!userThere('ned') && !pauseRow().failures,
+          'F7. cell A silent past the grace, cell B takes the probe over');
+  await drain([a]);
+
+  // THE CONCURRENCY BUDGET: scimClient.concurrency (4) over two cells.
+  world.t += 6000;
+  const lane = a.instance.laneOf({ realm: realms.currentId(),
+                                   clientId: 'pusher-' + RUN });
+  t.check(lane && lane.limit === 2,
+          'F8. each of two pushing cells has ceil(4 / 2) = 2', lane);
+  setClient({ scimClientCells: ['cella'] });
+  world.t += 6000;
+  const solo = a.instance.laneOf({ realm: realms.currentId(),
+                                   clientId: 'pusher-' + RUN });
+  t.check(solo && solo.limit === 4,
+          'F9. one pushing cell has the whole budget', solo);
+  setClient();
+  world.t += 6000;
+  ['oli', 'pat', 'quin', 'rae', 'sam', 'tia'].forEach(function (name) {
+    a.dir.add(name);
+    changed(a, name);
+  });
+  sp.delayMs = 15;
+  await a.instance.delivery.sweep();
+  sp.delayMs = 0;
+  await drain([a]);
+  t.check(sp.maxInFlight.cella === 2 && !!userThere('tia'),
+          'F10. the queue holds cell A to its budget: at most 2 requests ' +
+          'in flight', sp.maxInFlight);
+  log.debug('Leaving sharedPause().');
+}
+
+// ---------------------------------------------------------------------------
 // Z. WHAT A SERVICE PROVIDER SEES, AND ONE CELL.
 // ---------------------------------------------------------------------------
 function noCellNamed(t) {
@@ -1037,6 +1163,10 @@ async function oneCell(t) {
   t.check(!!userThere('frank') && world.transferAsks === asked,
           'Z2. a service that is one cell pushes everybody it holds and ' +
           'asks no transfer question');
+  t.check(solo.instance.laneOf({ realm: realms.currentId(),
+                                 clientId: 'pusher-' + RUN }) === null &&
+          !world.pauses.realmMap(realms.currentId()).has('solo'),
+          'Z3. and has no lane of its own nor a shared pause');
   world.multi = true;
   world.permitted = ['us>eu', 'ca>eu'];
   log.debug('Leaving oneCell().');
@@ -1055,6 +1185,7 @@ async function run(t) {
       await handover(t, a, b);
       await groupsWithPatch(t, a, b);
       await groupsWithoutPatch(t, a, b);
+      await sharedPause(t, a, b);
       noCellNamed(t);
       await oneCell(t);
     });

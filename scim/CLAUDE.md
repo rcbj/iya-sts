@@ -1034,6 +1034,25 @@ another. `syncGroupCells()` now:
   tell the owner. A 409 there adopts AND replaces, since the owner holds
   every share.
 
+**THE PAUSE IS GLOBAL, AND SO IS THE PROBE** (section 5, rcbj's decision
+3). In a service deployed as cells the pause lives in `scimClient.pause`, a
+GLOBAL-tier store keyed by client (`pauseOf()` / `writePause()`; one cell
+keeps it in the state row as before), so a 429 or 5xx any cell sees holds
+every cell's rows. A group's row has the same id in every cell, so the probe
+is named `<cell>#<row id>` (`probeName()`). A cell holding ANOTHER cell's
+probe cannot read that row, so it waits until `FOREIGN_PROBE_MS` (two
+minutes) past the later of the pause's end and the probe's election
+(`probeAt`) and then takes the probe over — a cell that went away must not
+pause the provider for ever, and two probes after two silent minutes is the
+price. The store is written only on a failure, a probe's election and the
+recovery, which is what makes a cross-region write per event acceptable.
+**The concurrency budget** is a LANE of the delivery queue
+(`outbound_delivery.ts`'s new `laneOf` hook, per process, inside the kind's
+own limit): `ceil(scimClient.concurrency / pushing cells)`, at least one,
+remembered five seconds per client. In one cell there is no lane, so the
+queue's own limit is the budget, exactly as before. The optional
+`scimClientMaxRequestsPerSecond` the issue mentions is NOT built.
+
 **RECONCILIATION IS PER CELL** (section 6). Each cell pushes its own
 pushable residents; of the remote resources, it deprovisions only what it
 linked or holds (`reconcilesUnlinked()`): a projection or another cell's

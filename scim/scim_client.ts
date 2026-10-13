@@ -56,7 +56,8 @@
 //     pause doubles with each consecutive such failure, jittered and capped,
 //     and when it ends ONE delivery goes first (the probe); the rest follow
 //     only after a success, which ends the pause. The pause is a persisted
-//     row (`scimClient.state`), so every node honours it.
+//     row (`scimClient.state`; `scimClient.pause`, global, in a service
+//     deployed as cells), so every node — and every cell — honours it.
 //
 // RFC 7643 / 7644, as a client is bound by them (the checklist on #552):
 //   * TLS, the server identity checked, no credential in a URI, a base URI
@@ -115,7 +116,10 @@
 //     409 adopts by externalId, unreplaced); ONE OWNER cell renames and
 //     deletes it, deleting only when every cell answers
 //     `scim-client-group-share` with no member; without PATCH the owner
-//     PUTs every cell's share merged, and nothing while a cell is away.
+//     PUTs every cell's share merged, and nothing while a cell is away;
+//   * the PAUSE is global (`scimClient.pause`) and one probe goes for the
+//     whole service; each cell's concurrency budget for a client is
+//     `scimClient.concurrency` split across the cells that push to it.
 // In a service that is one cell none of it is asked.
 // ===========================================================================
 
@@ -363,6 +367,9 @@ class ScimClients {
       },
       holdUntil: function (row: Json, at: number): number {
         return self.holdUntil(row, at);
+      },
+      laneOf: function (row: Json): Json {
+        return self.laneOf(row);
       },
       onFinish: function (row: Json, state: string, code: string,
                          why: string): void {
@@ -1175,6 +1182,76 @@ class ScimClients {
                          held || {});
   }
 
+  // THE PAUSE (#553 section 5): in a service that is one cell, the fields of
+  // the client's state row; in one deployed as cells, the client's row of
+  // the GLOBAL `pauses` store, so a 429 or a 5xx any cell sees pauses every
+  // cell, and one probe goes for the whole service.
+  private pauseOf(realmId: string, clientId: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.pauseOf(). " + clientId);
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.pauseOf(). One cell.");
+      return this.stateOf(realmId, clientId);
+    }
+    const held = this.pauses.realmMap(realmId).get(clientId);
+    log.debug("Leaving ScimClients.pauseOf(). Shared.");
+    return Object.assign({ failures: 0, pausedUntil: 0, probe: '',
+                           probeAt: 0 }, held || {});
+  }
+
+  private writePause(realmId: string, clientId: string, patch: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.writePause(). " + clientId);
+    if (!this.multi()) {
+      this.writeState(realmId, clientId, patch);
+      log.debug("Leaving ScimClients.writePause(). One cell.");
+      return;
+    }
+    const next = Object.assign(this.pauseOf(realmId, clientId), patch);
+    this.pauses.realmMap(realmId).set(clientId, next);
+    log.debug("Leaving ScimClients.writePause(). Shared.");
+  }
+
+  // What a row is called as a PROBE: its id, and in a service deployed as
+  // cells the cell's too, since a group's row has the same id in every cell.
+  private probeName(row: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.probeName().");
+    log.debug("Leaving ScimClients.probeName().");
+    return this.multi() ? this.here() + '#' + row.id : String(row.id);
+  }
+
+  /**
+   * The concurrency budget of a row's client in this cell (#553 section 5):
+   * `scimClient.concurrency` divided by the cells that push to the client,
+   * rounded up and never below one, as the delivery queue's lane. None in a
+   * service that is one cell, where the queue's own limit is the budget.
+   *
+   * @param row - a due row
+   * @returns `{ key, limit }`, or null
+   */
+  laneOf(row: Json): Json {
+    const { log, config, now } = this.deps;
+    log.debug("Entering ScimClients.laneOf().");
+    if (!this.multi()) {
+      log.debug("Leaving ScimClients.laneOf(). One cell.");
+      return null;
+    }
+    const key = row.realm + '|' + row.clientId;
+    const held = this.budgets.get(key);
+    if (held && now() - held.at < 5000) {
+      log.debug("Leaving ScimClients.laneOf(). Remembered.");
+      return { key: key, limit: held.limit };
+    }
+    const c = this.get(row.clientId);
+    const cells = c ? Math.max(1, this.pushingCells(c).length) : 1;
+    const total = Math.max(1, Number(config.value('scimClient.concurrency')));
+    const limit = Math.max(1, Math.ceil(total / cells));
+    this.budgets.set(key, { limit: limit, at: now() });
+    log.debug("Leaving ScimClients.laneOf(). " + limit);
+    return { key: key, limit: limit };
+  }
+
   private writeState(realmId: string, clientId: string, patch: Json): Json {
     const { log } = this.deps;
     log.debug("Entering ScimClients.writeState(). " + clientId);
@@ -1304,7 +1381,7 @@ class ScimClients {
   holdUntil(row: Json, at: number): number {
     const { log } = this.deps;
     log.debug("Entering ScimClients.holdUntil(). " + row.id);
-    const state = this.stateOf(row.realm, row.clientId);
+    const state = this.pauseOf(row.realm, row.clientId);
     if (!Number(state.failures)) {
       log.debug("Leaving ScimClients.holdUntil(). Not paused.");
       return 0;
@@ -1313,15 +1390,32 @@ class ScimClients {
       log.debug("Leaving ScimClients.holdUntil(). Paused.");
       return Number(state.pausedUntil);
     }
-    if (state.probe && state.probe !== row.id) {
-      const probe = this.delivery.liveRow(row.realm, state.probe);
-      if (probe && probe.state === 'pending') {
-        log.debug("Leaving ScimClients.holdUntil(). The probe goes first.");
+    const me = this.probeName(row);
+    if (state.probe && state.probe !== me) {
+      const mark = this.multi() ? this.here() + '#' : '';
+      const ours = String(state.probe).indexOf(mark) === 0;
+      if (ours) {
+        const probe = this.delivery.liveRow(
+          row.realm, String(state.probe).slice(mark.length));
+        if (probe && probe.state === 'pending') {
+          log.debug("Leaving ScimClients.holdUntil(). The probe goes " +
+                    "first.");
+          return at + Math.max(1000, this.backoffMs(1));
+        }
+      } else if (at < Math.max(Number(state.pausedUntil) || 0,
+                               Number(state.probeAt) || 0) +
+                      FOREIGN_PROBE_MS) {
+        // ANOTHER CELL'S PROBE (#553 section 5): one probe goes for the
+        // whole service; this cell takes it over only once that cell has
+        // been silent past the pause for FOREIGN_PROBE_MS — it may be gone.
+        log.debug("Leaving ScimClients.holdUntil(). Another cell probes.");
         return at + Math.max(1000, this.backoffMs(1));
       }
     }
-    if (state.probe !== row.id) {
-      this.writeState(row.realm, row.clientId, { probe: row.id });
+    if (state.probe !== me) {
+      this.writePause(row.realm, row.clientId,
+                      this.multi() ? { probe: me, probeAt: at }
+                                   : { probe: me });
     }
     log.debug("Leaving ScimClients.holdUntil(). The probe.");
     return 0;
@@ -1333,15 +1427,16 @@ class ScimClients {
                     retryAfterMs: number): void {
     const { log, now } = this.deps;
     log.debug("Entering ScimClients.notePause(). " + row.clientId);
-    const state = this.stateOf(row.realm, row.clientId);
+    const state = this.pauseOf(row.realm, row.clientId);
+    const me = this.probeName(row);
     if (ok) {
       // A SUCCESS ENDS THE PAUSE ONLY WHEN IT IS THE PROBE'S, or the pause has
       // run out: a request that was already in flight when another failed
       // says nothing about whether the service provider has recovered.
-      const ends = !Number(state.failures) || state.probe === row.id ||
+      const ends = !Number(state.failures) || state.probe === me ||
                    Number(state.pausedUntil) <= now();
       if (ends && (state.failures || state.pausedUntil)) {
-        this.writeState(row.realm, row.clientId,
+        this.writePause(row.realm, row.clientId,
                         { failures: 0, pausedUntil: 0, probe: '' });
       }
       log.debug("Leaving ScimClients.notePause(). Cleared.");
@@ -1353,10 +1448,14 @@ class ScimClients {
     }
     const failures = Number(state.failures || 0) + 1;
     const pause = Math.max(this.backoffMs(failures), retryAfterMs || 0);
-    // THE PROBE: the row that ends the pause goes alone.
-    this.writeState(row.realm, row.clientId,
-                    { failures: failures, pausedUntil: now() + pause,
-                      probe: row.id });
+    // THE PROBE: the row that ends the pause goes alone — in a service
+    // deployed as cells, alone in the whole service.
+    this.writePause(row.realm, row.clientId,
+                    this.multi()
+                      ? { failures: failures, pausedUntil: now() + pause,
+                          probe: me, probeAt: now() }
+                      : { failures: failures, pausedUntil: now() + pause,
+                          probe: me });
     log.warn(errorCodes.tag('STS-SCIMC-0008') + 'scim client "' +
              row.clientId + '" in realm "' + row.realm + '": the service ' +
              'provider is failing (' + failures + ' in a row); its queue is ' +
@@ -3694,11 +3793,12 @@ class ScimClients {
     const realmId = realms.currentId();
     const rows = this.list().map(function (c: Json) {
       const state = self.stateOf(realmId, c.identifier);
+      const pause = self.pauseOf(realmId, c.identifier);
       return Object.assign({}, c, {
         counts: self.queuesOf(c.identifier, 0).counts,
-        pausedUntil: Number(state.pausedUntil) > now()
-          ? new Date(Number(state.pausedUntil)).toISOString() : '',
-        failures: Number(state.failures) || 0,
+        pausedUntil: Number(pause.pausedUntil) > now()
+          ? new Date(Number(pause.pausedUntil)).toISOString() : '',
+        failures: Number(pause.failures) || 0,
         lastReconcileAt: state.lastReconcileAt
           ? new Date(Number(state.lastReconcileAt)).toISOString() : '',
         lastReconcile: state.lastReconcile || null });
@@ -4143,7 +4243,7 @@ class ScimClients {
                                                  : 'purged.') };
     }
     // deliver-now
-    this.writeState(realms.currentId(), before.identifier,
+    this.writePause(realms.currentId(), before.identifier,
                     { failures: 0, pausedUntil: 0, probe: '' });
     this.dueNow(before.identifier, realms.currentId());
     this.deliverSoon();
@@ -4191,6 +4291,9 @@ class ScimClients {
       });
     });
     this.states.realmMap(realmId).delete(clientId);
+    if (this.multi()) {
+      this.pauses.realmMap(realmId).delete(clientId);
+    }
     log.debug("Leaving ScimClients.purgeClient().");
   }
 

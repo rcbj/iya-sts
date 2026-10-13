@@ -659,7 +659,8 @@ once. **`408` is not retried.**
 timeout, `429` or a `5xx` stops every delivery of that client until the pause
 ends. The pause doubles with each such failure in a row (the same backoff,
 capped). When it ends, **one** delivery goes first as a probe, and the rest
-follow only after a success. The pause is shared by every node.
+follow only after a success. The pause is shared by every node (and, in a
+service deployed as cells, by every cell: below).
 
 A dead letter **stays dead**. A later change to that resource marks it as
 waiting, and is sent when the dead letter is retried, because the retry sends
@@ -769,6 +770,20 @@ cell, but each cell holds only its own residents as members (its share). So:
   merges them and replaces the group with a `PUT`. If any cell cannot be
   reached, nothing is sent and the owner tries again, so a partial membership
   is never written. The other cells tell the owner when their share changes.
+
+**The pause is shared by every cell.** A network failure, a timeout, `429` or a
+`5xx` seen by any cell pauses the client in **every** cell, so a struggling
+service provider is not sent several cells' worth of load. When the pause
+ends, **one** probe goes for the whole service, from the cell that saw the
+failure; the other cells wait for its result. A cell that does not send its
+probe within two minutes after the pause ends is assumed to be gone, and
+another cell's delivery becomes the probe. The pause is kept in the global
+tier; it holds no person's data and is written only on a failure and on the
+recovery. `deliver-now` lifts it for every cell.
+
+**The concurrency budget is shared too.** Each cell sends at most
+`scimClient.concurrency` divided by the number of cells that push to the
+client, rounded up and never less than one, at a time for that client.
 
 **Reconciliation is per cell.** Each cell reconciles the people homed there,
 on its own schedule. It deprovisions only what it linked or holds: a remote
