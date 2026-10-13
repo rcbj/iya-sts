@@ -224,6 +224,8 @@ function checkShaping(t) {
             { name: 'pair', checked: false }, { name: 'pair', checked: true },
             { name: 'unknown', checked: false },
             { name: 'loose', checked: false },
+            { name: 'either', checked: false },
+            { name: 'text', checked: false },
             { name: 'off', checked: false, disabled: true }];
   } };
   const unticked = ConsoleRuntime.uncheckedBoxes(form);
@@ -234,15 +236,22 @@ function checkShaping(t) {
                     enforcePinLength: { type: 'boolean' },
                     pair: { type: 'boolean' },
                     loose: { type: ['boolean', 'string'] },
+                    either: { oneOf: [{ type: 'boolean' },
+                                      { type: 'string' }] },
+                    text: { type: 'string' },
                     off: { type: 'boolean' } },
       additionalProperties: false }, unticked);
+  // `either` is how the policy kinds declare a yes/no field (a boolean or
+  // a `TRUE`/`FALSE` string): the first version of this missed it, and the
+  // passkey profile was still refused.
   t.check(JSON.stringify(unticked) === '["allowUsernameless","unknown",' +
-          '"loose"]' && policy.allowUsernameless === false &&
+          '"loose","either","text","off"]' && policy.allowUsernameless === false &&
           policy.enforcePinLength === true && policy.pair === true &&
-          !('unknown' in policy) && !('loose' in policy) &&
-          !('off' in policy),
+          policy.loose === false && policy.either === false &&
+          policy.off === false &&
+          !('unknown' in policy) && !('text' in policy),
           'E4. an unticked box is sent as false where the operation takes ' +
-          'a boolean, and nothing else is', JSON.stringify({ unticked: unticked,
+          'a boolean (in its type or a oneOf branch), and nothing else is', JSON.stringify({ unticked: unticked,
                                                             policy: policy }));
   log.debug("Leaving checkShaping().");
 }

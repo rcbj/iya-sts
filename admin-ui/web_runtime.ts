@@ -1565,10 +1565,11 @@ class ConsoleRuntime extends SpaClient {
     const ticked: Json = {};
     const names: string[] = [];
     for (let i = 0; i < boxes.length; i++) {
+      // A DISABLED BOX COUNTS TOO: a form leaves it out whether ticked or
+      // not, and Directory → Policies disables a field that cannot be
+      // turned on here (an emailed factor with no mail), whose save still
+      // needs its value — off.
       const box = boxes[i];
-      if (box.disabled) {
-        continue;
-      }
       if (box.checked) {
         ticked[box.name] = true;
       } else if (names.indexOf(box.name) < 0) {
@@ -1689,9 +1690,19 @@ class ConsoleRuntime extends SpaClient {
       if (name in out || !has(name)) {
         return;
       }
+      // ANY MEMBER THAT TAKES A BOOLEAN, whether its `type` says so or a
+      // branch of `oneOf`/`anyOf` does: the policy kinds declare each
+      // yes/no field as a boolean OR a string (`TRUE`/`FALSE` from a form),
+      // and those are exactly the fields the passkey profile refused.
       const prop = self.deref(schema.properties[name]) || {};
-      const types = [].concat(prop.type || []);
-      if (types.length === 1 && types[0] === 'boolean') {
+      const branches = [prop].concat(prop.oneOf || [], prop.anyOf || [])
+        .map(function (one: Json) {
+          return self.deref(one) || {};
+        });
+      const takesBoolean = branches.some(function (one: Json) {
+        return [].concat(one.type || []).indexOf('boolean') >= 0;
+      });
+      if (takesBoolean) {
         out[name] = false;
       }
     });
