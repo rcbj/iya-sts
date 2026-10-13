@@ -345,7 +345,10 @@ class AuthnSurface extends WebSurface {
 
   /**
    * Follows a link in place, except on an embedded page, whose links are
-   * the browser's.
+   * the browser's — and except a link TO an embedded page, which is a
+   * navigation the server has to answer: the SPNEGO sign-in's state (and
+   * the RFC 4559 challenge itself) arrives only on that response, so a page
+   * routed in place had none and said it could not be drawn (2026-10-12).
    *
    * @param event - the click
    * @returns nothing
@@ -353,6 +356,20 @@ class AuthnSurface extends WebSurface {
   onClick(event: Json): void {
     if (this.embeddedHere()) {
       return;
+    }
+    let el = event && event.target;
+    while (el && el.tagName !== 'A') {
+      el = el.parentElement;
+    }
+    if (el && el.getAttribute) {
+      const url = new URL(el.getAttribute('href') || '',
+                          this.env.location.href);
+      const path = url.origin === this.env.location.origin
+        ? this.surfacePath(url.pathname) : null;
+      const page: Json = path ? this.find(path) : null;
+      if (page && page.embedded) {
+        return;
+      }
     }
     super.onClick(event);
   }
@@ -493,6 +510,13 @@ class AuthnSurface extends WebSurface {
                            this.env.location.href);
     const path = this.surfacePath(target.pathname) || '';
     const fields = this.formFields(form, submitter);
+    // START OVER (rcbj, 2026-10-12): the one button every step's page
+    // carries, whichever page it is on, so it is asked before the page's own
+    // acts — the passkey page's form is otherwise always its ceremony.
+    if (String(fields.action || '') === 'start-over') {
+      await this.startOver();
+      return;
+    }
     if (path === '/authn/webauthn') {
       await this.stepPasskey(String(fields.key || ''));
       return;
@@ -733,6 +757,31 @@ class AuthnSurface extends WebSurface {
     const answer = await this.send('/authn-api/mfa/' +
       encodeURIComponent(this.idHere()) + '/' + act.op,
       act.body(fields, query));
+    await this.next(answer);
+  }
+
+  /**
+   * A step's Start over: the step named in the location (`mfa` for a second
+   * factor, set-up or emailed factor, `change` for the forced password
+   * change) is ended, and the answer sends the browser to the sign-in screen
+   * for the same request.
+   *
+   * @returns nothing
+   */
+  async startOver(): Promise<void> {
+    const query = WebPage.queryOf(this.env.location.search);
+    const path = query.mfa
+      ? '/authn-api/mfa/' + encodeURIComponent(String(query.mfa)) +
+        '/start-over'
+      : (query.change
+        ? '/authn-api/password-change/' +
+          encodeURIComponent(String(query.change)) + '/start-over'
+        : '');
+    if (!path) {
+      this.refused('This page names no sign-in step to start over from.');
+      return;
+    }
+    const answer = await this.send(path, {});
     await this.next(answer);
   }
 

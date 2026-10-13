@@ -12,6 +12,13 @@
 //! GET  /healthcheck   liveness, never whether the policy is current
 //! GET  /crl/<name>    this PEP's own credential's CRLs (#174)
 //! ```
+//!
+//! `GET /protected` IS THE DEMONSTRATION PEP since #596: the service's own
+//! `GET /xacml/protected` and its `xacml.pepBias` were deleted (the runtime
+//! ships no demonstration code), and this is the same thing in the place a
+//! PEP lives — the request built from `subject`, `resource` and `action`
+//! through the one builder, the bias as this PEP's option (`PEP_BIAS`), and
+//! section 7.2's obligation rule (`enforce.rs`).
 
 use std::sync::{Arc, Mutex};
 

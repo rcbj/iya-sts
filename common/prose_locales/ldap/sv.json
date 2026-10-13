@@ -1784,8 +1784,8 @@
     "text": "Dit ändringsknuffen ska POSTas, om PEP:en angav en. KNUFFEN ÄR ALDRIG MEKANISMEN — en PEP hämtar med sitt eget intervall och konvergerar utan detta — så en frånvarande, avvisad eller onåbar URL kostar latens och ingenting annat."
   },
   "xacmlPeps.schema.attributes.xacmlPepBias.what": {
-    "en": "b30e6c33ace1aeea",
-    "text": "Den bias som den fjärranslutna PEP:en rapporterar att den körs med. RAPPORTERAD AV DEN, aldrig satt härifrån: xacml.pepBias styr den INBÄDDADE PEP:en vid /xacml/protected och en kontroll som verkade sätta en fjärransluten skulle tyst inte göra någonting."
+    "en": "9d0aed2bdeb99a4b",
+    "text": "Den tendens som fjärr-PEP:en rapporterar att den kör med. RAPPORTERAS AV DEN, ställs aldrig in härifrån: det är PEP:ens egen konfiguration (PEP_BIAS), och en kontroll som verkade ställa in den skulle tyst inte göra någonting."
   },
   "xacmlPeps.schema.attributes.xacmlPepResource.what": {
     "en": "b53451dce7081be1",

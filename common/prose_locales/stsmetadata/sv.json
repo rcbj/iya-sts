@@ -580,28 +580,28 @@
     "text": "partial: vct, innehavarbindning via cnf, och nyckeluppslagsdokumentet /.well-known/jwt-vc-issuer. Att namnge utfärdaren via DID är ett TILLÄGG — det här dokumentet definierar ingen DID-baserad mekanism för utfärdarsignatur."
   },
   "stsmetadata.specs.vcdm.coverage": {
-    "en": "bb8acc4192f336b1",
-    "text": "partial: VC-JWT-kodningen av VCDM 1.1 (jwt_vc_json) och VCDM 2.0-intyg med ett inbäddat bevis (ldp_vc); och, vid VC-API-testslutpunkterna (#194), varje MUST i datamodellen kontrollerat på ett intyg eller en presentation som någon annan skrivit, JSON-LD safe mode över de vendorerade kontexterna, och inkapslade (enveloped) intyg och presentationer — hållet mot testsviten för W3C VC Data Model 2.0."
+    "en": "9ea60338e6f757a1",
+    "text": "partial: VC-JWT-kodningen av VCDM 1.1-intyg (jwt_vc_json) och VCDM 2.0-intyg med ett inbäddat bevis (ldp_vc); och, i W3C VC API (#194), varje MUST i datamodellen kontrollerat på ett intyg eller en presentation som någon annan skrivit, JSON-LD:s säkra läge över de medföljande kontexterna, och kuverterade intyg och presentationer — hållet mot W3C:s testsvit VC Data Model 2.0."
   },
   "stsmetadata.specs.di-jcs.coverage": {
-    "en": "f0d7755e83750914",
-    "text": "partial: verifiering (och signering, för tester) av en innehavares bevis på en VerifiablePresentation — P-256 och P-384, Ed25519, och ML-DSA-44 och SLH-DSA-SHA2-128s från utkastet Quantum-Resistant Cryptosuites — med verifieringsmetoderna did:jwk och did:key; och signering och verifiering av delegeringsbeviset för en GNAP zcap-token i Ed25519, ML-DSA-44 eller SLH-DSA-SHA2-128s mot ett Multikey-kontrollantdokument. Vid VC-API-testslutpunkterna säkrar och verifierar de två JCS-sviterna för EC och EdDSA även intyg, med bevisuppsättningar och beviskedjor (#195, #196). RDFC-sviterna är di-rdfc."
+    "en": "e298f8533eb3ccb0",
+    "text": "partial: verifiering (och signering, för tester) av en innehavares bevis på en VerifiablePresentation — P-256 och P-384, Ed25519, samt ML-DSA-44 och SLH-DSA-SHA2-128s från utkastet Quantum-Resistant Cryptosuites — med verifieringsmetoderna did:jwk och did:key; samt signering och verifiering av delegeringsbeviset i en GNAP zcap-token i Ed25519, ML-DSA-44 eller SLH-DSA-SHA2-128s mot ett Multikey-kontrollantdokument. I W3C VC API säkrar och verifierar de två JCS-sviterna för EC och EdDSA även intyg, med bevismängder och beviskedjor (#195, #196). RDFC-sviterna är di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
-    "en": "8578075bfdb2edb4",
-    "text": "full för utfärdande och verifiering vid VC-API-testslutpunkterna (#195, #196): Ed25519, P-256 och P-384, RDFC-1.0 över de vendorerade kontexterna i safe mode med en null-bas, bevisuppsättningar och kedjor, VC 1.1 och 2.0 — hållet mot W3C:s testsviter för EdDSA och ECDSA. En kontext som den här tjänsten inte levererar nekas, hämtas aldrig."
+    "en": "024efe640e5df490",
+    "text": "full för utfärdande och verifiering i W3C VC API (#195, #196): Ed25519, P-256 och P-384, RDFC-1.0 över de medföljande kontexterna i säkert läge med en nollbas, bevismängder och kedjor, VC 1.1 och 2.0 — hållen mot W3C:s testsviter för EdDSA och ECDSA. En kontext som tjänsten inte levererar med avvisas, hämtas aldrig."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
     "text": "full för P-256, den kurva som avsnitt 3.5.8 binder ett härlett bevis till: basbevis med obligatoriska pekare, härledda bevis från valfria selektiva pekare och verifieringen av dem (#196) — ett härlett bevis från specifikationens eget basbevis är byte för byte dess testvektor, och ett som härletts av Digital Bazaars bibliotek verifieras här och vice versa."
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
-    "en": "c4c0c53d034aeb43",
-    "text": "partial: vc+jwt, vc+sd-jwt och vc+cose samt deras vp-former, skyddade och verifierade vid VC-API-testslutpunkterna (#198), med SD-JWT-avslöjanden behandlade så som RFC 9901 avsnitt 7.1 anger; nycklar via ett kid av typen did:key eller did:jwk eller en publik nyckel som anroparen namnger, ingenting hämtas. OID4VCI-utfärdaren utfärdar inte dessa former (jwt_vc_json är VCDM 1.1), och ett Key Binding JWT på en SD-JWT-presentation rapporteras men kontrolleras inte."
+    "en": "de44817c598a2283",
+    "text": "partial: vc+jwt, vc+sd-jwt och vc+cose och deras vp-former, säkrade och verifierade i W3C VC API (#198), SD-JWT-röjanden behandlade som RFC 9901 avsnitt 7.1 säger; nycklar via en did:key- eller did:jwk-kid eller en publik nyckel som anroparen namnger, inget hämtas. OID4VCI-utfärdaren utfärdar inte dessa former (jwt_vc_json är VCDM 1.1), och en Key Binding JWT på en SD-JWT-presentation rapporteras, kontrolleras inte."
   },
   "stsmetadata.specs.vc-api.coverage": {
-    "en": "e2e4945d5e72ed8d",
-    "text": "partial, och en TESTKONTROLL: operationerna issue, verify, prove, derive och status som W3C:s testsviter driver, över den här tjänstens egna kryptosviter, nycklar och statuslistor, endast i en utvecklingssfär, bakom en åtkomsttoken som bär vc-api:issue eller vc-api:verify. Ingen zcap-auktorisering, inga arbetsflöden, ingen lagring av intyg."
+    "en": "d8ffeba3e97815b9",
+    "text": "partial: utfärdar- (issue), innehavar- (prove, derive), verifierar- (intyg och presentationer) och statustjänsterna, över tjänstens egna kryptosviter, statuslistor och VC API:ets egna nycklar, AV tills en domän slår på det (vcApi.enabled), bakom en OAuth 2.0-åtkomsttoken som bär vc-api:issue eller vc-api:verify i alla lägen, hastighetsbegränsat per klient, och ett alternativ det inte förstår avvisas. Inte byggt: zcap-auktorisering, arbetsflöden och utbyten, utmaningar, lagring av intyg och presentationer (GET och DELETE av /credentials/{id}), VCALM:s operation:path-omfång, och utfärdarinstanser konfigurerade per domän (instanserna är fasta, en per säkringsmekanism och kurva)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -624,8 +624,8 @@
     "text": "full för det Data Integrity behöver. JSON-LD-kontexter är VENDORERADE och hämtas aldrig: en kanonisering som berodde på en hämtning över nätverket vore varken reproducerbar eller säker."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "3441c40b69d1cf9a",
-    "text": "partial: den här tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och löser upp och derefererar (avsnitt 7) did:key, did:jwk och sitt eget did:web i båda JSON-representationerna vid VC-API-testslutpunkterna (#199), hållet mot W3C:s DID-testsvit. Inget annat did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
+    "en": "a4e9c39575ac8ed8",
+    "text": "partial: tjänsten PUBLICERAR ett did:web-dokument med två verifieringsmetoder, och slår upp och följer (avsnitt 7) did:key, did:jwk och sin egen did:web i båda JSON-representationerna i W3C VC API (#199), hållet mot W3C:s DID-testsvit. Ingen annan did:web hämtas; inga DID-parametrar (service, versionId, …) stöds."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -746,10 +746,6 @@
   "stsmetadata.endpoints./xacml/policies.what": {
     "en": "606444be2da8fa32",
     "text": "Varje policy så som PDP:n ser den, DOKUMENTEN INRÄKNADE, med de statiska typkontrollproblemen för var och en. Dokumenten visas avsiktligt, till skillnad från de hemligheter som /admin/ldap/* döljer: en policy är en regel snarare än en inloggningsuppgift, och en regel som ingen kan läsa är en regel som ingen kan kontrollera. VEM SOM FÅR LÄSA DEN ÄR EN ANNAN FRÅGA ÄN OM DEN ÄR MASKERAD, och detta kräver XACML_USER: sedan åtkomst- och utfärdande-PEP:arna bäddades in är dessa dokument de som den här tjänsten fattar beslut om sina egna insläpp med, och att ge en anonym anropare de exakta villkoren för när den släpper in folk är inte samma handling som att publicera en demonstrationspolicy. Lagret är ou=policies i den inbäddade katalogen — den behållaren ÄR förrådet."
-  },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "En resurs som den här tjänsten skyddar med sin egen PDP. Tar subject, resource och action som frågeparametrar, frågar PDP:n och UPPRÄTTHÅLLER svaret — 200 eller 403. Det är här xacml.pepBias syns: deny-biased och permit-biased är överens om varje Permit och varje Deny och skiljer sig åt för Indeterminate och NotApplicable, vilket är fallet som ingen testar. En obligation som den inte kan fullgöra förvandlar ett Permit till en nekan (avsnitt 7.2), vilket är den del som implementationer hoppar över. TVÅ GRINDAR, OM TVÅ OLIKA PERSONER: ANROPAREN behöver XACML_USER för att alls få driva den, och SUBJEKTET som namnges i ?subject= är det som PEP:n sedan upprätthåller beslutet om. Att hålla isär dem är det som låter en insläppt anropare fråga om någon som policyn nekar och se den neka — vilket är hela demonstrationen."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
@@ -2559,6 +2555,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET svarar vems lösenord som måste bytas; POST lagrar det nya och fortsätter inloggningen."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). Det påtvingade lösenordsbytets Börja om: inget ändras, och den väntande inloggning det bär läggs tillbaka för inloggningsskärmen."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). Vyn för sidan i ett steg för andra faktor eller e-postfaktor (?page=), som fakta och inga ord, och den CSRF-token som dess handlingar bär; vägras där sidan aldrig skulle kunna ritas för steget. Id:t är en bärarbefogenhet och loggas aldrig."
@@ -2610,6 +2610,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). Fortsätt-knappen på sidan som länken leder till, endast i webbläsaren som bad om den."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). Varje stegsidas Börja om: steget avslutas med allt det höll, ingen session startas, och den väntande inloggning det bär läggs tillbaka för inloggningsskärmen, så att den ursprungliga begäran ändå slutförs."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
@@ -2775,10 +2779,6 @@
     "en": "7573076dce7e186e",
     "text": "Dit en förlitande part POSTar resultatet av ett _async-kommando eller ber om en färsk metadata eller audit_tenant, med Bearer den callback_token som kommandot bar (#151). 204, eller RFC 6750:s fel."
   },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, endast i utvecklingsläge (#151): en förlitande parts command_endpoint som kontrollerar en Command Token som avsnitt 9 kräver och besvarar varje konto- och tenant-kommando, strömmar inräknade; GET visar vad den håller. 404 i produktläge."
-  },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",
     "text": "Det som GET /admin/claim-providers ritar, ur samma anrop."
@@ -2843,10 +2843,6 @@
     "en": "4f3a588acce9f5fc",
     "text": "Den här sfärens BitstringStatusListCredential för återkallelse eller suspendering, som application/vc+jwt: en GZIP-bitsträng med 131 072 poster, index 0 först, signerad med credential-nyckeln — eller, när Accept ber om JSON-LD eller JSON och inte JWT först, samma credential med ett eddsa-rdfc-2022-bevis av sfärens Ed25519-nyckel, utfärdat som dess did:key (#197)."
   },
-  "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose/publish.what": {
-    "en": "d39a31a0597ad418",
-    "text": "W3C-sviternas \"publicera listan nu\". En lista här beräknas vid varje läsning, så 204 och inget annat; en testkontroll, bakom vc-api:issue."
-  },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",
     "text": "Hämtar ett credential som utfärdaren svarade 202 för, mot dess transaction_id."
@@ -2900,40 +2896,76 @@
     "text": "Den BLS12-381-nyckel som ett ldp_vc-bevis verifieras med, som en Multikey. `/bbs/keys/<kid>` är vad ett vanligt ldp_vc-credentials verificationMethod dereferenseras till, för varje levande generation av sfärens BBS-nyckel (aktuell, nästa och pensionerade inom sin respittid — nyckeln roteras med sfärens signeringsnycklar, #49); `/bbs/keys/1` är den aktuella. 404 för alla andra."
   },
   "stsmetadata.endpoints./vc-api/issuers.what": {
-    "en": "e93fbff56e0821df",
-    "text": "NON-SPEC-listning, för svitjobben: varje utfärdare som den här adaptern erbjuder — en säkringsmekanism och den sfärnyckel den signerar med — med dess did:key och slutpunkt. Endast en utvecklingssfär; vc-api:issue."
+    "en": "1aa20d049d9eba6a",
+    "text": "Lista UTANFÖR SPECIFIKATIONEN, ett implementationsmanifests lista över utfärdarinstanser: varje utfärdare tjänsten erbjuder — en säkringsmekanism och VC API-nyckeln den signerar med — med sin did:key och sin ändpunkt. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/issuers.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
   },
   "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.what": {
-    "en": "7859cb69187f1427",
-    "text": "Säkrar det credential den får efter att ha kontrollerat varje MUST i datamodellen och JSON-LD:s säkra läge: ett inbäddat Data Integrity-bevis (eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019 och ecdsa-jcs-2019 över P-256 och P-384, ecdsa-sd-2023) eller ett VC-JOSE-COSE-kuvert (jose-p256, sd-jwt-p256, cose-p256). Credentialets issuer måste vara nyckelns did:key; options.credentialStatus allokerar ett index i sfärens Bitstring Status Lists. Endast en utvecklingssfär; vc-api:issue. 201 { verifiableCredential }."
+    "en": "76ef67331a4befb1",
+    "text": "Säkrar intyget den får efter att ha kontrollerat varje MUST i datamodellen och JSON-LD:s säkra läge: ett inbäddat Data Integrity-bevis (eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019 och ecdsa-jcs-2019 över P-256 och P-384, ecdsa-sd-2023) eller ett VC-JOSE-COSE-kuvert (jose-p256, sd-jwt-p256, cose-p256). Intygets utfärdare måste vara nyckelns did:key; options.credentialStatus tilldelar ett index i domänens Bitstring Status Lists. Signerat med VC API:ets egna nycklar, aldrig nycklarna som signerar domänens tokens; ett alternativ den inte förstår avvisas. vc-api:issue. 201 { verifiableCredential }."
+  },
+  "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
   },
   "stsmetadata.endpoints./vc-api/credentials/verify.what": {
     "en": "deaad63eadadc515",
     "text": "Datamodellen, JSON-LD:s säkra läge, varje bevis i en bevismängd och bevikedja (verifieringsmetoderna did:key och did:jwk, ingenting hämtas) eller kuvertet, och — när det efterfrågas eller namnges — credentialets status i den här sfärens listor. 200 eller 400 { verified, checks, warnings, errors }. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/credentials/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
+  },
   "stsmetadata.endpoints./vc-api/presentations/verify.what": {
     "en": "5c148622059888d3",
     "text": "Presentationens eget bevis (authentication, den challenge och domain som efterfrågats) eller kuvert (dess nonce och aud), och varje credential i den som /vc-api/credentials/verify kontrollerar ett. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/presentations/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
+  },
   "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.what": {
-    "en": "a10e25570a166392",
-    "text": "Säkrar en presentation som sfärnyckelns did:key: ett Data Integrity-bevis med angiven challenge och domain, eller ett VC-JOSE-COSE-kuvert. vc-api:issue."
+    "en": "021b219f3012be78",
+    "text": "Säkrar en presentation som VC API-nyckelns did:key: ett Data Integrity-bevis med den angivna utmaningen och domänen, eller ett VC-JOSE-COSE-kuvert. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
   },
   "stsmetadata.endpoints./vc-api/credentials/derive.what": {
     "en": "f059d39e5c330e56",
     "text": "Ett härlett ecdsa-sd-2023-bevis från ett basbevis, som avslöjar de obligatoriska påståendena och options.selectivePointers. vc-api:issue."
   },
+  "stsmetadata.endpoints./vc-api/credentials/derive.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
+  },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "b48e6b20d9d6497f",
-    "text": "Återkallar, suspenderar eller häver en suspendering av ett credential som den här adaptern utfärdade med en status — den åtgärd som /admin/vc-status utför, en av de tre som frånsäger ett credential. En återkallelse är slutgiltig. vc-api:issue."
+    "en": "860c7bcc627e7889",
+    "text": "Återkallar, spärrar eller häver en spärr av ett intyg som detta VC API utfärdade med en status — den handling /admin/vc-status utför, en av de tre som tar avstånd från ett intyg. En återkallelse är slutgiltig. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/credentials/status.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
   },
   "stsmetadata.endpoints./vc-api/resolve.what": {
     "en": "83c42724ff6ab588",
     "text": "DID Core avsnitt 7.1:s resolve eller resolveRepresentation (?function=) för did:key, did:jwk och den här sfärens egen did:web, med upplösningsresultatet som svar; varje annan did:web ger notFound i stället för att hämtas. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/resolve.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
+  },
   "stsmetadata.endpoints./vc-api/dereference.what": {
     "en": "d3e75554e1f05975",
     "text": "DID Core avsnitt 7.2: dokumentet, eller den verifieringsmetod som ett fragment namnger. vc-api:verify."
+  },
+  "stsmetadata.endpoints./vc-api/dereference.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "svarar 501 tills vcApi.enabled är på i domänen"
   },
   "stsmetadata.endpoints./.well-known/did.json.what": {
     "en": "614fbb0376075e4a",

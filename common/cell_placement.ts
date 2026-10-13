@@ -147,7 +147,9 @@ const ROWS: Row[] = [
   { prefix: '/spiffe', strategy: 'local',
     why: 'a workload attests to the cell it runs beside' },
   { prefix: '/vc-api', strategy: 'local',
-    why: 'a development-only test control over global configuration' },
+    why: 'the W3C VC API signs and verifies documents it is handed with ' +
+         'the realm\'s global-tier keys and status lists; no person\'s ' +
+         'data is read' },
   { prefix: '/krb5', strategy: 'local',
     why: 'the Kerberos views read global configuration' },
   { prefix: '/KdcProxy', strategy: 'handler',
@@ -253,8 +255,6 @@ const ROWS: Row[] = [
     why: 'the device code is minted here and stamped (D10)' },
   { prefix: '/oauth2/challenge', strategy: 'local',
     why: 'an attestation challenge is valid where it is issued' },
-  { prefix: '/oauth2/commands/mock-rp', strategy: 'local',
-    why: 'a test relying party with no state of anybody\'s' },
   { prefix: '/oauth2/commands/callback', strategy: 'local',
     why: 'a Command callback token is global configuration' },
   { prefix: '/oauth2/token', strategy: 'handler',

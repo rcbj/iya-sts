@@ -5503,6 +5503,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "串接的 PEM 憑證，屬於此簽發者採信其金鑰證明的 Wallet Provider 與金鑰儲存元件：證明必須能以其中一把金鑰驗證，或由其中之一所簽發的憑證（其 x5c）簽署。留空表示不信任任何一方，此時金鑰證明會被拒絕。"
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "提供 W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "在 /vc-api 提供 W3C CCG Verifiable Credentials API（VCALM）：一個為交給它的憑證加固的簽發者（Data Integrity eddsa-rdfc-2022、eddsa-jcs-2022、ecdsa-rdfc-2019、ecdsa-jcs-2019 與 ecdsa-sd-2023，或 VC-JOSE-COSE 信封），一個證明出示並衍生選擇性揭露的持有者，一個憑證與出示的驗證者，一個基於本領域 Bitstring Status Lists 的狀態服務，以及對 did:key、did:jwk 與本領域自身 did:web 的 DID 解析。每次呼叫都需要本領域簽發、帶有 vc-api:issue 或 vc-api:verify 的存取權杖——受保護的範圍，只簽發給管理員為其宣告過的用戶端——在所有模式下皆然。它以自己的金鑰簽署，每把金鑰以其 did:key 命名，絕不使用簽署本領域權杖的金鑰。預設關閉，因為它簽署的是呼叫者撰寫的文件：關閉時，每個 /vc-api 路徑都回應 501——功能已關閉，而非 URL 錯誤。"
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "每個速率限制時窗內一個用戶端可發出的 VC API 呼叫數"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "一個用戶端——以及一個位址——在一個 security.rateLimitWindowS 時窗內可以發出多少次 /vc-api 呼叫，依領域計數；超過後呼叫以 429 及 Retry-After 拒絕。它有自己的數值，理由與 xacml.pipMaxPerWindow 相同：security.rateLimitPerIdentity 是五，因為它守護的是登入，而協調者每個憑證呼叫一次的簽發者或驗證者會被它關閉。它所限制的是成本：一次呼叫會正規化 JSON-LD 並簽署或驗證，否則一個已獲准的用戶端可能在迴圈中耗盡本服務的 CPU。"
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "啟用 Kerberos"
@@ -6346,14 +6362,6 @@
   "xacml.maxPolicies|description": {
     "en": "eae9db3ed7f2d788",
     "text": "ou=policies 下可存在多少項目。與 ou=federations 及 ou=applications 所帶的限制相同，理由也相同：在預設持久化模式下此目錄位於記憶體中，能無限制建立項目的呼叫者可以耗盡它。達到上限時會拒絕「建立」並記錄；絕不會逐出。"
-  },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "嵌入式 PEP 如何處理非 Permit"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "這是 PEP 的決定而非 PDP 的決定，這正是它成為設定的全部理由。XACML section 7.2 允許 PEP 採拒絕偏向（任何非 Permit 皆為拒絕）或允許偏向（任何非 Deny 皆允許），而實際部署各有不同。預設為拒絕偏向，因為保護任何東西的 PEP 都應如此；允許偏向的存在，是為了讓用戶端看到另一種選擇如何處理 Indeterminate，這正是兩者意見分歧、也是沒有人測試的情況。僅限開發模式：它唯一的讀取者 /xacml/protected 是示範端點（#585）。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -7516,8 +7524,8 @@
     "text": "授予 XACML_USER 角色的群組"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是四個 XACML 本體端點所要求的——GET /xacml、POST /xacml/pdp、GET /xacml/policies 與 GET /xacml/protected。出示經此服務「驗證」之用戶端憑證的呼叫者，是它能指名的對象；此群組的成員資格才是讓它被允許進入的條件，兩者分開的理由與上方 roles.remotePepGroup 相同：憑證證明身分，群組授予權限。「它是第二個群組，而不是同一個」：REMOTE_PEPS 可觸及三個 /xacml/pep 端點，這些端點提供此服務用來強制執行其自身存取控制的文件，若由一個群組同時授予兩者，允許呼叫者進入示範介面就會在無聲無息中也允許其進入那些端點。將它設為空字串表示「沒有人」擁有此角色，這會對每個呼叫者關閉這四個端點；這是移除 XACML 介面、而不必關閉 xacml.enabled 並因此一併失去嵌入式簽發與存取 PEP 的方式。"
+    "en": "6256e6a60d3799e6",
+    "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是三個 XACML 端點本身所要求的角色——GET /xacml、POST /xacml/pdp 與 GET /xacml/policies。出示經本服務驗證之用戶端憑證的呼叫方，是本服務能夠指明身分的一方；而該群組的成員資格才使其成為本服務允許進入的一方，兩者分開的理由與上方 roles.remotePepGroup 相同：憑證證明身分，群組授予權限。這是第二個群組，而非同一個：REMOTE_PEPS 可存取三個 /xacml/pep 端點，它們分發本服務用以執行自身存取控制的文件，若由一個群組同時授予兩者，那麼允許呼叫方存取示範介面就會悄悄地允許其存取那些端點。設為空字串表示沒有人擁有該角色，這會對每個呼叫方關閉這三個端點；這是在不關閉 xacml.enabled、從而不連帶失去內嵌簽發與存取 PEP 的情況下移除 XACML 介面的方法。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

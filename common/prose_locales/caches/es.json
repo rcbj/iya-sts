@@ -1216,8 +1216,8 @@
     "text": "Credenciales de VC-API con estado"
   },
   "caches.store.vc-api.issued.description": {
-    "en": "a8b5945c11b02533",
-    "text": "Cada credencial que el adaptador de pruebas de VC-API emitió con una entrada de estado, y el índice de lista de estado que tomó, para que un cambio de estado pueda encontrarla."
+    "en": "6276c639d08ac2a7",
+    "text": "Cada credencial que la W3C VC API emitió con una entrada de estado, y el índice de la lista de estado que ocupó, para que un cambio de estado pueda encontrarla."
   },
   "caches.store.vc-api.issued.bound": {
     "en": "c05e415f3ddb333b",

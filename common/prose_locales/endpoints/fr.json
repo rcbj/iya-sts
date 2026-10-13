@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "Le référentiel de politiques"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "Le PEP intégré"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "Un PEP distant s’enregistre"
@@ -1475,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "Un changement de mot de passe imposé"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Recommencer une connexion depuis le changement de mot de passe"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Ce qu'affiche la page d'une étape de connexion"
@@ -1526,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Consommer un lien de connexion envoyé par e-mail"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Recommencer une connexion depuis une étape"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
@@ -1671,10 +1675,6 @@
     "en": "077e67ad034f4945",
     "text": "Point de terminaison de rappel des OpenID Provider Commands"
   },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Point de terminaison de commande de la partie de confiance fictive (pas un point de terminaison de la spécification)"
-  },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",
     "text": "La page Fournisseurs de revendications de la console, en JSON"
@@ -1739,10 +1739,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Attestation Bitstring Status List"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "Publier une liste de statut (VC-API, contrôle de test)"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "Point de terminaison d’attestation différée"
@@ -1792,40 +1788,40 @@
     "text": "Clé publique BBS"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "Les émetteurs VC-API (contrôle de test)"
+    "en": "73b838a87b15b09a",
+    "text": "Les émetteurs de la VC API"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "Émettre une attestation (VC-API, contrôle de test)"
+    "en": "36e4ff37d0083d67",
+    "text": "Émettre une attestation (VC API)"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "Vérifier une attestation (VC-API, contrôle de test)"
+    "en": "7f67271e211b78e1",
+    "text": "Vérifier une attestation (VC API)"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "Vérifier une présentation (VC-API, contrôle de test)"
+    "en": "f0ace30e55e137f1",
+    "text": "Vérifier une présentation (VC API)"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "Prouver une présentation (VC-API, contrôle de test)"
+    "en": "96508bdaea6f7f69",
+    "text": "Prouver une présentation (VC API)"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "Dériver une divulgation sélective (VC-API, contrôle de test)"
+    "en": "4af3df1e4c1f2f99",
+    "text": "Dériver une divulgation sélective (VC API)"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "Modifier le statut d’une attestation (VC-API, contrôle de test)"
+    "en": "d231bdc923e68f8a",
+    "text": "Changer le statut d'une attestation (VC API)"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "Résoudre un DID (contrôle de test)"
+    "en": "39c91a22e95b0c2e",
+    "text": "Résoudre un DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "Déréférencer une URL DID (contrôle de test)"
+    "en": "a7044c968ef56722",
+    "text": "Déréférencer une URL de DID"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

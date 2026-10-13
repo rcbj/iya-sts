@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "Ang policy repository"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "Ang embedded PEP"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "Nagpaparehistro ang isang remote PEP"
@@ -1475,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "Isang sapilitang pagpapalit ng password"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Simulan muli ang pag-sign in mula sa pagpapalit ng password"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "Ang ipinapakita ng page ng isang sign-in step"
@@ -1526,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "Gamitin ang isang emailed na sign-in link"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Simulan muli ang pag-sign in mula sa isang hakbang"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
@@ -1671,10 +1675,6 @@
     "en": "077e67ad034f4945",
     "text": "Callback endpoint ng OpenID Provider Commands"
   },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "bd13343933f0af89",
-    "text": "Command endpoint ng mock relying party (hindi spec endpoint)"
-  },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",
     "text": "Ang Claims Providers console page sa JSON"
@@ -1739,10 +1739,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring Status List credential"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "Maglathala ng status list (VC-API, test control)"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "Deferred credential endpoint"
@@ -1792,40 +1788,40 @@
     "text": "BBS public key"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "Ang mga VC-API issuer (test control)"
+    "en": "73b838a87b15b09a",
+    "text": "Ang mga issuer ng VC API"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "Mag-issue ng credential (VC-API, test control)"
+    "en": "36e4ff37d0083d67",
+    "text": "Maglabas ng kredensyal (VC API)"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "I-verify ang isang credential (VC-API, test control)"
+    "en": "7f67271e211b78e1",
+    "text": "I-verify ang isang kredensyal (VC API)"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "I-verify ang isang presentation (VC-API, test control)"
+    "en": "f0ace30e55e137f1",
+    "text": "I-verify ang isang presentasyon (VC API)"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "Patunayan ang isang presentation (VC-API, test control)"
+    "en": "96508bdaea6f7f69",
+    "text": "Patunayan ang isang presentasyon (VC API)"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "Kumuha ng selective disclosure (VC-API, test control)"
+    "en": "4af3df1e4c1f2f99",
+    "text": "Kumuha ng piling pagsisiwalat (VC API)"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "Baguhin ang status ng isang credential (VC-API, test control)"
+    "en": "d231bdc923e68f8a",
+    "text": "Baguhin ang status ng isang kredensyal (VC API)"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "I-resolve ang isang DID (test control)"
+    "en": "39c91a22e95b0c2e",
+    "text": "I-resolve ang isang DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "I-dereference ang isang DID URL (test control)"
+    "en": "a7044c968ef56722",
+    "text": "I-dereference ang isang DID URL"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

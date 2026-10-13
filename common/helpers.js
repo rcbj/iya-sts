@@ -707,6 +707,65 @@ function makeBrowserDeviceKeys() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE VC-API KEYS (#598, 2026-10-12): an Ed25519, a P-256 and a P-384 key
+// pair used for ONE thing — what `oid4vc/vc_api.ts` signs as the W3C VC API's
+// issuer and holder, each named by the did:key of its public half.
+//
+// **DEDICATED, AND THAT IS THE WHOLE REASON THEY EXIST.** Until #598 the
+// adapter signed with the realm's own curve keys (`extraKeys`), the keys
+// `signJwt()` signs ES256, ES384 and EdDSA tokens with — and the VC API is an
+// issuer that secures a document ITS CALLER WROTE. Its VC-JOSE-COSE issuers
+// produce a compact JWS over that document, so a caller holding
+// `vc-api:issue` could have had any claims it liked (an `iss`, a `sub`, an
+// `aud`, an `exp`: the VCDM 2.0 context's `@vocab` defines them all) signed
+// by a key `verifyOwnJws()` accepts as this realm's — a kid that names no key
+// of ours is tried against every candidate of the alg. RFC 8725 section 3.12
+// asks for exactly this separation ("use different keys for different kinds
+// of JWTs"), and OpenID Federation's 3.1.1 asked it of `oidfed/`'s keys. A
+// test control could get away without it; a product surface cannot.
+//
+// NEVER PUBLISHED in a JWKS and never a candidate of `ownCandidatesFor()`: a
+// verifier finds them through their did:key, which is the key. Made with the
+// set and carried over a rotation unchanged, as the browser device keys are,
+// because a did:key IS its key — a rotated key would be a different issuer,
+// and every credential the old one signed would name an issuer nobody holds.
+// ---------------------------------------------------------------------------
+const VC_API_KEY_SPECS = [
+  { name: 'ed25519', curve: 'Ed25519', alg: 'EdDSA',
+    gen: ['ed25519', undefined] },
+  { name: 'p256', curve: 'P-256', alg: 'ES256',
+    gen: ['ec', { namedCurve: 'prime256v1' }] },
+  { name: 'p384', curve: 'P-384', alg: 'ES384',
+    gen: ['ec', { namedCurve: 'secp384r1' }] }
+];
+
+function vcApiJwkOf(privateKey, spec) {
+  log.debug("Entering vcApiJwkOf(). " + spec.name);
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
+  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  log.debug("Leaving vcApiJwkOf().");
+  return Object.assign({}, publicJwk, {
+    kid: 'sts-vcapi-' + spec.name + '-' + thumbprint,
+    use: 'sig',
+    alg: spec.alg
+  });
+}
+
+function makeVcApiKeys() {
+  log.debug("Entering makeVcApiKeys().");
+  const out = {};
+  VC_API_KEY_SPECS.forEach(function (spec) {
+    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
+    out[spec.name] = { privateKey: pair.privateKey,
+                       publicJwk: vcApiJwkOf(pair.privateKey, spec) };
+  });
+  log.debug("Leaving makeVcApiKeys(). kids=" + out.ed25519.publicJwk.kid +
+            ", " + out.p256.publicJwk.kid + ", " + out.p384.publicJwk.kid);
+  return out;
+}
+
 // The RSA size a member of the key set is made at, read in the realm the set
 // is for. ONE reading for the synchronous maker and the asynchronous one, so a
 // set prepared off the loop is the size a set made on it would have been.
@@ -897,6 +956,9 @@ function makeStsKeys(made) {
     // THE BROWSER DEVICE KEYS (#265), made with the set for the same reason —
     // see makeBrowserDeviceKeys().
     browserDeviceKeys: makeBrowserDeviceKeys(),
+    // THE VC-API KEYS (#598), made with the set for the same reason — see
+    // makeVcApiKeys().
+    vcApiKeys: makeVcApiKeys(),
     // THE XML SIGNING KEY (2026-09-22, #42, D2), a member made with the set for
     // the reason the others are: the set is what the key channel agrees and
     // the keystore seals. See makeRsaSigningKey(). Its view — the certificate
@@ -992,6 +1054,12 @@ function plainKeySet(realmId, stored) {
   // forgotten by every other worker.
   if (stored.browserDeviceKeys) {
     set.browserDeviceKeys = stored.browserDeviceKeys;
+  }
+  // AND THE VC-API KEYS (#598): dropped here, this process would make keys of
+  // its own, and a credential a sibling issued would name a did:key this
+  // process does not sign as.
+  if (stored.vcApiKeys) {
+    set.vcApiKeys = stored.vcApiKeys;
   }
   // AND THE KEM DECRYPTION KEYS (#82): dropped here, this process would
   // publish keys of its own for an opted-in alg and fail to open what a
@@ -1864,6 +1932,64 @@ function lazyKeySet(realmId, stored) {
     set: function (made) {
       log.debug("Entering set().");
       bdGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
+  // **THE VC-API KEYS (#598)**, the browser device keys' arrangement: the
+  // public halves resident, the three private keys getters over the
+  // keystore. A name is read out into the closure, never the stored entry.
+  // ---------------------------------------------------------------------
+  const vcStored = stored.vcApiKeys || null;
+  const vcPublic = vcStored && VC_API_KEY_SPECS.every(function (spec) {
+    return vcStored[spec.name] && vcStored[spec.name].publicJwk;
+  }) ? VC_API_KEY_SPECS.reduce(function (out, spec) {
+      out[spec.name] = vcStored[spec.name].publicJwk;
+      return out;
+    }, {}) : null;
+  let vcGenerated = null;
+  const vcHeld = function (name) {
+    log.debug("Entering vcHeld().");
+    const held = keystore.privateMaterialFor(realmId);
+    if (!held || !held.vc || !held.vc[name]) {
+      throw new Error('the "' + realmId + '" realm\'s VC-API ' + name +
+        ' key is held encrypted and could not be decrypted; see the ' +
+        'keystore errors above.');
+    }
+    log.debug("Leaving vcHeld().");
+    return held.vc[name];
+  };
+  Object.defineProperty(set, 'vcApiKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (vcGenerated) {
+        log.debug("Leaving get().");
+        return vcGenerated;
+      }
+      if (!vcPublic) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const view = {};
+      VC_API_KEY_SPECS.forEach(function (spec) {
+        const name = spec.name;
+        view[name] = { publicJwk: vcPublic[name] };
+        Object.defineProperty(view[name], 'privateKey', {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            log.debug("Leaving get().");
+            return vcHeld(name).privateKey;
+          }
+        });
+      });
+      log.debug("Leaving get().");
+      return view;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      vcGenerated = made || null;
       log.debug("Leaving set().");
     }
   });
@@ -2864,6 +2990,71 @@ function requestObjectKeysFor(keySet) {
   keystore.publishShared(realmId, keys);
   log.debug("Leaving requestObjectKeysFor(). Backfilled.");
   return keys.requestObjectEncKeys || made;
+}
+
+// ---------------------------------------------------------------------------
+// THE VC-API KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS WRITTEN BEFORE
+// THEY EXISTED (#598) — `browserDeviceKeysFor()` step for step, and
+// `vcApiKeyFor()`, the one a curve names.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a key set's VC-API keys, reading or making them where the set was
+ * written before they existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ ed25519, p256, p384 }`, each `{ privateKey, publicJwk }`
+ */
+function vcApiKeysFor(keySet) {
+  log.debug("Entering vcApiKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.vcApiKeys;
+  if (present && present.ed25519 && present.ed25519.publicJwk) {
+    log.debug("Leaving vcApiKeysFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.vcApiKeysHeldFor(realmId);
+  if (held) {
+    keys.vcApiKeys = held;
+    log.debug("Leaving vcApiKeysFor(). Already made by this service.");
+    return held;
+  }
+  const made = makeVcApiKeys();
+  keys.vcApiKeys = made;
+  log.info('VC-API keys were added to the "' + realmId + '" realm\'s key ' +
+           'set, which was written by a build from before they joined it: ' +
+           made.ed25519.publicJwk.kid + ', ' + made.p256.publicJwk.kid +
+           ', ' + made.p384.publicJwk.kid + '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  log.debug("Leaving vcApiKeysFor(). Backfilled.");
+  return keys.vcApiKeys || made;
+}
+
+/**
+ * Returns the realm's VC-API key of a curve (#598): what `oid4vc/vc_api.ts`
+ * signs with, and nothing else does.
+ *
+ * @param curve - `Ed25519`, `P-256` or `P-384`
+ * @returns `{ alg, privateKey, publicJwk }`
+ * @throws Error for any other curve
+ */
+function vcApiKeyFor(curve) {
+  log.debug("Entering vcApiKeyFor(). " + curve);
+  const spec = VC_API_KEY_SPECS.filter(function (one) {
+    return one.curve === curve;
+  })[0];
+  if (!spec) {
+    log.debug("Leaving vcApiKeyFor(). No such curve.");
+    throw new Error('the VC-API has no ' + curve + ' key; it signs with ' +
+      VC_API_KEY_SPECS.map(function (one) {
+        return one.curve;
+      }).join(', ') + '.');
+  }
+  const held = vcApiKeysFor()[spec.name];
+  log.debug("Leaving vcApiKeyFor().");
+  return { alg: spec.alg, privateKey: held.privateKey,
+           publicJwk: held.publicJwk };
 }
 
 // ---------------------------------------------------------------------------
@@ -4704,6 +4895,9 @@ function plainCopyOf(keys, overrides) {
     refreshTokenEncKeys: keys.refreshTokenEncKeys,
     requestObjectEncKeys: keys.requestObjectEncKeys,
     browserDeviceKeys: keys.browserDeviceKeys,
+    // The VC-API keys (#598) carry over a rotation unchanged: a did:key is
+    // its key, and a rotated one would be another issuer (makeVcApiKeys()).
+    vcApiKeys: keys.vcApiKeys,
     // The KEM decryption keys (#82) carry over a rotation unchanged: they are
     // not signing keys, and a client holding the published key must still
     // be able to encrypt to it after the realm's signer moves on.
@@ -7820,6 +8014,8 @@ module.exports = {
   decryptableJweAlgs: decryptableJweAlgs,
   offeredJweAlgs: offeredJweAlgs,
   browserDeviceKeysFor: browserDeviceKeysFor,
+  vcApiKeysFor: vcApiKeysFor,
+  vcApiKeyFor: vcApiKeyFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,

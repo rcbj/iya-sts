@@ -406,6 +406,16 @@ const OPERATIONS: Operation[] = [
     summary: 'Stores the new password and continues the sign-in',
     description: 'Held to the password policy; the sign-in then continues ' +
       'exactly as after the password step — second factor included.' },
+  { method: 'POST', path: API + '/password-change/:id/start-over',
+    operationId: 'startOverFromPasswordChange', access: 'step',
+    mirrors: 'POST /authn/password-change', action: 'start-over',
+    handler: 'passwordChangeStartOver', body: EMPTY_BODY,
+    answer: NEXT_ANSWER,
+    summary: 'Leaves the forced password change and starts the sign-in over',
+    description: 'Changes nothing: the step is ended and the pending ' +
+      'sign-in it was minted from is put back under its id, so the ' +
+      'request it carries completes after the person signs in again. ' +
+      '`next: redirect` to the sign-in screen.' },
   // --- the second-factor and emailed-factor steps (#572, #573) -----------
   { method: 'GET', path: API + '/mfa/:id', operationId: 'getStep',
     access: 'mfa', handler: 'mfaStep',
@@ -509,7 +519,23 @@ const OPERATIONS: Operation[] = [
     handler: 'mfaAct', body: OPEN_BODY, answer: NEXT_ANSWER,
     summary: 'Spends a mailed sign-in link: its Continue button',
     description: 'Only in the browser that asked for the link (the ' +
-      '`sts_email_binding` cookie). Opening the link spends nothing.' }
+      '`sts_email_binding` cookie). Opening the link spends nothing.' },
+  { method: 'POST', path: API + '/mfa/:id/start-over',
+    operationId: 'startOver', access: 'mfa',
+    mirrors: 'POST /authn/totp, /authn/webauthn, /authn/backup-code, ' +
+             '/authn/password-factor, /authn/mfa-setup, /authn/email-code, ' +
+             '/authn/email-link, /authn/email-link/open',
+    action: 'start-over', handler: 'mfaAct', body: EMPTY_BODY,
+    answer: NEXT_ANSWER,
+    summary: 'Leaves a sign-in step and starts the sign-in over',
+    description: 'Every second-factor, set-up and emailed-factor page\'s ' +
+      'Start over button. The step is ended with whatever it held (an ' +
+      'emailed code, a link, an enrolment in progress), no session is ' +
+      'started and no factor is counted, and the pending sign-in the step ' +
+      'was minted from is put back under its id, so the request it ' +
+      'carries completes after the person signs in again. `next: ' +
+      'redirect` to the sign-in screen; a step that has already ended is ' +
+      'refused (400).' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1082,7 +1108,7 @@ class AuthnApi {
     const allowed = await websecurity.attemptShared('passkey-options', req,
                                                     '');
     if (!allowed.ok) {
-      errorCodes.mark(res, 'STS-AUTHN-0331');
+      errorCodes.mark(res, 'STS-AUTHN-0332');
       res.set('Retry-After', String(allowed.retryAfterS || 60));
       authn.answerJson(res, 429, { ok: false, next: 'refused',
                                    errors: [String(allowed.detail)] });
@@ -1179,6 +1205,39 @@ class AuthnApi {
     }
     await authn.passwordChangeAct(req, res, found.id, found.step, body);
     log.debug("Leaving AuthnApi.changePassword().");
+  }
+
+  /**
+   * `POST /authn-api/password-change/{id}/start-over`: the forced password
+   * change left, nothing changed, and the sign-in started over.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns nothing
+   */
+  passwordChangeStartOver(req: Json, res: Json, op: Operation): void {
+    const { log, authn, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.passwordChangeStartOver().");
+    const asked = this.deps.validation.checkParsed(req.params || {},
+                                                   'params', ID_PARAMS);
+    if (!asked.ok) {
+      errorCodes.mark(res, 'STS-AUTHN-0145');
+      this.refuse(res, 400, 'That is not the id of a password change.');
+      log.debug("Leaving AuthnApi.passwordChangeStartOver(). Not an id.");
+      return;
+    }
+    if (!this.bound(req, res) || !this.bodyOf(req, res, op)) {
+      log.debug("Leaving AuthnApi.passwordChangeStartOver(). Refused.");
+      return;
+    }
+    const found = this.stepOf(req, res);
+    if (!found) {
+      log.debug("Leaving AuthnApi.passwordChangeStartOver(). No step.");
+      return;
+    }
+    authn.passwordChangeStartOver(req, res, found.id);
+    log.debug("Leaving AuthnApi.passwordChangeStartOver().");
   }
 
   // ---------------------------------------------------------------------------
@@ -1321,6 +1380,9 @@ class AuthnApi {
         break;
       case 'sendEmailedFactor':
         await ef.sendAct(req, res, id, body.kind);
+        break;
+      case 'startOver':
+        authn.mfaStartOver(req, res, id);
         break;
       case 'checkEmailedCode':
         await ef.codeAct(req, res, id, String(body.code || ''));

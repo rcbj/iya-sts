@@ -5,7 +5,7 @@ nav_order: 3
 
 # Configuration
 
-> **Development mode only (#585):** `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/xacml/protected`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
+> **Development mode only (#585):** `/issuer/offer`, `/spnego/protected`, `/krb5/service`, `/krb5/principals`, `/did/generate` are demonstrations — mock, test-control or diagnostic endpoints. A realm in product mode neither serves nor lists them, and answers each as a path nothing is registered on (`Cannot GET …`, 404). The administrative and portal doors that replace them in product are named where each is described below.
 
 **There is exactly one place a setting is read**, `common/config.js`, and one
 table inside it. That is not tidiness — it is what makes the next three sentences
@@ -1978,6 +1978,13 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oidfed.resolveCacheMax` | `STS_OIDFED_RESOLVE_CACHE_MAX` | `1000` | yes | How many resolved Trust Chains a realm keeps; the oldest is dropped for a new one. |
 | `oidfed.clockSkewS` | `STS_OIDFED_CLOCK_SKEW_S` | `60` | yes | The leeway on iat and exp when a federation statement is read (3.2). |
 
+### W3C VC API
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `vcApi.enabled` | `STS_VC_API_ENABLED` | `false` | yes | Serve the W3C CCG Verifiable Credentials API (VCALM) at `/vc-api` in this realm (#598): issue, prove, derive, verify, status changes and DID resolution, behind an access token carrying `vc-api:issue` or `vc-api:verify` in every mode, signing with keys of its own. **Off by default**, because it signs documents its caller wrote; off, every `/vc-api` path answers 501 — the feature is off, the URL is not wrong (as `scim.enabled` and `ssf.enabled` do). [`vc-api.md`](vc-api.md). |
+| `vcApi.maxPerWindow` | `STS_VC_API_MAX_PER_WINDOW` | `600` | yes | How many `/vc-api` calls one client, and one address, may make per `security.rateLimitWindowS` window in a realm; past it, 429 with `Retry-After`. |
+
 ### Kerberos
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
@@ -2093,7 +2100,7 @@ page rather than in a setting.
 | `roles.enforceIssuance` | `STS_ROLES_ENFORCE_ISSUANCE` | `true` | yes | Whether this service ASKS before it issues anything. On, each of the nine kinds of issuance is a XACML request decided by the embedded PEP against a policy; off, nothing is asked and everything is allowed. **On by default costs nothing until an application is narrowed**: one that names no required role requires `EVERYBODY`, everybody holds `EVERYBODY`, and the answer is Permit — so the machinery is always running and always visible, and turning enforcement on for an application is narrowing a list rather than switching on a subsystem that has never run. Off is the way back if a policy edit locks something out. |
 | `roles.maxRoles` | `STS_ROLES_MAX` | `200` | yes | How many role entries `ou=roles` will hold, per trust realm. |
 | `roles.remotePepGroup` | `STS_ROLES_REMOTE_PEP_GROUP` | `remote-peps` | yes | The directory group whose members hold the built-in `REMOTE_PEPS` role, which is what `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat` and `POST /xacml/pip` require. A remote Policy Enforcement Point presenting a client certificate this service VERIFIED is somebody it can NAME; membership of this group is what makes them somebody it lets IN, and the two are kept apart on purpose — **the certificate says who and the group says whether**, so a perfectly valid certificate for the wrong common name is refused while being fully authenticated. Setting it to the empty string means nobody holds the role, which closes those four endpoints to every caller including a correctly configured PEP. |
-| `roles.xacmlUserGroup` | `STS_ROLES_XACML_USER_GROUP` | `xacml-users` | yes | The same arrangement for the built-in `XACML_USER` role, which is what the four XACML endpoints proper require — `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` and `GET /xacml/protected`. **It is a SECOND group and not the same one**, because `/xacml/pep/*` publishes the documents this service enforces its own access with and `POST /xacml/pip` publishes a named person's directory attributes; one group granting both would make admitting a caller to the demonstration surface silently admit it to those. A person is granted the role by being put in this group — one line on `/admin/ldap/directory` or one `ldapmodify` — and it takes effect on the very next request, because membership is resolved at decision time. Setting it to the empty string closes those four endpoints to everybody, which is how to take the XACML surface away without turning `xacml.enabled` off and losing the embedded issuance and access PEPs with it. `xacml.enforceAccess` is the other way, and it opens both sets at once. |
+| `roles.xacmlUserGroup` | `STS_ROLES_XACML_USER_GROUP` | `xacml-users` | yes | The same arrangement for the built-in `XACML_USER` role, which is what the three XACML endpoints proper require — `GET /xacml`, `POST /xacml/pdp` and `GET /xacml/policies`. **It is a SECOND group and not the same one**, because `/xacml/pep/*` publishes the documents this service enforces its own access with and `POST /xacml/pip` publishes a named person's directory attributes; one group granting both would make admitting a caller to the demonstration surface silently admit it to those. A person is granted the role by being put in this group — one line on `/admin/ldap/directory` or one `ldapmodify` — and it takes effect on the very next request, because membership is resolved at decision time. Setting it to the empty string closes those three endpoints to everybody, which is how to take the XACML surface away without turning `xacml.enabled` off and losing the embedded issuance and access PEPs with it. `xacml.enforceAccess` is the other way, and it opens both sets at once. |
 
 ### TOTP MFA
 

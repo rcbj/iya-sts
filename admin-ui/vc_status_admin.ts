@@ -29,8 +29,18 @@
 // It reads with Admin Read and changes with Admin Write.
 //
 // Rule 7: `GET /admin-api/vc-status` answers `statusView()` and `POST
-// /admin-api/vc-status/set` answers `statusAction()`, the two functions the
-// page's JSON and its form answer.
+// /admin-api/vc-status/{action}` answers `statusAction()`, the two functions
+// the page's JSON and its forms answer.
+//
+// **AND `publish` (#598)**, per Bitstring Status List purpose: the W3C suites'
+// "publish the list now", which was a VC API test hook
+// (`/oid4vci/status-lists/bitstring/{purpose}/publish`) until the VC API
+// became a product surface. A list here is COMPUTED ON EVERY READ from the
+// statuses set so far (`vc_status.ts`), so there is nothing to push: the act
+// says so, names what the next fetch will serve, and is recorded. It is an
+// operator's act — Admin Write, beside the per-credential controls — rather
+// than a protocol endpoint any client holding `vc-api:issue` could call,
+// which is what rcbj's decision 2 on #591 moved it for.
 //
 // TYPESCRIPT, AS A CLASS (#50): `caches_admin.ts`'s shape — dependencies
 // through the constructor, `registerRoutes(app)` called by
@@ -58,7 +68,12 @@ const PAGE = '/admin/vc-status';
  * The acts the page's control performs, and the status each sets: suspend (2),
  * reinstate (0) and revoke (1).
  */
-const ACTIONS = { suspend: 2, reinstate: 0, revoke: 1 };
+const ACTIONS = { suspend: 2, reinstate: 0, revoke: 1, publish: -1 };
+
+/**
+ * The Bitstring Status List purposes a `publish` may name.
+ */
+const PURPOSES = ['revocation', 'suspension'];
 
 interface VcStatusAdminDeps {
   log: typeof helpers.log;
@@ -138,14 +153,15 @@ class VcStatusAdmin {
 
   // ---------------------------------------------------------------------------
   // ONE ROW'S STATUS, CHANGED: `{ idx, action }` with action one of
-  // `suspend`, `reinstate`, `revoke`. Answers `{ ok, message }` or a refusal
+  // `suspend`, `reinstate`, `revoke` — or ONE LIST PUBLISHED, `{ purpose,
+  // action: 'publish' }` (#598). Answers `{ ok, message }` or a refusal
   // carrying its code under the Symbol `error_codes.js` reads.
   // ---------------------------------------------------------------------------
   /**
    * Changes one credential's status: suspend, reinstate (from suspended only)
-   * or revoke, which is final.
+   * or revoke, which is final; or publishes one Bitstring Status List.
    *
-   * @param body - `{ idx, action }`
+   * @param body - `{ idx, action }`, or `{ purpose, action: 'publish' }`
    * @param via - which surface asked, for the audit row
    * @returns `{ ok, message }`, or a refusal carrying its error code
    */
@@ -166,8 +182,24 @@ class VcStatusAdmin {
       // here BY reading the list back out of this sentence. "Name an
       // action: …" named them and did not name the action asked for, so the
       // sentence did not match and the check could not run.
-      return refuse('Unknown action "' + action + '". The three are: ' +
+      return refuse('Unknown action "' + action + '". The four are: ' +
                     Object.keys(ACTIONS).join(', ') + '.');
+    }
+    if (action === 'publish') {
+      const purpose = String(b.purpose || '');
+      if (PURPOSES.indexOf(purpose) < 0) {
+        return refuse('Name the list to publish: purpose is one of ' +
+                      PURPOSES.join(', ') + '.');
+      }
+      log.info('vc_status_admin: the ' + purpose + ' Bitstring Status List ' +
+               'was published by ' + via + ' (computed on every read, so ' +
+               'it is current already).');
+      log.debug("Leaving VcStatusAdmin.statusAction(). Published.");
+      return { ok: true, purpose: purpose, published: true,
+               message: 'The ' + purpose + ' Bitstring Status List is ' +
+                        'computed on every read, so it already carries ' +
+                        'every status set here: the next fetch of it serves ' +
+                        'them, signed afresh.' };
     }
     if (!/^\d+$/.test(idx)) {
       return refuse('Name a status-list index, as the list gives it.');

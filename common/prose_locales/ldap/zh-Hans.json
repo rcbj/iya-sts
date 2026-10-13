@@ -1784,8 +1784,8 @@
     "text": "如果 PEP 提供了地址，变更提醒 POST 到这里。提醒永远不是机制本身——PEP 按自己的间隔拉取，即使没有它也会趋于一致——因此 URL 缺失、被拒绝或无法访问，只会增加延迟，别无其他代价。"
   },
   "xacmlPeps.schema.attributes.xacmlPepBias.what": {
-    "en": "b30e6c33ace1aeea",
-    "text": "远程 PEP 报告其正在使用的偏向。由它报告，绝不在此设置：xacml.pepBias 管辖的是 /xacml/protected 上的嵌入式 PEP，一个看似能设置远程 PEP 的控件只会悄无声息地什么也不做。"
+    "en": "9d0aed2bdeb99a4b",
+    "text": "远程 PEP 报告其正在使用的偏向。由它报告，绝不在此设置：它是该 PEP 自己的配置（PEP_BIAS），一个看似能设置它的控件只会悄无声息地什么也不做。"
   },
   "xacmlPeps.schema.attributes.xacmlPepResource.what": {
     "en": "b53451dce7081be1",

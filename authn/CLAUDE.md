@@ -132,7 +132,7 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
 | `GET /authn-api/openapi.json` | generated from the table and the zod bodies (`account_api_spec.ts`'s converter) |
 | `GET /authn-api/pending/{id}` | the screen's view, `csrf`, `uiLocales`, a locked person's `preferredLanguage` |
 | `GET /authn-api/pending/{id}/partners` | the chooser's view, the list resolved again; `go` to the screen with fewer than two |
-| `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body; `…/passkey/options` (which mints a challenge and names nobody) is counted per address on a `passkey-options` budget of its own since 2026-10-12, 429 with `Retry-After` past it (`STS-AUTHN-0331`, `tests/authn_api.js` 5i-ii) |
+| `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body; `…/passkey/options` (which mints a challenge and names nobody) is counted per address on a `passkey-options` budget of its own since 2026-10-12, 429 with `Retry-After` past it (`STS-AUTHN-0332`, `tests/authn_api.js` 5i-ii) |
 | `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
 
 **UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
@@ -201,6 +201,36 @@ builders became facts (`mfaView()`, `webauthnFacts()`, `mfaSetupFacts()`,
 | `/authn/mfa-setup` | `setup` | `setup/totp`, `setup/confirm`, `setup/webauthn`, `skip` (Ignore, #246) |
 | `/authn/email-code`, `/authn/email-link` | `email-code`, `email-link` | `email/send`, `email/code` |
 | `/authn/email-link/open` | `email-link-open` | `email-link/open` |
+
+Every page in that table also carries **Start over** (`start-over`, below).
+
+* **START OVER (rcbj, 2026-10-12: "each MFA screen during login should
+  have a back button to start the login over in a graceful manner")**. Every
+  step's page — the five above, the emailed factor's ask, code, waiting and
+  link pages, and the forced password change — draws a Start over button
+  (`WebAuthnMfa.startOver()`, a form of its own); the runtime sends it,
+  whichever page it is on and before the page's own acts, to
+  `POST /authn-api/mfa/{id}/start-over` or, for the password change,
+  `POST /authn-api/password-change/{id}/start-over`. `restartFrom()` is the
+  whole of it: the step is deleted from its store with everything it held
+  (an emailed code's hash, a link's token, an enrolment's secret in
+  progress, the first factor's `amr` and risk assessment), no session is
+  started and no factor counted, and the pending sign-in the step was minted
+  from (`step.authn`, taken out of `pending` when the step began) is put
+  back under its SAME id with a fresh `authn.pendingTtlS` and nothing of the
+  attempt on it (`screenError`, `passkeyChallenge`, `rememberBrowser`
+  cleared). The answer is `next: redirect` to `/authn/login?authn=<id>`, the
+  address a session refused at a step's end already goes to, so the
+  relying party's request completes after the person signs in again. An
+  `authn.sign-in.started-over` audit row records it; a step that has already
+  ended is refused (STS-AUTHN-0331, or the password change's own
+  STS-AUTHN-0144). A step with no record cannot be minted, but if one were,
+  it is ended and the browser sent to the realm's front door, since
+  `/authn/login` is not a destination without a pending record. **The
+  wallet's pages as a second factor are not given one**: they are the
+  wallet surface's, and their own "another way" link returns to the step's
+  page, which has it. `tests/authn_mfa_api.js` section 11 holds it (a
+  mutant that does not put the record back fails 11c, 11d, 11g and 11j).
 
 * **WHAT A PAGE MAY BE DRAWN FOR IS `stepProblem()`**, which both the
   shell's GET (the 400 the page always answered) and the view ask: an

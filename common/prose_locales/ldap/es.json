@@ -1784,8 +1784,8 @@
     "text": "Adónde enviar por POST el aviso de cambios, si el PEP dio una. EL AVISO NUNCA ES EL MECANISMO — un PEP obtiene a su propio intervalo y converge sin esto —, así que una URL ausente, rechazada o inalcanzable cuesta latencia y nada más."
   },
   "xacmlPeps.schema.attributes.xacmlPepBias.what": {
-    "en": "b30e6c33ace1aeea",
-    "text": "El sesgo con el que el PEP remoto informa que se está ejecutando. LO INFORMA ÉL, nunca se define desde aquí: xacml.pepBias rige el PEP INTEGRADO en /xacml/protected y un control que pareciera definir uno remoto no haría nada en silencio."
+    "en": "9d0aed2bdeb99a4b",
+    "text": "El sesgo con el que el PEP remoto informa que funciona. LO INFORMA ÉL, nunca se fija desde aquí: es la propia configuración del PEP (PEP_BIAS), y un control que pareciera fijarlo no haría nada, sin avisar."
   },
   "xacmlPeps.schema.attributes.xacmlPepResource.what": {
     "en": "b53451dce7081be1",

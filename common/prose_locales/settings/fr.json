@@ -5503,6 +5503,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "Des certificats PEM, concaténés, des fournisseurs de portefeuille et des composants de stockage de clés dont cet émetteur croit les attestations de clé : une attestation doit se vérifier avec l’une de ces clés, ou être signée par un certificat (son x5c) émis par l’une d’elles. Vide ne fait confiance à aucun, et une attestation de clé est alors refusée."
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "Servir la W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "Servir la W3C CCG Verifiable Credentials API (VCALM) à /vc-api : un émetteur qui sécurise l'attestation qu'on lui remet (Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019, ecdsa-jcs-2019 et ecdsa-sd-2023, ou une enveloppe VC-JOSE-COSE), un détenteur qui prouve une présentation et dérive une divulgation sélective, un vérificateur d'attestations et de présentations, un service de statut sur les Bitstring Status Lists de ce domaine, et la résolution DID de did:key, did:jwk et du did:web propre à ce domaine. Chaque appel exige un jeton d'accès émis par ce domaine portant vc-api:issue ou vc-api:verify — des portées protégées, émises seulement à un client sur lequel un administrateur les a déclarées — dans tous les modes. Elle signe avec ses propres clés, chacune nommée par son did:key, jamais avec les clés qui signent les jetons de ce domaine. DÉSACTIVÉE PAR DÉFAUT, car elle signe des documents rédigés par son appelant : désactivée, chaque chemin /vc-api répond 501 — la fonctionnalité est désactivée, l'URL n'est pas fausse."
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "Appels VC API qu'un client peut faire par fenêtre de limitation de débit"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "Combien d'appels /vc-api un client — et une adresse — peut faire dans une fenêtre security.rateLimitWindowS, comptés par domaine ; au-delà, un appel est refusé 429 avec Retry-After. SON PROPRE NOMBRE, pour la raison de xacml.pipMaxPerWindow : security.rateLimitPerIdentity vaut cinq, parce qu'il protège une connexion, et un émetteur ou un vérificateur qu'un coordinateur appelle une fois par attestation en serait coupé. Ce qu'il borne, c'est le coût : un appel canonise du JSON-LD et signe ou vérifie, et un client admis pourrait sinon dépenser le CPU de ce service en boucle."
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "Activer Kerberos"
@@ -6346,14 +6362,6 @@
   "xacml.maxPolicies|description": {
     "en": "eae9db3ed7f2d788",
     "text": "Le nombre d’entrées pouvant figurer sous ou=policies. Le même type de limite que portent ou=federations et ou=applications, et pour la même raison : cet annuaire est en mémoire dans le mode de persistance par défaut, et un appelant capable de créer des entrées sans limite peut l’épuiser. Atteindre la limite refuse la CRÉATION et journalise ; cela n’évince jamais rien."
-  },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "Ce que fait le PEP intégré d’un non-Permit"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "C’EST LA DÉCISION DU PEP ET NON CELLE DU PDP, ce qui est toute la raison pour laquelle c’est un paramètre. XACML section 7.2 permet à un PEP d’être biaisé vers le refus (tout ce qui n’est pas Permit est un refus) ou biaisé vers l’autorisation (tout ce qui n’est pas Deny est autorisé), et les déploiements réels diffèrent. Le biais vers le refus est la valeur par défaut, car c’est ce que doit être un PEP qui protège quoi que ce soit ; le biais vers l’autorisation existe pour qu’un client puisse voir ce que l’autre choix fait d’un Indeterminate, le cas sur lequel les deux divergent et que personne ne teste. Mode développement uniquement : son seul lecteur, /xacml/protected, est un point de terminaison de démonstration (#585)."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -7516,8 +7524,8 @@
     "text": "Groupe conférant le rôle XACML_USER"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les quatre endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp, GET /xacml/policies et GET /xacml/protected. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface de démonstration l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces quatre endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
+    "en": "6256e6a60d3799e6",
+    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les trois endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp et GET /xacml/policies. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface de démonstration l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces trois endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

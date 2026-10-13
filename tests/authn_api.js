@@ -134,7 +134,8 @@ function childMain() {
     note(r.status === 200 && mirror('GET /authn/login') &&
          mirror('GET /authn/select-idp') &&
          mirror('GET /authn/password-change') &&
-         mirror('POST /authn/password-change') &&
+         mirror('POST /authn/password-change', 'password-change') &&
+         mirror('POST /authn/password-change', 'start-over') &&
          ['login', 'cancel', 'anonymous', 'email', 'passkey-options',
           'passkey'].every(function (a) {
            return mirror('POST /authn/login', a);

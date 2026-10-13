@@ -3759,10 +3759,6 @@ const SCHEMAS = {
                      'stay REGISTERED and answer 501 rather than 404 — the ' +
                      'feature being off and the URL being wrong are ' +
                      'different sentences to a client.' },
-      pepBias: { type: 'string', enum: ['deny-biased', 'permit-biased'],
-        description: 'THE EMBEDDED PEP\'S SETTING, NOT THE PDP\'S. The two ' +
-                     'biases agree on every Permit and every Deny and differ ' +
-                     'on Indeterminate and NotApplicable.' },
       policies: { type: 'integer',
         description: 'How many are in ou=policies.' },
       enabledPolicies: { type: 'integer' },
@@ -3965,19 +3961,28 @@ const SCHEMAS = {
       obligations: { type: 'array', items: { type: 'string' } },
       advice: { type: 'array', items: { type: 'string' } },
       applicablePolicies: { type: 'array', items: { type: 'string' } },
-      enforcement: openObject('What the EMBEDDED PEP would do.', {
+      enforcement: openObject('What a DENY-BIASED PEP would do — every ' +
+        'embedded PEP\'s bias, and the remote PEP\'s default. The first of ' +
+        '`enforcements`.', {
         allowed: { type: 'boolean' },
-        bias: { type: 'string',
-          description: 'xacml.pepBias. The two biases agree on every Permit ' +
-                       'and every Deny and differ on Indeterminate and ' +
-                       'NotApplicable, which is the case nobody tests.' },
+        bias: { type: 'string', enum: ['deny-biased'] },
         why: { type: 'string',
           description: 'Including the section 7.2 case: a Permit carrying ' +
                        'an obligation this PEP cannot discharge is a ' +
                        'REFUSAL, because allowing it and dropping the ' +
                        'obligation would enforce half a policy and report ' +
                        'success.' }
-      })
+      }),
+      enforcements: { type: 'array',
+        description: 'What a PEP would do under EACH bias, deny-biased then ' +
+                     'permit-biased (#596: the setting that chose one went ' +
+                     'with the demonstration PEP). The two agree on every ' +
+                     'Permit and every Deny and differ on Indeterminate and ' +
+                     'NotApplicable, which is the case nobody tests.',
+        items: openObject('One bias\'s enforcement.', {
+          allowed: { type: 'boolean' },
+          bias: { type: 'string', enum: ['deny-biased', 'permit-biased'] },
+          why: { type: 'string' } }) }
     }),
 
   // WHAT AUTHORIZATION IS DOING, as opposed to what it is configured to do.
@@ -4195,9 +4200,8 @@ const SCHEMAS = {
                        'FAILED NUDGE IS RECORDED: it is invisible from the ' +
                        'receiving end by definition.' },
         bias: { type: 'string',
-          description: 'REPORTED BY THE PEP, never set from here. ' +
-                       'xacml.pepBias governs the EMBEDDED PEP at ' +
-                       '/xacml/protected and nothing else.' },
+          description: 'REPORTED BY THE PEP, never set from here: it is ' +
+                       'the PEP\'s own configuration (PEP_BIAS).' },
         resource: { type: 'string' },
         version: { type: 'string' },
         description: { type: 'string' },

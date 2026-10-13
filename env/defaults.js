@@ -145,7 +145,6 @@ var config = {
     accessPolicy: "access-control",          // Access policy name
     enabled: true,                           // XACML enabled
     maxPolicies: 200,                        // Policies the repository may hold
-    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate
@@ -866,6 +865,12 @@ var config = {
     collectionMaxFetches: 100,                     // Lists fetched per crawl
     collectionMaxAgeS: 86400,                      // Crawl kept for (s)
     collectionCacheS: 300                          // In-process collection kept for (s)
+  },
+
+  // --- W3C VC API ------------------------------------------------------
+  vcApi: {
+    enabled: false,    // Serve the W3C VC API
+    maxPerWindow: 600  // VC API calls one client may make per rate-limit window
   },
 
   // --- Kerberos --------------------------------------------------------

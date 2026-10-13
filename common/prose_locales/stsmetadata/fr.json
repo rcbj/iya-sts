@@ -580,28 +580,28 @@
     "text": "partial : vct, la liaison au détenteur par cnf, et le document de résolution de clé /.well-known/jwt-vc-issuer. Nommer l’émetteur par un DID est une EXTENSION — ce document ne définit aucun mécanisme de signature d’émetteur fondé sur un DID."
   },
   "stsmetadata.specs.vcdm.coverage": {
-    "en": "bb8acc4192f336b1",
-    "text": "partial : l’encodage VC-JWT des attestations VCDM 1.1 (jwt_vc_json) et VCDM 2.0 avec une preuve intégrée (ldp_vc) ; et, aux points de terminaison de test VC-API (#194), chaque MUST du modèle de données vérifié sur une attestation ou une présentation écrite par quelqu’un d’autre, le mode sûr JSON-LD sur les contextes intégrés, et les attestations et présentations enveloppées — conformes à la suite de tests W3C VC Data Model 2.0."
+    "en": "9ea60338e6f757a1",
+    "text": "partial: l'encodage VC-JWT des attestations VCDM 1.1 (jwt_vc_json) et des attestations VCDM 2.0 avec une preuve intégrée (ldp_vc) ; et, à la W3C VC API (#194), chaque MUST du modèle de données vérifié sur une attestation ou une présentation écrite par quelqu'un d'autre, le mode sûr JSON-LD sur les contextes embarqués, et les attestations et présentations enveloppées — tenu à la suite de tests W3C VC Data Model 2.0."
   },
   "stsmetadata.specs.di-jcs.coverage": {
-    "en": "f0d7755e83750914",
-    "text": "partial : la vérification (et la signature, pour les tests) de la preuve d’un détenteur sur une VerifiablePresentation — P-256 et P-384, Ed25519, ainsi que ML-DSA-44 et SLH-DSA-SHA2-128s du brouillon Quantum-Resistant Cryptosuites — avec les méthodes de vérification did:jwk et did:key ; et la signature et la vérification de la preuve de délégation d’un jeton zcap GNAP en Ed25519, ML-DSA-44 ou SLH-DSA-SHA2-128s contre un document de contrôleur Multikey. Aux points de terminaison de test VC-API, les deux suites JCS EC et EdDSA sécurisent et vérifient également des attestations, avec ensembles de preuves et chaînes de preuves (#195, #196). Les suites RDFC relèvent de di-rdfc."
+    "en": "e298f8533eb3ccb0",
+    "text": "partial: vérification (et signature, pour les tests) de la preuve d'un détenteur sur une VerifiablePresentation — P-256 et P-384, Ed25519, et ML-DSA-44 et SLH-DSA-SHA2-128s du brouillon Quantum-Resistant Cryptosuites — avec des méthodes de vérification did:jwk et did:key ; et signature et vérification de la preuve de délégation d'un jeton zcap GNAP en Ed25519, ML-DSA-44 ou SLH-DSA-SHA2-128s contre un document contrôleur Multikey. À la W3C VC API, les deux suites JCS EC et EdDSA sécurisent et vérifient aussi des attestations, avec des ensembles de preuves et des chaînes de preuves (#195, #196). Les suites RDFC sont di-rdfc."
   },
   "stsmetadata.specs.di-rdfc.coverage": {
-    "en": "8578075bfdb2edb4",
-    "text": "full pour l’émission et la vérification aux points de terminaison de test VC-API (#195, #196) : Ed25519, P-256 et P-384, RDFC-1.0 sur les contextes intégrés en mode sûr avec une base nulle, ensembles et chaînes de preuves, VC 1.1 et 2.0 — conformes aux suites de tests W3C EdDSA et ECDSA. Un contexte que ce service ne fournit pas est refusé, jamais récupéré."
+    "en": "024efe640e5df490",
+    "text": "full pour l'émission et la vérification à la W3C VC API (#195, #196) : Ed25519, P-256 et P-384, RDFC-1.0 sur les contextes embarqués en mode sûr avec une base nulle, ensembles et chaînes de preuves, VC 1.1 et 2.0 — tenue aux suites de tests W3C EdDSA et ECDSA. Un contexte que ce service n'embarque pas est refusé, jamais récupéré."
   },
   "stsmetadata.specs.di-ecdsa-sd.coverage": {
     "en": "76ca82ce0b362d38",
     "text": "full pour P-256, la courbe à laquelle la section 3.5.8 fixe une preuve dérivée : preuves de base avec pointeurs obligatoires, preuves dérivées à partir de pointeurs sélectifs quelconques, et leur vérification (#196) — une preuve dérivée de la preuve de base de la spécification elle-même reproduit octet pour octet son vecteur de test, et une preuve dérivée par la bibliothèque de Digital Bazaar est vérifiée ici, et inversement."
   },
   "stsmetadata.specs.vc-jose-cose.coverage": {
-    "en": "c4c0c53d034aeb43",
-    "text": "partial : vc+jwt, vc+sd-jwt et vc+cose ainsi que leurs formes vp, sécurisés et vérifiés aux points de terminaison de test VC-API (#198), les divulgations SD-JWT traitées comme le prévoit la section 7.1 de la RFC 9901 ; les clés par un kid did:key ou did:jwk ou une clé publique nommée par l’appelant, rien n’est récupéré. L’émetteur OID4VCI n’émet pas ces formes (jwt_vc_json est VCDM 1.1), et un Key Binding JWT sur une présentation SD-JWT est signalé, non vérifié."
+    "en": "de44817c598a2283",
+    "text": "partial: vc+jwt, vc+sd-jwt et vc+cose et leurs formes vp, sécurisés et vérifiés à la W3C VC API (#198), les divulgations SD-JWT traitées comme le dit la section 7.1 de la RFC 9901 ; clés par un kid did:key ou did:jwk ou une clé publique nommée par l'appelant, rien n'est récupéré. L'émetteur OID4VCI n'émet pas ces formes (jwt_vc_json est VCDM 1.1), et un Key Binding JWT sur une présentation SD-JWT est signalé, non vérifié."
   },
   "stsmetadata.specs.vc-api.coverage": {
-    "en": "e2e4945d5e72ed8d",
-    "text": "partial, et un CONTRÔLE DE TEST : les opérations issue, verify, prove, derive et status que pilotent les suites de tests du W3C, sur les suites cryptographiques, les clés et les listes de statut propres à ce service, dans un domaine de développement uniquement, derrière un jeton d’accès portant vc-api:issue ou vc-api:verify. Pas d’autorisation zcap, pas de workflows, pas de stockage de justificatifs."
+    "en": "d8ffeba3e97815b9",
+    "text": "partial: les services d'émetteur (issue), de détenteur (prove, derive), de vérificateur (attestations et présentations) et de statut, sur les suites cryptographiques, les listes de statut et des clés propres à la VC API de ce service, DÉSACTIVÉE tant qu'un domaine ne l'active pas (vcApi.enabled), derrière un jeton d'accès OAuth 2.0 portant vc-api:issue ou vc-api:verify dans tous les modes, à débit limité par client, une option qu'elle ne comprend pas étant refusée. Non construit : l'autorisation zcap, les workflows et échanges, les défis, le stockage d'attestations et de présentations (GET et DELETE de /credentials/{id}), les portées operation:path de VCALM, et des instances d'émetteur configurées par domaine (les instances sont fixes, une par mécanisme de sécurisation et par courbe)."
   },
   "stsmetadata.specs.token-status-list.coverage": {
     "en": "0e654cb76a7429ce",
@@ -624,8 +624,8 @@
     "text": "full pour ce dont Data Integrity a besoin. Les contextes JSON-LD sont EMBARQUÉS (vendored), jamais récupérés : une canonicalisation qui dépendrait d’une récupération sur le réseau ne serait ni reproductible ni sûre."
   },
   "stsmetadata.specs.did-core.coverage": {
-    "en": "3441c40b69d1cf9a",
-    "text": "partial : ce service PUBLIE un document did:web avec deux méthodes de vérification, et résout et déréférence (section 7) did:key, did:jwk et son propre did:web dans les deux représentations JSON aux points de terminaison de test VC-API (#199), soumis à la suite de tests DID du W3C. Aucun autre did:web n’est récupéré ; aucun paramètre DID (service, versionId, …) n’est pris en charge."
+    "en": "a4e9c39575ac8ed8",
+    "text": "partial: ce service PUBLIE un document did:web avec deux méthodes de vérification, et résout et déréférence (section 7) did:key, did:jwk et son propre did:web dans les deux représentations JSON à la W3C VC API (#199), tenu à la suite de tests W3C DID. Aucun autre did:web n'est récupéré ; aucun paramètre DID (service, versionId, …) n'est pris en charge."
   },
   "stsmetadata.specs.did-config.coverage": {
     "en": "2af22c2a3b5244ed",
@@ -746,10 +746,6 @@
   "stsmetadata.endpoints./xacml/policies.what": {
     "en": "606444be2da8fa32",
     "text": "Chaque politique telle que la voit le PDP, DOCUMENTS COMPRIS, avec les problèmes de vérification statique de types de chacune. Les documents sont montrés délibérément, contrairement aux secrets que masque /admin/ldap/* : une politique est une règle plutôt qu’un justificatif, et une règle que personne ne peut lire est une règle que personne ne peut vérifier. QUI PEUT LA LIRE EST UNE AUTRE QUESTION QUE DE SAVOIR SI ELLE EST MASQUÉE, et ceci exige XACML_USER : depuis que les PEP d’accès et d’émission ont été intégrés, ces documents sont ceux avec lesquels ce service décide de ses propres admissions, et remettre à un appelant anonyme les conditions exactes dans lesquelles il laisse entrer les gens n’est pas le même acte que publier une politique de démonstration. Le magasin est ou=policies dans l’annuaire intégré — ce conteneur EST le référentiel."
-  },
-  "stsmetadata.endpoints./xacml/protected.what": {
-    "en": "8b816dccb12ecd15",
-    "text": "Une ressource que ce service protège avec son propre PDP. Prend subject, resource et action comme paramètres de requête, interroge le PDP, et APPLIQUE la réponse — 200 ou 403. C’est là que xacml.pepBias est visible : deny-biased et permit-biased s’accordent sur chaque Permit et chaque Deny et diffèrent sur Indeterminate et NotApplicable, le cas que personne ne teste. Une obligation qu’il ne peut pas exécuter transforme un Permit en refus (section 7.2), la partie que les implémentations omettent. DEUX CONTRÔLES, PORTANT SUR DEUX PERSONNES DIFFÉRENTES : l’APPELANT a besoin de XACML_USER pour le piloter tout court, et le SUJET nommé dans ?subject= est ce sur quoi le PEP applique ensuite la décision. Les séparer permet à un appelant admis de poser la question au sujet de quelqu’un que la politique refuse et de la voir refuser — ce qui est toute la démonstration."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
     "en": "2d66266ac296ab90",
@@ -2559,6 +2555,10 @@
     "en": "3543dc9d779cc445",
     "text": "NON-SPEC (#571). GET répond quel est le compte dont le mot de passe doit changer ; POST enregistre le nouveau et poursuit la connexion."
   },
+  "stsmetadata.endpoints./authn-api/password-change/:id/start-over.what": {
+    "en": "33737b21b65be481",
+    "text": "NON-SPEC (2026-10-12). Le bouton Recommencer du changement de mot de passe imposé : rien n’est modifié, et la connexion en attente qu’il porte est rendue à l’écran de connexion."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id.what": {
     "en": "91b7f4a74c9391a3",
     "text": "NON-SPEC (#572, #573). La vue de la page d’une étape de second facteur ou de facteur par e-mail (?page=), sous forme de faits et sans aucun texte, et le jeton CSRF que portent ses actions ; refusée là où la page ne pourrait jamais être affichée pour l’étape. L’identifiant est une capacité au porteur et n’est jamais journalisé."
@@ -2610,6 +2610,10 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/email-link/open.what": {
     "en": "5280ace174afe50f",
     "text": "NON-SPEC (#573). Le bouton Continuer de la page sur laquelle arrive le lien, uniquement dans le navigateur qui l’a demandé."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/start-over.what": {
+    "en": "612dc63d4e654629",
+    "text": "NON-SPEC (2026-10-12). Le bouton Recommencer de chaque page d’étape : l’étape est terminée avec tout ce qu’elle contenait, aucune session n’est ouverte, et la connexion en attente qu’elle porte est rendue à l’écran de connexion, de sorte que la demande d’origine aboutit toujours."
   },
   "stsmetadata.endpoints./authn/fingerprint.js.what": {
     "en": "ac75feb49bdcac8d",
@@ -2775,10 +2779,6 @@
     "en": "7573076dce7e186e",
     "text": "Là où une partie de confiance envoie par POST le résultat d’une commande _async ou demande un metadata ou un audit_tenant récent, avec en Bearer le callback_token que portait la commande (#151). 204, ou les erreurs de la RFC 6750."
   },
-  "stsmetadata.endpoints./oauth2/commands/mock-rp.what": {
-    "en": "2a38ebbc28a44cef",
-    "text": "NON-SPEC, développement uniquement (#151) : le command_endpoint d’une partie de confiance qui vérifie un Command Token comme le demande la section 9 et répond à chaque commande de compte et de tenant, flux compris ; GET montre ce qu’il détient. 404 en mode produit."
-  },
   "stsmetadata.endpoints./admin-api/claim-providers.what": {
     "en": "9ed9c0d25fe25036",
     "text": "Ce qu’affiche GET /admin/claim-providers, à partir du même appel."
@@ -2843,10 +2843,6 @@
     "en": "4f3a588acce9f5fc",
     "text": "La BitstringStatusListCredential de ce domaine pour la révocation ou la suspension, en application/vc+jwt : une chaîne de bits GZIP de 131 072 entrées, l’index 0 en premier, signée avec la clé des attestations — ou, lorsque Accept demande du JSON-LD ou du JSON et non d’abord le JWT, la même attestation avec une preuve eddsa-rdfc-2022 par la clé Ed25519 du domaine, émise sous son did:key (#197)."
   },
-  "stsmetadata.endpoints./oid4vci/status-lists/bitstring/:purpose/publish.what": {
-    "en": "d39a31a0597ad418",
-    "text": "Le « publier la liste maintenant » des suites W3C. Ici, une liste est calculée à chaque lecture, donc 204 et rien d’autre ; une commande de test, derrière vc-api:issue."
-  },
   "stsmetadata.endpoints./oid4vci/deferred_credential.what": {
     "en": "e734624535a9880a",
     "text": "Récupère une attestation pour laquelle l’émetteur a répondu 202, à l’aide de son transaction_id."
@@ -2900,40 +2896,76 @@
     "text": "La clé BLS12-381 avec laquelle une preuve ldp_vc est vérifiée, sous forme de Multikey. `/bbs/keys/<kid>` est ce vers quoi se déréférence le verificationMethod d’une attestation ldp_vc simple, pour chaque génération active de la clé BBS du domaine (actuelle, suivante, et retirées pendant leur délai de grâce — la clé change avec les clés de signature du domaine, #49) ; `/bbs/keys/1` est l’actuelle. 404 pour toute autre."
   },
   "stsmetadata.endpoints./vc-api/issuers.what": {
-    "en": "e93fbff56e0821df",
-    "text": "Liste NON-SPEC, pour les tâches de la suite : chaque émetteur que propose cet adaptateur — un mécanisme de sécurisation et la clé du domaine avec laquelle il signe — avec son did:key et son point de terminaison. Dans un domaine de développement uniquement ; vc-api:issue."
+    "en": "1aa20d049d9eba6a",
+    "text": "Liste HORS SPÉCIFICATION, la liste d'instances d'émetteur d'un manifeste d'implémentation : chaque émetteur que ce service offre — un mécanisme de sécurisation et la clé VC API avec laquelle il signe — avec son did:key et son point d'accès. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/issuers.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
   },
   "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.what": {
-    "en": "7859cb69187f1427",
-    "text": "Sécurise l’attestation qui lui est remise après avoir vérifié chaque MUST du modèle de données et le mode sûr JSON-LD : une preuve Data Integrity intégrée (eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019 et ecdsa-jcs-2019 sur P-256 et P-384, ecdsa-sd-2023) ou une enveloppe VC-JOSE-COSE (jose-p256, sd-jwt-p256, cose-p256). L’émetteur de l’attestation doit être le did:key de la clé ; options.credentialStatus alloue un index dans les Bitstring Status Lists du domaine. Dans un domaine de développement uniquement ; vc-api:issue. 201 { verifiableCredential }."
+    "en": "76ef67331a4befb1",
+    "text": "Sécurise l'attestation qu'on lui remet après avoir vérifié chaque MUST du modèle de données et le mode sûr JSON-LD : une preuve Data Integrity intégrée (eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019 et ecdsa-jcs-2019 sur P-256 et P-384, ecdsa-sd-2023) ou une enveloppe VC-JOSE-COSE (jose-p256, sd-jwt-p256, cose-p256). L'émetteur de l'attestation doit être le did:key de la clé ; options.credentialStatus alloue un index dans les Bitstring Status Lists du domaine. Signée avec les propres clés de la VC API, jamais avec les clés qui signent les jetons de ce domaine ; une option qu'elle ne comprend pas est refusée. vc-api:issue. 201 { verifiableCredential }."
+  },
+  "stsmetadata.endpoints./vc-api/issuers/:issuer/credentials/issue.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
   },
   "stsmetadata.endpoints./vc-api/credentials/verify.what": {
     "en": "deaad63eadadc515",
     "text": "Le modèle de données, le mode sûr JSON-LD, chaque preuve d’un ensemble et d’une chaîne de preuves (méthodes de vérification did:key et did:jwk, rien n’est récupéré) ou l’enveloppe, et — sur demande, ou s’il est nommé — le statut de l’attestation dans les listes de ce domaine. 200 ou 400 { verified, checks, warnings, errors }. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/credentials/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
+  },
   "stsmetadata.endpoints./vc-api/presentations/verify.what": {
     "en": "5c148622059888d3",
     "text": "La preuve propre de la présentation (authentication, le challenge et le domain demandés) ou son enveloppe (son nonce et son aud), et chaque attestation qu’elle contient, vérifiée comme le fait /vc-api/credentials/verify. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/presentations/verify.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
+  },
   "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.what": {
-    "en": "a10e25570a166392",
-    "text": "Sécurise une présentation sous le did:key de la clé du domaine : une preuve Data Integrity avec le challenge et le domain donnés, ou une enveloppe VC-JOSE-COSE. vc-api:issue."
+    "en": "021b219f3012be78",
+    "text": "Sécurise une présentation en tant que did:key de la clé VC API : une preuve Data Integrity avec le défi et le domaine donnés, ou une enveloppe VC-JOSE-COSE. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/holders/:holder/presentations/prove.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
   },
   "stsmetadata.endpoints./vc-api/credentials/derive.what": {
     "en": "f059d39e5c330e56",
     "text": "Une preuve dérivée ecdsa-sd-2023 à partir d’une preuve de base, révélant les déclarations obligatoires et options.selectivePointers. vc-api:issue."
   },
+  "stsmetadata.endpoints./vc-api/credentials/derive.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
+  },
   "stsmetadata.endpoints./vc-api/credentials/status.what": {
-    "en": "b48e6b20d9d6497f",
-    "text": "Révoque, suspend ou lève la suspension d’une attestation que cet adaptateur a émise avec un statut — l’acte qu’effectue /admin/vc-status, l’un des trois qui désavouent une attestation. Une révocation est définitive. vc-api:issue."
+    "en": "860c7bcc627e7889",
+    "text": "Révoque, suspend ou lève la suspension d'une attestation que cette VC API a émise avec un statut — l'acte que /admin/vc-status accomplit, l'un des trois qui désavouent une attestation. Une révocation est définitive. vc-api:issue."
+  },
+  "stsmetadata.endpoints./vc-api/credentials/status.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
   },
   "stsmetadata.endpoints./vc-api/resolve.what": {
     "en": "83c42724ff6ab588",
     "text": "Le resolve ou resolveRepresentation de la section 7.1 de DID Core (?function=) pour did:key, did:jwk et le did:web propre à ce domaine, renvoyant le résultat de la résolution ; tout autre did:web donne notFound plutôt que d’être récupéré. vc-api:verify."
   },
+  "stsmetadata.endpoints./vc-api/resolve.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
+  },
   "stsmetadata.endpoints./vc-api/dereference.what": {
     "en": "d3e75554e1f05975",
     "text": "DID Core section 7.2 : le document, ou la méthode de vérification que nomme un fragment. vc-api:verify."
+  },
+  "stsmetadata.endpoints./vc-api/dereference.effect": {
+    "en": "d47c04a75b0029c4",
+    "text": "répond 501 tant que vcApi.enabled n'est pas activé dans le domaine"
   },
   "stsmetadata.endpoints./.well-known/did.json.what": {
     "en": "614fbb0376075e4a",
