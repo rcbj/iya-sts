@@ -162,7 +162,7 @@ const SUBSYSTEMS = [
            'common/mode.js, common/version.js, sts_metadata.ts, home/, ' +
            'admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts ' +
            '(STS-CORE-0126), cluster/node_snapshots.ts, ' +
-           'common/heap_collector.ts',
+           'common/request_worker.ts (STS-CORE-0158)',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',

@@ -145,7 +145,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts, common/heap_collector.ts.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts, common/request_worker.ts (STS-CORE-0158).
 
 | Code | What failed | Client sees |
 |---|---|---|
