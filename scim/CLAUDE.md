@@ -1053,8 +1053,21 @@ recovery, which is what makes a cross-region write per event acceptable.
 (`outbound_delivery.ts`'s new `laneOf` hook, per process, inside the kind's
 own limit): `ceil(scimClient.concurrency / pushing cells)`, at least one,
 remembered five seconds per client. In one cell there is no lane, so the
-queue's own limit is the budget, exactly as before. The optional
-`scimClientMaxRequestsPerSecond` the issue mentions is NOT built.
+queue's own limit is the budget, exactly as before.
+
+**THE REQUEST RATE** (`scimClientMaxRequestsPerSecond`, rcbj 2026-10-13):
+off (empty or 0) by default; `rateOf()` is `ceil(rate / pushing cells)`, the
+whole rate in one cell. `throttle()`, at the top of each round of
+`request()`, is the one place it is kept, so every request to the service
+provider — a delivery, a lookup, discovery, a reconciliation page —
+reserves the next slot (1000 / rate ms apart, per client, per process) and
+WAITS for it: a wait inside the one operation sending (`sleep`, replaceable
+by a test), never a refusal and never a timer of the client's own. The
+token endpoint is the authorization server's, not the provider's, and is
+not counted. Per process rather than per cell: the deliveries of a cell are
+sent by the one node running `scim-client.deliver`, and an act sent on
+another node shares nothing with it — a second store written per request
+would cost a cross-node write per request to save a burst of a few.
 
 **EVERY CELL ON ONE PAGE, AND AN ACT NAMES ITS CELL** (section 7). The
 view stays synchronous and single-cell (`view()`, which `tests/scim_client.js`
@@ -1086,7 +1099,8 @@ this**, deliberately: "an externalId that belongs to no cell" cannot be told
 from "an externalId of somebody else's system" without a record, and the only
 record — the links — is per cell, so deprovisioning on a routing-index miss
 would deactivate other systems' users at a shared provider. Each cell's own
-linked people already reach the provider through that cell.
+linked people already reach the provider through that cell. **It stays
+unbuilt by the owner's decision (rcbj, 2026-10-13).**
 
 ## CELLS: WHICH CELL ANSWERS A SCIM REQUEST (#98, 2026-09-28)
 

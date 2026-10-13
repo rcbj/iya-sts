@@ -210,7 +210,9 @@ const MEMBERS: Array<[string, string]> = [
   ['deprovision', 'scimClientDeprovision'],
   ['reconcileMinutes', 'scimClientReconcileMinutes'],
   // A service deployed as cells (#553).
-  ['jurisdiction', 'scimClientJurisdiction']
+  ['jurisdiction', 'scimClientJurisdiction'],
+  // The request rate (#553, rcbj 2026-10-13): '' or 0 is no limit.
+  ['maxRequestsPerSecond', 'scimClientMaxRequestsPerSecond']
 ];
 const LIST_MEMBERS: Array<[string, string]> = [
   ['scopeGroups', 'scimClientScopeGroups'],
@@ -263,6 +265,8 @@ interface ScimClientsDeps {
   ldapjs(): Json;
   // The HTTP request, replaceable by a test.
   transport?: (options: Json, body: string | null) => Promise<Json>;
+  // A wait INSIDE one operation (the rate limit's), replaceable by a test.
+  sleep?: (ms: number) => Promise<void>;
   // A SERVICE DEPLOYED AS CELLS (#553), each lazily and each replaceable by
   // a test: the cell map, the channel between cells, the routing index, the
   // transfer question, and whether a person is a PROJECTION here (homed
@@ -308,6 +312,9 @@ class ScimClients {
   private readonly pauses: Json;
   // The concurrency budget per client, briefly remembered (#553 section 5).
   private readonly budgets = new Map<string, Json>();
+  // Per client, in this process: when the next request may leave (the
+  // request rate, scimClientMaxRequestsPerSecond).
+  private readonly nextSlot = new Map<string, number>();
 
   /**
    * Builds the client from its dependencies, and its delivery queue.
@@ -652,6 +659,11 @@ class ScimClients {
     if (!/^\d+$/.test(String(c.reconcileMinutes)) || minutes > 525600) {
       out.push('The reconciliation interval is a whole number of minutes, ' +
                '0 to 525600.');
+    }
+    const rate = String(c.maxRequestsPerSecond || '');
+    if (rate && (!/^\d+$/.test(rate) || Number(rate) > 100000)) {
+      out.push('The request rate is a whole number of requests a second, ' +
+               '0 (no limit) to 100000.');
     }
     this.cellProblems(c).forEach(function (one) {
       out.push(one);
@@ -1230,6 +1242,66 @@ class ScimClients {
     log.debug("Entering ScimClients.probeName().");
     log.debug("Leaving ScimClients.probeName().");
     return this.multi() ? this.here() + '#' + row.id : String(row.id);
+  }
+
+  /**
+   * The request rate a client may be sent in this cell (#553, rcbj
+   * 2026-10-13): its `scimClientMaxRequestsPerSecond` divided by the cells
+   * that push to it, rounded up — the whole rate in a service that is one
+   * cell. 0 is no limit.
+   *
+   * @param c - the client row
+   * @returns requests a second, or 0
+   */
+  rateOf(c: Json): number {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.rateOf().");
+    const rate = Number(c && c.maxRequestsPerSecond) || 0;
+    if (rate <= 0) {
+      log.debug("Leaving ScimClients.rateOf(). No limit.");
+      return 0;
+    }
+    const cells = Math.max(1, this.pushingCells(c).length);
+    const answer = Math.max(1, Math.ceil(rate / cells));
+    log.debug("Leaving ScimClients.rateOf(). " + answer);
+    return answer;
+  }
+
+  // Waits, inside the operation that is about to send, until a client's
+  // next request may leave: requests are spaced 1000 / rate ms apart, per
+  // client, in this process. A WAIT, never a refusal, and never a timer of
+  // the client's own — the delivery that is sending is what waits.
+  private async throttle(c: Json): Promise<void> {
+    const { log, realms, now, sleep } = this.deps;
+    log.debug("Entering ScimClients.throttle().");
+    const rate = this.rateOf(c);
+    if (!rate) {
+      log.debug("Leaving ScimClients.throttle(). No limit.");
+      return;
+    }
+    const key = realms.currentId() + '|' + c.identifier;
+    const at = now();
+    const slot = Math.max(at, this.nextSlot.get(key) || 0);
+    this.nextSlot.set(key, slot + 1000 / rate);
+    if (slot > at) {
+      await (sleep || ScimClients.sleep)(slot - at);
+    }
+    log.debug("Leaving ScimClients.throttle(). Waited " + (slot - at) +
+              "ms.");
+  }
+
+  /**
+   * Resolves after a number of milliseconds: a wait inside one request.
+   *
+   * @param ms - how long
+   * @returns a promise settled then
+   */
+  static sleep(ms: number): Promise<void> {
+    helpers.log.debug("Entering ScimClients.sleep().");
+    helpers.log.debug("Leaving ScimClients.sleep().");
+    return new Promise(function (resolve): void {
+      setTimeout(resolve, Math.max(0, ms));
+    });
   }
 
   /**
@@ -1886,6 +1958,10 @@ class ScimClients {
       headers['Content-Type'] = MEDIA_TYPE + '; charset=utf-8';
     }
     for (let round = 0; round < 2; round++) {
+      // THE REQUEST RATE: every request to the service provider — a
+      // delivery, a lookup, discovery, a reconciliation's page — waits for
+      // its slot rather than failing.
+      await this.throttle(c);
       if (c.authMethod === 'basic') {
         const password = applications().scimClientCredentialOf(
           c.identifier, 'scimClientPassword');

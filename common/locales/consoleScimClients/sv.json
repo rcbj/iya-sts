@@ -53,6 +53,7 @@
   "fields.groups": "Valda grupper (en per rad, cn eller DN)",
   "fields.jurisdiction": "Tjänsteleverantörens jurisdiktion",
   "fields.kept": "lämnas tomt behålls det som är satt",
+  "fields.maxRequestsPerSecond": "Högst antal förfrågningar per sekund (tomt eller 0 = ingen gräns)",
   "fields.name": "Namn",
   "fields.notSet": "inte satt",
   "fields.oauthClientAuth": "Autentisering mot tokenslutpunkten",

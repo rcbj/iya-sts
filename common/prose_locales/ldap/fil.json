@@ -1435,6 +1435,10 @@
     "en": "dbdcb711fcb44848",
     "text": "ALING MGA CELL ANG NAGPU-PUSH SA SERVICE PROVIDER, bawat isa ay isang cell id; kapag wala (ang default) ay lahat ng cell. Ang cell na hindi nakalista ay walang ipinapadala para sa client na ito, kaya hindi pinu-push ang mga taong may home cell doon. Hindi pinapansin kapag iisang cell lang ang serbisyo."
   },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "ILANG REQUEST BAWAT SEGUNDO ang pinakamaraming ipinapadala sa service provider: bawat delivery, lookup, pagbasa ng discovery at pahina ng reconciliation ay naghihintay ng kanyang pagkakataon sa halip na mabigo. Ang walang laman o 0 (ang default) ay walang limitasyon. Sa isang serbisyong naka-deploy bilang mga cell, ang bawat cell na nagpu-push ay maaaring magpadala nito na hinati sa bilang ng mga ganoong cell, na ini-round up."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "ANG PANGALAN NG ISANG SHARED SIGNALS RECEIVER — kung ano man ang ginamit nito sa pag-authenticate nang gumawa ito ng stream sa /ssf/stream, na siya ring `aud` ng bawat Security Event Token na dala ng stream na iyon. Hindi tulad ng apat na declaration-only na identifier sa itaas nito, ISINUSULAT ito ng protocol: ang paggawa ng stream ay nagtatala ng pagkakita, dahil ang receiver na nag-a-authenticate at pinagkakasunduan ng stream ay eksaktong uri ng pangyayaring umiiral ang registry na ito para hawakan. Wala pa rin itong ipinagkakaloob — ang stream ang nagpapasya kung ano ang nakukuha ng receiver, at may dala itong sariling audience."

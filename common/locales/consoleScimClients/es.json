@@ -53,6 +53,7 @@
   "fields.groups": "Grupos seleccionados (uno por línea, cn o DN)",
   "fields.jurisdiction": "Jurisdicción del proveedor de servicios",
   "fields.kept": "si se deja vacío, se conserva el definido",
+  "fields.maxRequestsPerSecond": "Máximo de solicitudes por segundo (vacío o 0 = sin límite)",
   "fields.name": "Nombre",
   "fields.notSet": "no definido",
   "fields.oauthClientAuth": "Autenticación en el punto de token",

@@ -163,7 +163,10 @@ class ScimClientsPage {
                   c.deprovision || [], r.deprovision || 'deactivate') +
       this.text('reconcileMinutes',
                 t.text('consoleScimClients.fields.reconcileMinutes'),
-                r.reconcileMinutes || '0', '1440') + '</div>' +
+                r.reconcileMinutes || '0', '1440') +
+      this.text('maxRequestsPerSecond',
+                t.text('consoleScimClients.fields.maxRequestsPerSecond'),
+                r.maxRequestsPerSecond, '10') + '</div>' +
       this.area('groups', t.text('consoleScimClients.fields.groups'),
                 list(r.groups), 2, 'engineering') +
       // A SERVICE DEPLOYED AS CELLS (#553): where the service provider is,

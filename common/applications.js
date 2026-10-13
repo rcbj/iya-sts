@@ -3851,6 +3851,15 @@ const SCHEMA = {
             '(the default) means every cell. A cell not listed sends ' +
             'nothing for this client, so the people homed there are not ' +
             'pushed. Ignored when the service is one cell.' },
+    { name: 'scimClientMaxRequestsPerSecond', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'HOW MANY REQUESTS A SECOND the service provider is sent, at ' +
+            'most: every delivery, lookup, discovery read and ' +
+            'reconciliation page waits for its turn rather than failing. ' +
+            'Empty or 0 (the default) is no limit. In a service deployed as ' +
+            'cells each cell that pushes may send this divided by the ' +
+            'number of such cells, rounded up.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -4747,6 +4756,7 @@ const EDITABLE = {
   scimClientReconcileMinutes: 'set',
   scimClientJurisdiction: 'set',
   scimClientCells: 'multi',
+  scimClientMaxRequestsPerSecond: 'set',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -6194,6 +6204,7 @@ const FIELD_EXAMPLES = {
   scimClientReconcileMinutes: '0',
   scimClientJurisdiction: 'eu',
   scimClientCells: 'euc1',
+  scimClientMaxRequestsPerSecond: '10',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',

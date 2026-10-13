@@ -608,7 +608,9 @@ In a service deployed as [cells](cells.md) two more attributes apply (#553):
 `scimClientJurisdiction`, the jurisdiction the service provider is in, which
 each person's home cell puts to the issuance policy before it pushes them;
 and `scimClientCells`, the cells that push to it (empty is every cell). Both
-are ignored in a service that is one cell. See
+are ignored in a service that is one cell. `scimClientMaxRequestsPerSecond`
+holds any client to a request rate (empty or 0 is no limit), split across the
+cells that push. See
 [In a service deployed as cells](scim.md#in-a-service-deployed-as-cells).
 
 ### Certificate enrollment (ACME, EST, SCEP)

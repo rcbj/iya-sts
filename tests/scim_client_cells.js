@@ -179,7 +179,7 @@ function provider(from, options, text) {
   // Time passes as requests are answered, so a change made while a
   // delivery is in flight is LATER than its attempt, as it is in life.
   world.t += 1;
-  sp.requests.push({ from: from, method: options.method,
+  sp.requests.push({ from: from, method: options.method, at: world.t,
                      path: url.pathname + url.search, body: body,
                      headers: options.headers, text: text || '' });
   for (let i = 0; i < sp.fail.length; i++) {
@@ -612,6 +612,19 @@ function makeCell(cellId) {
       beforeSend: function () {
         return Promise.resolve();
       }
+    },
+    // The rate limit's wait, on the shared clock.
+    // Waits that overlap end at their own slots, so a real timer (a
+    // hundredth of the wait) orders them and the clock moves to each end.
+    sleep: function (ms) {
+      const until = world.t + ms;
+      world.slept = (world.slept || 0) + ms;
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          world.t = Math.max(world.t, until);
+          resolve();
+        }, Math.ceil(ms / 100));
+      });
     },
     transport: function (options, text) {
       if (!sp.delayMs) {
@@ -1140,6 +1153,35 @@ async function sharedPause(t, a, b) {
   t.check(sp.maxInFlight.cella === 2 && !!userThere('tia'),
           'F10. the queue holds cell A to its budget: at most 2 requests ' +
           'in flight', sp.maxInFlight);
+
+  // THE REQUEST RATE: 5 a second over two pushing cells is 3 in each.
+  setClient({ scimClientMaxRequestsPerSecond: '5' });
+  const rate = a.instance.rateOf(clientOf(a));
+  const rateMark = sp.requests.length;
+  world.slept = 0;
+  ['uli', 'val', 'wyn'].forEach(function (name) {
+    a.dir.add(name);
+    changed(a, name);
+  });
+  await drain([a]);
+  const times = sp.requests.slice(rateMark).filter(function (r) {
+    return r.from === 'cella';
+  }).map(function (r) {
+    return r.at;
+  });
+  const gaps = times.slice(1).map(function (at, i) {
+    return at - times[i];
+  });
+  t.check(rate === 3 && times.length >= 6 && world.slept > 0 &&
+          Math.min.apply(null, gaps) >= 333 && !!userThere('wyn'),
+          'F11. scimClientMaxRequestsPerSecond 5 over two cells is 3 a ' +
+          'second in each, every request waiting for its slot (never ' +
+          'refused)', JSON.stringify({ rate: rate, gaps: gaps }));
+  setClient({ scimClientMaxRequestsPerSecond: '5',
+              scimClientCells: ['cella'] });
+  t.check(a.instance.rateOf(clientOf(a)) === 5,
+          'F12. one pushing cell has the whole rate');
+  setClient();
   log.debug('Leaving sharedPause().');
 }
 
@@ -1292,6 +1334,10 @@ async function oneCell(t) {
                                  clientId: 'pusher-' + RUN }) === null &&
           !world.pauses.realmMap(realms.currentId()).has('solo'),
           'Z3. and has no lane of its own nor a shared pause');
+  setClient({ scimClientMaxRequestsPerSecond: '5' });
+  t.check(solo.instance.rateOf(solo.instance.get('pusher-' + RUN)) === 5,
+          'Z3b. and the whole request rate');
+  setClient();
   const refused = await solo.instance.act({ action: 'reconcile',
                                             id: 'pusher-' + RUN,
                                             cell: 'cella' },

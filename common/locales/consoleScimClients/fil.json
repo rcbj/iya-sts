@@ -53,6 +53,7 @@
   "fields.groups": "Mga piniling grupo (isa bawat linya, cn o DN)",
   "fields.jurisdiction": "Jurisdiction ng service provider",
   "fields.kept": "kapag iniwang blangko, pananatilihin ang nakatakda",
+  "fields.maxRequestsPerSecond": "Pinakamaraming request bawat segundo (walang laman o 0 = walang limitasyon)",
   "fields.name": "Pangalan",
   "fields.notSet": "hindi nakatakda",
   "fields.oauthClientAuth": "Authentication sa token endpoint",

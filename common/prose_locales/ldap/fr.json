@@ -1435,6 +1435,10 @@
     "en": "dbdcb711fcb44848",
     "text": "LES CELLULES QUI POUSSENT VERS LE FOURNISSEUR DE SERVICES, chacune par son identifiant de cellule ; aucune (la valeur par défaut) signifie toutes les cellules. Une cellule non listée n’envoie rien pour ce client, de sorte que les personnes qui y sont rattachées ne sont pas poussées. Ignoré lorsque le service est une seule cellule."
   },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "LE NOMBRE MAXIMAL DE REQUÊTES PAR SECONDE envoyées au fournisseur de services : chaque livraison, recherche, lecture de découverte et page de réconciliation attend son tour au lieu d’échouer. Vide ou 0 (la valeur par défaut) signifie aucune limite. Dans un service déployé en cellules, chaque cellule qui pousse peut en envoyer cette valeur divisée par le nombre de ces cellules, arrondie au supérieur."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "LE NOM D’UN RÉCEPTEUR SHARED SIGNALS — ce sous quoi il s’est authentifié lorsqu’il a créé un flux sur /ssf/stream, qui est aussi le `aud` de chaque Security Event Token que porte ce flux. Contrairement aux quatre identifiants purement déclaratifs au-dessus, celui-ci EST écrit par le protocole : créer un flux enregistre une observation, car un récepteur qui s’authentifie et obtient un flux est exactement le genre d’événement que ce registre existe pour conserver. Il n’accorde toujours rien — c’est un flux qui décide de ce que reçoit un récepteur, et il porte sa propre audience."

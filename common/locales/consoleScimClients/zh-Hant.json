@@ -53,6 +53,7 @@
   "fields.groups": "所選群組（每行一個，cn 或 DN）",
   "fields.jurisdiction": "服務提供者的司法管轄區",
   "fields.kept": "留空則保留已設定的值",
+  "fields.maxRequestsPerSecond": "每秒最多請求數（留空或 0 = 不限制）",
   "fields.name": "名稱",
   "fields.notSet": "未設定",
   "fields.oauthClientAuth": "權杖端點驗證",

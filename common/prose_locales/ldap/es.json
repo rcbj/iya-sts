@@ -1435,6 +1435,10 @@
     "en": "dbdcb711fcb44848",
     "text": "QUÉ CELDAS ENVÍAN AL PROVEEDOR DE SERVICIOS, cada una por su id de celda; ninguna (el valor predeterminado) significa todas las celdas. Una celda que no figura no envía nada para este cliente, así que las personas con origen en ella no se envían. Se ignora cuando el servicio es una sola celda."
   },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "CUÁNTAS SOLICITUDES POR SEGUNDO se envían como máximo al proveedor de servicios: cada entrega, búsqueda, lectura de descubrimiento y página de conciliación espera su turno en lugar de fallar. Vacío o 0 (el valor predeterminado) significa sin límite. En un servicio desplegado en celdas, cada celda que envía puede enviar este valor dividido entre el número de esas celdas, redondeado hacia arriba."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "CÓMO SE LLAMA UN RECEPTOR DE SHARED SIGNALS — aquello como lo que se autenticó cuando creó un flujo en /ssf/stream, que es también el `aud` de cada Security Event Token que lleva ese flujo. A diferencia de los cuatro identificadores solo declarativos de encima, este SÍ lo escribe el protocolo: crear un flujo registra un avistamiento, porque un receptor que se autentica y obtiene un flujo es exactamente el tipo de evento que este registro existe para guardar. Aun así no concede nada — un flujo es lo que decide qué recibe un receptor, y lleva su propia audiencia."

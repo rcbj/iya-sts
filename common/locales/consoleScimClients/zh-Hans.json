@@ -53,6 +53,7 @@
   "fields.groups": "所选组（每行一个，cn 或 DN）",
   "fields.jurisdiction": "服务提供方的司法辖区",
   "fields.kept": "留空则保留已设置的值",
+  "fields.maxRequestsPerSecond": "每秒最多请求数（留空或 0 = 不限制）",
   "fields.name": "名称",
   "fields.notSet": "未设置",
   "fields.oauthClientAuth": "令牌端点身份验证",

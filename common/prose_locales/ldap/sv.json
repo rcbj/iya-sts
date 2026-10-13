@@ -1435,6 +1435,10 @@
     "en": "dbdcb711fcb44848",
     "text": "VILKA CELLER SOM SKICKAR TILL TJÄNSTELEVERANTÖREN, var och en med sitt cell-id; inga (standardvärdet) betyder alla celler. En cell som inte står med skickar ingenting för den här klienten, så de personer som har sin hemcell där skickas inte. Ignoreras när tjänsten är en enda cell."
   },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "HUR MÅNGA FÖRFRÅGNINGAR PER SEKUND tjänsteleverantören får som mest: varje leverans, uppslagning, upptäcktsläsning och avstämningssida väntar på sin tur i stället för att misslyckas. Tomt eller 0 (standardvärdet) betyder ingen gräns. I en tjänst som driftsätts som celler får varje cell som skickar skicka detta delat med antalet sådana celler, avrundat uppåt."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "VAD EN SHARED SIGNALS-MOTTAGARE HETER — det den autentiserade sig som när den skapade en ström vid /ssf/stream, vilket också är `aud` för varje Security Event Token som den strömmen bär. Till skillnad från de fyra deklarationsidentifierarna ovanför SKRIVS den här av protokollet: att skapa en ström registrerar en observation, eftersom att en mottagare autentiserar sig och beviljas en ström är exakt den sortens händelse som det här registret finns till för. Den beviljar ändå ingenting — en ström är det som avgör vad en mottagare får, och den bär sin egen målgrupp."

@@ -625,6 +625,14 @@ group that leaves the scope is deleted there.
 
 ### Delivery, retries and dead letters
 
+**A client may be held to a request rate**: `maxRequestsPerSecond`
+(`scimClientMaxRequestsPerSecond` on the entry) is the most requests a
+second its service provider is sent. Every request waits for its turn — a
+delivery, an `externalId` lookup, discovery, a reconciliation's page — and
+none fails for it. Empty or `0` (the default) is no limit. The rate is kept by
+each process that sends; in a service deployed as cells each cell that pushes
+may send the rate divided by the number of such cells, rounded up.
+
 Every change the directory makes to a person — created, changed, disabled or
 deleted — and every change to who is in a group queues **one delivery per
 enabled client and per resource**: the person, and the groups they are in.
@@ -783,7 +791,8 @@ recovery. `deliver-now` lifts it for every cell.
 
 **The concurrency budget is shared too.** Each cell sends at most
 `scimClient.concurrency` divided by the number of cells that push to the
-client, rounded up and never less than one, at a time for that client.
+client, rounded up and never less than one, at a time for that client. A
+client's `maxRequestsPerSecond` is split the same way.
 
 **Reconciliation is per cell.** Each cell reconciles the people homed there,
 on its own schedule. It deprovisions only what it linked or holds: a remote
@@ -832,13 +841,11 @@ cell. Only the console and `/admin-api` do.
 * **Send a password**, or this service's own User extension.
 * **Push a group nested in a group** as a member.
 * **Delete what it pushed when a client is removed.**
-* **Limit a client's request rate.** In a service deployed as cells the
-  concurrency is split across the cells; there is no per-second limit to
-  split.
 * **Sweep a service provider for users no cell knows**, in a service deployed
   as cells. Each cell deprovisions only the people it pushed or holds. A
   resource whose `externalId` no cell knows may belong to another system
-  that pushes to the same provider, so it is left alone.
+  that pushes to the same provider, so it is left alone. This was the
+  owner's decision (rcbj, 2026-10-13).
 
 ### Settings
 

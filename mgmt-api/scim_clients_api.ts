@@ -115,6 +115,16 @@ function clientProperties(): Json {
                         description: 'Minutes between scheduled ' +
                                      'reconciliations; 0 is on demand ' +
                                      'only.' },
+    maxRequestsPerSecond: { type: 'string', pattern: '^[0-9]{0,6}$',
+                            description: 'The most requests a second the ' +
+                                         'service provider is sent; every ' +
+                                         'request waits for its turn ' +
+                                         'rather than failing. Empty or 0 ' +
+                                         'is no limit. In a service ' +
+                                         'deployed as cells each pushing ' +
+                                         'cell may send this divided by ' +
+                                         'the pushing cells, rounded up ' +
+                                         '(#553).' },
     jurisdiction: { type: 'string', maxLength: 32,
                     description: 'A service deployed as cells (#553): the ' +
                                  'jurisdiction the service provider is in, ' +
@@ -219,7 +229,8 @@ class ScimClientsApi {
                         'tlsSource', 'tlsCertificate', 'tlsPrivateKey',
                         'caCertificates', 'scopeMode', 'scopeGroups',
                         'scopeFilter', 'groupMode', 'groups', 'deprovision',
-                        'reconcileMinutes', 'jurisdiction', 'cells'];
+                        'reconcileMinutes', 'maxRequestsPerSecond',
+                        'jurisdiction', 'cells'];
     const pick = function (names: string[]): Json {
       const out: Json = {};
       names.forEach(function (name) {
