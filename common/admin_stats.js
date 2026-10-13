@@ -1383,6 +1383,11 @@ function recordSvid(kind, detail) {
 // not here. That is the conservative direction for this caller — it refuses an
 // enrolment it could have allowed, rather than allowing one that creates
 // somebody — and the refusal names the fix.
+//
+// **SINCE #613 THE DOOR ASKS THE DIRECTORY AS WELL** (`authn.ts`'s
+// `knownPerson()`): the restore no longer puts every restored person here, and
+// a register capped at `MAX_USERS` never held a large directory's people
+// anyway, so this answer alone refused most of them.
 /**
  * Says whether this register already holds an identity by a name; asked by the
  * WebAuthn enrolment door in product mode.
@@ -2723,6 +2728,17 @@ function userRecord(identity) {
 // What persists is what somebody typed; what resets is what this process
 // counted. Restoring the counts would make `/admin/metrics` disagree with
 // `/admin/users` about how many authentications this process has seen.
+//
+// **AND SINCE #613 (2026-10-13) THE RESTORE CALLS THIS FOR NOBODY.** Filling
+// the register with every restored person was one synchronous pass per
+// process, linear in the directory — 16 s of blocked event loop per process
+// at 131,546 people — and every note and every eviction past `MAX_USERS` was
+// journalled into this minted store, so each start then wrote ~131K rows to
+// the store and the change log. `/admin/users` has read the DIRECTORY's
+// people itself since #610 (`peopleRows()`), so a restored person is listed
+// as `directory` without a record here. What calls this now is a door that
+// CREATED somebody, and the appliers of another process's create. `restored`
+// is still understood: a record persisted by an earlier build carries it.
 // ---------------------------------------------------------------------------
 /**
  * Adds a person who exists but has not authenticated in this process, such as

@@ -4586,11 +4586,12 @@ const directoryHooks = {
     if (isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
     }
-    // AND THE IDENTITY REGISTER, for `replaceRealm()`'s reason one row at a
-    // time: `/admin/users` reads a different store from this one, and a person
-    // created in another process would otherwise be in the directory here and
-    // absent from the page that lists people. Seeded entries are skipped on
-    // the same argument made at length below.
+    // AND THE IDENTITY REGISTER, one row at a time: a person another process
+    // just made through a door was OBSERVED by this service, and the register
+    // is what `/admin/users` reads for who was seen and how (`knownBy`).
+    // Seeded entries are skipped: being seeded is not an interaction. (The
+    // startup restore no longer fills the register at all — #613, see
+    // `replaceRealm()` below.)
     if (stored.origin !== 'seed') {
       realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
         if (!isPersonEntry(stored)) {
@@ -4601,9 +4602,9 @@ const directoryHooks = {
         // `created`, NOT `restored` (2026-09-08). Those are two different
         // provenances and this applier had been reporting the wrong one.
         //
-        // `restored` means "this person was in a store when this service
-        // started and nobody here saw how they got there" — which is exactly
-        // what the STARTUP restore below reports, and is right there. THIS
+        // `restored` meant "this person was in a store when this service
+        // started and nobody here saw how they got there" — what the STARTUP
+        // restore reported until #613 stopped it reporting anybody. THIS
         // function is the replication applier: the entry was written by a
         // DOOR, in another process, moments ago, in this run. The service
         // watched it happen; only this process did not.
@@ -4745,10 +4746,6 @@ const directoryHooks = {
     // that was deleted in the last run and reseeded in this one, and the
     // person who deleted it would find it back.
     store.clear();
-    // What was put back, walked below for the identity register — the LIST
-    // and not the store, which in a windowed worker holds at most its bound
-    // of these (#349).
-    const restored = [];
     list.forEach(function (row) {
       const stored = storedFromRow(realmId, row);
       if (directoryWindow) {
@@ -4756,11 +4753,6 @@ const directoryHooks = {
       } else {
         store.set(normalizeDn(stored.dn), stored);
       }
-      restored.push(stored);
-    });
-    // A whole realm replaced: its UUID index describes nothing now (#351).
-    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-      uuidIndexes().dirty = true;
     });
     // A whole realm replaced: its UUID index describes nothing now (#351).
     realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
@@ -4773,94 +4765,38 @@ const directoryHooks = {
     touchDirectory();
 
     // -------------------------------------------------------------------
-    // AND THE PEOPLE ARE PUT BACK IN THE IDENTITY REGISTER, WHICH IS A
-    // SEPARATE STORE AND WAS THE FIRST BUG THIS FEATURE HAD.
+    // AND THE IDENTITY REGISTER IS NOT FILLED HERE ANY MORE (#613,
+    // 2026-10-13). IT WAS, FROM 2026-08-27, AND IT COST A NODE ITS START.
     //
-    // `/admin/users`, `/admin-api/users` and the user drill-down do not read
-    // this directory. They read `admin_stats.js`'s identity register, which
-    // until 2026-08-27 could only be filled by somebody AUTHENTICATING — and
-    // that was a complete account of how a person came to be known, because
-    // until then a person could only come to be known that way. A restored
-    // directory is the first thing that ever put an entry under `ou=users`
-    // without a sign-in, and the symptom was exact and misleading: twenty
-    // entries restored, `ldapsearch` and `/admin/ldap/directory` showing all of
-    // them, `/admin/users` reporting `known: 0`. It reads as a failed
-    // restore and is a page reading a different store.
+    // This pass put every restored person into `admin_stats.js`'s register
+    // as `restored`, because `/admin/users` read nothing else and a restored
+    // directory read as `known: 0`. In a windowed process the names came
+    // from the store through the synchronous bridge, a page at a time, and
+    // the whole pass was one synchronous loop: on 8081 (131,546 people,
+    // front + 2 workers) it held the event loop 16.0, 17.7 and 13.7 s, IN
+    // EVERY PROCESS, which made the heartbeat 15 s late (STS-CLUSTER-0025)
+    // and an origin-claim renewal take 22.5 s of a 30 s claim
+    // (STS-STORE-0069). Worse, the register is a MINTED store
+    // (`admin_stats.users`) capped at `MAX_USERS` a realm: every note was
+    // journalled and every eviction past the cap was too, so each process
+    // then flushed ~131K writes and deletes — sealed one by one — into the
+    // store and the change log (the change log moved ~132K positions per
+    // process start), which every other process then pulled. That flush was
+    // the 11.2 s gap after "persistence is postgres" in the front.
     //
-    // They are registered as RESTORED rather than as authenticated —
-    // `noteRestoredIdentity()` argues the distinction and why the counts are
-    // deliberately not brought back with them.
-    //
-    // **THIS IS THE ONE PART OF replaceRealm() THAT ENTERS THE REALM**, and it
-    // is the exception the header above it warns is coming. Everything else
-    // here reaches the store through `entries.realmMap(id)`, which names a
-    // realm directly and needs no ambient one. These two do not have that
-    // shape: `isPersonEntry()` compares against `usersDn()`, and the identity
-    // register is itself a `realms.map()`. Both are ambient by construction,
-    // so this pass runs inside the realm and the rest does not.
+    // Nothing needs it since #610: `/admin/users` and `/admin-api/users`
+    // list the directory's people from the DIRECTORY (`peopleRows()`, a
+    // capped listing and the store's count), so a restored person is on the
+    // page as `directory` without being in the register. The register holds
+    // what THIS service observed — an authentication, a creation through a
+    // door, a person another process just made (`applyEntry()`,
+    // `forgetEntry()`) — and in product mode on postgres it is itself
+    // persisted, so what earlier runs observed comes back with the minted
+    // rows. The one reader that used the register as "does this person
+    // exist", the product-mode WebAuthn enrolment door, asks the directory
+    // as well (authn.ts, `knownPerson()`). ldap/CLAUDE.md has the rest.
     // -------------------------------------------------------------------
-    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-      let people = 0;
-      restored.forEach(function (stored) {
-        if (!isPersonEntry(stored)) {
-          return;
-        }
-        // ---------------------------------------------------------------
-        // A SEEDED PERSON IS SKIPPED, AND THAT IS WHAT KEEPS A RESTORED
-        // PROCESS'S /admin/users IDENTICAL TO A FRESH ONE'S.
-        //
-        // alice, bob and carol are written by seed() on every start, in every
-        // realm, and have never been in the identity register — that page's
-        // own description is "every userid this service has been given as part
-        // of an interaction that SUCCEEDED", and being seeded is not an
-        // interaction. Registering them here would mean a fresh service listed
-        // nobody and the same service after one restart listed three people
-        // who had still done nothing, which is a difference somebody would
-        // reasonably read as a bug.
-        //
-        // So what gets registered is what a fresh process would also have had:
-        // people somebody CREATED (`origin: 'console'`, and the SCIM and
-        // management API doors that share it), people an `ldapadd` wrote, and
-        // people who AUTHENTICATED — whose counts start at zero again either
-        // way, because those are statistics about a process.
-        // ---------------------------------------------------------------
-        if (stored.origin === 'seed') {
-          return;
-        }
-        // The `uid` if there is one, and the DN otherwise. A person written by
-        // any door in this service has a uid; one added by hand with ldapadd
-        // may not, and a person the console cannot name at all is worse than
-        // one it names by DN.
-        const uid = (stored.attributes.uid || [])[0];
-        if (stats.noteKnownIdentity(uid || stored.dn, 'restored')) {
-          people++;
-        }
-      });
-      // -----------------------------------------------------------------
-      // A WINDOWED WORKER'S PEOPLE ARE NOT IN `restored` (#349): it read the
-      // resident entries back and none of the people. The register is filled
-      // from the STORE instead, a page of NAMES at a time — the key, the DN,
-      // the origin and the first `uid`, which is everything the loop above
-      // reads of a person — so the register holds what it holds in a process
-      // that restored the whole directory, and no entry is read whole or
-      // kept. Same rule: under `ou=users`, not seeded, `uid` or else the DN.
-      // -----------------------------------------------------------------
-      if (directoryWindow && directoryWindow.attached()) {
-        people += directoryWindow.eachName(realmId, normalizeDn(usersDn()),
-          function (name) {
-            if (name.origin === 'seed') {
-              return false;
-            }
-            return !!stats.noteKnownIdentity(name.uid || name.dn,
-                                             'restored');
-          });
-      }
-      log.info('ldap: ' + people + ' restored person/people in the "' +
-               realmId + '" realm are known to /admin/users, marked as ' +
-               'restored rather than as having authenticated here — they ' +
-               'have not, in this process.');
-    });
-    log.debug('Leaving replaceRealm(). ' + restored.length +
+    log.debug('Leaving replaceRealm(). ' + list.length +
               ' entry/entries.');
   }
 };
