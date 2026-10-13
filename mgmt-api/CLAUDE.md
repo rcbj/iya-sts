@@ -1453,6 +1453,33 @@ the rest; `tests/tls_connection_page.js` and
 (#597): the open `POST /tls/trust` and `/tls/trust/clear` were deleted, and
 `tests/tools/pep-credential.js` has no fallback.
 
+## `POST /admin-api/node-health/collect-garbage` — NODE HEALTH'S ONE CONTROL (#611, 2026-10-13)
+
+Rule 7's twin of Monitoring → Node Health's Collect buttons, which post to
+it (`mirrors: 'POST /admin/node-health'`): a full V8 garbage collection in
+the answering node's front process (`target: 'front'`), one of its worker
+threads (a `threadId`), or all of them (`all`, the default), answered with
+each isolate's heap before and after and its pause. The handler calls
+`nodeHealthAdmin.collectGarbage()` and nothing else, passes
+`callerNameOf(res)` as the audit row's actor, and turns its `status` and
+`errorCode` into the reply's status and `mark()`. Nothing else it needed was
+new:
+
+* **IT REACHES THE FRONT PROCESS** because its path is under
+  `/admin-api/node-health`, which `request_pool.js`'s `NEVER_DISPATCHED`
+  already names (a segment-boundary prefix).
+* **ADMIN WRITE**, because it is a POST; **A SERVICE OPERATION**, because its
+  `mirrors` is a page in `admin_scope.ts`'s `SERVICE_PAGES`, so a realm's own
+  token is refused (`STS-API-0112`) by `realmTokenRefusal()` as every other
+  service operation is.
+* **ITS EXAMPLE IS RUN** by `sts_admin_api_operations`, which replays every
+  example: `{ target: 'all' }` collects every isolate of the node it reaches,
+  a pause of milliseconds on a test stack.
+
+`admin-ui/CLAUDE.md` (*A full garbage collection, on demand*) argues the
+rest; `tests/node_health_page.js` section 10 and
+`tests/vendored/sts_node_health.js` section 6 hold it.
+
 ## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
 
 `GET /admin-api/tls/trust` (paged with `page` / `per`) and `POST

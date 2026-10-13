@@ -1327,6 +1327,11 @@ const ACTIONS = [
     label: 'A role was deleted' },
   { action: 'roles.describe', category: 'admin',
     label: 'A role\'s description, display name or member types were set' },
+  // MONITORING → NODE HEALTH'S COLLECT BUTTONS (#611): one row per press,
+  // however many isolates it reached. `admin-ui/node_health_admin.ts`.
+  { action: 'node-health.collect-garbage', category: 'admin',
+    label: 'A full garbage collection was run in a process or worker ' +
+           'thread of a node' },
   { action: 'saml2.authnrequest', category: 'protocol',
     label: 'A SAML 2.0 AuthnRequest was refused' },
   { action: 'saml2.artifact.resolve', category: 'protocol',

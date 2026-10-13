@@ -631,6 +631,10 @@
     "en": "6a14636c8aef5de3",
     "text": "Santé des nœuds"
   },
+  "endpoints.route./admin-api/node-health/:action.name": {
+    "en": "00f328f6105fa2a9",
+    "text": "Actions de santé du nœud"
+  },
   "endpoints.route./admin-api/encryption.name": {
     "en": "eb626f73d72649aa",
     "text": "Chiffrement au repos"

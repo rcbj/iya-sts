@@ -686,7 +686,8 @@ const JOBS = [
   // answers the container's CPU and memory (read, or unavailable in a
   // sentence) and every process's memory, the totals the rows' sum, the
   // workers of /admin-api/worker-pools each listed; the page and its
-  // ?format=json; a realm's token is refused. `local: true`: this
+  // ?format=json; a full garbage collection on demand, front, all and one
+  // thread (#611); a realm's token is refused both. `local: true`: this
   // repository's own /admin and /admin-api.
   { file: 'sts_node_health.js',          browser: false, local: true },
   // RISK DATASETS AND THE FAILURE HISTORY (#62 P1, 2026-09-22): an operator

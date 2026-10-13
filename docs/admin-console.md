@@ -1157,9 +1157,24 @@ process in it:
 
 A source that is not there — no cgroup v2, not Linux, no ECS endpoint — is
 said in a sentence rather than drawn as zeros. The figures are **this
-node's**, drawn by its front process. It is read-only, and a realm's own
-administrator is refused it. `GET /admin-api/node-health` answers the same
-figures.
+node's**, drawn by its front process. A realm's own administrator is refused
+it. `GET /admin-api/node-health` answers the same figures.
+
+**Garbage collection on demand.** The page has one control: **Collect garbage
+in every process and worker thread**, above the processes table, and a
+**Collect** button on the front process's row and on each worker thread's.
+Each runs a full V8 garbage collection — in every isolate of this node, or in
+that one — and draws, above the table, each isolate's heap before and after,
+what it freed and how long it paused. Only this node's front process and its
+own worker threads are collected, never another node of a cluster nor the
+protocol debugger's api process. **A full collection stops the thread it runs
+in until it finishes, and in the front process that pauses every listener of
+the node**: it is a diagnostic, for telling memory that is garbage from memory
+that is held, not something to run on a schedule. The buttons are drawn for a
+service administrator who may write (Admin Write), in both modes, and every
+press is recorded in the audit log (`node-health.collect-garbage`).
+`POST /admin-api/node-health/collect-garbage` does the same, with `target`
+`all` (the default), `front` or a worker thread's `threadId`.
 
 ### Every cluster node on both pages
 

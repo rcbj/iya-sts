@@ -76,6 +76,10 @@ const ROLE_OWNERS_PAGE = '/admin/roles/owners';
 
 // AN APPLICATION'S OWNERS TAB (#604), the same arrangement.
 const APPLICATION_OWNERS_PAGE = '/admin/applications/owners';
+
+// MONITORING → NODE HEALTH (#611): its Collect buttons' answer is drawn on
+// the page rather than as a notice.
+const NODE_HEALTH_PAGE = '/admin/node-health';
 // DIRECTORY → POLICIES (#609): a named passkey profile's form searches the
 // realm's applications for its applications box. Its forms post to the page
 // itself, and a press is told apart from their Save by `fgsearch` and
@@ -842,6 +846,18 @@ class WebAnswers {
       const out = WebAnswers.copy(json);
       out.resolution = answer.resolution;
       return { json: out, banner: kit.note(kit.esc(answer.message || '')) };
+    }
+    // A GARBAGE COLLECTION'S FIGURES (#611): Monitoring → Node Health drawn
+    // again in place with each isolate's heap before and after above the
+    // processes table (`state.collected`), where a notice would have said
+    // only the total. A refusal is the strip's, in the server's words.
+    if (page === NODE_HEALTH_PAGE && action === 'collect-garbage') {
+      const out = WebAnswers.copy(json);
+      out.state = Object.assign({}, out.state || {},
+                                { collected: ok ? answer : null });
+      return { json: out,
+               banner: ok ? '' : kit.warn(kit.esc(errors.join(' ') ||
+                                                  'Refused.')) };
     }
     return null;
   }

@@ -157,6 +157,7 @@
   "endpoints.route./admin-api/mail/outbox/:action.name": "Mail outbox actions",
   "endpoints.route./admin-api/worker-pools.name": "Worker pools",
   "endpoints.route./admin-api/node-health.name": "Node health",
+  "endpoints.route./admin-api/node-health/:action.name": "Node health actions",
   "endpoints.route./admin-api/encryption.name": "Encryption at rest",
   "endpoints.route./admin-api/encryption/:action.name": "The data encryption keys' four acts",
   "endpoints.route./admin-api/users/:action.name": "User actions",

@@ -29,7 +29,14 @@
 //   3. THE PAGE draws the sections, and its `?format=json` names the same
 //      front process (on one node);
 //   4. A REALM'S OWN TOKEN is refused it (403): the container is the
-//      process's.
+//      process's — the report and the garbage collection alike (#611);
+//   6. THE GARBAGE COLLECTION (#611): `POST
+//      /admin-api/node-health/collect-garbage` with `front` collects the
+//      front process's main thread, a row with its heap before and after
+//      and its pause; with `all` the front and every worker thread, each a
+//      row or listed as unanswered (on one node, every ready worker thread
+//      `/admin-api/worker-pools` lists); a thread this node does not have is
+//      404 and a malformed target 400; and the press is in the audit log.
 //
 // `local: true` (tests/vendored/MANIFEST.js): it drives this repository's own
 // `/admin` and `/admin-api`, which is tests/CLAUDE.md's first question.
@@ -343,6 +350,16 @@ async function aRealmTokenIsRefused() {
         function () {
           assert.strictEqual(refused.status, 403, refused.text.slice(0, 300));
         });
+  const collect = await call("POST", base + R +
+                             "/admin-api/node-health/collect-garbage",
+                             { headers: { Authorization: "Bearer " + token,
+                                          "Content-Type":
+                                            "application/json" },
+                               body: JSON.stringify({ target: "front" }) });
+  check("POST /admin-api/node-health/collect-garbage with the realm's " +
+        "token is 403 (#611)", function () {
+    assert.strictEqual(collect.status, 403, collect.text.slice(0, 300));
+  });
   log.debug("Leaving aRealmTokenIsRefused().");
 }
 
@@ -421,6 +438,122 @@ async function everyNodeByName() {
   log.debug("Leaving everyNodeByName().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. A FULL GARBAGE COLLECTION, ON DEMAND (#611).
+// ---------------------------------------------------------------------------
+// A row of the answer for an isolate that collected.
+function collectedRow(row) {
+  log.debug("Entering collectedRow().");
+  assert.strictEqual(row.ok, true, JSON.stringify(row));
+  ["heapUsedBeforeBytes", "heapTotalBeforeBytes", "heapUsedAfterBytes",
+   "heapTotalAfterBytes", "durationMs"].forEach(function (name) {
+    assert.ok(isCount(row[name]), name + " is " + JSON.stringify(row[name]));
+  });
+  assert.strictEqual(row.freedBytes,
+                     row.heapUsedBeforeBytes - row.heapUsedAfterBytes,
+                     JSON.stringify(row));
+  log.debug("Leaving collectedRow().");
+}
+
+async function garbageIsCollected() {
+  log.debug("Entering garbageIsCollected().");
+  log.info("=== 6. POST /admin-api/node-health/collect-garbage (#611) ===");
+  const path = "/admin-api/node-health/collect-garbage";
+  const front = await api("POST", path, { target: "front" });
+  check("front: 200, one row, the front process's main thread, its heap " +
+        "before and after and its pause", function () {
+    assert.strictEqual(front.status, 200, front.text.slice(0, 300));
+    assert.strictEqual(front.body.target, "front");
+    assert.strictEqual(front.body.rows.length, 1, front.text.slice(0, 300));
+    const row = front.body.rows[0];
+    assert.ok(row.kind === "process" && row.pid === front.body.pid &&
+              row.role === "front process", JSON.stringify(row));
+    collectedRow(row);
+  });
+  const all = await api("POST", path, {});
+  const threads = (all.body && all.body.rows || []).filter(function (row) {
+    return row.kind === "thread";
+  });
+  check("no target is all: 200, the front first, then " + threads.length +
+        " worker thread(s), each collected or listed as unanswered",
+        function () {
+          assert.strictEqual(all.status, 200, all.text.slice(0, 300));
+          assert.strictEqual(all.body.target, "all");
+          assert.strictEqual(all.body.rows[0].kind, "process");
+          all.body.rows.forEach(function (row) {
+            if (row.ok) {
+              collectedRow(row);
+            } else {
+              assert.ok(row.error, JSON.stringify(row));
+            }
+          });
+          threads.forEach(function (row) {
+            assert.ok(row.pid === all.body.pid && isCount(row.threadId) &&
+                      /worker thread \d+$/.test(row.role),
+                      JSON.stringify(row));
+          });
+          assert.ok(Array.isArray(all.body.unanswered) && all.body.totals &&
+                    all.body.totals.isolates === all.body.rows.length,
+                    JSON.stringify(all.body.totals));
+        });
+  if (EXPECTED_NODES < 2) {
+    const pools = await api("GET", "/admin-api/worker-pools");
+    const ready = [];
+    (pools.body.pools || []).forEach(function (pool) {
+      (pool.workers || []).forEach(function (w) {
+        if (w.ready) {
+          ready.push(w.threadId);
+        }
+      });
+    });
+    const reached = threads.map(function (row) {
+      return row.threadId;
+    }).concat(all.body.unanswered.map(function (u) {
+      return u.threadId;
+    }));
+    check("each of the " + ready.length + " ready worker thread(s) was " +
+          "asked", function () {
+      ready.forEach(function (threadId) {
+        assert.ok(reached.indexOf(threadId) >= 0, threadId + " not in " +
+                  JSON.stringify(reached));
+      });
+    });
+    if (ready.length) {
+      const one = await api("POST", path, { target: String(ready[0]) });
+      check("a threadId collects that thread alone", function () {
+        assert.strictEqual(one.status, 200, one.text.slice(0, 300));
+        assert.strictEqual(one.body.rows.length +
+                           one.body.unanswered.length, 1,
+                           one.text.slice(0, 300));
+      });
+    }
+  } else {
+    log.info("  (a cluster: two requests may reach two front processes, " +
+             "so the workers are not compared)");
+  }
+  const none = await api("POST", path, { target: "999999999" });
+  check("a thread this node does not have is 404", function () {
+    assert.strictEqual(none.status, 404, none.text.slice(0, 300));
+    assert.ok(/no ready worker thread 999999999/.test(
+      (none.body.errors || []).join(" ")), none.text.slice(0, 300));
+  });
+  const bad = await api("POST", path, { target: "everything" });
+  check("a malformed target is 400", function () {
+    assert.strictEqual(bad.status, 400, bad.text.slice(0, 300));
+  });
+  if (EXPECTED_NODES < 2) {
+    const audit = await api("GET", "/admin-api/audit?per=500&action=" +
+                                   "node-health.collect-garbage");
+    const rows = (audit.body && (audit.body.rows || audit.body.events)) || [];
+    check("each press is in the audit log (" + rows.length + " row(s))",
+          function () {
+            assert.strictEqual(audit.status, 200, audit.text.slice(0, 300));
+            assert.ok(rows.length >= 2, audit.text.slice(0, 300));
+          });
+  }
+  log.debug("Leaving garbageIsCollected().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "health-admin-" + STAMP;
@@ -430,6 +563,7 @@ async function main() {
   await everyWorkerIsListed(body);
   await thePageAgrees(consoleClient, body);
   await everyNodeByName();
+  await garbageIsCollected();
   await aRealmTokenIsRefused();
   log.info("sts_node_health: " + checks + " check(s) passed.");
   log.debug("Leaving main().");

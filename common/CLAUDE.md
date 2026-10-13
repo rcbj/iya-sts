@@ -8,6 +8,7 @@ more than one family needs it, not because it felt general.
 |---|---|
 | `compiled_tree.js` | **IS THIS TREE COMPILED (#50, 2026-09-16)?** Lists every `dir/x.ts` with no `x.js` beside it; `server.js` and `tests/run.js` call `refuseUncompiledTree()` first, which exits with `STS-CORE-0093` and says to use the containers. Requires nothing of this service and has no logger, for `config_file.js`'s reason. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
+| `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
@@ -1952,6 +1953,17 @@ worker's `process.memoryUsage()`, `process.cpuUsage()` and uptime, which
 nothing outside the process can read (the heap is in no `/proc` file). Node
 Health's paths are in
 `NEVER_DISPATCHED` for the same reason as Worker Pools'.
+
+**AND A WORKER COLLECTS ITS OWN GARBAGE WHEN ASKED (#611).**
+`collectWorkerGarbage(ids, timeoutMs)` sends `{ collectGarbage, id }` to the
+ready workers named (all, for `null`) over the same channel, and each answers
+`{ collectGarbage, id, pid, collection }` from `request_worker.ts`'s
+`collectGarbage()`: what `heap_collector.ts` measured in that worker's own
+isolate, which nothing else can collect. The answer is `{ asked, answers }`,
+so a caller can tell a worker that was asked and did not answer from one that
+was never asked. Node Health's Collect buttons are the only caller
+(`admin-ui/CLAUDE.md`); `/admin-api/node-health/collect-garbage` is under
+the page's API path, so `NEVER_DISPATCHED` already holds it.
 
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 

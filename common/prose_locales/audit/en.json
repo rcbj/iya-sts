@@ -342,6 +342,7 @@
   "audit.actions.roles.create.label": "A role was created",
   "audit.actions.roles.delete.label": "A role was deleted",
   "audit.actions.roles.describe.label": "A role's description, display name or member types were set",
+  "audit.actions.node-health.collect-garbage.label": "A full garbage collection was run in a process or worker thread of a node",
   "audit.actions.saml2.authnrequest.label": "A SAML 2.0 AuthnRequest was refused",
   "audit.actions.saml2.artifact.resolve.label": "A SAML 2.0 artifact resolution was refused",
   "audit.actions.saml2.attribute-query.label": "A SAML 2.0 attribute query was answered or refused",

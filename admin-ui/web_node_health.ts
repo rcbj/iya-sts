@@ -18,6 +18,18 @@
 // Its methods were `NodeHealthAdmin`'s in `admin-ui/node_health_admin.ts`,
 // moved with their comments; that module still draws the page until the
 // console's cutover, by calling `render()` with its view passed through JSON.
+//
+// ITS ONE CONTROL (#611): a Collect all button above the processes table and
+// a Collect button on the front process's row and on each worker thread's,
+// each a form posted to `/admin/node-health` with `action=collect-garbage`
+// and a `target` — which the runtime sends to `POST
+// /admin-api/node-health/collect-garbage`, the operation that mirrors it.
+// They are drawn only for a reader who may write (`ctx.write`) and only in
+// THIS node's section: another node's section is its snapshot, and its
+// worker threads are that node's front process's to ask. The answer is drawn
+// above the table (`WebAnswers.redraw()` puts it in `state.collected`), one
+// row per isolate, beside the figures read before it. The sentence beside
+// the buttons says what a full collection costs before it is pressed.
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
@@ -36,6 +48,11 @@ const MIB = 1024 * 1024;
 // value's place and the value, escaped by `kit.esc()` as before, put in
 // after. English stays the bytes it was.
 const MARK = '\u0001';
+
+// The page the Collect buttons post to, and their action (#611): the runtime
+// sends them to the operation whose `mirrors` names this page.
+const PAGE = '/admin/node-health';
+const COLLECT_ACTION = 'collect-garbage';
 
 /**
  * Draws Monitoring → Node Health from the answer of `GET
@@ -194,9 +211,27 @@ class NodeHealthPage {
     return html;
   }
 
-  static processesHtml(p: Json, t: Json): string {
+  // `gc` (#611): `{ controls, pid, collected }` — whether this node's Collect
+  // buttons are drawn, the front process's pid (its row is the one whose
+  // `kind` is `process` and whose pid it is), and the answer of the last
+  // collection to draw above the table. Absent: no button, no answer.
+  static processesHtml(p: Json, t: Json, gc?: Json): string {
     const self = this;
     const totals = p.totals;
+    const controls = !!(gc && gc.controls);
+    const collectCell = function (r: Json): string {
+      if (!controls) {
+        return '';
+      }
+      const front = r.kind === 'process' && r.pid === gc.pid;
+      const target = front ? 'front'
+        : (r.kind === 'thread' ? String(r.threadId) : '');
+      return '<td>' + (target
+        ? self.collectForm(target, t.html('consoleNodeHealth.collect'),
+                           'gc-collect-' + target)
+        : '<small>' + t.html('consoleNodeHealth.notCollectable') +
+          '</small>') + '</td>';
+    };
     const html = '<h2 id="processes" data-tab="processes">' +
       t.html('consoleNodeHealth.headProcesses') + '</h2>' +
       this.rows([
@@ -216,6 +251,8 @@ class NodeHealthPage {
                   n: String(totals.isolatesWithHeap) })]
       ]) + kit.note(kit.esc(p.totalsText),
                     t.text('consoleNodeHealth.totalsLabel')) +
+      (controls ? this.collectAllHtml(t) : '') +
+      (gc && gc.collected ? this.collectedHtml(gc.collected, t) : '') +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleNodeHealth.thProcess') + '</th>' +
       '<th>' + t.html('consoleNodeHealth.thResident') + '</th><th>' +
@@ -223,7 +260,9 @@ class NodeHealthPage {
       t.html('consoleNodeHealth.thHeapTotal') + '</th>' +
       '<th>' + t.html('consoleNodeHealth.thExternal') + '</th><th>' +
       t.html('consoleNodeHealth.thArrayBuffers') + '</th><th>' +
-      t.html('consoleNodeHealth.thCpuTime') + '</th></tr>' +
+      t.html('consoleNodeHealth.thCpuTime') + '</th>' +
+      (controls ? '<th>' + t.html('consoleNodeHealth.thCollect') + '</th>'
+                : '') + '</tr>' +
       '</thead><tbody>' +
       p.rows.map(function (r: Json): string {
         const thread = r.kind === 'thread';
@@ -249,7 +288,7 @@ class NodeHealthPage {
                                    r.cpuSystemSeconds)) +
                ' s' + (r.processWide
                  ? '<br><small>' + t.html('consoleNodeHealth.everyThreads') +
-                   '</small>' : '')) + '</td></tr>';
+                   '</small>' : '')) + '</td>' + collectCell(r) + '</tr>';
       }).join('') + '</tbody></table>' +
       // A worker that did not answer is a problem the page reports, and a
       // problem's text stays English (#539).
@@ -261,6 +300,77 @@ class NodeHealthPage {
         }).join('; ') + '.') : '') +
       (p.debuggerNote ? '<p><small>' + kit.esc(p.debuggerNote) +
                         '</small></p>' : '');
+    return html;
+  }
+
+  // ONE COLLECT FORM (#611): the action and the target hidden, the button
+  // the only thing drawn. `class="inline"` keeps it on its row.
+  static collectForm(target: string, label: string, id: string): string {
+    return '<form method="post" action="' + PAGE + '" class="inline">' +
+      '<input type="hidden" name="action" value="' + COLLECT_ACTION + '">' +
+      '<input type="hidden" name="target" value="' + kit.esc(target) +
+      '"><button type="submit" id="' + kit.esc(id) + '">' + label +
+      '</button></form>';
+  }
+
+  // WHAT A COLLECTION COSTS, said before the button is pressed (#611), and
+  // the button that collects in every isolate of this node.
+  static collectAllHtml(t: Json): string {
+    return kit.warn(t.html('consoleNodeHealth.gcWarning')) + '<p>' +
+      this.collectForm('all', t.html('consoleNodeHealth.collectAll'),
+                       'gc-collect-all') + '</p>';
+  }
+
+  // THE LAST COLLECTION'S ANSWER (#611): a row per isolate, its heap before
+  // and after, what it freed and how long its thread stopped; a worker that
+  // did not answer in time listed after. A failed isolate's reason, and a
+  // silent worker's, are the server's words, in English (#539).
+  static collectedHtml(c: Json, t: Json): string {
+    const self = this;
+    const rows: Json[] = c.rows || [];
+    const unanswered: Json[] = c.unanswered || [];
+    const totals = c.totals || {};
+    const html = '<h3 id="gc-result">' +
+      t.html('consoleNodeHealth.gcResultHead') + '</h3><p>' +
+      t.html('consoleNodeHealth.gcResultSummary',
+             { n: String(totals.collected || 0),
+               freed: this.mib(totals.freedBytes),
+               pause: String(totals.longestPauseMs === undefined ||
+                             totals.longestPauseMs === null
+                               ? '—' : totals.longestPauseMs) }) +
+      '</p><table class="grid"><thead><tr><th>' +
+      t.html('consoleNodeHealth.thIsolate') + '</th><th>' +
+      t.html('consoleNodeHealth.thHeapBefore') + '</th><th>' +
+      t.html('consoleNodeHealth.thHeapAfter') + '</th><th>' +
+      t.html('consoleNodeHealth.thFreed') + '</th><th>' +
+      t.html('consoleNodeHealth.thPause') + '</th></tr></thead><tbody>' +
+      rows.map(function (r: Json): string {
+        const who = (r.kind === 'thread'
+          ? t.html('consoleNodeHealth.threadOfPid',
+                   { thread: String(r.threadId), pid: String(r.pid) })
+          : 'pid ' + kit.esc(r.pid)) + '<br><small>' + kit.esc(r.role) +
+          '</small>';
+        if (!r.ok) {
+          return '<tr><td>' + who + '</td><td colspan="4">' +
+            kit.esc(r.error) + '</td></tr>';
+        }
+        return '<tr><td>' + who + '</td><td>' +
+          kit.esc(self.mib(r.heapUsedBeforeBytes)) + '<br><small>' +
+          t.html('consoleNodeHealth.ofSize',
+                 { size: self.mib(r.heapTotalBeforeBytes) }) +
+          '</small></td><td>' +
+          kit.esc(self.mib(r.heapUsedAfterBytes)) + '<br><small>' +
+          t.html('consoleNodeHealth.ofSize',
+                 { size: self.mib(r.heapTotalAfterBytes) }) +
+          '</small></td><td>' + kit.esc(self.mib(r.freedBytes)) +
+          '</td><td>' + kit.esc(r.durationMs) + ' ms</td></tr>';
+      }).join('') + '</tbody></table>' +
+      (unanswered.length ? kit.warn(
+        unanswered.length + ' worker thread(s) did not answer: ' +
+        unanswered.map(function (u: Json): string {
+          return 'thread ' + kit.esc(u.threadId) + ', ' + kit.esc(u.role) +
+            ' (' + kit.esc(u.why) + ')';
+        }).join('; ') + '.') : '');
     return html;
   }
 
@@ -302,7 +412,9 @@ class NodeHealthPage {
 
   // `t` is optional because `node_health_admin.ts` draws one node's
   // sections with this alone, in English (`tests/node_health_page.js`).
-  static html(json: Json, t?: Json): string {
+  // `gc` is `processesHtml()`'s (#611), and only this node's section has
+  // one.
+  static html(json: Json, t?: Json, gc?: Json): string {
     t = t || kit.context().t;
     const cpu = json.cpu;
     const mem = json.memory;
@@ -343,7 +455,9 @@ class NodeHealthPage {
         [t.text('consoleNodeHealth.cpus'), kit.esc(m.cpus), 'os.cpus()']
       ]);
     const html = tiles + about + this.cpuHtml(cpu, t) +
-      this.memoryHtml(mem, t) + this.processesHtml(json.processes, t) +
+      this.memoryHtml(mem, t) +
+      this.processesHtml(json.processes, t,
+                         gc ? Object.assign({ pid: json.pid }, gc) : null) +
       this.ecsHtml(json.ecs, t) + machine;
     return html;
   }
@@ -360,11 +474,15 @@ class NodeHealthPage {
     const own = nodes.filter(function (n: Json): boolean {
       return n.self;
     })[0];
+    // THIS NODE'S CONTROLS (#611): for a reader who may write, and the last
+    // collection's answer, which the runtime kept in the view's `state`.
+    const gc = { controls: !!ctx.write,
+                 collected: (json.state && json.state.collected) || null };
     if (!c.clustered || nodes.length < 2) {
       const html = kit.note(kit.esc(c.text || ''),
                             t.text('consoleNodeHealth.cluster')) +
         (c.readError ? kit.warn(kit.esc(c.readError)) : '') +
-        (own && own.view ? this.html(own.view, t)
+        (own && own.view ? this.html(own.view, t, gc)
                          : nodes[0] && nodes[0].view
                            ? this.html(nodes[0].view, t) : '');
       return html;
@@ -423,7 +541,7 @@ class NodeHealthPage {
         }
         let body = '';
         try {
-          body = self.html(n.view, t);
+          body = self.html(n.view, t, n.self ? gc : null);
         } catch (e) {
           // A snapshot from another version of this page may lack a figure
           // this one draws; the node is still listed, and says so.

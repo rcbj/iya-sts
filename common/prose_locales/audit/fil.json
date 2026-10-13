@@ -1371,6 +1371,10 @@
     "en": "896007dff32a6824",
     "text": "Naitakda ang description, display name o mga member type ng isang role"
   },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "Nagpatakbo ng buong garbage collection sa isang proseso o worker thread ng isang node"
+  },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",
     "text": "May SAML 2.0 AuthnRequest na tinanggihan"

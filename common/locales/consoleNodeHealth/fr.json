@@ -56,7 +56,7 @@
   "ecsCpuWhy": "{pct} des vCPU de la tâche, entre les deux derniers échantillons de l’agent",
   "na": "n/d",
   "tileResident": "Mémoire résidente, tous processus",
-  "about": "Le processeur et la mémoire du conteneur sont lus dans son cgroup (v2), ceux de chaque processus et thread de travail dans le processus ou le thread lui-même, au moment où la page est affichée ; rien n’est conservé sauf l’échantillon CPU précédent. Cette page ne modifie rien.",
+  "about": "Le processeur et la mémoire du conteneur sont lus dans son cgroup (v2), ceux de chaque processus et thread de travail dans le processus ou le thread lui-même, au moment où la page est affichée ; rien n’est conservé sauf l’échantillon CPU précédent. Sa seule commande lance un ramasse-miettes complet à la demande ; rien d’autre ici ne modifie quoi que ce soit.",
   "whatThisPageIs": "À quoi sert cette page",
   "headMachine": "La machine, pas le conteneur",
   "loadAverage": "Charge moyenne",
@@ -74,5 +74,17 @@
   "thState": "État",
   "thAge": "Âge",
   "thisNode": "(ce nœud)",
-  "nodeNamed": "Nœud {name}"
+  "nodeNamed": "Nœud {name}",
+  "thCollect": "Ramasse-miettes",
+  "collect": "Collecter",
+  "collectAll": "Collecter dans chaque processus et thread de travail",
+  "notCollectable": "ni le processus frontal de ce nœud ni l’un de ses threads de travail",
+  "gcWarning": "Un ramasse-miettes complet arrête le thread dans lequel il s’exécute jusqu’à ce qu’il se termine, et dans le processus frontal cela met en pause chaque écouteur de ce nœud. C’est un outil de diagnostic : V8 collecte selon son propre calendrier, et la mémoire qu’un ramassage forcé ne libère pas est retenue, pas inutilisée. Chaque appui est audité.",
+  "gcResultHead": "Mémoire ramassée",
+  "gcResultSummary": "{n} isolat(s) collecté(s), {freed} libéré(s) au total, la plus longue pause {pause} ms. Le tableau ci-dessous a été lu avant le ramassage ; rechargez la page pour le relire.",
+  "thIsolate": "Isolat",
+  "thHeapBefore": "Tas avant",
+  "thHeapAfter": "Tas après",
+  "thFreed": "Libéré",
+  "thPause": "Pause"
 }

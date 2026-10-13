@@ -5116,6 +5116,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'one, and the machine\'s own figures labelled as such; in a ' +
           'cluster every node by name and the totals, ?node= for one ' +
           '(#332). Mirrors GET /admin/node-health.' },
+  { path: '/admin-api/node-health/:action', group: 'Management API',
+    name: 'Node health actions', specs: ['openapi'],
+    what: 'NON-SPEC (#611). collect-garbage, with { target? }: a full V8 ' +
+          'garbage collection in this node\'s front process (front), one ' +
+          'of its worker threads (its threadId) or all of them (all, the ' +
+          'default), each isolate\'s heap before and after and its pause. ' +
+          'A full collection stops the thread it runs in. The page\'s ' +
+          'Collect buttons. Mirrors POST /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +

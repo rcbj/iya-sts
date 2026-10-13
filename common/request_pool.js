@@ -2841,6 +2841,10 @@ function fork(pool, slot) {
         receivePoolStatus(entry, message);
         return;
       }
+      if (message && message.collectGarbage) {
+        receiveCollectGarbage(entry, message);
+        return;
+      }
       if (message && message.status) {
         entry.served = message.served;
       }
@@ -6077,6 +6081,99 @@ function askWorkerPoolStatus(timeoutMs) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A FULL GARBAGE COLLECTION IN EACH WORKER THREAD, ASKED FOR (#611).
+//
+// Monitoring → Node Health's Collect buttons (`admin-ui/node_health_admin.ts`)
+// over the same channel and in the same shape as `{ poolStatus }` above: one
+// `{ collectGarbage }` message to each ready worker named (or to every ready
+// worker), answered with what `common/heap_collector.ts` measured in that
+// worker's own isolate — a worker THREAD is an isolate of its own, so only it
+// can collect its heap. A worker that does not answer within `timeoutMs` is
+// absent from the answers and the caller says so; a collection of a large
+// heap takes a while, which is why the caller's bound is longer than the
+// status question's second.
+// ---------------------------------------------------------------------------
+let nextCollectId = 1;
+const collectWaiters = new Map();
+
+function receiveCollectGarbage(entry, message) {
+  log.debug("Entering receiveCollectGarbage(). pid=" + entry.pid);
+  const waiter = collectWaiters.get(message.id);
+  if (!waiter || waiter.answers[entry.pid]) {
+    log.debug("Leaving receiveCollectGarbage(). Nobody is waiting.");
+    return;
+  }
+  waiter.answers[entry.pid] = message.collection ||
+    { ok: false, error: 'it answered without a collection' };
+  waiter.left--;
+  if (waiter.left <= 0) {
+    waiter.finish();
+  }
+  log.debug("Leaving receiveCollectGarbage().");
+}
+
+/**
+ * Asks ready request and hosted-surface worker threads to run a full garbage
+ * collection of their own isolate, and waits for what each measured.
+ *
+ * @param ids - the threadIds (the pool's `pid` for a worker) to ask, or
+ *   null for every ready worker
+ * @param timeoutMs - how long to wait for the answers
+ * @returns a promise of `{ asked, answers }`: `asked` the threadIds the
+ *   question went to, `answers` `{ [threadId]: collection }`, a worker that
+ *   did not answer in time absent
+ */
+function collectWorkerGarbage(ids, timeoutMs) {
+  log.debug("Entering collectWorkerGarbage().");
+  const wanted = ids ? ids.map(String) : null;
+  const asked = workers.filter(function (one) {
+    return one.ready && one.child && one.child.connected &&
+           (!wanted || wanted.indexOf(String(one.pid)) >= 0);
+  });
+  if (!asked.length) {
+    log.debug("Leaving collectWorkerGarbage(). No worker to ask.");
+    return Promise.resolve({ asked: [], answers: {} });
+  }
+  const id = nextCollectId++;
+  log.debug("Leaving collectWorkerGarbage(). Asked " + asked.length + ".");
+  return new Promise(function (resolve) {
+    const sent = [];
+    const waiter = { answers: {}, left: asked.length,
+                     finish: function () {} };
+    // Unreferenced, for `askWorkerPoolStatus()`'s reason.
+    const timer = setTimeout(function () {
+      waiter.finish();
+    }, timeoutMs);
+    if (timer.unref) {
+      timer.unref();
+    }
+    waiter.finish = function () {
+      log.debug("Entering finish().");
+      clearTimeout(timer);
+      collectWaiters.delete(id);
+      resolve({ asked: sent, answers: waiter.answers });
+      log.debug("Leaving finish().");
+    };
+    collectWaiters.set(id, waiter);
+    asked.forEach(function (one) {
+      try {
+        one.child.send({ collectGarbage: true, id: id });
+        sent.push(one.pid);
+      } catch (e) {
+        log.debug("Caught in collectWorkerGarbage(): " +
+                  ((e && e.message) || e));
+        // A channel that closed between the filter and the send: that
+        // worker is going, was not asked, and is not waited for.
+        waiter.left--;
+      }
+    });
+    if (waiter.left <= 0) {
+      waiter.finish();
+    }
+  });
+}
+
 // What the pool is doing, for `/admin` and for the tests. A copy, so a reader
 // cannot reach into the live entries.
 /**
@@ -6225,6 +6322,9 @@ module.exports = {
   // Monitoring → Worker Pools (#327): each request worker's own
   // post-quantum pool, asked for over the channel.
   askWorkerPoolStatus: askWorkerPoolStatus,
+  // Monitoring → Node Health's Collect buttons (#611): a full garbage
+  // collection in each worker thread, asked for over the channel.
+  collectWorkerGarbage: collectWorkerGarbage,
   reset: reset,
   middleware: middleware,
   setServerCertificate: setServerCertificate,
