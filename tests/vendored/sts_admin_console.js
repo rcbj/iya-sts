@@ -4267,6 +4267,9 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
 // ---------------------------------------------------------------------------
 async function theTruststorePageAddsAndRemoves(driver) {
   log.debug("Entering theTruststorePageAddsAndRemoves().");
+  // `admin-ui/web_pages.ts`' protocolTabs(): the slug of the path, then the
+  // tab's name.
+  const ANCHORS_TAB = "/admin/tls/trust#tls-trust-tab-anchors";
   log.info("=== /admin/tls/trust: add a minted CA, remove it by its row ===");
   const credentials = require("../tools/pep-credential.js");
   const label = "console-truststore-" + names.runStamp().toLowerCase()
@@ -4315,7 +4318,13 @@ async function theTruststorePageAddsAndRemoves(driver) {
         outcomeOf(landed, "error"));
     });
 
-    const redrawn = await open(driver, root("/admin/tls/trust"));
+    // THE ANCHORS ARE A TAB (rcbj, 2026-10-12): the page opens on its
+    // Metadata tab and `innerText` leaves a hidden panel out, so a read-back
+    // of the bare page could never find the row. It is opened at the
+    // anchors tab, as a person clicking it does — and so is the read-back
+    // after the remove, where a hidden panel would let "gone" pass
+    // whatever the list held.
+    const redrawn = await open(driver, root(ANCHORS_TAB));
     const afterAdd = await held();
     check("the CA comes back on the page AND through the API", function () {
       assert.ok(redrawn.text.indexOf(label) >= 0 &&
@@ -4333,7 +4342,7 @@ async function theTruststorePageAddsAndRemoves(driver) {
     });
     const removedAt = await driver.getCurrentUrl();
     const afterRemove = await held();
-    const removedPage = await open(driver, root("/admin/tls/trust"));
+    const removedPage = await open(driver, root(ANCHORS_TAB));
     check("the row button removed exactly that CA and nothing else",
           function () {
       assert.strictEqual(outcomeOf(removedAt, "error"), "",
