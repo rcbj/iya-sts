@@ -1320,7 +1320,7 @@ function childMain() {
          'on Metadata only',
          'endpoints=' + vcExpectedEndpoints.length);
     note(vcTabs['vc-tab-metadata'][1].indexOf(
-           'The credential issuer at') >= 0 &&
+           'The OpenID4VCI credential issuer,') >= 0 &&
          vcTabs['vc-tab-metadata'][1].indexOf(
            'The OpenID4VP Verifier, whose') >= 0 &&
          vcTabs['vc-tab-metadata'][1].indexOf(
@@ -1328,7 +1328,7 @@ function childMain() {
          vcTabs['vc-tab-metadata'][1].indexOf(
            'href="/issuer/offer"') < 0 &&
          vcTabs['vc-tab-oid4vci'][1].indexOf(
-           'The credential issuer at') < 0 &&
+           'The OpenID4VCI credential issuer,') < 0 &&
          vcTabs['vc-tab-oid4vp'][1].indexOf(
            'The OpenID4VP Verifier, whose') < 0,
          'D-VC-metadata. issuer and verifier guidance and endpoint links are ' +
@@ -1340,7 +1340,7 @@ function childMain() {
     note(!!issuerFold && !!verifierFold &&
          !/<details[^>]*\bopen\b/.test(issuerFold[0]) &&
          !/<details[^>]*\bopen\b/.test(verifierFold[0]) &&
-         issuerFold[0].indexOf('The credential issuer at') >= 0 &&
+         issuerFold[0].indexOf('The OpenID4VCI credential issuer,') >= 0 &&
          verifierFold[0].indexOf('The OpenID4VP Verifier, whose') >= 0,
          'D-VC-metadata-folds. issuer and verifier guidance is collapsed by ' +
          'default in native disclosure sections',

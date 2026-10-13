@@ -13911,7 +13911,7 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0012',
     summary: 'A truststore add found no PEM certificate in what it was sent.',
-    spec: 'HTTP 400 (POST /tls/trust)' },
+    spec: 'HTTP 400 (POST /admin-api/tls/trust/add)' },
   { code: 'STS-TLS-0013',
     summary: 'A strict truststore add was refused whole because a ' +
       'certificate in it could not be read by OpenSSL.',
@@ -13919,7 +13919,8 @@ const CODES = [
   { code: 'STS-TLS-0014',
     summary: 'A truststore add stopped because the truststore holds its ' +
       'maximum number of anchors.',
-    spec: 'HTTP 400 (POST /tls/trust) when nothing was added' },
+    spec: 'HTTP 400 (POST /admin-api/tls/trust/add) when nothing ' +
+      'was added' },
   { code: 'STS-TLS-0015',
     summary: 'A truststore remove named something that is not a SHA-256 ' +
       'fingerprint.',
@@ -16701,42 +16702,42 @@ const CODES = [
   { code: 'STS-GNAP-0300',
     summary: 'A GNAP token model\'s access is not a non-empty array of ' +
       'access rights.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0301',
     summary: 'A GNAP token model\'s access element is an empty reference, ' +
       'or neither a reference string nor a typed object.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0302',
     summary: 'A GNAP token model\'s access element has an array dimension ' +
       'or an identifier of the wrong type.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0303',
     summary: 'A GNAP token model is not valid under RFC 9767 section 2.1 ' +
       '(a missing or malformed member, or a bearer flag and cnf that ' +
       'disagree), when minted or read back.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0304',
     summary: 'A presented GNAP access token has expired.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0305',
     summary: 'A presented GNAP access token is not yet valid (nbf).',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0306',
     summary: 'A presented GNAP access token is not intended for the ' +
       'audience it was presented to.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0307',
     summary: 'A key-bound GNAP access token was presented without that ' +
       'key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0308',
     summary: 'A presented GNAP access token does not grant the access the ' +
       'request needs, possibly because an attenuation narrowed it.',
@@ -16750,34 +16751,34 @@ const CODES = [
   { code: 'STS-GNAP-0311',
     summary: 'A presented macaroon is not unpadded base64url, or not a ' +
       'libmacaroons v2 binary macaroon.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0312',
     summary: 'A presented macaroon\'s identifier is not this service\'s ' +
       'GNAP prefix and a jti, so this service did not mint it.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0313',
     summary: 'A presented macaroon carries a third-party caveat, which ' +
       'needs a discharge macaroon this format does not carry.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0314',
     summary: 'A presented macaroon\'s HMAC chain does not verify under the ' +
       'resource server\'s root key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0315',
     summary: 'A presented macaroon carries a caveat outside this ' +
       'service\'s caveat grammar.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0316',
     summary: 'A presented macaroon\'s authority section is malformed: a ' +
       'caveat out of place or repeated, a required one missing, or not a ' +
       'valid token model.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0317',
     summary: 'A macaroon attenuation was refused: empty, outside the ' +
       'exp/nbf/aud/access grammar, or refused by the library.',
@@ -16795,24 +16796,24 @@ const CODES = [
     summary: 'A presented biscuit is not URL-safe base64, does not parse, ' +
       'or its signature chain does not verify under this authorization ' +
       'server\'s public key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0323',
     summary: 'A presented biscuit\'s authority block is not a GNAP token ' +
       'model (misnumbered or non-JSON access facts, a singular fact ' +
       'repeated, or not exactly one key binding).',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0324',
     summary: 'A biscuit authorization check failed, or the authorizer ' +
       'could not be built for the presentation.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0325',
     summary: 'Biscuit authorization exceeded its run limits (facts, ' +
       'iterations or time), which is a refusal and never a pass.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0326',
     summary: 'A biscuit attenuation block was refused: empty, a parameter ' +
       'of an unsupported type, or rejected by the library.',
@@ -16830,18 +16831,18 @@ const CODES = [
   { code: 'STS-GNAP-0332',
     summary: 'A presented ZCAP is not base64url JSON with exactly the ' +
       'members and @context this format writes.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0333',
     summary: 'A presented ZCAP\'s delegation proof does not verify under ' +
       'this authorization server\'s key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0334',
     summary: 'A presented ZCAP\'s GNAP terms are inconsistent, or it names ' +
       'no invocationTarget.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0335',
     summary: 'The ZCAP libraries refused to sign a capability.',
     spec: '' },
@@ -16849,34 +16850,34 @@ const CODES = [
     summary: 'A presented ZCAP carries a proof of a suite other than the ' +
       'one this realm\'s gnap.zcapCryptosuite names, or not exactly one ' +
       'proof.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0340',
     summary: 'A presented jwt-encrypted GNAP access token is encrypted to ' +
       'a resource server\'s key, which this authorization server does not ' +
       'hold.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0341',
     summary: 'A presented jwt-encrypted GNAP access token does not ' +
       'decrypt.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0342',
     summary: 'A presented JWT GNAP access token\'s signature does not ' +
       'verify.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0343',
     summary: 'A presented JWT is not a GNAP access token: its header typ ' +
       'is not gnap-at+jwt, or its payload typ is not GNAP.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0344',
     summary: 'A GNAP token names an access token format that does not ' +
       'exist.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0400',
     summary: 'A GNAP interaction start link (redirect or app) names no ' +
       'request still waiting for approval.',
@@ -17014,8 +17015,8 @@ const CODES = [
   { code: 'STS-GNAP-0546',
     summary: 'A presented GNAP access token failed its format\'s ' +
       'verification and the format named no more specific code.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0550',
     summary: 'The GNAP demonstration resource server was reached while it ' +
       'is turned off (gnap.demoResourceServer). ' +
@@ -17215,9 +17216,8 @@ const CODES = [
       '(#432).',
     spec: 'RFC 9767 section 4 (invalid_request)' },
   { code: 'STS-GNAP-0734',
-    summary: 'A GNAP access token was presented (the demonstration resource ' +
-      'server, a Shared Signals endpoint) whose resource owner\'s account ' +
-      'is disabled (#432).',
+    summary: 'A GNAP access token was presented (at a Shared Signals ' +
+      'endpoint) whose resource owner\'s account is disabled (#432).',
     spec: 'RFC 9635 section 7.2 (invalid_token)' },
   { code: 'STS-GNAP-0735',
     summary: 'A GNAP access token was presented whose client\'s ' +
@@ -17448,27 +17448,27 @@ const CODES = [
       '{"owner": "<DN>"} (#432 phase 5).',
     spec: '' },
   { code: 'STS-GNAP-0870',
-    summary: 'A demonstration spend would pass the limits of the token\'s ' +
+    summary: 'A spend would pass the limits of the token\'s ' +
       'right for its grant and period (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0871',
-    summary: 'A demonstration spend is outside the window or the repeating ' +
+    summary: 'A spend is outside the window or the repeating ' +
       'interval the token\'s limits allow (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0872',
-    summary: 'A demonstration spend names a receiver the token\'s limits do ' +
+    summary: 'A spend names a receiver the token\'s limits do ' +
       'not (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0873',
-    summary: 'A demonstration spend states no amount, or one in another ' +
+    summary: 'A spend states no amount, or one in another ' +
       'currency, where the token\'s limits count an amount (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0874',
-    summary: 'A demonstration spend\'s body is not readable (#432 phase 5).',
+    summary: 'A spend\'s body is not readable (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (invalid_request, HTTP 400)' },
   { code: 'STS-GNAP-0875',
     summary: 'The running totals of a token\'s limits could not be read from ' +
-      'the store every node shares; the demonstration spend was refused ' +
+      'the store every node shares; the spend was refused ' +
       '(#432 phase 5).',
     spec: 'HTTP 503' },
   { code: 'STS-GNAP-0876',
@@ -17479,7 +17479,7 @@ const CODES = [
       'was deleted; the test peer plays a GNAP resource server',
     spec: 'HTTP 502', retired: true },
   { code: 'STS-GNAP-0877',
-    summary: 'A demonstration spend could not be refunded: a new period ' +
+    summary: 'A spend could not be refunded: a new period ' +
       'had begun, or the store could not be asked (#432 phase 5).',
     spec: '' },
   // ===== DEVICE ============================================================
@@ -17974,9 +17974,8 @@ const CODES = [
       '(xacml.remotePeps).',
     spec: 'HTTP 501 not_implemented' },
   { code: 'STS-XACML-0003',
-    summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies, ' +
-      '/xacml/protected) was refused to a caller that presented no ' +
-      'client certificate.',
+    summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) ' +
+      'was refused to a caller that presented no client certificate.',
     spec: 'HTTP 403 access_denied' },
   { code: 'STS-XACML-0004',
     summary: 'The XACML surface was refused to a caller whose client ' +
@@ -18018,14 +18017,14 @@ const CODES = [
     summary: 'A decision could not be made because the repository\'s root ' +
       'policy does not load; the PDP answered Indeterminate.',
     spec: 'HTTP 200 with decision Indeterminate (XACML status ' +
-      'syntax-error); GET /xacml/protected may then refuse with 403' },
+      'syntax-error); a PEP asking it may then refuse with 403' },
   { code: 'STS-XACML-0013',
     summary: 'The engine reached Indeterminate through a processing or ' +
       'syntax error while evaluating a policy (not a missing ' +
       'attribute).',
     spec: 'HTTP 200 with decision Indeterminate (XACML status ' +
-      'processing-error or syntax-error); GET /xacml/protected may ' +
-      'then refuse with 403' },
+      'processing-error or syntax-error); a PEP asking it may then ' +
+      'refuse with 403' },
   { code: 'STS-XACML-0014',
     summary: 'The embedded demonstration PEP at GET /xacml/protected refused ' +
       'the subject because the decision was not one its bias allows. ' +

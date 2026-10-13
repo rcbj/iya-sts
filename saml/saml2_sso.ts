@@ -5446,7 +5446,6 @@ class Saml2Sso {
            'must be one of the samlAssertionConsumerService values ' +
            'registered on the service provider\'s entry, compared exactly; ' +
            'with none, the registered one is used; and there is no ' +
-           'demonstration ' +
            'fallback.'],
        ['NameIDPolicy/@Format', 'Answered with the format it asks for, ' +
                                 'whatever it is — unless the service ' +

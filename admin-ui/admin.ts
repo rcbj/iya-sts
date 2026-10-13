@@ -1251,10 +1251,8 @@ const SECTIONS = [
                'is the SAML pages next door, because the assertion is built ' +
                'by the same two functions the SAML profiles use.' },
       { path: '/admin/wsfed', label: 'WS-Federation',
-        blurb: 'The passive requestor profile at <code>/wsfed</code>, its ' +
-               'entity ID, and the demonstration relying party that checks a ' +
-               'sign-in ' +
-               'response line by line. The assertion it carries is a SAML ' +
+        blurb: 'The passive requestor profile at <code>/wsfed</code> and ' +
+               'its entity ID. The assertion it carries is a SAML ' +
                '1.1 one, so its issuer and its attributes are configured on ' +
                'the SAML pages — this page says which setting is which and ' +
                'links to them rather than offering a third form onto the ' +
@@ -10047,8 +10045,8 @@ const PROTOCOL_SETTINGS_PAGES = [
     settingsPage: '/admin/oid4vci',
     // The W3C VC API's rows are drawn on this tab too (#598).
     settingsGroup: ['OID4VCI', 'W3C VC API'],
-    lead: '<strong>The credential issuer at <code>/issuer</code>, and the ' +
-          'settings around it.</strong> What a credential CONTAINS is <a ' +
+    lead: '<strong>The OpenID4VCI credential issuer, and the settings ' +
+          'around it.</strong> What a credential CONTAINS is <a ' +
           'href="/admin/vc#vc-tab-claims">Credential claims</a> on the ' +
           'combined page; these are the ' +
           'ones about the exchange — where a holder is sent, which ' +

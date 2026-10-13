@@ -343,8 +343,8 @@ class GnapSpend {
         scope: SCOPE, key: spent.key, period: spent.period,
         amount: spent.amount, count: spent.count });
       if (!answer.refunded) {
-        log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a demonstration ' +
-                 'spend could not be refunded (a new period began, or the ' +
+        log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a spend could ' +
+                 'not be refunded (a new period began, or the ' +
                  'store could not be asked).');
       }
       log.debug("Leaving GnapSpend.refund(). Shared.");
@@ -354,8 +354,8 @@ class GnapSpend {
     if (!held || Number(held.period) !== Number(spent.period) ||
         BigInt(held.amount) < BigInt(spent.amount) ||
         Number(held.count) < Number(spent.count)) {
-      log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a demonstration ' +
-               'spend could not be refunded (a new period began).');
+      log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a spend could ' +
+               'not be refunded (a new period began).');
       log.debug("Leaving GnapSpend.refund(). Nothing to take from.");
       return false;
     }

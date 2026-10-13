@@ -6030,7 +6030,7 @@ const TAG_DESCRIPTIONS = {
   'Credential claims': 'What an issued Verifiable Credential carries.',
   'Credential status': 'The status lists every issued Verifiable ' +
     'Credential names, and suspending, reinstating or revoking one.',
-  'Verifier request': 'What the demonstration OID4VP Verifier asks a wallet ' +
+  'Verifier request': 'What this realm\'s OID4VP Verifier asks a wallet ' +
   'for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +
                      'token issued here last, and how far out a clock may be ' +

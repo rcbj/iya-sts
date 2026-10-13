@@ -1192,7 +1192,8 @@ function report() {
     note: !on
       ? 'tls.trustIssuedClientCertificates is off, so the TLS listeners do ' +
         'not trust this service\'s Root and a certificate issued on the user ' +
-        'portal verifies only where somebody added that Root at /tls/trust.'
+        'portal verifies only where somebody added that Root at ' +
+        '/admin/tls/trust.'
       : (anchor
         ? 'The TLS listeners trust this service\'s Root for client ' +
           'certificates, and a chain through it is an identity only when the ' +

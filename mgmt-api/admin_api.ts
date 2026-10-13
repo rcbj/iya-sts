@@ -11115,7 +11115,7 @@ class AdminApi {
       { method: 'GET', path: BASE + '/verifier-request',
         tag: 'Verifier request',
         operationId: 'getVerifierRequest',
-        summary: 'What the demonstration OID4VP Verifier asks a wallet for',
+        summary: 'What this realm\'s OID4VP Verifier asks a wallet for',
         description: 'The claims, the credential format, and the ' +
                      '`dcql_query` they build — from the function that ' +
                      'builds the real one, so this is the next Authorization ' +
