@@ -22,6 +22,11 @@
 //      without a proof from its key is refused.
 //   6. THE AUTHORIZATION REQUEST: bound_key without dpop_jkt is refused; with
 //      an ML-DSA-44 key the code flow issues an ID Token bound to an AKP key.
+//   7. KEY BINDING OFF (#315): `oauth2.keyBinding` false in the realm.
+//      bound_key leaves discovery; a request carrying it without dpop_jkt
+//      is not refused, the scope is not granted and nothing is bound; a
+//      refresh of the grant bound in 4 still needs its key, and drops the
+//      scope.
 //
 // OWNED HERE (local: true): this repository's authorization server, portal
 // and API. Since #568 the person approves on the STATIC portal: signed in as
@@ -505,7 +510,56 @@ async function test() {
                        pq.jkt);
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran");
+  log.info("=== 7. Key Binding turned off (#315) ===");
+  // What an OpenID Connect Core relying party that knows nothing of Key
+  // Binding does: asks for every advertised scope, with no dpop_jkt and no
+  // DPoP proof. The idptools.com debugger was refused this on testidp.
+  await ok(api + "/config/set", { key: "oauth2.keyBinding", value: false },
+           "turned Key Binding off");
+  const asOff = (await hop(null, "GET", base +
+                           "/.well-known/oauth-authorization-server")).json;
+  const plain = authorizeUrl(client, { scope: "openid bound_key" });
+  const plainLanded = await follow(browser, await hop(browser, "GET",
+                                                       plain.url));
+  const plainCode = new URL(plainLanded.location || RP_REDIRECT)
+    .searchParams.get("code");
+  const plainIssued = await hop(null, "POST", TOKEN, { form: form(client, {
+    grant_type: "authorization_code", code: plainCode,
+    redirect_uri: RP_REDIRECT, code_verifier: plain.verifier }) });
+  check("off: bound_key is not advertised, a request carrying it is not " +
+        "refused, and nothing is granted or bound", function () {
+    assert.ok(asOff.scopes_supported.indexOf("bound_key") < 0);
+    assert.ok(asOff.scopes_supported.indexOf("openid") >= 0);
+    assert.ok(plainCode, plainLanded.status + " " + plainLanded.location);
+    assert.strictEqual(plainIssued.status, 200,
+                       plainIssued.text.slice(0, 300));
+    assert.ok(String(plainIssued.json.scope || "").split(" ")
+      .indexOf("bound_key") < 0, plainIssued.json.scope);
+    assert.notStrictEqual(headerOf(plainIssued.json.id_token).typ,
+                          "dpop+id_token");
+    assert.ok(!payloadOf(plainIssued.json.id_token).cnf);
+  });
+  // The grant bound in section 4 is refreshed with the setting off: its key
+  // check stays (it reads the grant's kb_jkt, not the setting), and the
+  // scope the reply reports no longer holds bound_key.
+  const boundRefresh = (renewed.json && renewed.json.refresh_token) ||
+    issued.json.refresh_token;
+  const offStolen = await hop(null, "POST", TOKEN, { form: form(client, {
+    grant_type: "refresh_token", refresh_token: boundRefresh }),
+    headers: { DPoP: proof(other, TOKEN) } });
+  const offRenewed = await hop(null, "POST", TOKEN, { form: form(client, {
+    grant_type: "refresh_token", refresh_token: boundRefresh }),
+    headers: { DPoP: proof(key, TOKEN) } });
+  check("off: a grant bound before keeps its key check on refresh, and is " +
+        "no longer reported as bound_key", function () {
+    assert.strictEqual(offStolen.json.error, "invalid_dpop_proof",
+                       offStolen.text.slice(0, 200));
+    assert.strictEqual(offRenewed.status, 200, offRenewed.text.slice(0, 300));
+    assert.ok(String(offRenewed.json.scope || "").split(" ")
+      .indexOf("bound_key") < 0, offRenewed.json.scope);
+  });
+
+  assert.ok(checks >= 10, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -513,7 +567,7 @@ async function test() {
 
 new Command()
   .description("RFC 8628 device authorization and OpenID Connect Key " +
-    "Binding (#150), over HTTP.")
+    "Binding (#150), and turning it off (#315), over HTTP.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

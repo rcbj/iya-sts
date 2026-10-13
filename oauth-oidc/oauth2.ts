@@ -1993,10 +1993,10 @@ class OAuth2Server {
       scopes_supported: ['openid', 'profile', 'email', 'address', 'phone',
                          'offline_access',
                          // Native SSO section 5 (#130).
-                         'device_sso',
-                         // OpenID Connect Key Binding (#150), unless
-                         // `oauth2.keyBinding` is off (#315).
-                        ].concat(self.keyBindingOn() ? ['bound_key'] : []).concat(
+                         'device_sso'].concat(
+        // OpenID Connect Key Binding (#150), unless `oauth2.keyBinding` is
+        // off (#315).
+        self.keyBindingOn() ? ['bound_key'] : []).concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -5390,6 +5390,18 @@ class OAuth2Server {
     if (allowedScope !== String(opts.scope == null ? '' : opts.scope)) {
       opts.scope = allowedScope;
     }
+    // `bound_key` IS NOT GRANTED WHILE KEY BINDING IS OFF (#315), whatever
+    // the grant. The authorization endpoint drops it from the request
+    // (vetAuthorizationRequest()); this is the backstop for every other door
+    // — the device flow, CIBA, a token exchange, and a refresh of a grant
+    // made while it was on — so the `scope` member never reports a binding
+    // nothing performed. A grant already bound keeps its key check on
+    // refresh: that reads `kb_jkt`, not the scope.
+    if (!self.keyBindingOn() && hasScope(opts.scope, 'bound_key')) {
+      opts.scope = String(opts.scope).split(/\s+/).filter(function (one) {
+        return one && one !== 'bound_key';
+      }).join(' ');
+    }
     // THE EMBEDDED DEBUGGER'S PERMISSION IS A CONSOLE ADMINISTRATOR'S AND
     // NOBODY ELSE'S (2026-09-13). Here, the one function every grant mints
     // through, so no grant — a refresh after a role was revoked, a token
@@ -6134,11 +6146,6 @@ class OAuth2Server {
     return { claims: out, ignored: ignored };
   }
 
-  // The names one member of a parsed claims request asks for, in the order the
-  // client wrote them. A helper rather than an inline Object.keys() because
-  // three call sites need it and one of them is the console.
-  // OPENID CONNECT KEY BINDING SECTION 2/3 (#150): a grant whose scope
-  // holds `bound_key` needs a DPoP proof whose `c_s256` is the base64url
   // WHETHER OPENID CONNECT KEY BINDING IS PERFORMED in the ambient realm
   // (#315): `oauth2.keyBinding`, on by default. Every place that advertises,
   // refuses for, binds to or checks `bound_key` asks this.
@@ -6155,6 +6162,11 @@ class OAuth2Server {
     return on;
   }
 
+  // The names one member of a parsed claims request asks for, in the order the
+  // client wrote them. A helper rather than an inline Object.keys() because
+  // three call sites need it and one of them is the console.
+  // OPENID CONNECT KEY BINDING SECTION 2/3 (#150): a grant whose scope
+  // holds `bound_key` needs a DPoP proof whose `c_s256` is the base64url
   // SHA-256 of the code it redeems (the authorization code, or the device
   // code). Null when it holds, or when `bound_key` was not granted.
   /**
