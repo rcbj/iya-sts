@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Walang expiry: tinatanggal kasama ng principal, kapag pinalitan ang record nito (pagpapalit ng password o restore), o kapag ito ang least recently used na lampas sa hangganan; hindi kailanman pine-persist."
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "Mga tao at may hawak ng credential, binilang"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "Ilang tao ang itinatakda ng realm, ilan ang may password, lahat ng may hawak na credential attribute (raw), at ilan sa mga pangalang nakitang nag-sign in ang mga tao rito: ang mga tile ng /admin/users sa buong directory nang hindi ito inililista (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "Istruktural: isang bilang at isang bilang ng pangalan bawat realm; hawak ng bilang ang mga taong may credential, hindi ang lahat."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "Hanggang may maisulat sa ilalim ng ou=users ng realm, at sa prosesong humahawak sa directory bilang bintana sa store, nang hindi hihigit sa sampung segundo."
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "Index ng device sa directory"

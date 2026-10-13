@@ -652,7 +652,11 @@ ldif or multi-cell service is unchanged.
     and deletes since (a `count(*)` is linear in the realm's rows — 13–15 ms
     for 29,303 on 8081, measured), and outside a window the realm's KEYS
     walked with an `endsWith`, no entry read — still a walk, said there.
-    `personNamesUpTo(limit)` pages only the first `limit` + 1 people.
+    `personNamesUpTo(limit)` pages only the first `limit` + 1 people;
+    `credentialTallies()` is `countHolding()` (one `count(*) FILTER` over
+    `attr_names`) and `holders()` per credential attribute, and
+    `countPeopleNamed()` is `byKeys` plus one `withNames` —
+    `admin-core/CLAUDE.md`, *the tiles count the directory*.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each
     answer read back through the window and asked the service's own rule, the
     entries changed here and not yet written added: `existingUserEntry()`

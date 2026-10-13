@@ -655,12 +655,9 @@ function body(t, tally) {
           wanted.people > SCAN_LIMIT,
           '(precondition) a mix of credentials, past the scan cap',
           JSON.stringify(wanted));
-  t.check(tiled.factors.withSecond < wanted.withSecond,
-          '7i. where the list\'s own count, over the capped list, is ' +
-          'smaller', tiled.factors.withSecond + ' < ' + wanted.withSecond);
   const roster8 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
   t.equal(JSON.stringify(roster8.directoryCounts), JSON.stringify(wanted),
-          '7j. /admin-api/mfa carries the same tiles');
+          '7i. /admin-api/mfa carries the same tiles');
   log.debug("Leaving body().");
 }
 

@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Aucune expiration : supprimées avec le principal, lorsque son enregistrement est remplacé (un changement de mot de passe ou une restauration), ou lorsqu’il est le moins récemment utilisé au-delà de la limite ; jamais persistées."
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "Personnes et détenteurs d’identifiants, comptés"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "Combien de personnes le domaine définit, combien ont un mot de passe, toutes celles qui ont un attribut d’identifiant (brut), et combien des noms vus à la connexion sont des personnes d’ici : les indicateurs de /admin/users sur tout l’annuaire sans le lister (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "Structurel : un décompte et un décompte de noms par domaine ; le décompte garde les personnes qui ont un identifiant, pas tout le monde."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "Jusqu’à ce que quoi que ce soit soit écrit sous le ou=users du domaine et, dans un processus qui tient l’annuaire comme une fenêtre sur le stockage, dix secondes au plus."
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "Index des appareils de l’annuaire"

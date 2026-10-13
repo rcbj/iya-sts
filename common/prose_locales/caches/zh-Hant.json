@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "不會過期：隨主體一併捨棄、在其記錄被取代時（密碼變更或還原）捨棄，或在超過上限時作為最久未使用者被捨棄；從不持久保存。"
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "人員與認證持有者計數"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "本領域定義了多少人、多少人持有密碼、所有持有認證屬性的人（原始值），以及登入時見過的名稱中有多少是這裡的人員：即 /admin/users 在不列出整個目錄的情況下對整個目錄的統計格（#610）。"
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "結構性：每個領域一份計數與一份名稱計數；計數保存的是持有認證的人，而不是所有人。"
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "直到本領域的 ou=users 下有任何寫入為止；在把目錄當作儲存區窗口持有的程序中，最多十秒。"
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "目錄裝置索引"

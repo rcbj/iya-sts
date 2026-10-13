@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Ingen utgång: släpps tillsammans med principalen, när dess post ersätts (ett lösenordsbyte eller en återställning), eller när den är den minst nyligen använda över gränsen; skrivs aldrig ner beständigt."
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "Personer och innehavare av behörighetsuppgifter, räknade"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "Hur många personer sfären definierar, hur många som har ett lösenord, alla som har ett attribut för behörighetsuppgifter (rått), och hur många av namnen som setts logga in som är personer här: rutorna på /admin/users över hela katalogen utan att lista den (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "Strukturell: en sammanräkning och en namnräkning per sfär; sammanräkningen håller personerna med en behörighetsuppgift, inte alla."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "Tills något under sfärens ou=users skrivs, och i en process som håller katalogen som ett fönster mot lagret högst tio sekunder."
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "Katalogens enhetsindex"
