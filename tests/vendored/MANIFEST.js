@@ -480,6 +480,14 @@ const JOBS = [
   // The portal's /portal/certificates page: a person's own enrollment
   // credentials and certificates, driven with two signed-in browsers.
   { file: 'sts_portal_certificates.js',  browser: false, local: true },
+  // AN OWNER ADMINISTERS WHAT THEY OWN (#607): signed in as the portal with
+  // both resources and the owner scopes, the owner token refreshed for
+  // /admin-api; a role, a group, an application and a service account read
+  // and changed within the access-control policy's owner rule, and refused
+  // outside it — a list, another's object, the last owner, an application's
+  // scopes, an administrator's mark, a person taken off everything, and a
+  // person who owns nothing issued no owner scope.
+  { file: 'sts_portal_owner_edits.js',   browser: false, local: true },
   // THE REAL CLIENTS (#207-#211, 2026-09-26): certbot and lego against
   // ACME, libest's estclient against EST, sscep and micromdm's scepclient
   // against SCEP — each at the version tests/Dockerfile pins, driven as an
