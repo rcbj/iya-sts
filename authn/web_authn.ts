@@ -228,7 +228,8 @@ class AuthnSurface extends WebSurface {
     if (view.fingerprint) {
       this.loadFingerprint();
     }
-    if (view.passkey && this.autofill) {
+    // No username field to fill where none is asked for (#608).
+    if (view.passkey && !view.usernameless && this.autofill) {
       this.armAutofill();
     }
   }

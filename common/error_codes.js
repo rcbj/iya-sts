@@ -6159,6 +6159,12 @@ const CODES = [
       'per-address budget, security.rateLimitPerAddress in ' +
       'security.rateLimitWindowS. No challenge was minted.',
     spec: 'HTTP 429 with Retry-After, { ok: false, next: refused, errors }' },
+  { code: 'STS-AUTHN-0333',
+    summary: 'A sign-in at the sign-in screen named a person where the ' +
+      'passkey policy requires a passkey sign-in with no username ' +
+      '(requireUsernameless, #608): the application signs in with a ' +
+      'passkey alone, and the screen asks for no username.',
+    spec: 'none — the sign-in screen is drawn again' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

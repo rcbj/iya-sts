@@ -56,6 +56,17 @@ class WebAuthnLogin {
   }
 
   /**
+   * The opening of a box's label: `chk`, and `off` beside it where the box
+   * is disabled, which the card draws greyed (#608).
+   *
+   * @param disabled - whether the box in it is disabled
+   * @returns the label's opening tag
+   */
+  static chk(disabled: boolean): string {
+    return '<label class="chk' + (disabled ? ' off' : '') + '">';
+  }
+
+  /**
    * The two passkey boxes, the policy's sentences and the demands' notes —
    * `loginPage()`'s rules, each a fact of the view.
    *
@@ -66,11 +77,14 @@ class WebAuthnLogin {
   static keyBoxes(v: Json, t: Json): string {
     const keys = v.keys || {};
     const d = v.demands || {};
-    let out = keys.enabled ? '' : '<label class="chk"><input type="checkbox" ' +
+    const chk = WebAuthnLogin.chk;
+    let out = keys.enabled ? '' : chk(true) + '<input type="checkbox" ' +
       'disabled> ' + t.html('authn.login.passkeysOff') + '</label>';
     if (keys.enabled && keys.mfaAllowed) {
-      out += '<label class="chk"><input type="checkbox" id="use_webauthn" ' +
-        'name="use_webauthn" value="1"' +
+      // A box CHECKED by a demand is disabled too, but it is in force rather
+      // than unavailable, so it is not greyed.
+      out += chk(!!d.passwordless) + '<input type="checkbox" ' +
+        'id="use_webauthn" name="use_webauthn" value="1"' +
         (d.mfa || d.key ? ' checked disabled' : '') +
         (d.passwordless ? ' disabled' : '') + '> ' +
         t.html('authn.login.keySecond') +
@@ -81,11 +95,11 @@ class WebAuthnLogin {
         (d.mfa || d.key
           ? '<input type="hidden" name="use_webauthn" value="1">' : '');
     } else if (keys.enabled) {
-      out += '<label class="chk"><input type="checkbox" disabled> ' +
+      out += chk(true) + '<input type="checkbox" disabled> ' +
         t.html('authn.login.keySecondOff') + '</label>';
     }
     if (keys.enabled && keys.primaryAllowed && !v.locked) {
-      out += '<label class="chk"><input type="checkbox" id="webauthn_only" ' +
+      out += chk(!!d.mfa) + '<input type="checkbox" id="webauthn_only" ' +
         'name="webauthn_only" value="1"' + (d.mfa ? ' disabled' : '') +
         (d.passwordless ? ' checked disabled' : '') + '> ' +
         t.html('authn.login.keyOnly') +
@@ -99,13 +113,29 @@ class WebAuthnLogin {
         (d.passwordless
           ? '<input type="hidden" name="webauthn_only" value="1">' : '');
     } else if (keys.enabled) {
-      out += '<label class="chk"><input type="checkbox" disabled> ' +
+      out += chk(true) + '<input type="checkbox" disabled> ' +
         t.html('authn.login.keyOnlyOff') +
         (d.passwordless
           ? ' ' + t.html('authn.login.keyOnlyCannotComplete',
                          { name: d.via || '' }) : '') + '</label>';
     }
     return out;
+  }
+
+  /**
+   * "Remember this browser" (#265), where the realm offers it.
+   *
+   * @param v - the view
+   * @param t - the translator
+   * @returns the markup, or ''
+   */
+  static rememberBox(v: Json, t: Json): string {
+    return v.remember
+      ? '<label class="chk"><input type="checkbox" id="remember_browser" ' +
+        'name="remember_browser" value="1"> ' +
+        t.html('authn.login.remember') + ' <span class="sub">' +
+        t.html('authn.login.rememberNote') + '</span></label>'
+      : '';
   }
 
   /**
@@ -128,6 +158,21 @@ class WebAuthnLogin {
     }
     const autofill = v.passkey && !(ctx && ctx.autofill === false);
     const email = v.email || {};
+    // A PASSKEY WITH NO USERNAME, REQUIRED (#608): no username field and no
+    // Sign In — the passkey button is the way in, beside Cancel.
+    if (v.usernameless) {
+      return '<form method="post" action="/authn/login">' +
+        (v.fingerprint
+          ? '<input type="hidden" name="device_fp" id="device-fp" value="">'
+          : '') +
+        WebAuthnLogin.keyBoxes(v, t) +
+        WebAuthnLogin.rememberBox(v, t) +
+        '<div class="row"><button type="submit" id="wa-passkey-go" ' +
+        'name="action" value="passkey">' + t.html('authn.login.passkey') +
+        '</button><button type="submit" id="kc-cancel" name="action" ' +
+        'value="cancel" class="secondary">' + t.html('authn.login.cancel') +
+        '</button></div></form>';
+    }
     return '<form method="post" action="/authn/login">' +
       (v.fingerprint
         ? '<input type="hidden" name="device_fp" id="device-fp" value="">'
@@ -146,12 +191,7 @@ class WebAuthnLogin {
           'autocomplete="current-password">'
         : '') +
       WebAuthnLogin.keyBoxes(v, t) +
-      (v.remember
-        ? '<label class="chk"><input type="checkbox" id="remember_browser" ' +
-          'name="remember_browser" value="1"> ' +
-          t.html('authn.login.remember') + ' <span class="sub">' +
-          t.html('authn.login.rememberNote') + '</span></label>'
-        : '') +
+      WebAuthnLogin.rememberBox(v, t) +
       '<div class="row"><button type="submit" id="kc-login" name="action" ' +
       'value="login">' + t.html('authn.login.signIn') + '</button>' +
       (v.anonymous

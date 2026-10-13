@@ -8977,6 +8977,9 @@ class Authn {
       anonymous: !!config.value('authn.unauthenticatedSessions') &&
                  !locked && !restricted.length,
       passkey: passkey,
+      // A PASSKEY WITH NO USERNAME, REQUIRED (#608): no username field and
+      // no Sign In, the passkey button the way in.
+      usernameless: passkey && this.usernamelessRequired(record),
       email: emailFirst,
       // FORGOT YOUR PASSWORD? (#63): the portal's self-service reset, where
       // `common/mail_uses.ts` says it is offered, never for a locked name.
@@ -11052,6 +11055,79 @@ class Authn {
                : { ok: true };
   }
 
+  // ===========================================================================
+  // A PASSKEY SIGN-IN WITH NO USERNAME, REQUIRED (#608, rcbj 2026-10-13).
+  //
+  // The passkey policy's `requireUsernameless` takes the username field off
+  // the screen and refuses a sign-in that names somebody — but only where
+  // all of these hold, and this is the one place they are asked:
+  //
+  //   * THE APPLICATION SIGNS IN WITH A PASSKEY ALONE: its own
+  //     `appAuthnMechanism` is `webauthn` and nothing else, so the record is
+  //     passwordless by the application's declaration (`mechanismSource`
+  //     `application`). A relationship's `webauthn`, a demand for two factors
+  //     that overrode it (`forcePasswordless` false) or a list with anything
+  //     beside it is not this case: rcbj's "only webauthn selected".
+  //   * A passkey with no username is OFFERED here (`passkeyOffered()`): the
+  //     realm's settings, the authentication policy, not a linking sign-in.
+  //     Required and not offered would be a screen that signs nobody in.
+  //   * THE PROFILE THAT SELECTS THIS APPLICATION says so — chosen by the
+  //     application alone (the screen knows nobody yet), read by name, so
+  //     the ambient selection of some other door cannot answer it.
+  //   * AND NOT A HOSTED SURFACE THROUGH `default` (rcbj): the admin
+  //     console, the debugger and the portal are held to it only by a named
+  //     profile that selects the application itself, so a realm-wide switch
+  //     cannot change how an administrator gets in
+  //     (`applications.HOSTED_SURFACE_CLIENT_IDS`).
+  // ===========================================================================
+  /**
+   * Says whether this sign-in must be a passkey sign-in with no username.
+   *
+   * @param record - the pending sign-in
+   * @returns true where the screen asks for no username
+   */
+  usernamelessRequired(record): boolean {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Authn.usernamelessRequired().");
+    const allowed: string[] = Array.isArray(record.allowedMechanisms)
+      ? record.allowedMechanisms : [];
+    const passkeyAlone = !!record.forcePasswordless &&
+      record.mechanismSource === 'application' &&
+      record.mechanism === 'webauthn' &&
+      allowed.every(function (one) {
+        return one === 'webauthn';
+      });
+    if (!passkeyAlone || record.lockedUsername) {
+      log.debug("Leaving Authn.usernamelessRequired(). The application " +
+                "does not sign in with a passkey alone.");
+      return false;
+    }
+    const application = String(record.application || '');
+    let name = 'default';
+    let required = false;
+    try {
+      name = passkeyPolicy.selectionFor('', application);
+      required = passkeyPolicy.requiresUsernameless(passkeyPolicy.read(name));
+    } catch (e) {
+      // A policy that cannot be read requires nothing new: the screen is
+      // the one it was, with its username field, and every other rule still
+      // holds.
+      log.debug("Caught in Authn.usernamelessRequired(): " +
+                ((e && e.message) || e));
+      required = false;
+    }
+    if (required && name === passkeyPolicy.DEFAULT_PROFILE &&
+        applications.HOSTED_SURFACE_CLIENT_IDS.indexOf(application) >= 0) {
+      log.debug("Leaving Authn.usernamelessRequired(). A hosted surface " +
+                "under the default profile.");
+      return false;
+    }
+    const out = required && this.passkeyOffered(record).ok;
+    log.debug("Leaving Authn.usernamelessRequired(). " + (out ? 'Yes.'
+                                                               : 'No.'));
+    return out;
+  }
+
   // The challenge the screen's passkey ceremony is armed with: minted on the
   // pending record when the screen is drawn and kept there until a POST
   // takes it. Persisted with the record, so any node answers the POST.
@@ -11818,6 +11894,20 @@ class Authn {
       log.debug("Leaving Authn.screenAct(). A passkey with no " +
                 "username.");
       return this.passkeySignIn(req, res, base, record, body);
+    }
+    // A PASSKEY WITH NO USERNAME, REQUIRED (#608): the screen drew no
+    // username field, and a POST naming somebody anyway is refused here —
+    // the screen's shape is not what enforces it.
+    if (this.usernamelessRequired(record)) {
+      log.info('authn: a sign-in naming a person was refused: the passkey ' +
+               'policy requires a passkey sign-in with no username for "' +
+               String(record.application || '') + '".');
+      log.debug("Leaving Authn.screenAct(). A username where none is " +
+                "asked for.");
+      errorCodes.mark(res, 'STS-AUTHN-0333');
+      return this.screenRefused(res, record,
+        'This application signs in with a passkey and no username. Use ' +
+        'Sign in with a passkey.');
     }
     // A LOCKED RECORD'S NAME IS THE RECORD'S (#109): see
     // beginAuthentication(). Whatever was typed is not read.
