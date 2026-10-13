@@ -5552,8 +5552,8 @@
     "text": "Password ng service principal"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "Ang password ng account na pinapangalanan ng krb5.servicePrincipal — katumbas ng isang keytab. SA PRODUCT MODE, tinatanggihan ang kasamang default: naka-print ang value na iyon sa repository na ito, kaya ang service key na hinango mula rito ay key na mapapag-forge-an ng ticket ng kahit sino. Kapag hindi ito nakatakda, hindi ginagawa ang service account, walang tinatanggap na ticket ang /authn/spnego, at sinasabi ng GET /admin-api/kerberos/principals kung bakit. Itakda ito sa password ng account ng SPN sa KDC na nag-i-issue ng mga ticket nito."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "Ang password ng account na pinangangalanan ng krb5.servicePrincipal — katumbas ng isang keytab. Sa PRODUCT MODE tinatanggihan ang kasamang default: nakalimbag ang halagang iyon sa repository na ito, kaya ang service key na hinango mula rito ay key na magagamit ng kahit sino para mameke ng ticket. Kaya binibigyan ng product ang SPN ng random na key, minsan lang, naka-seal sa application entry nito (nagbibigay ng keytab ang Rotate sa /admin/kerberos/principals), at ganoon din sa walang-lamang password. Itakda ito sa password ng account ng SPN sa KDC na naglalabas ng mga ticket nito at mananaig ito sa key na iyon. Sa development, walang account na nalilikha sa walang-lamang password at walang ticket na tinatanggap ang acceptor."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
