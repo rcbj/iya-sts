@@ -962,6 +962,103 @@ class PasskeyPolicy {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // THE POLICIES THAT NAME ONE APPLICATION (#609), for its page: read-only,
+  // and nothing is stored for it — the relation is the named profiles'
+  // `stsPasskeySelectApplication` and nothing else (rcbj's decision 1). An
+  // application answers to its identifier and to each client_id, matched as
+  // `selectionFor()` matches the one a sign-in names: trimmed and in any
+  // case. The one that applies is the lowest precedence among them (ties by
+  // name), `selectionFor()`'s order, else `default` — for a sign-in naming
+  // the application and nobody yet; a profile selecting a group the person
+  // is in can still win for that person, which the page says.
+  // -------------------------------------------------------------------------
+  /**
+   * Lists this realm's named profiles that name an application, in the
+   * order `selectionFor()` ranks them, and which one applies to it.
+   *
+   * @param names - what the application answers to: its identifier and each
+   *   client_id
+   * @returns `{ policies, applies, appliesBy, groupPolicies }` — each
+   *   policy `{ name, dn, precedence, selectApplications, selectGroups,
+   *   matched, applies }`; `applies` the lowest precedence naming the
+   *   application by any of its names, else `default`; `appliesBy` the
+   *   profile a sign-in naming it by each one gets before any person is
+   *   known; `groupPolicies` how many named profiles select by group and
+   *   could still win for a person
+   */
+  forApplication(names: unknown[]): {
+      policies: Array<{ name: string; dn: string; precedence: number;
+                        selectApplications: string[];
+                        selectGroups: string[]; matched: string[];
+                        applies: boolean }>;
+      applies: string; appliesBy: Record<string, string>;
+      groupPolicies: number } {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.forApplication().");
+    const wanted = (Array.isArray(names) ? names : []).map(function (one) {
+      return String(one === undefined || one === null ? '' : one).trim()
+        .toLowerCase();
+    }).filter(Boolean);
+    if (!this.haveDirectory()) {
+      log.debug("Leaving PasskeyPolicy.forApplication(). No directory.");
+      return { policies: [], applies: DEFAULT_PROFILE, appliesBy: {},
+               groupPolicies: 0 };
+    }
+    const named = this.directory.allPasskeyPolicies().filter(function (one) {
+      return String(one.name || '').toLowerCase() !== DEFAULT_PROFILE;
+    }).map((entry) => {
+      const at = entry.attributes || {};
+      const p = Number(this.firstValue(at, 'stsPasskeyPrecedence'));
+      const apps = this.allValues(at, 'stsPasskeySelectApplication');
+      return {
+        name: String(entry.name).toLowerCase(),
+        dn: String(entry.dn || ''),
+        precedence: p >= 1 && p <= 1000 ? p : DEFAULT_PRECEDENCE,
+        selectApplications: apps,
+        selectGroups: this.allValues(at, 'stsPasskeySelectGroup'),
+        matched: apps.filter(function (one) {
+          return wanted.indexOf(one.trim().toLowerCase()) >= 0;
+        }),
+        applies: false
+      };
+    });
+    const policies = named.filter(function (one) {
+      return one.matched.length > 0;
+    }).sort(function (a, b) {
+      return a.precedence - b.precedence || (a.name < b.name ? -1 : 1);
+    });
+    if (policies.length) {
+      policies[0].applies = true;
+    }
+    const groupPolicies = named.filter(function (one) {
+      return one.selectGroups.length > 0;
+    }).length;
+    const applies = policies.length ? policies[0].name : DEFAULT_PROFILE;
+    // A SIGN-IN NAMES ONE OF THEM — an OAuth client its client_id, SAML its
+    // entity ID — so where two policies name the application by different
+    // names, which applies depends on the name: `selectionFor()`'s answer
+    // for each, before any person is known.
+    const appliesBy: Record<string, string> = {};
+    (Array.isArray(names) ? names : []).forEach(function (one) {
+      const raw = String(one === undefined || one === null ? '' : one).trim();
+      if (!raw) {
+        return;
+      }
+      const lower = raw.toLowerCase();
+      const first = policies.filter(function (p) {
+        return p.matched.some(function (m) {
+          return m.trim().toLowerCase() === lower;
+        });
+      })[0];
+      appliesBy[raw] = first ? first.name : DEFAULT_PROFILE;
+    });
+    log.debug("Leaving PasskeyPolicy.forApplication(). " + policies.length +
+              " name it; " + applies + " applies.");
+    return { policies: policies, applies: applies, appliesBy: appliesBy,
+             groupPolicies: groupPolicies };
+  }
+
   /**
    * Selects the profile for a person and an application for the rest of
    * this request: every `read()` without a name reads it from here on.
@@ -2144,6 +2241,7 @@ export = {
   hintsFor: slot.forward('hintsFor'),
   select: slot.forward('select'),
   selectionFor: slot.forward('selectionFor'),
+  forApplication: slot.forward('forApplication'),
   selectedName: slot.forward('selectedName'),
   hasSelection: slot.forward('hasSelection'),
   withSelection: slot.forward('withSelection'),

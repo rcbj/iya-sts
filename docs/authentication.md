@@ -511,10 +511,29 @@ Registration on `/portal/keys` or through an activation link has no
 application, so only group selectors apply there. A realm's named policies
 are its own: unlike `default`, they are not inherited from the default realm.
 
-Manage them on Directory → Policies (*Named profiles*), or with
+Manage them on Directory → Policies, or with
 `POST /admin-api/policies/save-passkey-policy` naming `profile`,
 `selectApplications`, `selectGroups` and `precedence`.
 `reset-passkey-policy` with a named `profile` removes it.
+
+The *Passkey policy* tab there has three sub-tabs (#609):
+
+- **Default**: the `default` policy, which applies wherever no named one
+  does.
+- **Named policies**: every named policy, each with the applications and
+  groups it selects, its precedence, its form and a Remove.
+- **New policy**: the form that adds one.
+
+The applications box of a named policy's form has a search under it: type
+part of an application's identifier or name and press **Find** (or Enter).
+The realm's applications are listed five to a page, leaving out the ones the
+box already names, each with an **Add**. Add puts the application's
+**identifier** in the box; nothing is written until the policy's Save, which
+stores the box as `stsPasskeySelectApplication`, as before. A client_id
+typed by hand still works.
+
+An application's own page shows the same relation read-only: see
+[the passkey policy card](applications.md#the-passkey-policy-that-applies-to-it).
 
 The policy replaced the settings `webauthn.usernameless` and
 `webauthn.residentKey` (#527); a configuration that still names either is

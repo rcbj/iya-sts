@@ -1792,6 +1792,10 @@ class ConsoleRuntime extends SpaClient {
         await this.groupOwnerSearch(fields, 'page', 'applicationOwners');
         return;
       }
+      if (page === WebAnswers.POLICIES_PAGE) {
+        await this.policySearch(fields);
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -1973,6 +1977,58 @@ class ConsoleRuntime extends SpaClient {
     // on. Put back after the drawing has settled: `draw()` re-navigates to
     // the fragment (`targetFragment()`), and a focus given before that is
     // lost to it, which is what closed the cell under #459.
+    const doc = this.env.document;
+    const attribute = asked.attribute;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-' + attribute);
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
+  // A NAMED PASSKEY PROFILE'S APPLICATION SEARCH (#609): the field search's
+  // Find, Previous, Next and Add on Directory → Policies. The Applications
+  // list is asked for a page of five, leaving out what the form's
+  // applications box already holds, and the page drawn again with that
+  // form's posted fields as its draft (`state.policyDrafts`, by the search's
+  // key) — an Add appends the application's IDENTIFIER to the box — and the
+  // results in `state.finds`, as the grid keeps them. Nothing is written
+  // until the form's Save, which writes `stsPasskeySelectApplication` as it
+  // always did.
+  /**
+   * Runs a named policy's application search and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async policySearch(fields: Json): Promise<void> {
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const drafted = Object.assign({}, fields);
+    delete drafted.fgsearch;
+    delete drafted.fgadd;
+    const text = WebAnswers.one(fields, 'selectApplications');
+    drafted.selectApplications = asked.add
+      ? WebAnswers.withListedValue(text, asked.add)
+      : text;
+    const held = WebAnswers.listedValues(drafted.selectApplications);
+    const answer = await this.apiJson('GET',
+      WebAnswers.fieldSearchPath('policy-applications', asked, held));
+    const found = WebAnswers.fieldSearchFound('policy-applications', asked,
+      answer && answer.status === 200 ? answer.json : null);
+    const before = (this.view.json && this.view.json.state) || {};
+    const finds = Object.assign({}, before.finds || {});
+    finds[asked.attribute] = found;
+    const drafts = Object.assign({}, before.policyDrafts || {});
+    drafts[asked.attribute] = drafted;
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, { finds: finds,
+                                         policyDrafts: drafts }) });
+    this.drawView(null, '');
     const doc = this.env.document;
     const attribute = asked.attribute;
     const refocus = function () {

@@ -962,6 +962,45 @@ application's page, `POST /admin-api/applications/update-fields`, or `add` /
 `remove` with `attribute: appMfaMechanism`. A value that is not a second
 factor is refused (`STS-REG-0203`).
 
+### The passkey policy that applies to it
+
+An application's Configuration tab, *Every protocol*, ends with a
+**Passkey policy** card (#609). It is read-only, and it lists every named
+passkey policy of the realm whose applications list names this application,
+by its identifier or by one of its client_ids, matched in any case as a
+sign-in is. For each it shows:
+
+- its precedence;
+- the value that named the application;
+- any groups it selects as well;
+- whether it is the one that applies.
+
+The one that applies is the lowest precedence among them. Where none names the
+application, the card says the `default` passkey policy applies. Each name
+links to that policy on Directory → Policies.
+
+A sign-in names the application by one of its names: an OAuth or OpenID
+Connect sign-in by its client_id, SAML by its entity ID. Where policies name
+the application by different names, a sign-in gets the policy that names the
+name it used, and the card says so for each name that gets a different one.
+
+**A policy selecting by group can still win for a given person.** Where a
+named policy lists one of the person's groups and has a lower precedence,
+it applies to them instead; the card says how many named policies select by
+group.
+
+Nothing is stored on the application. Which applications a passkey policy
+covers is the policy's `stsPasskeySelectApplication`, edited on
+Directory → Policies (see the
+[passkey policy](authentication.md#the-passkey-policy)). Several policies may
+name one application; precedence decides between them.
+
+The API answer is `page.passkeyPolicies` on
+`GET /admin-api/applications?application=<id>`: `policies` (each `name`,
+`dn`, `precedence`, `selectApplications`, `selectGroups`, `matched`,
+`applies` and `link`), `applies`, `appliesBy` (the policy per name),
+`groupPolicies`, `names` and `link`.
+
 ## Development and product mode
 
 | | Development | Product |

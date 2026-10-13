@@ -76,6 +76,11 @@ const ROLE_OWNERS_PAGE = '/admin/roles/owners';
 
 // AN APPLICATION'S OWNERS TAB (#604), the same arrangement.
 const APPLICATION_OWNERS_PAGE = '/admin/applications/owners';
+// DIRECTORY → POLICIES (#609): a named passkey profile's form searches the
+// realm's applications for its applications box. Its forms post to the page
+// itself, and a press is told apart from their Save by `fgsearch` and
+// `fgadd` alone — neither is a field any policy form carries.
+const POLICIES_PAGE = '/admin/policies';
 // The reason `common/ownership.ts` gives for an administrator's mark (#607),
 // to the letter: the in-place redraw after the Owners tab's checkbox adds or
 // takes it off the reasons the page holds.
@@ -120,6 +125,7 @@ class WebAnswers {
   static readonly GROUP_OWNERS_PAGE = GROUP_OWNERS_PAGE;
   static readonly ROLE_OWNERS_PAGE = ROLE_OWNERS_PAGE;
   static readonly APPLICATION_OWNERS_PAGE = APPLICATION_OWNERS_PAGE;
+  static readonly POLICIES_PAGE = POLICIES_PAGE;
 
   /**
    * Every non-empty value of a form field, in the order posted.
@@ -390,7 +396,8 @@ class WebAnswers {
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
             page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE ||
-            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE) &&
+            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE ||
+            page === POLICIES_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -466,6 +473,40 @@ class WebAnswers {
       out[prefix + next] = value;
     }
     return out;
+  }
+
+  // A NAMED PASSKEY PROFILE'S APPLICATIONS BOX (#609) is ONE text box of
+  // comma-separated values, as the profile's save reads it — not the grid's
+  // boxes — so an Add appends the identifier to its text, once.
+  /**
+   * The values of a comma-separated box.
+   *
+   * @param text - the box's text
+   * @returns its values, trimmed, empty ones left out
+   */
+  static listedValues(text: string): string[] {
+    return String(text || '').split(/[,\n]/).map(function (one) {
+      return one.trim();
+    }).filter(Boolean);
+  }
+
+  /**
+   * A comma-separated box's text with a value appended — or as it was when
+   * it holds the value already, in any case.
+   *
+   * @param text - the box's text
+   * @param value - the value to add
+   * @returns the text to draw
+   */
+  static withListedValue(text: string, value: string): string {
+    const held = WebAnswers.listedValues(text);
+    const wanted = String(value || '').trim();
+    if (!wanted || held.some(function (one) {
+      return one.toLowerCase() === wanted.toLowerCase();
+    })) {
+      return held.join(', ');
+    }
+    return held.concat([wanted]).join(', ');
   }
 
   /**
