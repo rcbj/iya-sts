@@ -12231,6 +12231,21 @@ const CODES = [
       'copy without that module does (#583). The negotiation itself is ' +
       'unaffected.',
     spec: 'logged; the page is drawn server-side' },
+  // 2026-10-12: the acceptor's random key in product.
+  { code: 'STS-KRB-0210',
+    summary: 'No random key could be made for the Kerberos acceptor\'s SPN, ' +
+      'whose configured krb5.servicePassword product refused (empty or the ' +
+      'published default), so the acceptor accepts no ticket.',
+    spec: '' },
+  { code: 'STS-KRB-0211',
+    summary: 'A node lost the race to make the Kerberos acceptor\'s random ' +
+      'key and, re-reading the directory, did not find the winner\'s key ' +
+      'yet; its acceptor refuses until it arrives.',
+    spec: '' },
+  { code: 'STS-KRB-0212',
+    summary: 'The Kerberos acceptor\'s random key was not made: this node ' +
+      'could not ask the shared store whether another node was making it.',
+    spec: '' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',

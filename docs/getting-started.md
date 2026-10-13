@@ -313,8 +313,11 @@ services:
     ports:
       - "${STS_PORT:-8081}:8081"
       - "${PKI_PORT:-8082}:8082"
+      - "${KDC_PORT:-88}:88"
+      - "${KDC_PORT:-88}:88/udp"
     environment:
       STS_MODE: product
+      KRB5_SERVICE_PRINCIPAL: ${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       STS_PERSISTENCE_MODE: postgres
       STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=verify-full
       STS_DATABASE_TLS_CA_FILE: /run/secrets/database-ca/postgres.crt
@@ -436,13 +439,19 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, and every build also has its `M.N.O`. `STS_PORT` and
-  `PKI_PORT` move the two published ports.
+  build of `main`, and every build also has its `M.N.O`. `STS_PORT`,
+  `PKI_PORT` and `KDC_PORT` move the published ports.
+* **Kerberos works from the start.** The KDC is published on 88 (TCP and
+  UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
+  asks for at `https://localhost:8081`, under a random key the service makes
+  itself. Set `KRB5_SERVICE_PRINCIPAL` to `HTTP/<host>` when you reach the
+  service by another name. The client side is in
+  [Kerberos: signing in from a browser](kerberos.md#signing-in-from-a-browser-on-the-base-installation).
 
 What the checkout's own `docker-compose.yml` has and this does not: the optional
 remote XACML PEP (the `xacml` profile), and the extra addresses a realm's own
-SPIFFE listeners bind. Kerberos and LDAP are running but not published; add
-`88`, `389` or `636` to `ports` to reach them from the host.
+SPIFFE listeners bind. LDAP is running but not published; add `389` or `636`
+to `ports` to reach it from the host.
 [Configuration](configuration.md) covers every setting the `environment` block
 can take.
 

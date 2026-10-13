@@ -140,6 +140,8 @@ services:
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
       - "${STS_PKI_HOST_PORT:-8082}:8082"
+      - "${STS_KDC_HOST_PORT:-88}:88"
+      - "${STS_KDC_HOST_PORT:-88}:88/udp"
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,6 +165,7 @@ services:
       - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-}
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-postgres}
       - STS_MODE=${STS_MODE:-product}
+      - KRB5_SERVICE_PRINCIPAL=${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-2}
       - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
