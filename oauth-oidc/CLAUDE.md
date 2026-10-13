@@ -4532,8 +4532,19 @@ presented.
   AKP key's `priv` is refused like `d`, and its `alg` must match the proof's.
 * **`bound_key` is a reserved OpenID scope**, beside the six, in
   `scope_policy.ts`, `jwt_access_token.ts` and `protocolScopes()`.
+* **`oauth2.keyBinding` turns all of it off, per realm (#315).** Advertising
+  `bound_key` and then refusing it broke every OpenID Connect Core relying
+  party that asks for each advertised scope (the idptools.com debugger, on
+  testidp). Off, `keyBindingOn()` is false and every site above asks it:
+  discovery and `defaultScopes()` leave `bound_key` out,
+  `vetAuthorizationRequest()` DROPS it from the request instead of refusing,
+  `tokenSet()` drops it from what any other grant reports, and nothing is
+  bound or held to `c_s256`. It stays a reserved name — an application
+  still may not take it as an audience. A grant bound while it was on keeps
+  its refresh key check, which reads `kb_jkt`, not the setting.
 
-Tests: `tests/vendored/sts_device_key_binding.js`.
+Tests: `tests/vendored/sts_device_key_binding.js` (section 7 is #315),
+`tests/device_key_binding.js` section 4.
 
 ## 3bl. OPENID PROVIDER COMMANDS, AND ONE OUTBOUND QUEUE (2026-09-26, #151)
 
