@@ -228,7 +228,7 @@ function childMain() {
          xacmlPages.indexOf('/admin/xacml/editor') < 0 &&
          xacmlPages.indexOf('/admin/xacml/peps') < 0 &&
          xacmlPages.indexOf('/admin/xacml/decide') < 0 &&
-         ['/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
+         ['/xacml', '/xacml/pdp', '/xacml/policies',
           '/xacml/pep/register', '/xacml/pep/policies',
           '/xacml/pep/heartbeat', '/xacml/pip']
            .every(function (route) { return xacml.indexOf(route) >= 0; }),

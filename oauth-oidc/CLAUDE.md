@@ -4590,16 +4590,28 @@ rcbj's answers were every recommendation:
   * It takes an `_async` result, or a relying party's
     `command_requested: metadata | audit_tenant`.
   * It answers RFC 6750's errors.
-* **The mock relying party**, `/oauth2/commands/mock-rp` (development only):
-  * It checks a Command Token as section 9 asks.
+* **The relying party a test needs is the TEST PEER's** since #596
+  (2026-10-12; #591 P5): `tests/peer/peer_commands.js`, at
+  `/t/{tenant}/commands` on the peer's TLS listener. The runtime's mock,
+  `/oauth2/commands/mock-rp` (`command_mock_rp.ts`), was deleted, and its
+  code `STS-OAUTH-0782` is retired.
+  * It checks a Command Token as section 9 asks — from the OUTSIDE now:
+    the signature against the `jwks_uri` of the realm's OpenID
+    configuration, and `iss` against that configuration's `issuer`.
   * It keeps section 6's state machine per account, and invents an `aud_sub`
     for the provider to learn.
   * It streams tenant commands.
-  * It answers `_async` through the callback IN PROCESS.
+  * It answers `_async` through the callback OVER HTTP, at the
+    `callback_endpoint` the provider's `metadata` named (the mock handed the
+    result over in process), trying a 401 again a few times while another
+    process of the provider catches up with the callback token.
   * The registered URL's query carries the knobs `fail`, `drop` and `audsub`.
+  * A realm reaches it with the peer's CA as `federation.outboundCaFile`, and
+    in development mode, since the peer is on the stack's private network.
 
-Tests: `tests/provider_commands.js` and
-`tests/vendored/sts_provider_commands.js`.
+Tests: `tests/provider_commands.js`, `tests/test_peer.js` (section G, the
+relying party's own correctness) and
+`tests/vendored/sts_provider_commands.js` (`testPeer: true`).
 
 ## 3by. ASSERTIONS FROM DECLARED ISSUERS AS RFC 8693 SUBJECT AND ACTOR TOKENS (2026-10-03, #114)
 
@@ -5471,8 +5483,6 @@ as a person's at mint (the subject kind is read off the grant), and the
 
 ## Development only: this family's demonstrations (#585, 2026-10-12)
 
-`/oauth2/commands/mock-rp` (both methods; its product 404 of its own is gone) and `/dpop/nonce-mode` — **both halves**: the write's 403 `STS-OAUTH-0178` is retired, and the read went with it, because RFC 9449 section 8's `use_dpop_nonce` already tells a client the policy. In product `oauth2.dpopNonceRequired` is set on `/admin/oauth2` or with `POST /admin-api/config/set`. Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
-
-The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an.
+**None is left.** The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an. So was the Provider Commands mock relying party, `/oauth2/commands/mock-rp`, until #596 moved it to the test peer — see 3bl.
 
 **`/dpop/nonce-mode` left the runtime with #597 (2026-10-12)**: deleted, both halves, and `oauth2.dpopNonceRequired` is set the same way in either mode (see *`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL*, above).

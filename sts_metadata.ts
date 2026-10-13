@@ -3056,7 +3056,7 @@ const SPECS: Spec[] = [
     where: 'W3C', url: 'https://www.w3.org/TR/vc-data-model-2.0/',
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
               'VCDM 2.0 credentials with an embedded proof (ldp_vc); and, ' +
-              'at the VC-API test endpoints (#194), every MUST of the data ' +
+              'at the W3C VC API (#194), every MUST of the data ' +
               'model checked on a credential or presentation somebody else ' +
               'wrote, JSON-LD safe mode over the vendored contexts, and ' +
               'enveloped credentials and presentations — held to the W3C ' +
@@ -3072,13 +3072,13 @@ const SPECS: Spec[] = [
               'did:key verification methods; and signing and verification ' +
               'of a GNAP zcap token\'s delegation proof in Ed25519, ML-DSA-44 ' +
               'or SLH-DSA-SHA2-128s against a Multikey controller document. ' +
-              'At the VC-API test endpoints the two EC and EdDSA JCS suites ' +
+              'At the W3C VC API the two EC and EdDSA JCS suites ' +
               'also secure and verify credentials, with proof sets and ' +
               'proof chains (#195, #196). The RDFC suites are di-rdfc.' },
   { id: 'di-rdfc', name: 'W3C Data Integrity — eddsa-rdfc-2022 and ' +
                          'ecdsa-rdfc-2019',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-eddsa/',
-    coverage: 'full for issuing and verifying at the VC-API test endpoints ' +
+    coverage: 'full for issuing and verifying at the W3C VC API ' +
               '(#195, #196): Ed25519, P-256 and P-384, RDFC-1.0 over the ' +
               'vendored contexts in safe mode with a null base, proof sets ' +
               'and chains, VC 1.1 and 2.0 — held to the W3C EdDSA and ECDSA ' +
@@ -3096,21 +3096,28 @@ const SPECS: Spec[] = [
                               'JOSE and COSE',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-jose-cose/',
     coverage: 'partial: vc+jwt, vc+sd-jwt and vc+cose and their vp forms, ' +
-              'secured and verified at the VC-API test endpoints (#198), ' +
+              'secured and verified at the W3C VC API (#198), ' +
               'SD-JWT disclosures processed as RFC 9901 section 7.1 says; ' +
               'keys by a did:key or did:jwk kid or a caller-named public ' +
               'key, nothing fetched. The OID4VCI issuer does not issue these ' +
               'forms (jwt_vc_json is VCDM 1.1), and a Key Binding JWT on an ' +
               'SD-JWT presentation is reported, not checked.' },
-  { id: 'vc-api', name: 'W3C CCG Verifiable Credentials API (test ' +
-                        'endpoints)',
-    where: 'W3C CCG', url: 'https://w3c-ccg.github.io/vc-api/',
-    coverage: 'partial, and a TEST CONTROL: the issue, verify, prove, ' +
-              'derive and status operations the W3C test suites drive, over ' +
-              'this service\'s own cryptosuites, keys and status lists, in ' +
-              'a development realm only, behind an access token carrying ' +
-              'vc-api:issue or vc-api:verify. No zcap authorization, no ' +
-              'workflows, no credential storage.' },
+  { id: 'vc-api', name: 'W3C Verifiable Credentials API (VCALM, the CCG ' +
+                        'VC API)',
+    where: 'W3C CCG', url: 'https://w3c.github.io/vcalm/',
+    coverage: 'partial: the issuer (issue), holder (prove, derive), ' +
+              'verifier (credentials and presentations) and status ' +
+              'services, over this service\'s own cryptosuites, status ' +
+              'lists and keys of the VC API\'s own, OFF until a realm turns ' +
+              'it on (vcApi.enabled), behind an OAuth 2.0 access token ' +
+              'carrying vc-api:issue or vc-api:verify in every mode, rate ' +
+              'limited per client, an option it does not understand ' +
+              'refused. Not built: zcap authorization, workflows and ' +
+              'exchanges, challenges, credential and presentation storage ' +
+              '(GET and DELETE of /credentials/{id}), VCALM\'s ' +
+              'operation:path scopes, and issuer instances configured ' +
+              'per realm (the instances are fixed, one per securing ' +
+              'mechanism and curve).' },
   { id: 'token-status-list',
     name: 'Token Status List (draft-ietf-oauth-status-list-21)',
     where: 'IETF',
@@ -3158,7 +3165,7 @@ const SPECS: Spec[] = [
     coverage: 'partial: this service PUBLISHES a did:web document with two ' +
               'verification methods, and resolves and dereferences (section ' +
               '7) did:key, did:jwk and its own did:web in both JSON ' +
-              'representations at the VC-API test endpoints (#199), held to ' +
+              'representations at the W3C VC API (#199), held to ' +
               'the W3C DID test suite. No other did:web is fetched; no DID ' +
               'parameters (service, versionId, …) are supported.' },
   { id: 'did-config', name: 'DIF Well Known DID Configuration',
@@ -3344,6 +3351,11 @@ const SPECS: Spec[] = [
 // `group` orders the page. `specs` are ids from SPECS above; a typo there is
 // reported on the page rather than silently dropping the link.
 // ---------------------------------------------------------------------------
+// What every W3C VC API row says about being off (#598): the routes are
+// registered in every realm and answer 501 until the realm turns them on.
+const OFF_UNTIL_ENABLED = 'answers 501 until vcApi.enabled is on in the ' +
+                          'realm';
+
 /**
  * What each HTTP endpoint is, keyed by its Express path: its group, a
  * description and the specifications it implements.
@@ -3509,22 +3521,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'lets people in is not the same act as publishing a demonstration ' +
           'policy. The store is ou=policies in the embedded directory — ' +
           'that container IS the repository.' },
-  { path: '/xacml/protected', group: 'XACML', name: 'The embedded PEP',
-    specs: ['xacml30'],
-    what: 'A resource this service guards with its own PDP. Takes subject, ' +
-          'resource and action as query parameters, asks the PDP, and ' +
-          'ENFORCES the answer — 200 or 403. It is where xacml.pepBias is ' +
-          'visible: deny-biased and permit-biased agree on every Permit and ' +
-          'every Deny and differ on Indeterminate and NotApplicable, which ' +
-          'is the case nobody tests. An obligation it cannot discharge turns ' +
-          'a Permit into a refusal (section 7.2), which is the part ' +
-          'implementations skip. TWO GATES, ABOUT TWO DIFFERENT PEOPLE: the ' +
-          'CALLER needs XACML_USER to drive it at all, and the SUBJECT named ' +
-          'in ?subject= is what the PEP then enforces about. Keeping them ' +
-          'apart is what lets an admitted caller ask about somebody the ' +
-          'policy refuses and watch it refuse — which is the whole ' +
-          'demonstration.',
-    demo: true },
   { path: '/xacml/pep/register', group: 'XACML',
     name: 'A remote PEP registers', specs: ['xacml30'],
     what: 'A Policy Enforcement Point in ANOTHER PROCESS says it exists, ' +
@@ -7952,6 +7948,12 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'A forced password change', specs: [],
     what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +
           'stores the new one and continues the sign-in.' },
+  { path: '/authn-api/password-change/:id/start-over',
+    group: 'Authentication',
+    name: 'Start a sign-in over from the password change', specs: [],
+    what: 'NON-SPEC (2026-10-12). The forced password change\'s Start over: ' +
+          'nothing is changed, and the pending sign-in it carries is put ' +
+          'back for the sign-in screen.' },
   // #572, #573: the steps after the screen.
   { path: '/authn-api/mfa/:id', group: 'Authentication',
     name: 'What a sign-in step\'s page shows', specs: [],
@@ -8008,6 +8010,12 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Spend a mailed sign-in link', specs: [],
     what: 'NON-SPEC (#573). The Continue button of the page the link ' +
           'lands on, only in the browser that asked for it.' },
+  { path: '/authn-api/mfa/:id/start-over', group: 'Authentication',
+    name: 'Start a sign-in over from a step', specs: [],
+    what: 'NON-SPEC (2026-10-12). Every step page\'s Start over: the step ' +
+          'is ended with whatever it held, no session is started, and the ' +
+          'pending sign-in it carries is put back for the sign-in screen, ' +
+          'so the original request still completes.' },
   { path: '/authn/fingerprint.js', group: 'Authentication',
     name: 'Browser fingerprint script (optional)',
     specs: [],
@@ -8409,14 +8417,6 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Where a relying party POSTs an _async command\'s result or asks ' +
           'for a fresh metadata or audit_tenant, Bearer the callback_token ' +
           'the command carried (#151). 204, or RFC 6750\'s errors.' },
-  { path: '/oauth2/commands/mock-rp', group: 'OAuth 2.0 / OIDC',
-    name: 'Demonstration relying party command endpoint (not a spec endpoint)',
-    specs: ['oidc-provider-commands'],
-    what: 'NON-SPEC, development only (#151): a relying party\'s ' +
-          'command_endpoint that checks a Command Token as section 9 asks ' +
-          'and answers every account and tenant command, streams included; ' +
-          'GET shows what it holds. 404 in product mode.',
-    demo: true },
   { path: '/admin-api/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page over JSON',
     specs: ['oidc-claims-aggregation'],
@@ -8549,14 +8549,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'when Accept asks for JSON-LD or JSON and not the JWT first, the ' +
           'same credential with an eddsa-rdfc-2022 proof by the realm\'s ' +
           'Ed25519 key, issued as its did:key (#197).' },
-  { path: '/oid4vci/status-lists/bitstring/:purpose/publish',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Publish a status list (VC-API, test control)',
-    specs: ['vc-api', 'bitstring-status-list'],
-    what: 'The W3C suites\' "publish the list now". A list here is computed ' +
-          'on every read, so 204 and nothing else; a test control, behind ' +
-          'vc-api:issue.',
-    demo: true },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -8639,17 +8631,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'their grace — the key rotates with the realm\'s signing keys, ' +
           '#49); `/bbs/keys/1` is the current one. 404 for any other.' },
 
-  // --- W3C VC-API test endpoints (#194-#199) ---
-  { path: '/vc-api/issuers', group: 'W3C VC-API (test endpoints)',
-    name: 'The VC-API issuers (test control)', specs: ['vc-api'],
-    what: 'NON-SPEC listing, for the suite jobs: each issuer this adapter ' +
-          'offers — a securing mechanism and the realm key it signs with — ' +
-          'with its did:key and endpoint. A development realm only; ' +
-          'vc-api:issue.',
-    demo: true },
+  // --- The W3C VC API (#194-#199; a product surface since #598) ---
+  // Every one answers 501 until vcApi.enabled is on in the realm, and asks
+  // for an access token carrying the scope it names in every mode.
+  { path: '/vc-api/issuers', group: 'W3C VC API',
+    name: 'The VC API issuers', specs: ['vc-api'],
+    what: 'NON-SPEC listing, an implementation manifest\'s list of issuer ' +
+          'instances: each issuer this service offers — a securing ' +
+          'mechanism and the VC API key it signs with — with its did:key ' +
+          'and endpoint. vc-api:issue.',
+    effect: OFF_UNTIL_ENABLED },
   { path: '/vc-api/issuers/:issuer/credentials/issue',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Issue a credential (VC-API, test control)',
+    group: 'W3C VC API',
+    name: 'Issue a credential (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
             'vc-jose-cose', 'bitstring-status-list'],
     what: 'Secures the credential it is handed after checking every MUST ' +
@@ -8659,11 +8653,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'ecdsa-sd-2023) or a VC-JOSE-COSE envelope (jose-p256, ' +
           'sd-jwt-p256, cose-p256). The credential\'s issuer must be the ' +
           'key\'s did:key; options.credentialStatus allocates an index in ' +
-          'the realm\'s Bitstring Status Lists. A development realm only; ' +
-          'vc-api:issue. 201 { verifiableCredential }.',
-    demo: true },
-  { path: '/vc-api/credentials/verify', group: 'W3C VC-API (test endpoints)',
-    name: 'Verify a credential (VC-API, test control)',
+          'the realm\'s Bitstring Status Lists. Signed with the VC API\'s ' +
+          'own keys, never the keys that sign this realm\'s tokens; an ' +
+          'option it does not understand is refused. vc-api:issue. 201 ' +
+          '{ verifiableCredential }.',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/credentials/verify', group: 'W3C VC API',
+    name: 'Verify a credential (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
             'vc-jose-cose', 'bitstring-status-list'],
     what: 'The data model, JSON-LD safe mode, every proof of a proof set ' +
@@ -8671,52 +8667,51 @@ const ENDPOINTS: EndpointEntry[] = [
           'fetched) or the envelope, and — asked, or named — the ' +
           'credential\'s status in this realm\'s lists. 200 or 400 ' +
           '{ verified, checks, warnings, errors }. vc-api:verify.',
-    demo: true },
+    effect: OFF_UNTIL_ENABLED },
   { path: '/vc-api/presentations/verify',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Verify a presentation (VC-API, test control)',
+    group: 'W3C VC API',
+    name: 'Verify a presentation (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
     what: 'The presentation\'s own proof (authentication, the challenge ' +
           'and domain asked for) or envelope (its nonce and aud), and every ' +
           'credential in it as /vc-api/credentials/verify checks one. ' +
           'vc-api:verify.',
-    demo: true },
+    effect: OFF_UNTIL_ENABLED },
   { path: '/vc-api/holders/:holder/presentations/prove',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Prove a presentation (VC-API, test control)',
+    group: 'W3C VC API',
+    name: 'Prove a presentation (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
-    what: 'Secures a presentation as the realm key\'s did:key: a Data ' +
+    what: 'Secures a presentation as the VC API key\'s did:key: a Data ' +
           'Integrity proof with the challenge and domain given, or a ' +
           'VC-JOSE-COSE envelope. vc-api:issue.',
-    demo: true },
-  { path: '/vc-api/credentials/derive', group: 'W3C VC-API (test endpoints)',
-    name: 'Derive a selective disclosure (VC-API, test control)',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/credentials/derive', group: 'W3C VC API',
+    name: 'Derive a selective disclosure (VC API)',
     specs: ['vc-api', 'di-ecdsa-sd'],
     what: 'An ecdsa-sd-2023 derived proof from a base proof, revealing the ' +
           'mandatory statements and options.selectivePointers. ' +
           'vc-api:issue.',
-    demo: true },
-  { path: '/vc-api/credentials/status', group: 'W3C VC-API (test endpoints)',
-    name: 'Change a credential\'s status (VC-API, test control)',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/credentials/status', group: 'W3C VC API',
+    name: 'Change a credential\'s status (VC API)',
     specs: ['vc-api', 'bitstring-status-list'],
     what: 'Revokes, suspends or lifts a suspension of a credential this ' +
-          'adapter issued with a status — the act /admin/vc-status ' +
+          'VC API issued with a status — the act /admin/vc-status ' +
           'performs, one of the three that disown a credential. A ' +
           'revocation is final. vc-api:issue.',
-    demo: true },
-  { path: '/vc-api/resolve', group: 'W3C VC-API (test endpoints)',
-    name: 'Resolve a DID (test control)', specs: ['did-core', 'vc-api'],
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/resolve', group: 'W3C VC API',
+    name: 'Resolve a DID', specs: ['did-core', 'vc-api'],
     what: 'DID Core section 7.1\'s resolve or resolveRepresentation ' +
           '(?function=) for did:key, did:jwk and this realm\'s own did:web, ' +
           'answering the resolution result; any other did:web is notFound ' +
           'rather than fetched. vc-api:verify.',
-    demo: true },
-  { path: '/vc-api/dereference', group: 'W3C VC-API (test endpoints)',
-    name: 'Dereference a DID URL (test control)', specs: ['did-core',
-                                                          'vc-api'],
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/dereference', group: 'W3C VC API',
+    name: 'Dereference a DID URL', specs: ['did-core', 'vc-api'],
     what: 'DID Core section 7.2: the document, or the verification method a ' +
           'fragment names. vc-api:verify.',
-    demo: true },
+    effect: OFF_UNTIL_ENABLED },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',
@@ -9648,7 +9643,7 @@ const PROTOCOLS: Protocol[] = [
           'session standing on one (refuseEmailFactor).' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
-             'Decentralized Identifiers', 'W3C VC-API (test endpoints)'],
+             'Decentralized Identifiers', 'W3C VC API'],
     specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
             'token-status-list', 'bitstring-status-list', 'dc-api',
             'di-jcs', 'di-rdfc', 'di-ecdsa-sd', 'vc-jose-cose', 'vc-api',
@@ -9686,7 +9681,7 @@ const GROUP_ORDER = ['Service', 'Authentication', 'WS-Trust', 'WS-Federation',
                      'VC Issuance (OID4VCI)', 'Decentralized Identifiers',
                      'VC ' +
                          'Presentation (OID4VP)',
-                     'W3C VC-API (test endpoints)',
+                     'W3C VC API',
                      'Admin', 'Management API', 'Admin console API',
                      'Undocumented'];
 
@@ -9880,8 +9875,8 @@ class StsMetadata {
     rows.forEach(function (r) {
       countBy[r.group] = (countBy[r.group] || 0) + 1;
     });
-    // A GROUP WHOSE EVERY ROW IS A HIDDEN DEMONSTRATION (#585) — the
-    // VC-API's test endpoints in a product realm — is not on the page, so a
+    // A GROUP WHOSE EVERY ROW IS A HIDDEN DEMONSTRATION (#585) — as the
+    // VC API's was in a product realm until #598 — is not on the page, so a
     // card naming it drops it rather than linking to a table that is not
     // there, and a specification only those rows cited leaves the card too.
     const hiddenGroups = {};
@@ -10119,8 +10114,8 @@ class StsMetadata {
     const stale = Array.from(described.keys());
     // THE SPECIFICATIONS ONLY A HIDDEN DEMONSTRATION IMPLEMENTED (#585): in a
     // product realm a specification cited by nothing but demonstration rows
-    // is not on the page either, or it would be an idle claim — the VC-API's
-    // test endpoints are the whole of this service's VC-API.
+    // is not on the page either, or it would be an idle claim — as the VC
+    // API's specification was until #598 made it a product surface.
     const live = new Set<string>();
     rows.forEach(function (r) {
       (r.specs || []).forEach(function (id) {

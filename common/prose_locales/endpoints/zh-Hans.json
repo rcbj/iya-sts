@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "策略存储库"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "嵌入式 PEP"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "远程 PEP 注册"
@@ -1475,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "强制更改密码"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "从密码更改处重新开始登录"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "登录步骤页面显示的内容"
@@ -1526,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "用掉通过电子邮件发送的登录链接"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "从某个步骤重新开始登录"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
@@ -1671,10 +1675,6 @@
     "en": "077e67ad034f4945",
     "text": "OpenID Provider Commands 回调端点"
   },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "f433c19afa03eaac",
-    "text": "演示依赖方命令端点（非规范端点）"
-  },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",
     "text": "以 JSON 形式提供的声明提供方控制台页面"
@@ -1739,10 +1739,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring 状态列表凭证"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "发布状态列表（VC-API，测试控件）"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "延迟凭证端点"
@@ -1792,40 +1788,40 @@
     "text": "BBS 公钥"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "VC-API 颁发者（测试控件）"
+    "en": "73b838a87b15b09a",
+    "text": "VC API 的签发者"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "签发凭证（VC-API，测试控件）"
+    "en": "36e4ff37d0083d67",
+    "text": "签发凭证（VC API）"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "验证凭证（VC-API，测试控件）"
+    "en": "7f67271e211b78e1",
+    "text": "验证凭证（VC API）"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "验证展示（VC-API，测试控件）"
+    "en": "f0ace30e55e137f1",
+    "text": "验证出示（VC API）"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "证明展示（VC-API，测试控件）"
+    "en": "96508bdaea6f7f69",
+    "text": "证明出示（VC API）"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "派生选择性披露（VC-API，测试控件）"
+    "en": "4af3df1e4c1f2f99",
+    "text": "派生选择性披露（VC API）"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "更改凭证状态（VC-API，测试控件）"
+    "en": "d231bdc923e68f8a",
+    "text": "更改凭证状态（VC API）"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "解析 DID（测试控件）"
+    "en": "39c91a22e95b0c2e",
+    "text": "解析 DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "解引用 DID URL（测试控件）"
+    "en": "a7044c968ef56722",
+    "text": "解引用 DID URL"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

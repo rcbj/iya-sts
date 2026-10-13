@@ -724,8 +724,8 @@
     "text": "Les points de terminaison de démonstration et de contrôle de test existent"
   },
   "mode.requirements.demo-endpoints.development": {
-    "en": "b507467a00f40b04",
-    "text": "Servis et listés : la partie de confiance de démonstration des commandes (/oauth2/commands/mock-rp), les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected, et /xacml/protected."
+    "en": "533d4ffebabb9b7b",
+    "text": "Servis et listés : les pages de démonstration de l’émetteur et du vérificateur (/issuer, /issuer/offer, /oid4vp/verifier, /oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), les relectures OpenID4VCI, /did/generate, les points de terminaison de test VC-API, le service Kerberos protégé (/krb5/service et son socket TCP), /krb5/principals, /spnego et /spnego/protected."
   },
   "mode.requirements.demo-endpoints.product": {
     "en": "b82d8439b897527e",

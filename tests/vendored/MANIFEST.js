@@ -180,8 +180,8 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // assertion in any of the three therefore spans a console door and a protocol
 // door — a template built on `/admin-api` deciding at `/xacml/pdp`, a policy
 // disabled on the console disappearing from what a remote PEP pulls, a rule
-// built by pressing buttons on `/admin/xacml/editor` changing what
-// `/xacml/protected` allows — and a test with the two halves in two
+// built by pressing buttons on `/admin/xacml/editor` changing what the PDP
+// permits (`/xacml/protected` until #596) — and a test with the two halves in two
 // repositories could not make one of them. **`sts_xacml_remote_pep.js` IS THE
 // THIRD AND IS ALSO THE ONLY JOB HERE THAT STARTS A SECOND PROCESS OF ITS
 // OWN**: it runs `xacml-pep/pep.js` — the real container's program, not a
@@ -1231,8 +1231,9 @@ const JOBS = [
     timeoutMs: 2700000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
-  // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
-  // adapter (oid4vc/vc_api.ts) of a throwaway development realm — or, for
+  // image by tests/vc-suites/fetch-suites.sh, run against the W3C VC API
+  // (oid4vc/vc_api.ts) of a throwaway development realm that turns it on
+  // (vcApi.enabled, off by default since #598) — or, for
   // the DID suite, over fixtures generated from this service's DIDs and
   // resolver. Every failure fixed or a documented exception. `local: true`:
   // this repository's oid4vc/ and its test adapter.
@@ -1248,6 +1249,12 @@ const JOBS = [
     timeoutMs: 900000 },
   { file: 'sts_did_test_suite.js',       browser: false, local: true,
     timeoutMs: 900000 },
+  // THE W3C VC API AS A PRODUCT SURFACE (#598, 2026-10-12): off by default
+  // (501), the token in a PRODUCT realm, its own keys (a VC-JOSE-COSE
+  // credential verifies against no key of the realm's JWKS), the options it
+  // refuses, and the status-list publish on /admin-api. `local: true`: this
+  // repository's oid4vc/vc_api.ts.
+  { file: 'sts_vc_api_product.js',       browser: false, local: true },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
@@ -1270,9 +1277,12 @@ const JOBS = [
   { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
   // account commands, the callback, automatic suspend and reactivate, a
-  // resumed tenant stream and a retried delivery, against the mock relying
-  // party. `local: true`.
-  { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // resumed tenant stream and a retried delivery, against the TEST PEER's
+  // relying party since #596 (the service's mock was deleted, #591 P5), so
+  // `testPeer: true`: SKIPPED, with the reason, in a run with no peer.
+  // `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false, local: true,
+    testPeer: true },
   // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
   // 2026-10-01): one realm's transmitter as the partner, another realm
   // receiving through federation relationships by poll and push, blocking

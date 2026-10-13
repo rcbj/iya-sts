@@ -350,7 +350,15 @@ class ProtocolEndpoints {
         // The x509 Client Identifiers (#230), whose settings are here.
         '/oid4vp/verifier-certificate',
         // The wallet sign-in (#38), whose four settings are on this page.
-        '/authn/wallet', '/authn/wallet/wait'
+        '/authn/wallet', '/authn/wallet/wait',
+        // The W3C VC API (#598), a product surface whose settings are on
+        // this page; off by default, it answers 501 until a realm turns it
+        // on (vcApi.enabled).
+        '/vc-api/issuers', '/vc-api/issuers/:issuer/credentials/issue',
+        '/vc-api/holders/:holder/presentations/prove',
+        '/vc-api/credentials/derive', '/vc-api/credentials/verify',
+        '/vc-api/presentations/verify', '/vc-api/credentials/status',
+        '/vc-api/resolve', '/vc-api/dereference'
       ].map(route),
       // CERTIFICATE ISSUANCE (2026-09-13; one page since 2026-10-12): ACME,
       // EST, SCEP and SPIFFE, on the Metadata tab of `/admin/cert-issuance`.
@@ -389,7 +397,7 @@ class ProtocolEndpoints {
         this.socket('spiffe-broker')
       ]),
       '/admin/xacml': [
-        '/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
+        '/xacml', '/xacml/pdp', '/xacml/policies',
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
         '/xacml/pip'
       ].map(route),
@@ -468,7 +476,7 @@ class ProtocolEndpoints {
       ].map(route),
       // ===== Provider Commands endpoints row (#151) =====
       '/admin/commands': [
-        '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
+        '/oauth2/commands/callback'
       ].map(route)
     };
   }

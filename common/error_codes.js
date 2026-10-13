@@ -6147,6 +6147,12 @@ const CODES = [
       'sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the ' +
       'operation does not take, or a page that is not one.',
     spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0331',
+    summary: 'A Start over at a sign-in step (/authn-api/mfa/{id}/start-over ' +
+      'or /authn-api/password-change/{id}/start-over) named a step that ' +
+      'has already ended: spent, expired or never minted. Nothing is put ' +
+      'back.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -9170,8 +9176,10 @@ const CODES = [
   { code: 'STS-OAUTH-0782',
     summary: 'The demonstration relying party\'s command endpoint refused a ' +
       'command — the development test control answering as a relying party ' +
-      'would (#151).',
-    spec: 'HTTP 400, 401 or 409 {error}' },
+      'would (#151). ' +
+      'Retired 2026-10-12 (#596): the demonstration relying party was deleted; the ' +
+      'test peer plays a Provider Commands relying party',
+    spec: 'HTTP 400, 401 or 409 {error}', retired: true },
   { code: 'STS-OAUTH-0783',
     summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
       'response_type code with a response mode that is not JARM (Part 2 ' +
@@ -14562,10 +14570,12 @@ const CODES = [
       'List publish hook) was called in a realm whose test controls are ' +
       'closed — a product realm — and answered as though it did not exist ' +
       '(#194). Retired by #585: a product realm\'s request is passed on ' +
-      'past the route to Express\'s own 404, which records no code.',
+      'past the route to Express\'s own 404, which records no code. Since ' +
+      '#598 the VC API is a product surface, off by default ' +
+      '(STS-VC-0120).',
     spec: '', retired: true },
   { code: 'STS-VC-0101',
-    summary: 'A VC-API test endpoint was presented an access token it ' +
+    summary: 'A W3C VC API endpoint was presented an access token it ' +
       'refused: not issued by this realm, not an access token, revoked, ' +
       'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
       'to a client that no longer declares that scope (#194).',
@@ -14676,6 +14686,21 @@ const CODES = [
     summary: 'An operation of the OpenID4VC demonstration\'s API ' +
       '(/vc-demo-api, #582) failed with an unexpected error.',
     spec: 'HTTP 500, { ok: false, errors }' },
+  { code: 'STS-VC-0120',
+    summary: 'A W3C VC API endpoint (/vc-api/*) was called in a realm that ' +
+      'does not serve it: vcApi.enabled is off, which is the default ' +
+      '(#598).',
+    spec: 'HTTP 501 {errors}' },
+  { code: 'STS-VC-0121',
+    summary: 'A W3C VC API client, or an address, made more calls than ' +
+      'vcApi.maxPerWindow allows in one security.rateLimitWindowS window ' +
+      '(#598).',
+    spec: 'HTTP 429 {errors} with Retry-After' },
+  { code: 'STS-VC-0122',
+    summary: 'A W3C VC API request carried an option the endpoint does not ' +
+      'understand, or an option value of the wrong shape — refused as VCALM ' +
+      'requires (#598).',
+    spec: 'HTTP 400 {errors}' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -17972,13 +17997,17 @@ const CODES = [
       'then refuse with 403' },
   { code: 'STS-XACML-0014',
     summary: 'The embedded demonstration PEP at GET /xacml/protected refused ' +
-      'the subject because the decision was not one its bias allows.',
-    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer' },
+      'the subject because the decision was not one its bias allows. ' +
+      'Retired 2026-10-12 (#596): the demonstration PEP was deleted; the ' +
+      'remote PEP container\'s GET /protected is the demonstration',
+    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer', retired: true },
   { code: 'STS-XACML-0015',
     summary: 'The embedded demonstration PEP refused a Permit because the ' +
       'decision carried an obligation it cannot discharge (XACML 3.0 ' +
-      'section 7.2).',
-    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer' },
+      'section 7.2). ' +
+      'Retired 2026-10-12 (#596): the demonstration PEP was deleted; the ' +
+      'remote PEP container\'s GET /protected is the demonstration',
+    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer', retired: true },
   { code: 'STS-XACML-0016',
     summary: 'GET /xacml was asked with a format or bias query parameter ' +
       'outside its allowed values.',

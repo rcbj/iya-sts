@@ -5503,6 +5503,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "PEM-certifikat, sammanfogade, för de Wallet Providers och nyckellagringskomponenter vars nyckelattesteringar den här utfärdaren tror på: en attestering måste verifieras mot en av dessa nycklar, eller vara signerad av ett certifikat (dess x5c) som en av dem utfärdat. Tomt litar på ingen, och en nyckelattestering avvisas då."
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "Tillhandahåll W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "Tillhandahåll W3C CCG Verifiable Credentials API (VCALM) på /vc-api: en utfärdare som säkrar ett intyg den får (Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019, ecdsa-jcs-2019 och ecdsa-sd-2023, eller ett VC-JOSE-COSE-kuvert), en innehavare som bevisar en presentation och härleder ett selektivt röjande, en verifierare av intyg och presentationer, en statustjänst över denna domäns Bitstring Status Lists, och DID-uppslagning av did:key, did:jwk och denna domäns egen did:web. Varje anrop kräver en åtkomsttoken som denna domän utfärdat och som bär vc-api:issue eller vc-api:verify — skyddade omfång, utfärdade bara till en klient som en administratör deklarerat dem på — i alla lägen. Det signerar med egna nycklar, var och en namngiven av sin did:key, aldrig med nycklarna som signerar denna domäns tokens. AV SOM STANDARD, eftersom det signerar dokument som anroparen skrev: avstängt svarar varje /vc-api-sökväg 501 — funktionen är avstängd, URL:en är inte fel."
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "VC API-anrop en klient får göra per hastighetsbegränsningsfönster"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "Hur många /vc-api-anrop en klient — och en adress — får göra i ett security.rateLimitWindowS-fönster, räknat per domän; därefter avvisas ett anrop med 429 och Retry-After. ETT EGET TAL, av xacml.pipMaxPerWindow:s skäl: security.rateLimitPerIdentity är fem, eftersom den skyddar en inloggning, och en utfärdare eller verifierare som en koordinator anropar en gång per intyg skulle stängas av av den. Det den begränsar är kostnad: ett anrop kanoniserar JSON-LD och signerar eller verifierar, och en insläppt klient kunde annars förbruka tjänstens CPU i en slinga."
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "Aktivera Kerberos"
@@ -6346,14 +6362,6 @@
   "xacml.maxPolicies|description": {
     "en": "eae9db3ed7f2d788",
     "text": "Hur många poster som får finnas under ou=policies. Samma slags gräns som ou=federations och ou=applications har, och av samma skäl: den här katalogen ligger i minnet i standardläget för persistens, och en anropare som kan skapa poster utan gräns kan uttömma den. Att nå gränsen vägrar SKAPANDET och loggar; den tar aldrig bort något."
-  },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "Vad den inbäddade PEP:en gör med ett icke-Permit"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "DET HÄR ÄR PEP:ENS BESLUT OCH INTE PDP:NS, vilket är hela skälet till att det är en inställning. XACML avsnitt 7.2 låter en PEP vara deny-biased (allt som inte är Permit är ett avslag) eller permit-biased (allt som inte är Deny tillåts), och verkliga driftsättningar skiljer sig åt. Deny-biased är standard eftersom det är vad en PEP som skyddar något bör vara; permit-biased finns så att en klient kan se vad det andra valet gör med ett Indeterminate, vilket är fallet där de två är oense och det som ingen testar. Endast utvecklingsläge: dess enda läsare, /xacml/protected, är en demonstrationsslutpunkt (#585)."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -7516,8 +7524,8 @@
     "text": "Grupp som ger rollen XACML_USER"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "Den kataloggrupp vars medlemmar har den inbyggda rollen XACML_USER, vilket är vad de fyra egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp, GET /xacml/policies och GET /xacml/protected. En anropare som presenterar ett klientcertifikat som den här tjänsten VERIFIERADE är någon den kan namnge; medlemskap i den här gruppen är det som gör den till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument som den här tjänsten upprätthåller sin egen åtkomst med, och en grupp som gav båda skulle göra att en anropare som släpps in till demonstrationsytan i tysthet släpps in även till dem. Att ställa in den till en tom sträng betyder att INGEN har rollen, vilket stänger de fyra slutpunkterna för varje anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbäddade PEP:erna för utfärdande och åtkomst samtidigt."
+    "en": "6256e6a60d3799e6",
+    "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på demonstrationsytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

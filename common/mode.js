@@ -3058,15 +3058,13 @@ const REQUIREMENTS = [
   // endpoint.
   { id: 'demo-endpoints',
     what: 'The demonstration and test-control endpoints exist',
-    development: 'Served and listed: the commands demonstration relying ' +
-                 'party ' +
-                 '(/oauth2/commands/mock-rp), the demonstration issuer and ' +
+    development: 'Served and listed: the demonstration issuer and ' +
                  'verifier pages (/issuer, /issuer/offer, /oid4vp/verifier, ' +
                  '/oid4vp/start, /oid4vp/done, /oid4vp/result/{state}), the ' +
                  'OpenID4VCI readbacks, /did/generate, the VC-API test ' +
                  'endpoints, the protected Kerberos service (/krb5/service ' +
                  'and its TCP socket), /krb5/principals, /spnego and ' +
-                 '/spnego/protected, and /xacml/protected.',
+                 '/spnego/protected.',
     product: 'None of them is served or listed. Each answers exactly as a ' +
              'path nothing is registered on does — Express\'s own 404 ' +
              '"Cannot GET" — and no metadata page, console page, document ' +
@@ -3834,7 +3832,8 @@ const WRITE_REFUSALS = {
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
     'without the workload.spiffe.io header MUST be refused.',
-  // #585: the one row is xacml.pepBias, read only by /xacml/protected.
+  // #585: the one row was xacml.pepBias, read only by /xacml/protected; both
+  // went to the remote PEP in #596 and no row asks this now.
   servesDemoEndpoints:
     'it configures a demonstration endpoint, and product serves none of ' +
     'them. Try it in a development realm.',

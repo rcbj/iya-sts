@@ -3386,7 +3386,9 @@ class AdminApi {
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API credential status action.");
         },
-        actions: ['suspend', 'reinstate', 'revoke'].map(function (action) {
+        // `any`: the publish action below carries a body of another shape.
+        actions: ['suspend', 'reinstate', 'revoke'].map(function (action):
+          any {
           return {
             action: action,
             operationId: action + 'Credential',
@@ -3416,7 +3418,35 @@ class AdminApi {
             },
             responseDescription: 'The index and its new status.'
           };
-        })
+        }).concat([{
+          // THE STATUS-LIST PUBLISH (#598), moved here from the VC API's
+          // test hook `POST /oid4vci/status-lists/bitstring/{purpose}/
+          // publish` when the VC API became a product surface: an
+          // operator's act, Admin Write, beside the Credential status tab's
+          // control. `admin-ui/vc_status_admin.ts` argues it.
+          action: 'publish',
+          operationId: 'publishStatusList',
+          summary: 'Publish one Bitstring Status List',
+          description: 'The W3C test suites\' "publish the list now", for ' +
+                       'the `revocation` or `suspension` Bitstring Status ' +
+                       'List. A list here is computed on every read from ' +
+                       'the statuses set so far, so it is current already: ' +
+                       'the answer says so, and the next fetch serves every ' +
+                       'status, signed afresh. A purpose that is neither is ' +
+                       '400 with `errors`.',
+          requestBodyRequired: true,
+          requestBody: {
+            type: 'object',
+            properties: {
+              purpose: { type: 'string', enum: ['revocation', 'suspension'],
+                         description: 'Which list.' }
+            },
+            required: ['purpose'],
+            examples: [{ purpose: 'revocation' }],
+            additionalProperties: false
+          },
+          responseDescription: 'The purpose, and that the list is current.'
+        }])
       },
 
       // ---------------------------------------------------------------------
@@ -9759,7 +9789,7 @@ class AdminApi {
             summary: 'Revoke everything for one identity, under every spelling',
             description: 'The users list\'s `key`, and every spelling of it ' +
                          '— `alice`, her `urn:uuid:<entryUUID>` subject and ' +
-                         '`alice@STS.MOCK` are one ' +
+                         '`alice@EXAMPLE.COM` are one ' +
                          'identity here, so revoking ' +
                          '"for alice" means all of them. Use ' +
                          '`revoke-subject` ' +
@@ -14411,12 +14441,7 @@ class AdminApi {
                      'ABOUT SOMEBODY ELSE\'S BOUNDARY. Every other protocol ' +
                      'here authenticates or provisions a person; this one is ' +
                      'handed a subject who was authenticated somewhere else ' +
-                     'and asked whether they may.\n\n`pepBias` is the ' +
-                     'embedded Policy ENFORCEMENT point\'s setting and not ' +
-                     'the PDP\'s. Deny-biased and permit-biased agree on ' +
-                     'every Permit and every Deny and differ ' +
-                     'on Indeterminate and NotApplicable, ' +
-                     'which is exactly the case nobody tests.',
+                     'and asked whether they may.',
         mirrors: 'GET /admin/xacml',
         responseDescription: 'The PDP, its repository and its PIP.',
         responseSchema: { $ref: '#/components/schemas/Xacml' },
@@ -15714,10 +15739,9 @@ class AdminApi {
                          'AND you must also do this", and section 7.2 makes ' +
                          'it ' +
                          'binding: a PEP that cannot discharge one MUST NOT ' +
-                         'grant the access. Both PEPs here implement that — ' +
-                         'the embedded one at /xacml/protected and the ' +
-                         'remote container — and it is the part ' +
-                         'implementations skip.',
+                         'grant the access. The remote PEP container ' +
+                         'implements that, and /admin/xacml/decide shows ' +
+                         'it — and it is the part implementations skip.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',

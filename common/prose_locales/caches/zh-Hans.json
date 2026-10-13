@@ -1216,8 +1216,8 @@
     "text": "带状态的 VC-API 凭据"
   },
   "caches.store.vc-api.issued.description": {
-    "en": "a8b5945c11b02533",
-    "text": "VC-API 测试适配器签发的、带有状态条目的每个凭据，以及它所占用的状态列表索引，以便状态变更能找到它。"
+    "en": "6276c639d08ac2a7",
+    "text": "W3C VC API 带状态条目签发的每个凭证，以及它所占用的状态列表索引，以便状态变更能找到它。"
   },
   "caches.store.vc-api.issued.bound": {
     "en": "c05e415f3ddb333b",

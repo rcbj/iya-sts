@@ -108,6 +108,8 @@
   "webauthn.amrSecond": "密碼步驟已成功。成功後，工作階段會記錄 amr [\"pwd\",\"hwk\"] 和 acr \"mfa\"，且 {name} 的目錄項目會被標記為已使用多個因素進行身分驗證。",
   "webauthn.backup": "我沒有帶密碼金鑰 — 使用復原碼",
   "totp.title": "一次性驗證碼 — 身分驗證服務",
+  "startOver.button": "重新開始",
+  "startOver.note": "返回同一請求的登入畫面。此步驟中的任何內容都不會保留。",
   "totp.heading": "您的一次性驗證碼",
   "totp.sub": "<code>{name}</code> 的第二因素",
   "totp.label": "驗證器應用程式中的 {digits} 位數驗證碼",

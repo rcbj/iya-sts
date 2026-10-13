@@ -35,10 +35,6 @@
     "en": "beb8ca12489eec05",
     "text": "原則存放庫"
   },
-  "endpoints.route./xacml/protected.name": {
-    "en": "f400e014a6fec063",
-    "text": "內嵌 PEP"
-  },
   "endpoints.route./xacml/pep/register.name": {
     "en": "042b865d703aee20",
     "text": "遠端 PEP 註冊"
@@ -1475,6 +1471,10 @@
     "en": "f2d18b738357010b",
     "text": "強制變更密碼"
   },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "從密碼變更處重新開始登入"
+  },
   "endpoints.route./authn-api/mfa/:id.name": {
     "en": "b881ffb2600f827e",
     "text": "登入步驟頁面顯示的內容"
@@ -1526,6 +1526,10 @@
   "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
     "en": "7d4cd6f48237ebb7",
     "text": "用掉以電子郵件寄送的登入連結"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "從某個步驟重新開始登入"
   },
   "endpoints.route./authn/fingerprint.js.name": {
     "en": "e79a24977ac0a595",
@@ -1671,10 +1675,6 @@
     "en": "077e67ad034f4945",
     "text": "OpenID Provider Commands 回呼端點"
   },
-  "endpoints.route./oauth2/commands/mock-rp.name": {
-    "en": "f433c19afa03eaac",
-    "text": "示範依賴方命令端點（非規格端點）"
-  },
   "endpoints.route./admin-api/claim-providers.name": {
     "en": "263c769f55b58ee3",
     "text": "Claims Providers 主控台頁面，以 JSON 提供"
@@ -1739,10 +1739,6 @@
     "en": "69e5a2172fd0dff1",
     "text": "Bitstring Status List 認證"
   },
-  "endpoints.route./oid4vci/status-lists/bitstring/:purpose/publish.name": {
-    "en": "843ce39d261d74ad",
-    "text": "發布狀態清單（VC-API，測試控制項）"
-  },
   "endpoints.route./oid4vci/deferred_credential.name": {
     "en": "b64bd315376ba1ef",
     "text": "延遲認證端點"
@@ -1792,40 +1788,40 @@
     "text": "BBS 公開金鑰"
   },
   "endpoints.route./vc-api/issuers.name": {
-    "en": "02093df3defa8360",
-    "text": "VC-API 簽發者（測試控制項）"
+    "en": "73b838a87b15b09a",
+    "text": "VC API 的簽發者"
   },
   "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
-    "en": "413cb2bffe95b83f",
-    "text": "簽發認證（VC-API，測試控制項）"
+    "en": "36e4ff37d0083d67",
+    "text": "簽發憑證（VC API）"
   },
   "endpoints.route./vc-api/credentials/verify.name": {
-    "en": "f4d98610242a61f2",
-    "text": "驗證認證（VC-API，測試控制項）"
+    "en": "7f67271e211b78e1",
+    "text": "驗證憑證（VC API）"
   },
   "endpoints.route./vc-api/presentations/verify.name": {
-    "en": "8653b56b034f4dff",
-    "text": "驗證呈現（VC-API，測試控制項）"
+    "en": "f0ace30e55e137f1",
+    "text": "驗證出示（VC API）"
   },
   "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
-    "en": "71a4cace2f394f23",
-    "text": "證明呈現（VC-API，測試控制項）"
+    "en": "96508bdaea6f7f69",
+    "text": "證明出示（VC API）"
   },
   "endpoints.route./vc-api/credentials/derive.name": {
-    "en": "25c9160867a02407",
-    "text": "衍生選擇性揭露（VC-API，測試控制項）"
+    "en": "4af3df1e4c1f2f99",
+    "text": "衍生選擇性揭露（VC API）"
   },
   "endpoints.route./vc-api/credentials/status.name": {
-    "en": "bc88654c0b540225",
-    "text": "變更認證的狀態（VC-API，測試控制項）"
+    "en": "d231bdc923e68f8a",
+    "text": "變更憑證狀態（VC API）"
   },
   "endpoints.route./vc-api/resolve.name": {
-    "en": "24b89e8d97970744",
-    "text": "解析 DID（測試控制項）"
+    "en": "39c91a22e95b0c2e",
+    "text": "解析 DID"
   },
   "endpoints.route./vc-api/dereference.name": {
-    "en": "94ef1efe3d8eb38f",
-    "text": "解參照 DID URL（測試控制項）"
+    "en": "a7044c968ef56722",
+    "text": "解參照 DID URL"
   },
   "endpoints.route./.well-known/did.json.name": {
     "en": "9400b0ba526646db",

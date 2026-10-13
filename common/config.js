@@ -10545,6 +10545,51 @@ const SETTINGS = [
                  'one of them issued. Empty trusts none, and a key ' +
                  'attestation is then refused.' },
 
+  // --- The W3C VC API (#598) ------------------------------------------------
+  //
+  // **A PRODUCT SURFACE SINCE #598, AND OFF UNTIL A REALM TURNS IT ON.** Until
+  // then `/vc-api` was a development-only test control (#194-#199, #585). It
+  // is an issuer that signs a document ITS CALLER WROTE, a holder that
+  // presents one, and a verifier — so it is off by default for the reason any
+  // signing service is: nothing should be signing on a realm's behalf until
+  // that realm's administrator decided it should. `oid4vc/vc_api.ts` argues
+  // the surface; the setting decides only whether it exists.
+  { key: 'vcApi.enabled', group: 'W3C VC API',
+    label: 'Serve the W3C VC API',
+    env: 'STS_VC_API_ENABLED', type: 'bool', dflt: false, runtime: true,
+    description: 'Serve the W3C CCG Verifiable Credentials API (VCALM) at ' +
+                 '/vc-api: an issuer that secures a credential it is handed ' +
+                 '(Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ' +
+                 'ecdsa-rdfc-2019, ecdsa-jcs-2019 and ecdsa-sd-2023, or a ' +
+                 'VC-JOSE-COSE envelope), a holder that proves a ' +
+                 'presentation and derives a selective disclosure, a ' +
+                 'verifier of credentials and presentations, a status ' +
+                 'service over this realm\'s Bitstring Status Lists, and DID ' +
+                 'resolution of did:key, did:jwk and this realm\'s own ' +
+                 'did:web. Every call needs an access token this realm ' +
+                 'issued carrying vc-api:issue or vc-api:verify — protected ' +
+                 'scopes, issued only to a client an administrator declared ' +
+                 'them on — in every mode. It signs with keys of its own, ' +
+                 'each named by its did:key, never with the keys that sign ' +
+                 'this realm\'s tokens. OFF BY DEFAULT, because it signs ' +
+                 'documents its caller wrote: off, every /vc-api path ' +
+                 'answers 501 — the feature is off, the URL is not wrong.' },
+
+  { key: 'vcApi.maxPerWindow', group: 'W3C VC API',
+    label: 'VC API calls one client may make per rate-limit window',
+    env: 'STS_VC_API_MAX_PER_WINDOW', type: 'int', dflt: 600,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many /vc-api calls one client — and one address — may ' +
+                 'make in a security.rateLimitWindowS window, counted per ' +
+                 'realm; past it a call is refused 429 with Retry-After. ITS ' +
+                 'OWN NUMBER, for xacml.pipMaxPerWindow\'s reason: ' +
+                 'security.rateLimitPerIdentity is five, because it guards a ' +
+                 'sign-in, and an issuer or verifier a coordinator calls ' +
+                 'once per credential would be switched off by it. What it ' +
+                 'bounds is cost: a call canonicalizes JSON-LD and signs or ' +
+                 'verifies, and an admitted client could otherwise spend ' +
+                 'this service\'s CPU in a loop.' },
+
   // --- Kerberos ------------------------------------------------------------
   //
   // **A TRUST REALM HAS A KERBEROS OF ITS OWN SINCE 2026-09-15**, on the same
@@ -11767,8 +11812,9 @@ const SETTINGS = [
   // is deliberate in a service whose every other surface is a turnstile. A
   // PDP's whole output is a decision; a flag that made it answer Permit when
   // it could not decide would not be a mock of anything, it would be a broken
-  // PDP. What IS configurable is what happens at the PEP — see
-  // `xacml.pepBias`, which is the PEP's decision and not the PDP's.
+  // PDP. What happens at a PEP is the PEP's own configuration: the remote
+  // PEP's `PEP_BIAS` (`xacml.pepBias`, the demonstration PEP's, went with it
+  // to the `xacml-pep` container in #596).
   { key: 'xacml.enabled', group: 'XACML', label: 'XACML enabled',
     env: 'STS_XACML_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'When on, the XACML 3.0 endpoints under /xacml answer. ' +
@@ -11787,28 +11833,6 @@ const SETTINGS = [
                  'the default persistence mode, and a caller that can create ' +
                  'entries without bound can exhaust it. Reaching the limit ' +
                  'refuses the CREATE and logs; it never evicts.' },
-
-  { key: 'xacml.pepBias', group: 'XACML',
-    label: 'What the embedded PEP does with a non-Permit',
-    env: 'STS_XACML_PEP_BIAS', type: 'enum',
-    enumValues: ['deny-biased', 'permit-biased'], dflt: 'deny-biased',
-    runtime: true,
-    // DEVELOPMENT-ONLY (#585): the one reader is /xacml/protected, a
-    // demonstration endpoint product does not serve, so a product realm
-    // holding permit-biased would be a value nothing reads that looks like a
-    // policy loosened.
-    onlyWhile: 'servesDemoEndpoints',
-    description: 'THIS IS THE PEP\'S DECISION AND NOT THE PDP\'S, which is ' +
-                 'the whole reason it is a setting. XACML section 7.2 lets a ' +
-                 'PEP be deny-biased (anything that is not Permit is a ' +
-                 'refusal) or permit-biased (anything that is not Deny is ' +
-                 'allowed), and real deployments differ. Deny-biased is the ' +
-                 'default because it is what a PEP protecting anything ' +
-                 'should be; permit-biased exists so that a client can see ' +
-                 'what the other choice does to an Indeterminate, which is ' +
-                 'the case the two disagree about and the one nobody tests. ' +
-                 'Development mode only: its one reader, /xacml/protected, ' +
-                 'is a demonstration endpoint (#585).' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',
@@ -11835,10 +11859,9 @@ const SETTINGS = [
   // is a surprise to anybody who has already read the first.
   //
   // WHAT IS NOT HERE IS A SETTING THAT CHANGES A REMOTE PEP'S BIAS. A remote
-  // PEP is a SEPARATE PROCESS with its own configuration, and `xacml.pepBias`
-  // governs the EMBEDDED one at /xacml/protected and nothing else. A row here
-  // that appeared to set a remote PEP's bias would be a control that silently
-  // did nothing, which is worse than no control: the remote one reports the
+  // PEP is a SEPARATE PROCESS with its own configuration (`PEP_BIAS`). A row
+  // here that appeared to set a remote PEP's bias would be a control that
+  // silently did nothing, which is worse than no control: the remote one reports the
   // bias it is actually running with on every heartbeat, and the console shows
   // that rather than what this service would have chosen for it.
   { key: 'xacml.remotePeps', group: 'XACML',
@@ -13789,9 +13812,9 @@ const SETTINGS = [
     env: 'STS_ROLES_XACML_USER_GROUP', type: 'string', dflt: 'xacml-users',
     runtime: true,
     description: 'The directory group whose members hold the built-in ' +
-                 'XACML_USER role, which is what the four XACML endpoints ' +
-                 'proper require — GET /xacml, POST /xacml/pdp, GET ' +
-                 '/xacml/policies and GET /xacml/protected. A caller ' +
+                 'XACML_USER role, which is what the three XACML endpoints ' +
+                 'proper require — GET /xacml, POST /xacml/pdp and GET ' +
+                 '/xacml/policies. A caller ' +
                  'presenting a client certificate this service VERIFIED is ' +
                  'somebody it can name; membership of this group is what ' +
                  'makes them somebody it lets in, and the two are kept apart ' +
@@ -13803,7 +13826,7 @@ const SETTINGS = [
                  'access with, and one group granting both would make ' +
                  'admitting a caller to the demonstration surface silently ' +
                  'admit it to those. Setting it to the empty string means ' +
-                 'NOBODY holds the role, which closes those four endpoints ' +
+                 'NOBODY holds the role, which closes those three endpoints ' +
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },

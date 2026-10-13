@@ -1784,8 +1784,8 @@
     "text": "L’endroit où envoyer par POST la notification de changement, si le PEP en a fourni un. LA NOTIFICATION N’EST JAMAIS LE MÉCANISME — un PEP récupère selon son propre intervalle et converge sans elle — si bien qu’une URL absente, refusée ou injoignable coûte de la latence et rien d’autre."
   },
   "xacmlPeps.schema.attributes.xacmlPepBias.what": {
-    "en": "b30e6c33ace1aeea",
-    "text": "Le biais avec lequel le PEP distant indique fonctionner. SIGNALÉ PAR LUI, jamais défini d’ici : xacml.pepBias régit le PEP INTÉGRÉ sur /xacml/protected, et une commande qui semblerait en définir un distant ne ferait silencieusement rien."
+    "en": "9d0aed2bdeb99a4b",
+    "text": "Le biais avec lequel le PEP distant indique fonctionner. SIGNALÉ PAR LUI, jamais défini d’ici : c’est la propre configuration du PEP (PEP_BIAS), et une commande qui semblerait le définir ne ferait silencieusement rien."
   },
   "xacmlPeps.schema.attributes.xacmlPepResource.what": {
     "en": "b53451dce7081be1",

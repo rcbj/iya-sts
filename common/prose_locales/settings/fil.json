@@ -5503,6 +5503,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "Mga PEM certificate, pinagdugtong, ng mga Wallet Provider at key storage component na ang mga key attestation ay pinaniniwalaan ng issuer na ito: dapat mag-verify ang attestation laban sa isa sa mga key na ito, o pinirmahan ng certificate (ang x5c nito) na na-issue ng isa sa mga ito. Walang pinagkakatiwalaan kapag walang laman, at tinatanggihan ang key attestation."
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "Ihain ang W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "Ihain ang W3C CCG Verifiable Credentials API (VCALM) sa /vc-api: isang issuer na nagse-secure ng kredensyal na ibinibigay dito (Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ecdsa-rdfc-2019, ecdsa-jcs-2019 at ecdsa-sd-2023, o isang VC-JOSE-COSE envelope), isang holder na nagpapatunay ng presentasyon at kumukuha ng piling pagsisiwalat, isang verifier ng mga kredensyal at presentasyon, isang serbisyo ng status sa ibabaw ng Bitstring Status Lists ng realm na ito, at DID resolution ng did:key, did:jwk at ng sariling did:web ng realm na ito. Bawat tawag ay nangangailangan ng access token na inilabas ng realm na ito na may dalang vc-api:issue o vc-api:verify — mga protektadong scope, inilalabas lamang sa client na pinagdeklarahan ng isang administrator — sa bawat mode. Pumipirma ito gamit ang sarili nitong mga key, bawat isa ay pinangalanan ng did:key nito, hindi kailanman gamit ang mga key na pumipirma sa mga token ng realm na ito. NAKA-OFF BILANG DEFAULT, dahil pumipirma ito ng mga dokumentong isinulat ng tumatawag dito: kapag naka-off, bawat /vc-api path ay sumasagot ng 501 — naka-off ang feature, hindi mali ang URL."
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "Mga tawag sa VC API na maaaring gawin ng isang client bawat rate-limit window"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "Ilang tawag sa /vc-api ang maaaring gawin ng isang client — at ng isang address — sa isang security.rateLimitWindowS window, binibilang bawat realm; lampas doon, ang tawag ay tinatanggihan ng 429 na may Retry-After. SARILI NITONG BILANG, sa dahilan ng xacml.pipMaxPerWindow: ang security.rateLimitPerIdentity ay lima, dahil nagbabantay ito ng pag-sign in, at ang isang issuer o verifier na tinatawag ng isang coordinator nang isang beses bawat kredensyal ay mapuputol nito. Ang nililimitahan nito ay gastos: ang isang tawag ay nagka-canonicalize ng JSON-LD at pumipirma o nagve-verify, at kung hindi ay maaaring gugulin ng isang tinanggap na client ang CPU ng serbisyong ito sa isang loop."
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "I-enable ang Kerberos"
@@ -6346,14 +6362,6 @@
   "xacml.maxPolicies|description": {
     "en": "eae9db3ed7f2d788",
     "text": "Ilang entry ang maaaring nasa ilalim ng ou=policies. Ang parehong uri ng limitasyon na dala ng ou=federations at ou=applications, at sa parehong dahilan: nasa memory ang directory na ito sa default na persistence mode, at mauubos ito ng caller na kayang gumawa ng mga entry nang walang hangganan. Ang pag-abot sa limitasyon ay tumatanggi sa CREATE at naglo-log; hindi ito kailanman nag-e-evict."
-  },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "Ang ginagawa ng embedded PEP sa hindi Permit"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "DESISYON ITO NG PEP AT HINDI NG PDP, na siyang buong dahilan kung bakit ito setting. Pinapayagan ng XACML section 7.2 ang PEP na maging deny-biased (anumang hindi Permit ay pagtanggi) o permit-biased (anumang hindi Deny ay pinapayagan), at nagkakaiba ang mga tunay na deployment. Deny-biased ang default dahil iyon ang dapat na PEP na nagpoprotekta ng anuman; umiiral ang permit-biased para makita ng client kung ano ang ginagawa ng ibang pagpipilian sa isang Indeterminate, na siyang kaso kung saan nagkakaiba ang dalawa at ang walang sinumang sumusubok. Sa development mode lamang: ang nag-iisang bumabasa nito, ang /xacml/protected, ay isang demonstration endpoint (#585)."
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -7516,8 +7524,8 @@
     "text": "Group na nagbibigay ng XACML_USER role"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na XACML_USER role, na siyang hinihingi ng apat na tunay na XACML endpoint — GET /xacml, POST /xacml/pdp, GET /xacml/policies at GET /xacml/protected. Ang caller na nagpapakita ng client certificate na VINE-VERIFY ng serbisyong ito ay isang mapapangalanan nito; ang membership sa group na ito ang gumagawa sa kanila na isang pinapapasok nito, at pinaghihiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: pinapatunayan ng certificate ang identity at nagbibigay ng pahintulot ang group. PANGALAWANG GROUP ITO AT HINDI ANG PAREHO: umaabot ang REMOTE_PEPS sa tatlong /xacml/pep endpoint, na namamahagi ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang group na nagbibigay ng pareho ay gagawing ang pagpapapasok ng caller sa demonstration surface ay tahimik na pagpapapasok din dito sa mga iyon. Ang pagtatakda nito sa walang lamang string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa apat na endpoint na iyon sa bawat caller; iyon ang paraan para alisin ang XACML surface nang hindi ino-off ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
+    "en": "6256e6a60d3799e6",
+    "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa demonstration surface. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",

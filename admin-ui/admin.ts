@@ -8184,7 +8184,8 @@ class AdminConsole {
       }),
       settings: this.configSettingsJson(
         row.settingsPath || row.path,
-        row.settingsGroup ? [row.settingsGroup] : undefined),
+        row.settingsGroup ? ([] as string[]).concat(row.settingsGroup)
+                          : undefined),
       // THE SAME PROSE AS MARKUP (#446): `what` and `notes` are its plain
       // text for a reader of the JSON, and a page drawn from this answer
       // draws the lead and the warnings as this console wrote them.
@@ -8752,6 +8753,10 @@ const SETTING_HOMES = [
   { group: 'Custom listeners', pages: ['/admin/listeners'] },
   { group: 'OID4VCI', pages: ['/admin/vc'] },
   { group: 'OID4VP', pages: ['/admin/vc'] },
+  // THE W3C VC API (#598), on the OpenID4VCI tab of the same page: it is the
+  // realm's other way of issuing a credential, and it signs over the same
+  // status lists the Credential status tab beside it draws.
+  { group: 'W3C VC API', pages: ['/admin/vc'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
   { group: 'LDAP', pages: ['/admin/ldap'] },
   // A page of its own rather than a section of /admin/ldap, and the reason is
@@ -10046,7 +10051,8 @@ const PROTOCOL_SETTINGS_PAGES = [
 
   { path: '/admin/oid4vci', title: 'OpenID4VCI', settingsPath: '/admin/vc',
     settingsPage: '/admin/oid4vci',
-    settingsGroup: 'OID4VCI',
+    // The W3C VC API's rows are drawn on this tab too (#598).
+    settingsGroup: ['OID4VCI', 'W3C VC API'],
     lead: '<strong>The credential issuer at <code>/issuer</code>, and the ' +
           'settings around it.</strong> What a credential CONTAINS is <a ' +
           'href="/admin/vc#vc-tab-claims">Credential claims</a> on the ' +

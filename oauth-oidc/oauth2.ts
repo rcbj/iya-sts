@@ -6926,7 +6926,7 @@ class OAuth2Server {
                ' ' +
                'and this service holds ' +
                'others: ' + out.mismatched.join('; ') + '. The values held ' +
-               'are what is returned — a mock that echoed back whatever a ' +
+               'are what is returned — a service that echoed back whatever a ' +
                'client asked it to assert could not be used to test ' +
                'anything.');
     }

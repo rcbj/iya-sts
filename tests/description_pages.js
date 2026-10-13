@@ -231,9 +231,12 @@ function childMain() {
     const devSaml11 = json(await get('/saml11?format=json'));
     const devXacml = json(await get('/xacml?format=json'));
     note(devSaml2 && !('sp' in devSaml2.paths) && devSaml11 &&
-         !('rp' in devSaml11.paths) && devXacml && devXacml.pep,
-         '5a. development: the embedded PEP is listed, and no mock SP or ' +
-         'RP (#592)', JSON.stringify([devSaml2 && devSaml2.paths,
+         !('rp' in devSaml11.paths) && devXacml && !('pep' in devXacml) &&
+         !(devXacml.endpoints || []).some(function (row) {
+           return row.path === '/xacml/protected';
+         }),
+         '5a. development: no mock SP or RP (#592), and no embedded ' +
+         'demonstration PEP (#596: it is the remote PEP\'s)', JSON.stringify([devSaml2 && devSaml2.paths,
                                       devSaml11 && devSaml11.paths]));
     config.setOverride('global.mode', 'product');
     const prodSaml2 = json(await get('/saml2?format=json'));
@@ -243,7 +246,7 @@ function childMain() {
     config.clearOverride('global.mode');
     note(prodSaml2 && !('sp' in prodSaml2.paths) && prodSaml11 &&
          !('rp' in prodSaml11.paths) && prodXacml &&
-         prodXacml.pep === null &&
+         !('pep' in prodXacml) &&
          !(prodXacml.endpoints || []).some(function (row) {
            return row.path === '/xacml/protected';
          }) && prodShell && !('sp' in prodShell.view.paths),

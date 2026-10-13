@@ -108,6 +108,8 @@
   "webauthn.amrSecond": "A password step has already succeeded. On success the session records amr [\"pwd\",\"hwk\"] and acr \"mfa\", and the directory entry for {name} is flagged as having authenticated with more than one factor.",
   "webauthn.backup": "I do not have my passkey — use a recovery code",
   "totp.title": "One-time code — authentication service",
+  "startOver.button": "Start over",
+  "startOver.note": "Back to the sign-in screen for the same request. Nothing from this step is kept.",
   "totp.heading": "Your one-time code",
   "totp.sub": "Second factor for <code>{name}</code>",
   "totp.label": "The {digits}-digit code from your authenticator app",

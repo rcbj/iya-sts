@@ -5503,6 +5503,22 @@
     "en": "7f75db9b5f30bc72",
     "text": "串联在一起的 PEM 证书，属于此颁发者所信任其密钥证明的钱包提供方和密钥存储组件：证明必须能依据其中某个密钥验证，或由其中某个证书签发的证书（其 x5c）签署。为空时不信任任何一方，此时密钥证明会被拒绝。"
   },
+  "vcApi.enabled|label": {
+    "en": "5c2f9e8aabdd4d3b",
+    "text": "提供 W3C VC API"
+  },
+  "vcApi.enabled|description": {
+    "en": "77f4e7952de5c4fd",
+    "text": "在 /vc-api 提供 W3C CCG Verifiable Credentials API（VCALM）：一个为交给它的凭证加固的签发者（Data Integrity eddsa-rdfc-2022、eddsa-jcs-2022、ecdsa-rdfc-2019、ecdsa-jcs-2019 和 ecdsa-sd-2023，或 VC-JOSE-COSE 信封），一个证明出示并派生选择性披露的持有者，一个凭证和出示的验证者，一个基于本领域 Bitstring Status Lists 的状态服务，以及对 did:key、did:jwk 和本领域自身 did:web 的 DID 解析。每次调用都需要本领域签发的、带有 vc-api:issue 或 vc-api:verify 的访问令牌——受保护的范围，只签发给管理员为其声明过的客户端——在所有模式下均如此。它使用自己的密钥签名，每个密钥以其 did:key 命名，绝不使用签署本领域令牌的密钥。默认关闭，因为它签署的是调用方编写的文档：关闭时，每个 /vc-api 路径都回答 501——功能已关闭，而不是 URL 错误。"
+  },
+  "vcApi.maxPerWindow|label": {
+    "en": "b70bc803ee1e309f",
+    "text": "每个速率限制窗口内一个客户端可发起的 VC API 调用数"
+  },
+  "vcApi.maxPerWindow|description": {
+    "en": "0e40583701627c68",
+    "text": "一个客户端——以及一个地址——在一个 security.rateLimitWindowS 窗口内可以发起多少次 /vc-api 调用，按领域计数；超过后调用以 429 及 Retry-After 被拒绝。它有自己的数值，理由与 xacml.pipMaxPerWindow 相同：security.rateLimitPerIdentity 是五，因为它守护的是登录，而协调者每个凭证调用一次的签发者或验证者会被它关停。它所限制的是成本：一次调用会规范化 JSON-LD 并签名或验证，否则一个已获准的客户端可能在循环中耗尽本服务的 CPU。"
+  },
   "krb5.enabled|label": {
     "en": "9fea652a8357184b",
     "text": "启用 Kerberos"
@@ -6346,14 +6362,6 @@
   "xacml.maxPolicies|description": {
     "en": "eae9db3ed7f2d788",
     "text": "ou=policies 下可以存放多少个条目。与 ou=federations 和 ou=applications 具有同类限制，原因也相同：在默认持久化模式下此目录位于内存中，能够无限制创建条目的调用方可以耗尽它。达到上限会拒绝创建并记录日志；它从不驱逐条目。"
-  },
-  "xacml.pepBias|label": {
-    "en": "515031e03b0ef3a7",
-    "text": "嵌入式 PEP 如何处理非 Permit 结果"
-  },
-  "xacml.pepBias|description": {
-    "en": "ad0594c9ac4f34c1",
-    "text": "这是 PEP 的决定而不是 PDP 的决定，这正是它成为一项设置的全部原因。XACML 第 7.2 节允许 PEP 采用拒绝偏向（凡不是 Permit 都拒绝）或允许偏向（凡不是 Deny 都允许），实际部署各有不同。默认采用拒绝偏向，因为保护任何东西的 PEP 都应如此；允许偏向的存在是为了让客户端能看到另一种选择如何处理 Indeterminate——这正是两者存在分歧、而又无人测试的情况。仅限开发模式：它唯一的读取方 /xacml/protected 是演示端点（#585）。"
   },
   "xacml.returnPolicyIdList|label": {
     "en": "52841ab403a871af",
@@ -7516,8 +7524,8 @@
     "text": "授予 XACML_USER 角色的组"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "7aadc7fdf510763d",
-    "text": "其成员拥有内置 XACML_USER 角色的目录组，这是四个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp、GET /xacml/policies 和 GET /xacml/protected。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问演示界面就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这四个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
+    "en": "6256e6a60d3799e6",
+    "text": "其成员拥有内置 XACML_USER 角色的目录组，这是三个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp 和 GET /xacml/policies。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问演示界面就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这三个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
