@@ -1347,7 +1347,8 @@ THAT BOTH LAUNCHERS RUN AGAINST A LIVE SERVICE.** It builds a Root CA, an
 Issuing CA and a TLS client leaf on `common/vendored/x509.js` — the debugger's
 own PKI engine, already in this repository, already what `spiffe/spiffe_ca.ts`
 issues X509-SVIDs with, and held to roughly 240 certificates against OpenSSL by
-`tests/pki_x509.js` over there — and POSTs the Root to `/tls/trust`. That is the
+`tests/pki_x509.js` over there — and adds the Root through `POST
+/admin-api/tls/trust/add` (the open `POST /tls/trust` until #597). That is the
 flow the parent's `tests/pki_mutual_tls.js` has always used, with a command line
 instead of a browser.
 
@@ -1592,8 +1593,8 @@ TO EMPTY THE CLIENT TRUSTSTORE (2026-09-06).** That walk carries NO SESSION
 deliberately, so a bodyless POST to a console form is refused 401 — a handler
 answering, which is the whole of what the check asks. **That argument holds for
 everything behind a gate and for nothing in front of one**, and
-`POST /tls/trust/clear` is in front of one: it needs no credential, it succeeds,
-and it removes every anchor the launcher posted.
+`POST /tls/trust/clear` was in front of one until #597 deleted it: it needed no
+credential, it succeeded, and it removed every anchor the launcher posted.
 
 Nothing depended on that until 2026-09-06. A client certificate was a turnstile
 and `GET /xacml/pep/policies` needed none; now the remote PEP container's pull,
