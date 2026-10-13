@@ -436,9 +436,8 @@ function childMain() {
         return predicate();
       };
       const trustBase = trustNow();
-      check(trustBase.broker >= 1 && trustBase.api === null,
-            'the Broker endpoint trusts the realm\'s anchors, and the realm ' +
-            'binds no SPIRE Server API port', trustBase);
+      check(trustBase.broker >= 1,
+            'the Broker endpoint trusts the realm\'s anchors', trustBase);
       const nodeCrypto = require('crypto');
       const federatedCa = await testCa.makeCa();
       const federatedTd = 'broker-federated.test';
@@ -456,6 +455,9 @@ function childMain() {
         return trustNow().broker === trustBase.broker + 1;
       }), 'the federated authority joins the Broker endpoint\'s TLS trust',
       { before: trustBase, after: trustNow() });
+      check(trustBase.api === null || trustNow().api === trustBase.api + 1,
+            'and the SPIRE Server API\'s, where its credentials are built',
+            { before: trustBase, after: trustNow() });
       const farStrangerSvid = await foreignSvid(federatedCa,
         'spiffe://' + federatedTd + '/stranger');
       const askAsFarStranger = async function () {
