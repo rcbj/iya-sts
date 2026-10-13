@@ -964,6 +964,14 @@ const JOBS = [
   // another lane loads.
   // `local: true`: this repository's own sign-in screen and API.
   { file: 'sts_passkey_usernameless.js', browser: false, local: true },
+  // AN APPLICATION'S PASSKEY POLICY (#609): the named passkey policies
+  // naming an application, read back through `GET /admin-api/applications`'s
+  // `page.passkeyPolicies` in precedence order with the one that applies
+  // marked, and the policy page's application search over the Applications
+  // list, its Add saved by identifier. `local: true`: this repository's own
+  // API. In a throwaway realm, because named policies change what a sign-in
+  // gets.
+  { file: 'sts_passkey_policy_application.js', browser: false, local: true },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
   // /portal/keys in a throwaway realm with statements this job makes — an
   // x5c packed statement under a root minted at run time and configured as
