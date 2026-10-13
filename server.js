@@ -933,7 +933,24 @@ serviceState.start().then(function (both) {
     });
     return made;
   });
-  return krbtgtReady.then(function () {
+  // THE ACCEPTOR'S RANDOM KEY (2026-10-12), after the krbtgt keys and for
+  // the same reason: in product, a realm whose krb5.servicePassword is empty
+  // or the published default gets a random key for krb5.servicePrincipal,
+  // made once for the cluster, so a base installation's SPNEGO sign-in works
+  // with no password configured. Never rejects.
+  const acceptorReady = krbtgtReady.then(function () {
+    return require('./kerberos/krb5_person_keys').ensureAcceptorKeys();
+  }).then(function (made) {
+    (made || []).forEach(function (one) {
+      if (one && one.ok === false) {
+        log.warn('sts: trust realm "' + (one.realm || 'default') + '" has ' +
+                 'no key for its Kerberos acceptor (' + (one.why ||
+                 'see above') + '); the acceptor refuses until one is made.');
+      }
+    });
+    return made;
+  });
+  return acceptorReady.then(function () {
     // THE MAIL CHANNEL (#63): in PRODUCT, a realm whose configured transport
     // cannot be built — a missing SDK, an unreadable secret, `capture` — is
     // a service that would promise reset links it cannot send, and it does

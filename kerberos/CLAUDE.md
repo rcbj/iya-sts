@@ -337,7 +337,8 @@ binding 88 needs root, and on a host run it usually fails.
   `/authn/spnego`'s facts table draw — they listed `localhost` while a
   browser's `HTTP/localhost` was refused `KDC_ERR_S_PRINCIPAL_UNKNOWN`. A
   product deployment reached at `localhost` sets `krb5.servicePrincipal` to
-  `HTTP/localhost` (and a real `krb5.servicePassword`). No require was added
+  `HTTP/localhost` — which `docker-compose.yml` now does, and the acceptor is
+  keyed at random (*THE ACCEPTOR'S KEY IN A BASE INSTALLATION*, below). No require was added
   to the parent's COPY closure. Service,
   computer and `krbtgt` accounts keep their own distinct passwords — the two krbtgts
   and the trust must be three different secrets or assertions about which key sealed
@@ -1663,6 +1664,71 @@ in-process transport) and `tests/vendored/sts_kerberos_rc4.js` (`local: true`,
 over TCP 88 in both modes, and MIT `kinit` with `permitted_enctypes =
 rc4-hmac`). `krb5_wire.js` gained `etypes`, `subkeyEtype` and an RC4 PRF for
 them.
+
+## THE ACCEPTOR'S KEY IN A BASE INSTALLATION: RANDOM, AND THE SPN FROM COMPOSE (2026-10-12)
+
+**THE GAP.** A `docker compose up` gave a product-mode service whose SPNEGO
+sign-in could not work: 88 was not published, the acceptor held
+`HTTP/web.example.com` while a browser at `https://localhost:8081` asks for
+`HTTP/localhost` (product creates no SPN on demand: `KDC_ERR_S_PRINCIPAL_UNKNOWN`,
+STS-KRB-0038), and product refused the published `krb5.servicePassword`
+(STS-KRB-0061), so there was no acceptor account at all. It was made to work on
+8081 by hand with an override carrying an invented password; rcbj asked for
+every piece in the base installation.
+
+**THE KEY IS RANDOM, AND STORED, AS THE KRBTGT'S IS** (the section below).
+`mode.generatesAcceptorKey()` (product): where the acceptor's account was refused
+ONLY for its password (`passwordRefused` on `ctx.serviceAccount`, set in
+`configuredServiceDefinition()`'s two password refusals and nowhere else — an SPN
+that is not one is not keyed), `krb5_person_keys.ts` makes the SPN exactly what an
+operator's create-service makes — the application entry `<spn>@<REALM>`, a random
+key per enctype sealed on it — through the same `createService()`, marked
+`info.generated: "acceptor"`, and drops the keytab: nobody asked for one, and a
+Rotate on `/admin/kerberos/principals` hands one over. It is made **once for the
+cluster** — at startup by `ensureAcceptorKeys()` (from `server.js`, after the
+krbtgt keys and before anything forks or binds), under the claim
+`krb5.acceptor-create` behind a shared store, or at once where this process is the
+store's only writer — and **when the acceptor first asks**, for a trust realm that
+turned Kerberos on after the start: `principals.serviceAccount()` asks the key
+source's `acceptorKeyMissing()`, a member of the existing key source rather than a
+new slot (rule 3e — FAST's and PKINIT's arrangement), which `krb5_principals.js`
+calls only when present, so the parent's in-process jobs (which install no
+source) are unchanged. No require was added to the COPY closure.
+
+**WHY NOT A PASSWORD THE SEEDER GENERATES INTO `/run/secrets`** (the fallback the
+ticket named): a password-derived key is a weaker key than random-to-key, it is a
+second secret to deliver and rotate beside the KEK that already seals everything,
+and a random stored key is what the KDC already does for every other service
+principal and for krbtgt — one mechanism, one console row, one rotation.
+
+**AN OPERATOR'S OWN PASSWORD WINS.** The stored key normally wins over the
+configured account (`storedService()`), which would make a password set later a
+dead letter. So `serviceKeys()` answers NULL for a key marked `generated:
+acceptor` while `principals.acceptorAccount()` says the configured account
+exists — the password-built account answers, as before any key was stored — and
+the marker survives a Rotate, which is still the service's own key. A key an
+operator created is not marked and still wins over a password, as it always did.
+`acceptorAccount()` reads the context and not the source, so the two never call
+each other round.
+
+**THE SPN COMES FROM COMPOSE, NOT FROM `global.publicBaseUrl`.** Deriving
+`HTTP/<publicBaseUrl host>` when `krb5.servicePrincipal` is at its shipped default
+was the alternative. It is not the base installation's answer: neither compose
+file sets `global.publicBaseUrl` (the service builds its URLs from each request's
+`Host`), a request's `Host` must never name a principal the KDC then issues, and
+the SPN has to exist at startup, before any request. So `docker-compose.yml` and
+`docker-compose-quick.yml` pass `KRB5_SERVICE_PRINCIPAL=${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}`:
+one visible value an operator changes with the host name, read by the existing
+setting, with the shipped default and every trust realm's derivation untouched.
+The test compose files set nothing and publish nothing.
+
+**WHAT IS TESTED**: `tests/kerberos_acceptor_key.js` — a product child keys
+`HTTP/localhost` at startup (sealed, marked, no keytab in the audit), the KDC
+issues a ticket for it and the acceptor accepts a real AP-REQ, a second start
+makes nothing; a product child with a password of its own makes nothing and a
+generated key planted for its SPN is unread; a development child makes nothing.
+Failures are STS-KRB-0210 (not made), 0211 (another node's has not arrived),
+0212 (the store could not be asked).
 
 ## THE KRBTGT KEY: RANDOM IN PRODUCT, STORED, ROTATED (#169, 2026-09-23)
 

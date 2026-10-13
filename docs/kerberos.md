@@ -235,7 +235,17 @@ it on is refused until it has a `krb5.realm` no other realm answers to
   kvno; Delete removes it. The KDC issues tickets for that SPN under the stored
   key in both modes, and the acceptor prefers a stored key for its own SPN over
   `krb5.servicePassword` — which is how the acceptor in product mode gets a key
-  without a password printed anywhere. A service principal is an application,
+  without a password printed anywhere.
+* **The acceptor's own SPN is keyed this way by itself in product mode**
+  (2026-10-12). Where `krb5.servicePassword` is empty or the published
+  default, the service makes a random key for `krb5.servicePrincipal` at the
+  start (or when the acceptor first asks, for a realm that turned Kerberos on
+  later), once for the cluster, and hands no keytab to anybody: Rotate on
+  `/admin/kerberos/principals` hands one over if another service needs the
+  key. The entry is marked as made for the acceptor, and **a
+  `krb5.servicePassword` of your own wins over it**: the account it builds
+  answers, and the generated key is left unread. Failures are
+  `STS-KRB-0210`–`0212`. A service principal is an application,
   not a [service account](service-accounts.md#a-service-account-is-not-a-kerberos-service-principal),
   which is a person entry keyed from its password.
 * **A password change or a Rotate keeps the previous key version** —
@@ -624,6 +634,87 @@ a KDC, and it lives in the [SPNEGO acceptor](#spnego-over-http). The UDP
 socket cannot carry a
 PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 
+## Signing in from a browser on the base installation
+
+`docker-compose.yml` (and the published-image file in
+[Getting started](getting-started.md)) give you a working Kerberos sign-in
+with nothing to configure on the server:
+
+* the KDC is published on **88**, TCP and UDP (`STS_KDC_HOST_PORT` moves it;
+  `KDC_PORT` in the published-image file);
+* the acceptor holds **`HTTP/localhost`** (`KRB5_SERVICE_PRINCIPAL`), the SPN
+  a browser asks for when it opens `https://localhost:8081`. A browser always
+  asks for `HTTP/<the host in the URL>`, so reach the service by another name
+  and you set `KRB5_SERVICE_PRINCIPAL=HTTP/<that name>` too;
+* in product mode that SPN gets a **random key** the service makes and keeps
+  sealed (above), so no password is set anywhere.
+
+What you do on the client:
+
+1. **Give the person a Kerberos key.** In product mode a person's keys are
+   derived from their own password, so set one (Directory → Users, or the
+   activation link) or sign in once with it at `/authn/login`. Until then the
+   KDC answers *no Kerberos keys yet*.
+2. **Write a `krb5.conf`** for the realm (`krb5.realm`, `EXAMPLE.COM` by
+   default) and point the tools at it:
+
+   ```ini
+   # /tmp/sts-krb5.conf
+   [libdefaults]
+     default_realm = EXAMPLE.COM
+     dns_lookup_kdc = false
+     dns_lookup_realm = false
+     rdns = false
+     dns_canonicalize_hostname = false
+   [realms]
+     EXAMPLE.COM = {
+       kdc = localhost:88
+     }
+   [domain_realm]
+     localhost = EXAMPLE.COM
+   ```
+
+   ```bash
+   export KRB5_CONFIG=/tmp/sts-krb5.conf KRB5CCNAME=FILE:/tmp/sts-krb5cc
+   kinit alice@EXAMPLE.COM          # alice's directory password
+   kvno HTTP/localhost@EXAMPLE.COM  # a service ticket for the acceptor
+   klist
+   ```
+
+   `rdns = false` and `dns_canonicalize_hostname = false` stop MIT Kerberos
+   turning `localhost` into another name before it asks for the ticket. With
+   MIT's `k5tls` plugin installed (`krb5-k5tls`) the KDC is also reachable
+   through the main port: `kdc = https://localhost:8081/KdcProxy`, with the
+   service's certificate in `http_anchors = FILE:/tmp/sts.pem`.
+3. **Let the browser use the ticket for this host.**
+   * **Chrome / Chromium**: start it from the same shell, so it reads
+     `KRB5_CONFIG` and `KRB5CCNAME`, with the host allowed and a profile of its
+     own:
+
+     ```bash
+     google-chrome --auth-server-allowlist=localhost \
+                   --user-data-dir=/tmp/chrome-kerberos https://localhost:8081/
+     ```
+
+     On a managed machine the same setting is the `AuthServerAllowlist` policy.
+   * **Firefox**: in `about:config` set `network.negotiate-auth.trusted-uris`
+     to `https://localhost:8081`, and start it from the same shell.
+4. **Sign in.** "Sign in with Kerberos" on `/authn/login`
+   (`krb5.spnegoLoginButton`) completes whatever flow is in progress — the
+   console, the portal, an OAuth client — without a password.
+
+From a terminal, `curl --negotiate -u : --cacert /tmp/sts.pem
+https://localhost:8081/authn/spnego` performs the same exchange. In product
+mode the sign-in is scored like any other, and curl's own User-Agent is read
+as an automated client and refused (`STS-RISK-0016`); give it a browser's
+(`-A 'Mozilla/5.0 …'`) to see the sign-in.
+
+If the browser answers with nothing, the usual causes are, in order: the host
+is not in the allowlist; the browser was not started from the shell holding
+`KRB5CCNAME`; the ticket is for another SPN (`klist` names it; the 401 from
+`/authn/spnego` carries `X-Krb5-Service-Principal` with the one the acceptor
+holds); the person has no key yet (step 1).
+
 ## Development and product mode
 
 | | Development | Product |
@@ -632,16 +723,16 @@ PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 | Service accounts | a service-shaped name is created on demand for a host in `krb5.serviceDomains`, with `krb5.autoServicePassword` | nothing is created on demand; service principals are made at `/admin/kerberos/principals` |
 | Fixtures | alice, bob, misconfigured users, a computer account, delegation services with `msDS-*` rules, and the trusted second realm | none; `PARTNER.COM` is `KDC_ERR_WRONG_REALM` |
 | `krbtgt` | derived from the published `krb5.krbtgtPassword`, until rotated by hand | a **random** key, stored sealed on the directory and rotated every `krb5.krbtgtRotationIntervalDays` (#169); `krb5.krbtgtPassword` is ignored |
-| The acceptor's account | built from the published password | built only when `krb5.servicePassword` is **not** the published default; otherwise refused, and `GET /admin-api/kerberos/principals` (`acceptor`) says why |
+| The acceptor's account | built from the published password | built from `krb5.servicePassword` when it is set to something of your own; otherwise the SPN gets a **random** stored key, made once (see [Stored long-term keys](#stored-long-term-keys-product-mode)) |
 | The shared passwords | published as settings, so a reader can decrypt a ticket and read its PAC | not used |
 | The PAC | invents `passwordLastSet` and `logonCount` | the zero FILETIME and 0 |
 | Delegation | fixture rules make every refusal and success reachable | no rule until an operator writes one |
 | A password alone, for a person who holds or must hold a second factor | a ticket | `KDC_ERR_POLICY`, after the password verified; FAST with OTP gets one |
 
 In product mode every Kerberos listener binds `global.host`. The only principals a product realm starts with are
-`krbtgt/<realm>` and the account `krb5.servicePrincipal` names — the latter
-only where `krb5.servicePassword` is set to something other than its published
-default.
+`krbtgt/<realm>` and the account `krb5.servicePrincipal` names — keyed from
+`krb5.servicePassword` where that is set to something of your own, and at
+random otherwise.
 
 What stays a refusal in development: a service-shaped name for a host this
 service is not willing to be (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in
@@ -657,8 +748,8 @@ modes**, and a replay is refused in both. See
 | `krb5.enabled` | `KRB5_ENABLED` | `true` | yes | Whether this realm's KDC answers; on a trust realm, whether the realm has a Kerberos realm at all (created off). |
 | `krb5.realm` | `KRB5_REALM` | `EXAMPLE.COM` | no | The Kerberos realm; its lower-cased form is the domain, and port 88 routes by it. |
 | `krb5.kdcPort` | `KRB5_KDC_PORT` | `88` | no | The KDC's TCP and UDP port; `0` asks for any free port. A failure to bind is recorded, not fatal. |
-| `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. |
-| `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode. |
+| `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. `docker-compose.yml` sets `HTTP/localhost`. |
+| `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode, which keys the SPN at random instead. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | no | The string-to-key salt for that account; set it to accept tickets from a real Active Directory KDC. |
 | `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | no | The RFC 3961 encryption types used, strongest first; an unimplemented number stops startup. **Warning:** 23 (rc4-hmac) is deprecated by RFC 8429 and is used in development mode only — product reads the list without it and refuses a write naming it. |
 | `krb5.kvno` | `KRB5_KVNO` | `3` | no | The kvno of every account built from a configured password, and the starting kvno of stored keys. |

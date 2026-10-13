@@ -935,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "SLUMPMÄSSIG — RFC 3961 random-to-key för varje enctype i krb5.enctypes — skapad en gång per sfär, förseglad på katalogposten krbtgt/<REALM>@<REALM> och aldrig visad; krb5.krbtgtPassword ignoreras. Jobbet krb5.krbtgt-rotate ersätter den var krb5.krbtgtRotationIntervalDays, behåller versionen den ersatte så länge som en TGT under den längst kan leva (förnyelser inräknade), och roterar aldrig medan det fönstret fortfarande är öppet. \"Rotera och ogiltigförklara\" är Active Directorys dubbla återställning i en enda åtgärd: ingenting behålls och varje TGT i sfären vägras med KRB_AP_ERR_BADKEYVER."
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "Nyckeln som Kerberos-acceptorn dekrypterar biljetter med när krb5.servicePassword är tomt eller det publicerade standardvärdet"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "HÄRLEDD från det publicerade krb5.servicePassword, så att en läsare kan härleda den; ett tomt lösenord skapar inget konto och acceptorn accepterar ingen biljett."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "SLUMPMÄSSIG — en nyckel per enctype i krb5.enctypes för det SPN som krb5.servicePrincipal namnger, skapad en gång per realm vid start (eller när acceptorn först frågar), förseglad på applikationsposten <spn>@<REALM> och aldrig visad. Rotera den på /admin/kerberos/principals för att få en keytab. Ett krb5.servicePassword som är operatörens eget har företräde framför den."
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "En enhetsnyckel som visas upp utan verifierbar attestering vägras"

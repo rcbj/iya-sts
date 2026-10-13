@@ -935,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "「隨機」——對 krb5.enctypes 中的每種 enctype 使用 RFC 3961 random-to-key——每個領域產生一次，密封在目錄項目 krbtgt/<REALM>@<REALM> 上且從不顯示；krb5.krbtgtPassword 會被忽略。krb5.krbtgt-rotate 工作每隔 krb5.krbtgtRotationIntervalDays 將其取代，保留被取代的版本，持續到以其簽發之 TGT 最長的存活時間（含續期），且在該窗口仍開啟時絕不輪替。「輪替並使失效」是 Active Directory 的雙重重設合為一個動作：不保留任何東西，領域中的每個 TGT 都會以 KRB_AP_ERR_BADKEYVER 拒絕。"
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "當 krb5.servicePassword 為空或為公開的預設值時，Kerberos 接受端用來解密票證的金鑰"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "由公開的 krb5.servicePassword 推導而來，因此讀者可以推導出它；空密碼不會建立帳戶，接受端也不接受任何票證。"
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "隨機 —— 為 krb5.servicePrincipal 所命名的 SPN，依 krb5.enctypes 中的每種 enctype 各產生一把金鑰，每個 realm 在啟動時（或接受端第一次要求時）產生一次，密封在應用程式項目 <spn>@<REALM> 上，從不顯示。在 /admin/kerberos/principals 上輪替它即可取得 keytab。營運者自己設定的 krb5.servicePassword 優先於它。"
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "未附可驗證證明而出示的裝置金鑰會被拒絕"

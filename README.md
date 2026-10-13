@@ -177,9 +177,11 @@ And two Unix domain sockets (mount the directory as a volume to reach them):
 | `/tmp/spire-server/private/api.sock` | `spiffe.serverSocket` / `STS_SPIFFE_SERVER_SOCKET` | off — the SPIRE Server API's private socket |
 
 A socket that fails to bind is reported and is not fatal. `docker-compose.yml`
-publishes 8081 and 8082 only; a raw Kerberos client needs
-`-p 88:88/tcp -p 88:88/udp`, while a browser reaches the KDC through
-`POST /KdcProxy` on 8081. The Kerberos-protected test service that was on
+publishes 8081, 8082 and the KDC on 88 (TCP and UDP), with the acceptor
+holding `HTTP/localhost`, so `kinit` and a browser's SPNEGO sign-in work from
+the host ([the recipe](docs/kerberos.md#signing-in-from-a-browser-on-the-base-installation));
+a `docker run` needs `-p 88:88/tcp -p 88:88/udp`, and a client that can reach
+only 8081 uses `POST /KdcProxy`. The Kerberos-protected test service that was on
 8888 is the development companion's ([docker-compose](docs/docker-compose.md)).
 
 ### Configuration
