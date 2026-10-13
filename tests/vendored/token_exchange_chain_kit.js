@@ -86,6 +86,8 @@
 // are apart.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const registry = require("./sts_applications.js");
@@ -680,33 +682,21 @@ async function authorizationCode(base, opts) {
     "request for " + opts.clientId + " should reach the sign-in screen; it " +
     "answered " + first.status + " " + screenAt + " " +
     String(await first.text()).slice(0, 300));
-  const screen = await fetch(absolute(screenAt),
-                            { redirect: "manual", headers: agent });
-  const page = await screen.text();
-  const authnId = (page.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  const csrf = (page.match(/name="csrf_token" value="([^"]+)"/) || [])[1] ||
-      "";
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  // Posted back to the path the screen was served from (a realm's own).
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, at the
+  // base the screen was served under (a realm's own), with this walk's
+  // User-Agent on every request.
   const screenUrl = new URL(absolute(screenAt));
-  const signedIn = await fetch(screenUrl.origin + screenUrl.pathname, {
-    method: "POST", redirect: "manual",
-    headers: Object.assign({
-      "Content-Type": "application/x-www-form-urlencoded" }, agent),
-    body: new URLSearchParams({ authn_id: authnId, username: opts.username,
-                                password: opts.password, action: "login",
-                                csrf_token: csrf }).toString()
-  });
-  const cookie = setCookieHeader(signedIn);
-  const next = signedIn.headers.get("location") || "";
+  const signedIn = await authnSignin.submit(screenUrl.origin +
+    screenUrl.pathname.replace(/\/authn\/login$/, ""), screenUrl.toString(),
+    { action: "login", username: opts.username, password: opts.password },
+    { headers: agent });
+  const cookie = signedIn.next === "redirect" ? signedIn.cookie : "";
+  const next = signedIn.location;
   if (!cookie || !next) {
     // What the screen said, so a refusal names itself.
-    const said = String(await signedIn.text())
-      .replace(/<style[\s\S]*?<\/style>/g, "").replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ").slice(0, 500);
     assert.fail("signing " + opts.username + " in should establish a " +
       "session and redirect; the screen answered " + signedIn.status +
-      ": " + said);
+      " " + signedIn.next + ": " + JSON.stringify(signedIn.errors));
   }
   const headers = Object.assign({ Cookie: cookie }, agent);
   const back = await fetch(absolute(next),

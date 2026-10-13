@@ -63,12 +63,16 @@ about that line had to change.
      case.** `/admin-api/claims/:action` and `/admin-api/saml-attributes/:action`
      both call `claimsAction`, differing only in the third argument — the set ids
      that door carries, `stats.JWT_CLAIM_SET_IDS` or `stats.SAML_CLAIM_SET_IDS`,
-     which is exactly what the two console pages pass. That is what makes the two
-     resources a mirror of the two PAGES rather than two models of one store. It
-     costs fourteen operations for seven behaviours, so the seven are built once
-     by `claimSetActions(family)` and the family varies the set enum, the noun and
+     which is exactly what the console controls pass.
+     The SAML resource feeds the Custom SAML attributes tab on `/admin/saml2`;
+     the resource paths stay distinct so each control's operations remain clear.
+     It costs fourteen operations for seven behaviours, so the seven are built
+     once by `claimSetActions(family)` and the family varies the set enum, the noun and
      the reserved-names rule: fourteen hand-written descriptions would be seven
-     pairs, and the half of each pair nobody edited is the half a caller believes.
+     pairs, and the half of each pair nobody edited is the half a caller
+     believes. The parity check sees the same seven action names from both
+     resources, which is the property that makes them one behaviour rather than
+     two.
      The parity check that reads the refusal sentence off each resource sees the
      same seven action names from both, which is the property that makes them
      one behaviour rather than two.
@@ -148,10 +152,11 @@ one operation, and nothing whatsoever would fail.
 
 On 2026-08-27 every one of `config.js`'s setting groups moved onto the console
 page for the protocol it configures, and eight pages were created for the
-families that had settings and no page: `/admin/oauth2`, `/admin/oid4vci`,
-`/admin/oid4vp`, `/admin/kerberos`, `/admin/ldap`, `/admin/wstrust`,
-`/admin/wsfed` and `/admin/tls`. Rule 7 asks for an operation per page, so each
-gained a GET here — and **no POST**, for exactly the reason the row below gives.
+families that had settings and no page: `/admin/oauth2`, `/admin/vc`
+(OpenID4VCI and OpenID4VP settings), `/admin/kerberos`, `/admin/ldap`,
+`/admin/wstrust`, `/admin/wsfed` and `/admin/tls`. Rule 7 asks for an
+operation per page, so each gained a GET here — and **no POST**, for exactly
+the reason the row below gives.
 
 **Every form on those pages posts `set-many` to `/admin/config`**, which `POST
 /admin-api/config/set-many` already mirrors. A POST per page would be eight more
@@ -186,11 +191,11 @@ group, the other console pages that draw the same group. The block is drawn
 from this member alone now
 (`admin-ui/web_settings.ts`); `admin-ui/CLAUDE.md`, *The settings block*.
 
-**Two of the paths are not the obvious ones**, and the collision is worth
-knowing before somebody "fixes" them: `/admin-api/oid4vci-settings` and
-`/admin-api/oid4vp-settings`, because `/admin-api/credential-claims` and
-`/admin-api/verifier-request` already mirror the other two pages of those
-families and the bare names would have read as theirs.
+**Two operation names preserve distinct settings APIs**:
+`/admin-api/oid4vci-settings` and `/admin-api/oid4vp-settings`, while
+`/admin-api/credential-claims` and `/admin-api/verifier-request` retain the
+content operations' separate meanings. All four now feed tabs of the single
+`/admin/vc` destination.
 
 **`GET /admin-api/config` did not narrow when the page did.** It still answers
 the whole table — a caller asking this API for the configuration should not have
@@ -227,7 +232,8 @@ generated password and an activation link can be answered in a page body
 instead of a 303's query string. `tests/vendored/sts_admin_console.js` builds
 its list of "console paths that take a POST" by parsing this field, so a page
 left out of it reads as a control that reaches nothing. `/admin-api/xacml/{action}`
-has named three since it was written; this is the second resource to need it.
+names its former page paths and its three tab-specific controls; this is the
+second resource to need more than one console path.
 
 **IT ALSO CLOSED AN OPERATION THIS SERVICE HAD BEEN DOCUMENTING AND NOT
 SERVING.** `common/credentials.ts` names `POST /admin-api/users/set-password`
@@ -312,6 +318,17 @@ off `body`. `helpers.parseBody()` cannot see a repeated field, so a form-encoded
 body copied from the console's checkbox column would otherwise create the
 application with one family out of five and answer 200.
 
+### SAML SP metadata upload names the family when the application has both
+
+`POST /admin-api/saml2/upload-metadata` accepts a pasted `document` or a
+console-shaped `file` object and an optional `family` (`saml2` or `saml11`).
+The application's SAML family sub-sub-tabs send that value explicitly: without
+it, the shared consumer keeps its legacy selection, which defaults a
+dual-protocol application to SAML 2.0. The consumer refuses a family the
+application did not declare and validates the document before its one save.
+The API and console therefore share the same family-specific import behavior
+without a second metadata parser.
+
 ### `/admin-api/ssf` IS THE FIRST OPERATION HERE WHOSE HANDLER AWAITS, AND THE FIRST WITH A CONTROL DELIBERATELY MISSING
 
 Added 2026-08-31. A GET and a POST with four actions — set a status, transmit an
@@ -367,8 +384,8 @@ worked out.
 
 **`fedClientSecret` is never returned by this API** — `(set — not returned)` or
 empty. That is deliberately NOT claimed as a security boundary, because an
-`ldapsearch` of `ou=federations` shows it, exactly as `GET /krb5/principals`
-prints every Kerberos password. What it avoids is this API being a SECOND way to
+`ldapsearch` of `ou=federations` shows it, exactly as the settings print every
+development Kerberos password (and `GET /krb5/principals` did, until #595). What it avoids is this API being a SECOND way to
 read a credential that belongs to somebody else's service out of this process.
 
 ### The narrow door: `/admin-api/token-lifetimes`
@@ -1407,6 +1424,25 @@ the refusal that matters: it will not remove the last way in. An operator must
 not be able to do what the owner is stopped from doing.
 
 
+## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
+
+Rule 7's twin of `/admin/tls-connection`, which replaced the development
+pages `/tls` and `/tls/forwarded` (rcbj's decision 3 on #591): what this
+service saw of THE REQUEST THAT CALLED IT — its TLS connection, the client
+certificate on it, and its forwarding headers with what was believed. Admin
+Read, in both modes; it changes nothing. The view is `tls/tls_server.js`'s
+`connectionView()`, required LAZILY in the handler (that module is at 20,
+after this one, and its routes are registered at its require). Pinned to the
+front process with the page (`common/request_pool.js`'s `NEVER_DISPATCHED`),
+because a worker's socket is the unix socket from the front process. Not a
+service operation: a realm administrator may call it. `tls/CLAUDE.md` argues
+the rest; `tests/tls_connection_page.js` and
+`tests/vendored/sts_tls_connection.js` hold it.
+
+**AND THIS IS NOW THE TRUSTSTORE'S ONLY RUNTIME DOOR BESIDE THE CONSOLE'S**
+(#597): the open `POST /tls/trust` and `/tls/trust/clear` were deleted, and
+`tests/tools/pep-credential.js` has no fallback.
+
 ## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
 
 `GET /admin-api/tls/trust` (paged with `page` / `per`) and `POST
@@ -1768,8 +1804,9 @@ the roster. Now:
 
 `POST /admin-api/xacml/issue-pep-certificate` issues a registered remote PEP the
 key pair for its HTTPS listener, from the realm's `pep-tls` Issuing CA, and
-mirrors the **Issue certificate** control on `/admin/xacml/peps` through the
-same `pepAction()` — rule 7 in the ordinary way. Three things about it:
+mirrors the **Issue certificate** control on the Remote PEPs tab of
+`/admin/xacml` through the same `pepAction()` — rule 7 in the ordinary way.
+Three things about it:
 
 * **`/xacml/:action` SETTLES A PROMISE NOW.** This action answers one and the
   other XACML actions answer a result, so `admin-core/admin_actions.ts`'s
@@ -1942,8 +1979,8 @@ it under `/realm/{id}/admin-api/mode` for a realm's answer.
 ## `/admin-api/vc-status` (#38's follow-ups, 2026-09-17)
 
 Two operations, and both are `admin-ui/vc_status_admin.ts`'s own functions
-(rule 7): `GET /admin-api/vc-status` is what `/admin/vc-status?format=json`
-answers — where this realm's status lists are served, their size and
+(rule 7): `GET /admin-api/vc-status` feeds the Credential status tab on
+`/admin/vc` — where this realm's status lists are served, their size and
 lifetimes, the counts, and a page of every issued credential's index and
 status — and `POST /admin-api/vc-status/{suspend|reinstate|revoke}` with
 `{ idx }` is the page's three buttons, through `statusAction()`. The action is
@@ -2128,8 +2165,9 @@ deliberate:
 `admin_api_spec.ts`'s `scopeForMethod()` states the same exception, and
 `tests/admin_api_document_security.js` compares the two and reads the
 exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
-is the handler, shared with development's test control at
-`/devices/test/compliance` (`mode.opensTestControls()`).
+is the handler. It was shared with development's test control at
+`/devices/test/compliance` until #597 deleted that route; the feed is the one
+door in both modes.
 
 ## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
 
@@ -2244,3 +2282,105 @@ the question to ask:
 **AN ENTRY PERSISTED BEFORE #454 IS NOT MIGRATED** (no migrations): a
 `sts-admin-console` seeded earlier declares no `admin:console`, and the
 console's frame answers 403 `STS-API-0127`, whose text names the fix.
+
+## `GET /admin-api/account-api` — THE OTHER API'S DOCUMENT (#568, 2026-10-12)
+
+The user portal became a static application over `/account-api`
+(`account-api/CLAUDE.md`), whose OpenAPI document that API publishes itself,
+to anybody, at `/account-api/openapi.json`. This operation answers the same
+document — for the realm the call is in, since the account API is per realm —
+with where it is published and how many operations it holds, so the console's
+*Account API* page (`/admin/account-api`) is drawn from an operation here like
+every other page, and rule 7's parity check finds its management GET. It
+requires `admin:read` and changes nothing.
+
+## `/admin-api/verifications` — WHERE A VERIFICATION STARTS AND IS READ (#587, 2026-10-12; the only doors since #594)
+
+`POST /admin-api/verifications/start` (Admin Write) and `GET
+/admin-api/verifications` (Admin Read) start an OpenID4VP verification and
+read what was decided, as JSON and in every mode. They were the twins of the
+demonstration Verifier's `/oid4vp/start` and `/oid4vp/result/:state`, which
+left for the development companion on #594 (`companion/`, whose bar door is
+an application calling these); an operator, every job
+(`sts_oid4vp_wallet.js`, `sts_siop.js`, `sts_oid4vp_x509.js`,
+`sts_oid4vp_status_reference.js`, `sts_oid4vp_conformance.js`) and the
+companion start one here.
+
+* **`redirect_uri`: THE STARTER'S OWN COMPLETION PAGE (#594).** OpenID4VP 1.0
+  section 8.2 lets the Response Endpoint answer a `redirect_uri` the wallet
+  sends the browser to. It named the demonstration's `/oid4vp/done` for every
+  verification — a 404 in product — so whose page it is now belongs to the
+  start: `vcVerifier.completionUriFor(asked, res.locals.apiClientId)` holds it,
+  where only registered addresses are accepted, to the CALLING CLIENT's
+  registered redirect URIs (matched whole), and to an absolute http(s) URL
+  with no fragment anywhere; 400 `STS-VC-0123` otherwise, never replaced. It
+  rides on the transaction (`record.completionUri`), the answer says it back
+  as `redirectUri`, and a start that names none is answered by the Response
+  Endpoint with no `redirect_uri` — `{}`, the section's MAY.
+
+* **`start` IS AN ACTION OF `/verifications/:action`**, not a literal path
+  (2026-10-12), for `/cells/:action`'s reason: the suite probes every POST
+  resource with an action nobody has heard of and wants a 400 naming the
+  ones there are, and the literal answered Express's 404.
+* **ONE FUNCTION PER QUESTION, AND THE VERIFIER OWNS BOTH.**
+  `vcVerifier.startVerification(req, asked, where)` validates what was asked
+  against the page's own schema, issues the x509 certificate first where one
+  is needed, calls `buildVpRequest()`, builds the query and applies the
+  wallet rule, and RETURNS what it built; this operation answers it.
+  `verificationOutcome(state)` is what `GET ?state=` answers with `found:
+  true`. The refusals, status and code: 400 `STS-VC-0032`, 400
+  `STS-VC-0033`, 500 with the builder's code (`STS-VC-0092`,
+  `STS-VC-0110`–`0113`), and 404 `STS-VC-0042` for an unknown state.
+* **THE START IS THE ONE WRITE THAT CALLS A PROTOCOL MODULE RATHER THAN AN
+  `admin-core` ACTION**, and it is argued, not drifted into: building a
+  request reads the REQUEST's origin a dozen times below it (the Response URI,
+  the did:web, the OpenID Federation entity identifier, the x509 name), and
+  an action never sees a request (`tests/admin_actions_layer.js`). Rule 7
+  loses nothing — the static console's form posts to this operation, so there
+  is no second admin door. The READ is an ordinary view,
+  `adminViews.presentationVerificationsJson(req)` (named apart from #127's
+  `verificationsJson()`, a person's identity verifications).
+* **WITHOUT `state` IT LISTS, AND THAT IS WHAT MAKES IT A RESOURCE.** The
+  realm's open verifications, newest first, at most 25 of `total`, each what
+  it asked and what it decided — the claim NAMES, never a value, and no
+  wallet sign-in (a person signing in, with their name on the transaction).
+  `sts_admin_api_operations.js` reads every GET bare and reads a written
+  resource back, so a bare GET that answered 404 would have failed both.
+  `GET /admin-api/verifier-request` carries the same list as
+  `recentVerifications` (and the start's menus as `startChoices`) because
+  the Verifier request tab is drawn from that view alone; one function
+  answers both.
+* **THE CLOSED SETS ARE THE VERIFIER'S** (`START_VOCABULARY`), and `format`
+  is deliberately not one, for `/verifier-request/format`'s reason: a
+  form-encoded `+` arrives as a space and is put back.
+* **THE CONSOLE'S TWIN** is the *Start a verification* form and the *Open
+  verifications* list on the Verifier request tab
+  (`oid4vc/web_vc_verifier_config.ts`). The form posts to
+  `/admin/vc-verifier-config` with `action=start`, which `vcTabLinks()`
+  moves to the tab and `WebForms.resolve()` sends here through this row's
+  `mirrors`; the answer's `message` is what the strip shows.
+* **CELLS (#98) ARE NOT FOLLOWED.** This read answers from the cell it
+  arrives at (the demonstration's `/oid4vp/result/:state` was placed on the
+  cell that minted the state).
+  A start and its read through the same address meet in the same cell, which
+  is every caller here; a cross-cell read is not built.
+
+## `/admin-api/oid4vci/last-request` and `/admin-api/oid4vci/notifications` — WHAT THE ISSUER SAW (#594)
+
+Admin Read, every mode. They were the non-spec, development-only `GET
+/oid4vci/last_request` and `GET /oid4vci/notification/:id`, answered to
+anybody; what a wallet sent and what it said it did with a credential are an
+operator's facts, and a wallet under test (and the job driving it) asks them
+here with a token. `vcIssuer.lastCredentialRequest()` and
+`notificationRecord(id)` answer them, the second as a query parameter
+(`?id=`) because no GET in this table takes a path parameter; an unknown id is
+404 `STS-VC-0024`. No console page draws them (`mirrors` says so).
+
+`GET /admin-api/kerberos/principals` gained `accountPolicy` in the same change
+(`anyUsernameAuthenticates`, `neverCreated`, `serviceHosts` — the facts
+`/krb5/principals` published, from the same places, without either shared
+password), so `random_username.js`'s `requireKnownOrCreatable()` has an
+administrator's door to ask. **Since #595 it is the only door**: that
+demonstration document was deleted, and its principal rows are this
+operation's `database` (`?databasePage=`), which `sts_kerberos_samba.js` reads
+for the salts and kvnos it hands Samba.

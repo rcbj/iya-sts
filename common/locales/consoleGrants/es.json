@@ -13,5 +13,8 @@
   "colGeneration": "Generación",
   "colCreated": "Creada / actualizada",
   "colExpires": "Caduca",
-  "colTokens": "Tokens en poder"
+  "colTokens": "Tokens en poder",
+  "noMatch": "Ninguna concesión coincide con <code>{wanted}</code>.",
+  "searchLabel": "Restringir las concesiones",
+  "searchPlaceholder": "un grant_id, un cliente o un sujeto"
 }

@@ -533,13 +533,39 @@ async function rc4() {
 // ---------------------------------------------------------------------------
 // 6. SPNEGO AT /authn/spnego.
 // ---------------------------------------------------------------------------
+// THE STATE A SPNEGO BODY CARRIES (#575): `/authn/spnego`'s first 401, its
+// 403 when off and its signed-in 200 are the sign-in surface's shell, and
+// what the page is drawn from is `data-sts-state` on its `<html>` — the
+// browser draws it with script; a client that runs none reads it here.
+function spnegoState(body) {
+  log.debug("Entering spnegoState().");
+  const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(body || ""));
+  if (!m) {
+    log.debug("Leaving spnegoState(). None.");
+    return null;
+  }
+  const raw = m[1].replace(/&quot;/g, "\"").replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  let state = null;
+  try {
+    state = JSON.parse(raw);
+  } catch (e) {
+    log.debug("Caught in spnegoState(): " + ((e && e.message) || e));
+    state = null;
+  }
+  log.debug("Leaving spnegoState().");
+  return state && state.view ? state.view : null;
+}
+
 function signedIn(status, body, who, what) {
   log.debug("Entering signedIn().");
   assert.strictEqual(status, 200, what + " answered " + status + ": " +
                      String(body).replace(/<[^>]+>/g, " ")
                        .replace(/\s+/g, " ").slice(0, 400));
-  assert.ok(String(body).indexOf("<strong>" + who + "</strong>") !== -1,
-            what + ": the page does not name " + who);
+  const view = spnegoState(body);
+  assert.ok(view && view.kind === "signed-in" && view.username === who,
+            what + ": the page does not name " + who + ": " +
+            JSON.stringify(view));
   log.debug("Leaving signedIn().");
 }
 

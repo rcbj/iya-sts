@@ -5,7 +5,7 @@
   "retry": "Reintentar",
   "audSubRequired": "aud_sub obligatorio",
   "learned": "obtenido el {when}",
-  "notAsked": "aún no se ha preguntado — envía <code>metadata</code>",
+  "notAsked": "aún no se ha preguntado — envíe <code>metadata</code>",
   "sendMetadata": "Enviar metadata",
   "noClients": "Ningún cliente registró un <code>command_endpoint</code>. Es un miembro del registro (RFC 7591, <code>POST /oauth2/register</code>) y un campo en <code>/admin/applications</code>.",
   "sendHeading": "Enviar un comando",
@@ -44,5 +44,6 @@
   "nothingIn": "Nada en estado {state}.",
   "counts": "{pending} pendiente(s), {sent} enviada(s), <strong>{dead} muerta(s)</strong>",
   "colWhat": "Qué",
-  "deliveriesNote": "<strong>Cada entrega saliente</strong> que este servicio envía por POST a una dirección que un cliente registró, en la única cola duradera: cada una es una fila persistida, intentada una vez para el clúster bajo una concesión reclamada, reintentada con espera cuando un tiempo de espera agotado, un fallo de conexión, un 5xx, 408 o 429 lo justifica, y una <strong>carta muerta</strong> en caso contrario — se vuelve a enviar solo cuando un operador pulsa Reintentar, lo que inicia una nueva generación."
+  "deliveriesNote": "<strong>Cada entrega saliente</strong> que este servicio envía por POST a una dirección que un cliente registró, en la única cola duradera: cada una es una fila persistida, intentada una vez para el clúster bajo una concesión reclamada, reintentada con espera cuando un tiempo de espera agotado, un fallo de conexión, un 5xx, 408 o 429 lo justifica, y un <strong>mensaje fallido</strong> en caso contrario — se vuelve a enviar solo cuando un operador pulsa Reintentar, lo que inicia una nueva generación.",
+  "clientsHeading": "Partes que confían"
 }

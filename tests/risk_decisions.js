@@ -120,17 +120,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   // A browser's User-Agent: anything `isbot` reads as an automated client is
   // a signal of its own (x10), which would take every sign-in here to HIGH.
@@ -139,6 +128,8 @@ function childMain() {
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen and its steps over `/authn-api` (#571, #572).
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -496,13 +487,34 @@ function childMain() {
         client_id: CLIENT, response_type: 'code', redirect_uri: REDIRECT,
         scope: 'openid', state: 's', nonce: 'n-' + Date.now() }).toString());
     };
+    // THE SCREEN IS A STATIC PAGE OVER `/authn-api` (#571), and so are its
+    // steps (#572): the act at the screen, read as the form's answer was —
+    // a redirect as its 303, a refusal at its own status with the
+    // sentence in `text` — and a second factor's step OPENED (its view in
+    // `step`, `view` and `text`), as the browser opens it.
+    const signInAt = async function (b, screenAt, username) {
+      const answer = await authnScreen.submit({ port: port, jar: b.jar,
+        userAgent: CHROME, at: screenAt,
+        fields: { username: username, password: 'anything',
+                  action: 'login' } });
+      if (answer.next === 'mfa') {
+        const opened = await authnScreen.openStep({ port: port, jar: b.jar,
+          userAgent: CHROME, at: answer.location });
+        return { status: 200, headers: {}, step: opened,
+                 view: opened.view || {}, text: opened.text };
+      }
+      return { status: answer.status, headers: answer.headers,
+               text: (answer.errors || []).join(' ') || answer.text };
+    };
     const signIn = async function (b, username) {
       const start = await authorize(b);
-      const screenAt = String(start.headers.location || '');
-      const page = await b.go('GET', screenAt);
-      return b.go('POST', screenAt.split('?')[0], {
-        form: Object.assign(hiddenFields(page.text), {
-          username: username, password: 'anything', action: 'login' }) });
+      return signInAt(b, String(start.headers.location || ''), username);
+    };
+    // A step's code act (#572), read as the form's answer was.
+    const sendCode = function (b, asked, code) {
+      return authnScreen.stepAct({ port: port, jar: b.jar,
+        userAgent: CHROME, opened: asked.step, op: 'totp',
+        body: { code: code } });
     };
     const follow = async function (b, first) {
       let at = first;
@@ -524,7 +536,7 @@ function childMain() {
     const bob = browser(port, CHROME);
     const bobAnswer = await signIn(bob, 'rd-bob');
     const bobAssessed = await assessmentOf('rd-bob');
-    note(bobAnswer.status === 200 &&
+    note(bobAnswer.status === 400 &&
          /Authentication failed for rd-bob/.test(bobAnswer.text) &&
          !authn.sessionsOf('rd-bob').length,
          'F1. from a Tor exit a first sign-in is MEDIUM, and a person ' +
@@ -541,14 +553,12 @@ function childMain() {
     credentials.confirmTotpEnrolment('rd-carol', totp.codeAt(begun.secret));
     const carol = browser(port, CHROME);
     const asked = await signIn(carol, 'rd-carol');
-    const step = hiddenFields(asked.text);
-    note(asked.status === 200 && step.mfa_id &&
-         /name="code"/.test(asked.text),
+    note(asked.status === 200 && asked.view && asked.view.page === 'totp' &&
+         asked.step.id,
          'F3. a person holding an authenticator app is asked for a code',
-         asked.status + ' ' + asked.text.slice(0, 120));
-    const coded = await carol.go('POST', '/authn/totp', { form: {
-      mfa_id: step.mfa_id,
-      code: totp.codeAt(begun.secret, Date.now() + 30000) } });
+         asked.status + ' ' + String(asked.text).slice(0, 120));
+    const coded = await sendCode(carol, asked,
+      totp.codeAt(begun.secret, Date.now() + 30000));
     const landed = await follow(carol, coded);
     const carolSessions = authn.sessionsOf('rd-carol');
     const carolSession = carolSessions.length
@@ -597,7 +607,7 @@ function childMain() {
     const daveAnswer = await signIn(dave, 'rd-dave');
     const daveAssessed = await assessmentOf('rd-dave');
     note(daveAssessed && daveAssessed.level === 'HIGH' &&
-         daveAssessed.decision === 'refuse' && daveAnswer.status === 200 &&
+         daveAssessed.decision === 'refuse' && daveAnswer.status === 400 &&
          /Authentication failed for rd-dave/.test(daveAnswer.text) &&
          !authn.sessionsOf('rd-dave').length,
          'H1. an address on the operator\'s deny list makes a sign-in ' +
@@ -715,14 +725,11 @@ function childMain() {
       ivyAt = await ivy.go('GET', pathOf(ivyAt.headers.location));
     }
     const ivyScreen = pathOf(ivyAt.headers.location);
-    const ivyPage = await ivy.go('GET', ivyScreen);
-    const ivyAsked = await ivy.go('POST', ivyScreen.split('?')[0], {
-      form: Object.assign(hiddenFields(ivyPage.text), {
-        username: 'rd-ivy', password: 'anything', action: 'login' }) });
-    const ivyStep = hiddenFields(ivyAsked.text);
-    let ivyDone = ivyStep.mfa_id ? await ivy.go('POST', '/authn/totp', {
-      form: { mfa_id: ivyStep.mfa_id,
-              code: totp.codeAt(ivyTotp.secret, Date.now() + 30000) } })
+    const ivyAsked = await signInAt(ivy, ivyScreen, 'rd-ivy');
+    const ivyStep = { mfa_id: ivyAsked.step ? ivyAsked.step.id : '' };
+    let ivyDone = ivyStep.mfa_id
+      ? await sendCode(ivy, ivyAsked,
+                       totp.codeAt(ivyTotp.secret, Date.now() + 30000))
       : ivyAsked;
     for (let i = 0; i < 4 && ivyDone.status >= 300 && ivyDone.status < 400 &&
          !/\/admin\/callback\?/.test(String(ivyDone.headers.location || ''));
@@ -766,10 +773,7 @@ function childMain() {
       jayAt = await jay.go('GET', pathOf(jayAt.headers.location));
     }
     const jayScreen = pathOf(jayAt.headers.location);
-    const jayPage = await jay.go('GET', jayScreen);
-    let jayDone = await jay.go('POST', jayScreen.split('?')[0], {
-      form: Object.assign(hiddenFields(jayPage.text), {
-        username: 'rd-jay', password: 'anything', action: 'login' }) });
+    let jayDone = await signInAt(jay, jayScreen, 'rd-jay');
     for (let i = 0; i < 4 && jayDone.status >= 300 && jayDone.status < 400 &&
          !/\/admin\/callback\?/.test(String(jayDone.headers.location || ''));
          i++) {

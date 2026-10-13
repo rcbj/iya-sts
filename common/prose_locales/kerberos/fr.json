@@ -1,0 +1,38 @@
+{
+  "kerberos.notes.keys": {
+    "en": "01d360b3a9460a3b",
+    "text": "Aucun élément de clé ne figure dans cette réponse ni sur la page. Les clés d’une personne sont dérivées de son mot de passe lorsqu’il est défini ou vérifié et ne sont jamais affichées ; le keytab d’un principal de service est remis UNE SEULE FOIS, par la création ou le renouvellement qui l’a produit, et le keytab d’une personne UNE SEULE FOIS, dérivé d’un mot de passe fourni — celui qu’un administrateur définit sur la page de la personne, ou le sien propre sur /portal/kerberos."
+  },
+  "kerberos.notes.modeProduct": {
+    "en": "8d432ed7c10cfff6",
+    "text": "Ce KDC est un KDC de PRODUIT : une personne s’authentifie avec son propre mot de passe au moyen des clés stockées sur son entrée d’annuaire, et une personne qui n’en a pas est refusée avec « connectez-vous une fois »."
+  },
+  "kerberos.notes.modeDevelopment": {
+    "en": "14d392eb2589e34a",
+    "text": "Ce KDC est un KDC de DÉVELOPPEMENT : chaque utilisateur est doté de clés issues de krb5.userPassword et aucune clé stockée n’est jamais attribuée aux personnes. Les principaux de service créés ici sont utilisés dans les deux modes."
+  },
+  "kerberos.notes.realmServed": {
+    "en": "8a723c27287c5be5",
+    "text": "UN KDC PAR DOMAINE DE CONFIANCE : voici les personnes et les applications du domaine de confiance dans lequel cette page est lue, en tant que principaux de son propre royaume Kerberos {{kerberosRealm}}."
+  },
+  "kerberos.notes.realmNone": {
+    "en": "8b5e4bb62b24c1f7",
+    "text": "CE DOMAINE DE CONFIANCE N’A PAS DE KDC : {{reason}}. Définissez krb5.realm sur le domaine et activez krb5.enabled pour lui en donner un ; le port 88 achemine une requête selon le nom de royaume Kerberos qu’elle contient."
+  },
+  "kerberos.notes.realmInactive": {
+    "en": "8a719e1d4100b20e",
+    "text": "LE KDC DE CE DOMAINE DE CONFIANCE EST ACTIVÉ MAIS INUTILISABLE : {{reason}}. Son royaume Kerberos est {{kerberosRealm}}."
+  },
+  "kerberos.notes.window": {
+    "en": "f23c2b84dd49da4d",
+    "text": "Les clés sont dérivées APRÈS qu’un mot de passe a été défini ou vérifié et mettent quelques dizaines de millisecondes à être disponibles ; d’ici là, le KDC refuse la personne plutôt que d’accepter une clé plus ancienne."
+  },
+  "kerberos.notes.previous": {
+    "en": "6266fa9952830399",
+    "text": "Un changement de mot de passe ou un renouvellement conserve la version qu’il remplace — au plus krb5.retainedKeyVersions d’entre elles, chacune pendant krb5.retainedKeyTtlS — afin qu’un ticket émis avec elle soit encore accepté jusqu’à ce qu’il ait pu expirer. Une version précédente ne fait jamais qu’OUVRIR un tel ticket : rien n’est émis avec elle et un ancien mot de passe ne permet jamais de se connecter. « Supprimer les versions précédentes » met fin immédiatement à cette fenêtre, après une compromission."
+  },
+  "kerberos.notes.param.noKdcReason": {
+    "en": "eb8c1a9f118d56b9",
+    "text": "krb5.enabled y est désactivé"
+  }
+}

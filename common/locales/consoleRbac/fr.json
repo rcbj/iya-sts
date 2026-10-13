@@ -27,7 +27,7 @@
   "body.typedHeading": "Attribuer à un nom absent de la liste",
   "body.name": "Nom",
   "body.typedPlaceholder": "le nom avec lequel la personne se connectera",
-  "body.typedNote": "L’appartenance restera EN SUSPENS tant que cette personne n’existera pas — elle désigne un DN que cet annuaire ne contient pas encore — et le rôle compte dès sa première connexion. C’est le cas intéressant pour un simulateur et c’est pourquoi ce formulaire existe : rien dans une attribution n’exige que la personne ait été vue. Un nom contenant un caractère que la RFC 4514 réserve dans un DN est refusé, comme lors de la création d’une personne.",
+  "body.typedNote": "L’appartenance restera EN SUSPENS tant que cette personne n’existera pas — elle désigne un DN que cet annuaire ne contient pas encore — et le rôle compte dès sa première connexion. C’est le cas intéressant pour les tests et c’est pourquoi ce formulaire existe : rien dans une attribution n’exige que la personne ait été vue. Un nom contenant un caractère que la RFC 4514 réserve dans un DN est refusé, comme lors de la création d’une personne.",
   "body.readOnlyNote": "Attribuer et révoquer nécessitent <strong>Admin Write</strong>. Le tableau ci-dessus est ce que vous pouvez voir avec <strong>Admin Read</strong>.",
   "body.person": "Personne",
   "body.filterPlaceholder": "une partie d’un nom",

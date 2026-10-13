@@ -1462,3 +1462,7 @@ up for a day would issue SVIDs under an expired authority. The rotation is
 `rotateX509Authority()` / `rotateJwtAuthority()`, the console's, which keeps
 `spiffe.retainedAuthorities` published — or, under the hierarchy, re-issues
 the SPIFFE Issuing CA under the Root, which leaves the bundle unchanged.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /spiffe` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `spiffe/web_spiffe_description.ts` from the `describeSpiffe` catalogs, with `/spiffe/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds the issuing authority's readiness and whether the main port is HTTPS, which `page()` read beside it (`page()`, `listenerRows()`, `methodRows()` and `esc()` went with #584). What is attested is still READ from the view, never asserted. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

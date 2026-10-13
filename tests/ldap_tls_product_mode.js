@@ -27,8 +27,9 @@
 // 1.2 client on 8443; it is now asserted on LDAPS 636, which `ldap_server.js`
 // builds from the same `tlsServer.protocolOptions()`. The argument is beside
 // the assertion. Nothing else here was about those two sockets: `POST
-// /tls/trust` is a route on the main port and always was, and the bind-address
-// section now asks the four raw sockets that are left.
+// /tls/trust` was a route on the main port (deleted by #597), and the
+// bind-address section now asks the raw sockets that are left (the
+// Kerberos acceptor's went to the development companion with #595).
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, and why most of it in a CHILD process.
@@ -296,27 +297,23 @@ function listenersHonourTheBindAddress(t) {
   log.debug("Entering listenersHonourTheBindAddress().");
   t.log.info('=== every listener binds global.host ===');
   const run = inAChild({ STS_HOST: '127.0.0.1', LDAP_PORT: '0', LDAPS_PORT: '0',
-                         KRB5_KDC_PORT: '0',
-                         KRB5_SERVICE_PORT: '0' },
+                         KRB5_KDC_PORT: '0' },
     // tls_server.js had two listeners of its own here until 2026-09-16. They
     // were deleted; the main port is `server.js`'s and binds global.host with
-    // every other HTTP route on it, so the four raw sockets below are what is
-    // left to ask.
-    'const kdc = require(R + "/kerberos/krb5_kdc.js");const svc = require(R ' +
-    '+ "/kerberos/krb5_service.js");const ldap = require(R + ' +
-    '"/ldap/ldap_server.js");const k = kdc.listen(0); const kr = await ' +
-    'k.whenReady;const s = svc.listen(0); await new Promise(function (ok) { ' +
-    's.listening ? ok() : s.once("listening", ok); });const l = ' +
-    'ldap.listen(); await l.whenReady;' +
+    // every other HTTP route on it, so the raw sockets below are what is
+    // left to ask. The Kerberos acceptor's own socket (krb5.servicePort) was
+    // one of them until #595 moved it to the development companion.
+    'const kdc = require(R + "/kerberos/krb5_kdc.js");const ldap = ' +
+    'require(R + "/ldap/ldap_server.js");const k = kdc.listen(0); const kr ' +
+    '= await k.whenReady;const l = ldap.listen(); await l.whenReady;' +
     'return { kdcTcp: kr.tcp.address().address, kdcUdp: ' +
-    'kr.udp.address().address, service: s.address().address, ldap: ' +
+    'kr.udp.address().address, ldap: ' +
     'l.server.address().address, ldaps: l.secureServer && ' +
     'l.secureServer.address().address };');
   const r = run.report || {};
   t.check(r.kdcTcp === '127.0.0.1' && r.kdcUdp === '127.0.0.1',
           'the KDC binds global.host on TCP and UDP',
           JSON.stringify(r) + run.output.slice(-300));
-  t.equal(r.service, '127.0.0.1', 'the Kerberos acceptor binds global.host');
   t.check(r.ldap === '127.0.0.1' && r.ldaps === '127.0.0.1',
           'LDAP and LDAPS bind global.host', JSON.stringify(r));
 
@@ -377,17 +374,26 @@ function theTruststoreIsNotATestControlInProduct(t) {
   const pem = require('../tls/tls_server.js').serverCertificatePem();
   const refused = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust', pem);
   const rr = refused.report || {};
-  t.check(rr.status === 403 && /tls\.trustAnchorsFile/.test(rr.body),
-          'a product service REFUSES a trust anchor from whoever reaches the ' +
-          'port, and names the setting that is the door ' +
-          'instead', JSON.stringify(rr).slice(0, 400));
+  // NOT THERE AT ALL: a product process had no such route since #585, and no
+  // process has since #597 — it answers as for a path nothing is registered
+  // on, Express's own 404. The doors are /admin-api/tls/trust and
+  // tls.trustAnchorsFile.
+  t.check(rr.status === 404 && /Cannot POST \/tls\/trust/.test(rr.body),
+          'a product service has no open door for a trust anchor: POST ' +
+          '/tls/trust answers as an unrouted path', JSON.stringify(rr)
+            .slice(0, 400));
   const cleared = httpProbe({ STS_MODE: 'product' }, 'POST', '/tls/trust/clear',
                             '');
-  t.equal((cleared.report || {}).status, 403, 'and refuses to EMPTY it too');
+  const cr = cleared.report || {};
+  t.check(cr.status === 404 && /Cannot POST/.test(cr.body),
+          'and none to EMPTY it either', JSON.stringify(cr).slice(0, 200));
+  // AND NOR DOES DEVELOPMENT SINCE #597: both routes were deleted, and
+  // /admin-api/tls/trust (which the launchers use) is the door in either mode.
   const accepted = httpProbe({}, 'POST', '/tls/trust', pem);
-  t.equal((accepted.report || {}).status, 200,
-          'while development mode still takes the anchor, which is what the ' +
-          'launchers use');
+  const ar = accepted.report || {};
+  t.check(ar.status === 404 && /Cannot POST \/tls\/trust/.test(ar.body),
+          'nor has a development service: POST /tls/trust was deleted',
+          JSON.stringify(ar).slice(0, 200));
 
   const file = path.join(os.tmpdir(), 'anchors-' + process.pid + '.pem');
   fs.writeFileSync(file, pem);

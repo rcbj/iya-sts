@@ -213,6 +213,46 @@ function checkShaping(t) {
       additionalProperties: false });
   t.check(JSON.stringify(one.attributes) === '["givenName"]',
           'E3. and one ticked box is a list of one');
+  // E4. AN UNTICKED BOX IS `false` WHERE THE OPERATION TAKES A BOOLEAN
+  // (2026-10-12): Directory → Policies' passkey profile is saved whole, and
+  // unticking "Allow a passkey sign-in with no username" sent nothing and
+  // was refused. A box ticked under the same name, a member the schema
+  // does not name, and a member that is not only a boolean are left alone.
+  const form = { querySelectorAll: function () {
+    return [{ name: 'allowUsernameless', checked: false },
+            { name: 'enforcePinLength', checked: true },
+            { name: 'pair', checked: false }, { name: 'pair', checked: true },
+            { name: 'unknown', checked: false },
+            { name: 'loose', checked: false },
+            { name: 'either', checked: false },
+            { name: 'text', checked: false },
+            { name: 'off', checked: false, disabled: true }];
+  } };
+  const unticked = ConsoleRuntime.uncheckedBoxes(form);
+  const policy = runtime.shapeFields(
+    { enforcePinLength: 'true', pair: 'on' },
+    { type: 'object',
+      properties: { allowUsernameless: { type: 'boolean' },
+                    enforcePinLength: { type: 'boolean' },
+                    pair: { type: 'boolean' },
+                    loose: { type: ['boolean', 'string'] },
+                    either: { oneOf: [{ type: 'boolean' },
+                                      { type: 'string' }] },
+                    text: { type: 'string' },
+                    off: { type: 'boolean' } },
+      additionalProperties: false }, unticked);
+  // `either` is how the policy kinds declare a yes/no field (a boolean or
+  // a `TRUE`/`FALSE` string): the first version of this missed it, and the
+  // passkey profile was still refused.
+  t.check(JSON.stringify(unticked) === '["allowUsernameless","unknown",' +
+          '"loose","either","text","off"]' && policy.allowUsernameless === false &&
+          policy.enforcePinLength === true && policy.pair === true &&
+          policy.loose === false && policy.either === false &&
+          policy.off === false &&
+          !('unknown' in policy) && !('text' in policy),
+          'E4. an unticked box is sent as false where the operation takes ' +
+          'a boolean (in its type or a oneOf branch), and nothing else is', JSON.stringify({ unticked: unticked,
+                                                            policy: policy }));
   log.debug("Leaving checkShaping().");
 }
 

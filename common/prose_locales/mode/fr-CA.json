@@ -1,0 +1,18 @@
+{
+  "mode.requirements.mail.what": {
+    "en": "8b83e20e2d14d9a9",
+    "text": "Le courriel est envoyé, pas conservé ; un lien envoyé par courriel nomme l’adresse publique épinglée"
+  },
+  "mode.requirements.mail.development": {
+    "en": "c6e53c9e30d286e6",
+    "text": "Le mail.transport `default` est le transport de CAPTURE : chaque message est conservé avec son corps et affiché sur Surveillance → Courriel plutôt qu’envoyé, sauf si un vrai transport est configuré. Un lien envoyé par courriel est construit sur global.publicBaseUrl, ou sur l’hôte et le port configurés de l’écouteur lorsque celui-ci est vide — jamais sur la requête."
+  },
+  "mode.requirements.mail.product": {
+    "en": "497ff2ab5fad4b85",
+    "text": "`default` vaut `off`, et `capture` est refusé à l’écriture et au démarrage (STS-MAIL-0003), car un lien de réinitialisation de mot de passe capturé est un identifiant visible sur la console. Un transport configuré qui ne peut pas être construit empêche le service de démarrer (STS-MAIL-0002). Un lien n’est envoyé par courriel que lorsque global.publicBaseUrl est défini (STS-MAIL-0015)."
+  },
+  "mode.requirements.fresh-key-attestation.development": {
+    "en": "f1d730667e165896",
+    "text": "Une déclaration TPM2_Certify dont l’extraData n’est pas un nonce actif émis par EST /nonce pour le même client et le même témoin (aucun récupéré, expiré, déjà consommé, celui d’un autre client, ou une requête via SCEP, qui n’a pas d’opération de nonce) conserve son niveau et est consignée avec une fraîcheur NON PROUVÉE et le motif. Un nonce correspondant est consommé."
+  }
+}

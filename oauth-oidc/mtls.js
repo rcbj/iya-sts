@@ -57,7 +57,8 @@
 // says the binding is to the certificate itself and explicitly permits a
 // self-signed one — the proof is that the same key completed the handshake, not
 // that a CA vouched for it. Refusing an unverified certificate here would break
-// exactly the case the truststore at `/tls/trust` exists to make reachable.
+// exactly the case the truststore (`/admin/tls/trust`) exists to make
+// reachable.
 //
 // ---------------------------------------------------------------------------
 // THE THUMBPRINT IS OF THE DER, AND THAT IS THE WHOLE OF THE INTEROPERABILITY.
@@ -136,7 +137,8 @@ function peerCertificate(req) {
 // reading a constant.
 //
 // THAT IS NO LONGER TRUE. The main listener joined the client truststore that
-// `POST /tls/trust` fills, so a certificate that chains to an anchor is now
+// `POST /admin-api/tls/trust/add` fills, so a certificate that chains to an
+// anchor is now
 // distinguishable from one that chains to nothing. RFC 8705 binding does not
 // care about the difference — it binds to the certificate and section 3
 // explicitly permits a self-signed one — but anything that RESOLVES a
@@ -242,8 +244,8 @@ function peerVerified(req) {
     verified: false, presented: true, error: error,
     why: 'A client certificate was presented and it did NOT verify' +
          (error ? ' (' + error + ')' : '') + '. The commonest cause is that ' +
-         'nothing in the truststore issued it — POST the issuing CA to ' +
-         '/tls/trust — and the next commonest is a chain sent without its ' +
+         'nothing in the truststore issued it — add the issuing CA through ' +
+         '/admin/tls/trust or POST /admin-api/tls/trust/add — and the next commonest is a chain sent without its ' +
          'intermediates, which looks identical from the client side. The ' +
          'certificate is still thumbprinted and still binds a token: RFC ' +
          '8705 section 3 binds to the certificate rather than to anybody\'s ' +

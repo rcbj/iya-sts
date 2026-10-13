@@ -1538,7 +1538,7 @@ const SCHEMAS = {
                                'half — PKCS#8 for PEM and DER, PBES2 as a ' +
                                '.jwe for JWK. Empty means the private key ' +
                                'comes out in the clear, which is usually ' +
-                               'what is wanted from a mock and never ' +
+                               'what is wanted in development and never ' +
                                'anywhere else.' }
     }),
 
@@ -1613,13 +1613,20 @@ const SCHEMAS = {
           encrypts: { type: 'string' },
           decrypts: { type: 'string' },
           hashes: { type: 'string' },
+          keys: { type: 'string',
+                  description: 'The keys the family holds of its own, ' +
+                    'beside the realm\'s signing keys; empty when it has ' +
+                    'nothing to add.' },
           whatItDoesNot: { type: 'string' },
           envelopes: { type: 'array', items: { type: 'string' },
                        description: 'Keys into `standards` below.' },
           algorithms: { type: 'array', items: openObject(
-            'One labelled list, read live from the module that performs it.',
+            'One labelled row, read live from the module that performs it: ' +
+            'a list of identifiers, or — where `how` is present — a ' +
+            'sentence, and then `values` is empty.',
             { what: { type: 'string' },
-              values: { type: 'array', items: { type: 'string' } } }) }
+              values: { type: 'array', items: { type: 'string' } },
+              how: { type: 'string' } }) }
         }) },
       hashing: openObject('Every digest this service computes, and what for.',
                           {}),
@@ -1638,7 +1645,7 @@ const SCHEMAS = {
         'again.', {}),
       standards: { type: 'array', items: openObject(
         'One higher-level envelope, with an honest coverage note. Every ' +
-        '`coverage` starts `full`, `partial` or `mock` and says what is ' +
+        '`coverage` starts `full`, `partial` or `minimal` and says what is ' +
         'missing.', {
           key: { type: 'string' },
           name: { type: 'string' },
@@ -1680,7 +1687,16 @@ const SCHEMAS = {
         'ticket by the KDC and cannot be moved, and an LDAP connection has ' +
         'no expiry at all.', {}),
       sessions: { type: 'array',
-                  items: { $ref: '#/components/schemas/SessionRow' } }
+                  items: { $ref: '#/components/schemas/SessionRow' } },
+      unauthenticatedHeld: { type: 'integer',
+        description: 'Live sessions that authenticated nobody, all of ' +
+                     'them: never filtered and counted before paging.' },
+      unauthenticatedSessions: { type: 'array',
+        description: 'One page of those sessions, moved by ' +
+                     '`anonymousPage` (#313).',
+        items: { $ref: '#/components/schemas/SessionRow' } },
+      unauthenticatedPaging: openObject(
+        'Where in the unauthenticated sessions that page is.', {})
     }, PAGING_PROPERTIES)),
 
   SessionRow: openObject(
@@ -2063,10 +2079,10 @@ const SCHEMAS = {
     'do.\n\n`fedClientSecret` is NEVER returned by this API — it is reported ' +
     'as `(set — not returned)` or empty. That is not a security boundary and ' +
     'is not claimed as one: an `ldapsearch` of this directory shows it, ' +
-    'deliberately and loudly, exactly as `GET /krb5/principals` prints every ' +
-    'Kerberos password. What it avoids is this API being a SECOND way to ' +
-    'read a credential that belongs to somebody else\'s service out of this ' +
-    'process.',
+    'deliberately and loudly, exactly as the settings print every ' +
+    'development Kerberos password. What it avoids is this API being a ' +
+    'SECOND way to read a credential that belongs to somebody else\'s ' +
+    'service out of this process.',
     Object.assign({
       relationships: {
         type: 'array',
@@ -2857,8 +2873,11 @@ const SCHEMAS = {
                                   'answers about.' },
       ldapVersion: { type: 'integer' },
       bindPolicy: { type: 'string',
-                    description: 'Every bind succeeds. This says so in the ' +
-                                 'reply rather than only on the page.' },
+                    description: 'Which binds succeed, in this realm\'s ' +
+                                 'mode: every bind in development, a ' +
+                                 'person\'s verified password over LDAPS in ' +
+                                 'product. This says so in the reply rather ' +
+                                 'than only on the page.' },
       refusedPassword: { type: 'string',
                          description: 'The ONE literal password answered ' +
                                       'LDAP_INVALID_CREDENTIALS (49), so ' +
@@ -3394,7 +3413,7 @@ const SCHEMAS = {
                      'and logged, not refused: the directory is a vocabulary ' +
                      'rather than a constraint here, and an identity ' +
                      'provider that stopped issuing because somebody typed ' +
-                     '"yes" would be a mock that stopped answering.',
+                     '"yes" would be a service that stopped answering.',
         items: openObject('One overridable setting.', {
           setting: { type: 'string',
                      description: 'The appconfig key, as in GET /config.' },
@@ -3682,7 +3701,7 @@ const SCHEMAS = {
     }),
 
   VerifierRequest: openObject(
-    'What the mock OID4VP Verifier at /oid4vp/verifier asks a wallet for, ' +
+    'What the OID4VP Verifier asks a wallet for, ' +
     'and in which credential format. It reaches the wire as the `dcql_query` ' +
     'of the next Authorization Request and is then what the presentation is ' +
     'checked against.',
@@ -3712,7 +3731,16 @@ const SCHEMAS = {
       },
       dcqlQuery: openObject(
         'The query this builds, from the function that builds the real ' +
-        'one.', {})
+        'one.', {}),
+      recentVerifications: openObject(
+        'The verifications still open in this realm and what each ' +
+        'decided, newest first (#587) — `GET /verifications` without a ' +
+        '`state`, from the same function: `verifications`, `total`, ' +
+        '`limit`.', {}),
+      startChoices: openObject(
+        'What `POST /verifications/start` may name — `format`, `by`, ' +
+        '`mode`, `response_type`, `response_mode`, `client_id_prefix` — ' +
+        'each the list the Verifier checks a start against (#587).', {})
     }),
 
   // -----------------------------------------------------------------------
@@ -3731,10 +3759,6 @@ const SCHEMAS = {
                      'stay REGISTERED and answer 501 rather than 404 — the ' +
                      'feature being off and the URL being wrong are ' +
                      'different sentences to a client.' },
-      pepBias: { type: 'string', enum: ['deny-biased', 'permit-biased'],
-        description: 'THE EMBEDDED PEP\'S SETTING, NOT THE PDP\'S. The two ' +
-                     'biases agree on every Permit and every Deny and differ ' +
-                     'on Indeterminate and NotApplicable.' },
       policies: { type: 'integer',
         description: 'How many are in ou=policies.' },
       enabledPolicies: { type: 'integer' },
@@ -3937,19 +3961,28 @@ const SCHEMAS = {
       obligations: { type: 'array', items: { type: 'string' } },
       advice: { type: 'array', items: { type: 'string' } },
       applicablePolicies: { type: 'array', items: { type: 'string' } },
-      enforcement: openObject('What the EMBEDDED PEP would do.', {
+      enforcement: openObject('What a DENY-BIASED PEP would do — every ' +
+        'embedded PEP\'s bias, and the remote PEP\'s default. The first of ' +
+        '`enforcements`.', {
         allowed: { type: 'boolean' },
-        bias: { type: 'string',
-          description: 'xacml.pepBias. The two biases agree on every Permit ' +
-                       'and every Deny and differ on Indeterminate and ' +
-                       'NotApplicable, which is the case nobody tests.' },
+        bias: { type: 'string', enum: ['deny-biased'] },
         why: { type: 'string',
           description: 'Including the section 7.2 case: a Permit carrying ' +
                        'an obligation this PEP cannot discharge is a ' +
                        'REFUSAL, because allowing it and dropping the ' +
                        'obligation would enforce half a policy and report ' +
                        'success.' }
-      })
+      }),
+      enforcements: { type: 'array',
+        description: 'What a PEP would do under EACH bias, deny-biased then ' +
+                     'permit-biased (#596: the setting that chose one went ' +
+                     'with the demonstration PEP). The two agree on every ' +
+                     'Permit and every Deny and differ on Indeterminate and ' +
+                     'NotApplicable, which is the case nobody tests.',
+        items: openObject('One bias\'s enforcement.', {
+          allowed: { type: 'boolean' },
+          bias: { type: 'string', enum: ['deny-biased', 'permit-biased'] },
+          why: { type: 'string' } }) }
     }),
 
   // WHAT AUTHORIZATION IS DOING, as opposed to what it is configured to do.
@@ -3965,8 +3998,13 @@ const SCHEMAS = {
       endpoints: openObject('Every GNAP endpoint of this realm, absolute.', {}),
       capabilities: openObject('The default authorization server\'s RFC 9635 ' +
                                'section 9 document.', {}),
-      authorizationServers: { type: 'array', items: openObject('A named ' +
+      authorizationServers: { type: 'array',
+        description: 'One page of the named authorization servers, moved ' +
+                     'by `serversPage` (#313).',
+        items: openObject('A named ' +
           'authorization server and its GNAP capabilities.', {}) },
+      authorizationServersPaging: openObject(
+        'Where in the named authorization servers that page is.', {}),
       tokenFormats: { type: 'array', items: { type: 'string' } },
       verificationMaterial: openObject('The public material that verifies ' +
                                        'the self-contained formats (absent ' +
@@ -4162,9 +4200,8 @@ const SCHEMAS = {
                        'FAILED NUDGE IS RECORDED: it is invisible from the ' +
                        'receiving end by definition.' },
         bias: { type: 'string',
-          description: 'REPORTED BY THE PEP, never set from here. ' +
-                       'xacml.pepBias governs the EMBEDDED PEP at ' +
-                       '/xacml/protected and nothing else.' },
+          description: 'REPORTED BY THE PEP, never set from here: it is ' +
+                       'the PEP\'s own configuration (PEP_BIAS).' },
         resource: { type: 'string' },
         version: { type: 'string' },
         description: { type: 'string' },
@@ -4279,9 +4316,15 @@ const SCHEMAS = {
                      'receiver\'s `authorization_header` is NEVER in it — it ' +
                      'is a credential belonging to somebody else\'s ' +
                      'endpoint, and this resource is not the door it goes ' +
-                     'back through.',
+                     'back through. One page of the streams, moved by ' +
+                     '`streamsPage` and described by `paging.streams`; ' +
+                     '`stream` narrows it to one.',
         items: { type: 'object' }
       },
+      streamTotals: openObject(
+        'Counted over every stream, before `streamDetail` is narrowed and ' +
+        'paged: `streams`, `enabled`, `delivered`, `failed`, `waiting`, ' +
+        '`dead` and `deadLetters`.', {}),
       deadLetters: {
         type: 'object',
         description: 'The dead-letter and push-cap settings in force, and ' +
@@ -4289,13 +4332,6 @@ const SCHEMAS = {
                      '`active`, `waiting`, `concurrency`, `backlog`. A ' +
                      'dispatched service has one per process, and this is ' +
                      'the one that answered.'
-      },
-      receivedDetail: {
-        type: 'array',
-        description: 'What POST /ssf/receive has taken, newest first, with ' +
-                     'whether each signature verified and whether the ' +
-                     'application/secevent+jwt media type was used.',
-        items: { type: 'object' }
       },
       settings: {
         type: 'object',
@@ -4475,9 +4511,15 @@ const SCHEMAS = {
                      'here rather than only on the Ssf resource because a ' +
                      'session with a count of zero almost always means ' +
                      'nobody asked for that type, and SSF gives a receiver ' +
-                     'no other notice of that.',
+                     'no other notice of that. On the sessions list it is ' +
+                     'one page, moved by `streamsPage` and described by ' +
+                     '`paging.streams`.',
         items: { type: 'object' }
       },
+      streamCounts: openObject(
+        'On the sessions list: `total`, every stream in the realm, and ' +
+        '`taking`, those taking any CAEP event — counted over the whole ' +
+        'list, before `streams` is paged.', {}),
       settings: {
         type: 'object',
         description: 'The `CAEP` setting group as /admin/caep draws it. ' +
@@ -4663,9 +4705,15 @@ const SCHEMAS = {
                      'here rather than only on the Ssf resource because an ' +
                      'account with a count of zero almost always means ' +
                      'nobody asked for that type, and SSF gives a receiver ' +
-                     'no other notice of that.',
+                     'no other notice of that. On the accounts list it is ' +
+                     'one page, moved by `streamsPage` and described by ' +
+                     '`paging.streams`.',
         items: { type: 'object' }
       },
+      streamCounts: openObject(
+        'On the accounts list: `total`, every stream in the realm, and ' +
+        '`taking`, those taking any RISC event — counted over the whole ' +
+        'list, before `streams` is paged.', {}),
       settings: {
         type: 'object',
         description: 'The `RISC` setting group as /admin/risc draws it. ' +
@@ -4789,7 +4837,7 @@ const SCHEMAS = {
             description: 'The access control policy RFC 7644 section 2 ' +
                          'requires a provider to be able to map an ' +
                          'authenticated client to. It is two lines, which is ' +
-                         'the honest length for a mock.'
+                         'the honest length for this service.'
           }
         }),
       store: openObject(
@@ -5002,7 +5050,9 @@ const SCHEMAS = {
                      'first: `state` is `dead`, `half-open`, `failing`, ' +
                      '`healthy`, `poll` or `unknown` (letters for a stream ' +
                      'this process does not hold), with its letters by ' +
-                     'cause and its dead or failing times.',
+                     'cause and its dead or failing times. Narrowed by ' +
+                     '`dlstream` and `dlcause` (a stream holding a letter ' +
+                     'of that cause) and paged by `streamsPage`.',
         items: openObject('One stream.', {}) },
       letters: { type: 'array',
         description: 'Held letters, newest first, narrowed by `dlq`, ' +
@@ -5013,8 +5063,8 @@ const SCHEMAS = {
         description: 'How many letters the narrowing matched, before paging.' },
       filter: openObject('`q`, `stream` and `cause`, each null when not ' +
                          'narrowed.', {}),
-      paging: openObject('`letters`: where in the matched list this page is.',
-                         {}),
+      paging: openObject('`letters` and `streams`: where in each narrowed ' +
+                         'list its page is.', {}),
       settings: openObject('The seven `ssf.*` settings that decide what is ' +
                            'dead-lettered and for how long.', {}),
       process: openObject(
@@ -5237,7 +5287,7 @@ const SCHEMAS = {
         description: 'The NORMALISED local name, so a party here and a row ' +
                      'on /admin-api/users name the same person — `alice`, ' +
                      'her `urn:uuid:<entryUUID>` subject and ' +
-                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     '`alice@EXAMPLE.COM` are one identity. Empty where ' +
                      'this ' +
                      'layer is an application ' +
                      'rather than a person, or where nothing named it.'
@@ -5686,7 +5736,7 @@ const SCHEMAS = {
         description: 'The NORMALISED local name, so a row here and a row on ' +
                      '/admin-api/users name the same person — `alice`, her ' +
                      '`urn:uuid:<entryUUID>` subject and ' +
-                     '`alice@STS.MOCK` are one identity. Empty where ' +
+                     '`alice@EXAMPLE.COM` are one identity. Empty where ' +
                      'nothing named an actor, which an ' +
                      'unauthenticated protocol call and an anonymous LDAP ' +
                      'bind both are.'
@@ -5980,7 +6030,8 @@ const TAG_DESCRIPTIONS = {
   'Credential claims': 'What an issued Verifiable Credential carries.',
   'Credential status': 'The status lists every issued Verifiable ' +
     'Credential names, and suspending, reinstating or revoking one.',
-  'Verifier request': 'What the mock OID4VP Verifier asks a wallet for.',
+  'Verifier request': 'What this realm\'s OID4VP Verifier asks a wallet ' +
+  'for.',
   'Token lifetimes': 'How long an access token, an ID Token and a refresh ' +
                      'token issued here last, and how far out a clock may be ' +
                      'before this service stops believing one of its own. ' +

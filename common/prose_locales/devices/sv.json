@@ -1,0 +1,66 @@
+{
+  "devices.enrolment.native-sso.what": {
+    "en": "16178c8191c0cc60",
+    "text": "OpenID Connect Native SSO for Mobile Apps: den första appens beviljande med auktoriseringskod och omfånget device_sso skapar enheten och ger den en device_secret, hashad på posten och giltig endast för den inloggningssessionen."
+  },
+  "devices.enrolment.admin.what": {
+    "en": "71254afa1953e5ae",
+    "text": "En administratör, på Katalog → Enheter eller POST /admin-api/devices/create: ägd av en person eller av en applikation, med nycklar inskrivna som värden. En nyckel som läggs till på det här sättet registreras som bevisad av ingen och självdeklarerad."
+  },
+  "devices.enrolment.portal.what": {
+    "en": "91e4899bb82f5cd4",
+    "text": "Ägaren på /portal/devices (eller dess JSON-dörrar, POST /portal/devices/challenge och /portal/devices/proof), som bevisar en nyckel: en device-key-proof+jwt JWS över en utmaning bunden till deras session — med en Android Key Attestation i dess x5c, eller ett Apple App Attest-uttalande i stället — eller genom att länka en WebAuthn-plattformsautentiseringsuppgift de registrerat, med ett färskt intygande."
+  },
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "EST (RFC 7030) simpleenroll vid /.well-known/est/device/: ett certifikat utfärdat till den enhetspost som begärans urn:sts:device:<id> namnger — eller till en ny, ägd av den begärande — med en TPM-nyckelattestering (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). Ägaren för sin egen enhet, Admin Write för vilken som helst."
+  },
+  "devices.enrolment.scep.what": {
+    "en": "f2790d20081d2a71",
+    "text": "SCEP (RFC 8894) PKCSReq med ett utmaningslösenord utfärdat för enhetsprofilen — detsamma, för de enheter som bara talar det."
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "Klientcertifikatet på TLS-anslutningen — vid en inloggning och vid tokenslutpunkten (RFC 8705) — matchat via SHA-256 av dess SubjectPublicKeyInfo, så ett förnyat certifikat över samma nyckel är samma enhet. Handskakningen bevisar innehav; om kedjan verifierades registreras, och ett certifikat som avvisats på grund av återkallelse känns inte igen."
+  },
+  "devices.recognition.jwk.what": {
+    "en": "18f6dc11a05f7b7b",
+    "text": "Ett DPoP-bevis vid tokenslutpunkten, matchat via dess jkt — RFC 7638-tumavtrycket som varje jwk-nyckel bär."
+  },
+  "devices.recognition.webauthn.what": {
+    "en": "baffd188b35ca245",
+    "text": "Ett WebAuthn-intygande vid en inloggning vars autentiseringsuppgift är länkad till enheten."
+  },
+  "devices.recognition.native-sso.what": {
+    "en": "a79805a282a5905a",
+    "text": "Native SSO-enhetens device_secret, medan den inloggningssession den utfärdades för är levande."
+  },
+  "devices.notes.caepSessions": {
+    "en": "60b89495e94226ce",
+    "text": "enhetsmedlemmen på session-established, session-presented och session-revoked"
+  },
+  "devices.notes.riscSessionsRevoked": {
+    "en": "c792bbacab53a2bf",
+    "text": "sessions-revoked (där risc.autoEmitTypes namnger den; inte som standard)"
+  },
+  "devices.notes.subject": {
+    "en": "5701918ef6842f24",
+    "text": "sammansatt: device (iss_sub — den här sfärens utfärdare och enhets-id:t) och user (ägaren, där det är en person)"
+  },
+  "devices.notes.recordedAtSignIn": {
+    "en": "9f2344eae59daae5",
+    "text": "autentiseringshändelsens registeredDevice (authn.registeredDeviceOf(session) läser den senaste)"
+  },
+  "devices.notes.recordedAtTokenEndpoint": {
+    "en": "e5325ebe82720b8e",
+    "text": "utfärdandebegärans registered_device, före utfärdandespärren"
+  },
+  "devices.notes.adminKeys": {
+    "en": "4a9c1c956ea1c116",
+    "text": "en administratörs nyckel som värde godtas i båda lägena, registrerad med bevis admin och självdeklarerad"
+  },
+  "devices.notes.scepFreshness": {
+    "en": "de8bddcb2b76d6c1",
+    "text": "SCEP har ingen nonce-operation, så ett TPM-uttalande över den visas aldrig som färskt"
+  }
+}

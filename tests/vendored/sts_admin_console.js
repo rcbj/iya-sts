@@ -197,7 +197,7 @@
 // ---------------------------------------------------------------------------
 const assert = require("assert");
 const { Command, Option } = require("commander");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, until } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const NetworkInspector = require("selenium-webdriver/bidi/networkInspector.js");
 const browserFlags = require("./browser_flags.js");
@@ -1322,7 +1322,11 @@ let signedInAs = "";
 // would a person, who signs in again. Nothing is granted here.
 async function typeTheSignIn(driver, username) {
   log.debug("Entering typeTheSignIn(). username=" + username);
-  const field = await driver.findElement(By.css("input[name='username']"));
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): the form is waited for before it is filled.
+  const field = await driver.wait(
+    until.elementLocated(By.css("input[name='username']")), 15000,
+    "the sign-in screen never drew its form");
   await field.clear();
   await field.sendKeys(username);
   const secret = await driver.findElement(By.css("input[name='password']"));
@@ -2407,13 +2411,26 @@ async function theNewUserPageDescribesAPerson(driver) {
   // sign-in this browser is not set up for mid-job. The answer is what the
   // check is about, and a fetch is a request with no session at all, which
   // is what the person the link is for will make.
-  const opened = await fetch(new URL(String(link).trim(), root("/")).href,
-                             { redirect: "manual" });
+  //
+  // **AND IT ASKS THE OPERATION THE PAGE IS DRAWN FROM (#568).** The portal
+  // is a static application: `/portal/activate` answers its document, 200,
+  // for any token at all, and the link is checked by the page's operation,
+  // `GET /account-api/activation`, with the link's own query. That is what
+  // the person's browser asks when the link is opened.
+  const linked = new URL(String(link).trim(), root("/"));
+  const opened = await fetch(new URL(linked.pathname.replace(
+    /\/portal\/activate$/, "/account-api/activation") + linked.search,
+    linked).href, { redirect: "manual",
+                    headers: { accept: "application/json" } });
+  const view = await opened.json().catch(function () {
+    return {};
+  });
   check("and spending it reaches the setup screen", function () {
-    assert.strictEqual(opened.status, 200,
-      "THE LINK THIS PAGE HANDED OVER DOES NOT WORK. It answered " +
-      opened.status + ". A link that 400s is indistinguishable, on the page " +
-      "that issued it, from one that works — and it is the only copy: this " +
+    assert.ok(opened.status === 200 && view.step === "setup",
+      "THE LINK THIS PAGE HANDED OVER DOES NOT WORK. Its operation " +
+      "answered " + opened.status + " " + JSON.stringify(view).slice(0, 200) +
+      ". A link that is refused is indistinguishable, on the page that " +
+      "issued it, from one that works — and it is the only copy: this " +
       "service stores a hash of the token and cannot produce it again.");
   });
 
@@ -2648,7 +2665,11 @@ function consolePostPathsIn(mirrors) {
   let found = pattern.exec(String(mirrors || ""));
   while (found) {
     const path = found[1].replace(/[.,;]+$/, "")
-                         .replace(/\/:.*$/, "").split("?")[0];
+                         .replace(/\/:.*$/, "").split("?")[0]
+                         // A tab's mirror names its fragment
+                         // (`/admin/xacml#xacml-tab-editor`); a form's target
+                         // is a path, so the fragment is not part of the route.
+                         .split("#")[0];
     if (path && paths.indexOf(path) < 0) {
       paths.push(path);
     }
@@ -2698,24 +2719,32 @@ async function actionsByConsolePath() {
   assert.strictEqual(index.status, 200,
     "GET /admin-api should answer its index; it answered " + index.status);
   const out = {};
+  const tables = {};
   for (const operation of index.body.operations || []) {
     // EVERY console control the operation names, not just the first. One
     // resource legitimately mirrors several — /admin-api/xacml/{action} is
     // three — and all of them dispatch on the same action switch, so they all
     // get the same table.
+    //
+    // AND ONE CONSOLE PATH MAY BE MIRRORED BY SEVERAL RESOURCES, whose tables
+    // are UNITED. The combined pages (`/admin/saml2`'s SAML 2.0, SAML 1.1,
+    // assertion and custom-attribute tabs, `/admin/vc`, `/admin/xacml`) post
+    // every tab's forms to the page's one path, and each tab's actions are
+    // its own resource's. Keeping the first resource's table for the path
+    // reported every other tab's buttons as naming an action nobody knows.
     const paths = consolePostPathsIn(operation.mirrors);
     if (!paths.length) {
       continue;
     }
-    let table = null;
+    if (!Object.prototype.hasOwnProperty.call(tables, operation.path)) {
+      tables[operation.path] = await actionsKnownAt(operation.path);
+    }
+    const table = tables[operation.path];
     for (const consolePath of paths) {
-      if (Object.prototype.hasOwnProperty.call(out, consolePath)) {
-        continue;
-      }
-      if (table === null) {
-        table = await actionsKnownAt(operation.path);
-      }
-      out[consolePath] = table;
+      const held = out[consolePath] || [];
+      out[consolePath] = held.concat(table.filter(function (one) {
+        return held.indexOf(one) < 0;
+      }));
     }
   }
   log.debug("Leaving actionsByConsolePath(). " +
@@ -2729,17 +2758,29 @@ async function actionsByConsolePath() {
 async function actionsKnownAt(apiPath) {
   log.debug("Entering actionsKnownAt(). apiPath=" + apiPath);
   const resource = String(apiPath).replace(/\/[^/]*$/, "");
-  const probe = await common.httpJson(base + resource + "/__no_such_action__", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // Enough to get past the validation the three claim-set doors and the two
-    // SAML ones do BEFORE they look at the action; a probe that never reaches
-    // the switch comes back naming something else in a sentence of the same
-    // shape, which admin_api.js already learnt the hard way.
-    body: JSON.stringify({ set: "access_token", sp: "x", rp: "x",
-                           id: "x", user: "x", entry: "x", agent: "x" })
-  });
-  const errors = ((probe.body && probe.body.errors) || []).join(" ");
+  const ask = function (set) {
+    return common.httpJson(base + resource + "/__no_such_action__", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Enough to get past the validation the claim-set doors and the two
+      // SAML ones do BEFORE they look at the action; a probe that never
+      // reaches the switch comes back naming something else in a sentence of
+      // the same shape, which admin_api.js already learnt the hard way.
+      body: JSON.stringify({ set: set, sp: "x", rp: "x",
+                             id: "x", user: "x", entry: "x", agent: "x" })
+    });
+  };
+  let probe = await ask("access_token");
+  let errors = ((probe.body && probe.body.errors) || []).join(" ");
+  // A claim-set door that does not carry `access_token` (the SAML attribute
+  // sets, the Kerberos PAC set) refuses the SET before the action, naming the
+  // sets it does carry. Ask again with the first of them, or the combined
+  // page's tab is reported as posting actions nobody knows.
+  const carried = errors.match(/The ones this door carries are:\s*([^,.\s]+)/);
+  if (carried) {
+    probe = await ask(carried[1]);
+    errors = ((probe.body && probe.body.errors) || []).join(" ");
+  }
   const sentence =
       errors.match(/Unknown action "[^"]*"\.\s*[^:]*:\s*([^.]+)\./);
   const out = sentence ?
@@ -3078,7 +3119,10 @@ async function theSignOutButtonSignsYouOut(driver) {
   // sign-out, `/logout`, which lists everything this service still holds for
   // the person and ends it. So the button's claim is that it lands THERE, and
   // the sign-out is that page's Global logout, pressed as a person would.
-  const offered = await survey(driver);
+  // THE SIGN-OUT PAGE IS A STATIC SURFACE SINCE #577: the shell loads,
+  // then its script draws the page from /authn-api/logout, so the page is
+  // read once its Global logout is drawn rather than when the document is.
+  const offered = await waitForText(driver, /Global logout/);
   const offeredUrl = await driver.getCurrentUrl();
   check("Sign out sends the browser to the sign-out page, which offers to " +
         "end everything", function () {
@@ -3093,7 +3137,10 @@ async function theSignOutButtonSignsYouOut(driver) {
   assert.ok(global >= 0, "/logout should draw the Global logout form.");
   await fillAndPress(driver, global, {}, { buttonText: "Global logout" });
 
-  const landed = await survey(driver);
+  // The act goes to /authn-api/logout, and what it answers is drawn in
+  // place or is the signed-out document the page posts to: either way the
+  // page is read once it says what ended.
+  const landed = await waitForText(driver, /signed out/i);
   check("it answers a page saying what ended", function () {
     assert.ok(/signed out/i.test(landed.text || ""),
       "the Global logout should land on a page that SAYS so. The page " +
@@ -3163,6 +3210,30 @@ function theRealmIsLeftBehind() {
            root("/admin/realms?realm=" + encodeURIComponent(REALM)) + ", or " +
            "remove it by hand when you are done with it.");
   log.debug("Leaving theRealmIsLeftBehind().");
+}
+
+// THE PAGE ONCE IT SAYS SOMETHING (#577): a static surface outside the
+// console — the sign-out — draws itself after its document has loaded, so
+// `waitForDrawn()` (which knows the console's own placeholder) cannot say
+// when it is drawn. This waits until the page's text matches, and answers
+// the survey either way: a caller asserting on it says what was there.
+async function waitForText(driver, pattern, timeoutMs) {
+  log.debug("Entering waitForText(). " + pattern);
+  await driver.wait(async function () {
+    const text = await driver.executeScript(
+      "return document.body ? document.body.innerText : '';")
+      .catch(function (e) {
+        // A document torn down under the probe: asked again.
+        log.debug("Caught in waitForText(): " + ((e && e.message) || e));
+        return "";
+      });
+    return pattern.test(String(text || ""));
+  }, timeoutMs || 20000).catch(function (e) {
+    log.debug("Caught in waitForText(): " + ((e && e.message) || e));
+  });
+  const page = await survey(driver);
+  log.debug("Leaving waitForText().");
+  return page;
 }
 
 // The index of the first form on the current page carrying a submit button
@@ -3784,14 +3855,18 @@ function writeForms(stamp) {
       values: { name: "console_ui_claim_" + stamp, value: "yes",
                 set: "userinfo" },
       expect: { text: "console_ui_claim_" + stamp } },
-    { path: "/admin/saml-attributes", button: "Add",
+    { path: "/admin/saml2#saml-tab-attributes", button: "Add",
       values: { name: "console_saml_" + stamp, value: "yes", set: "saml2" },
       expect: { text: "console_saml_" + stamp } },
-    { path: "/admin/saml2", button: "Register",
+    // The SAML 2.0 tab, named: /admin/saml2 opens on Metadata, and the
+    // read-back below reads the page's visible text, so the bare path drew a
+    // page whose service provider list was hidden in another tab.
+    { path: "/admin/saml2#saml-tab-saml2", button: "Register",
       values: { sp: "urn:console:" + stamp + ":sp" },
       expect: { text: "urn:console:" + stamp + ":sp" } },
-    { path: "/admin/saml11", button: "Register",
-      values: { rp: "urn:console:" + stamp + ":rp" },
+    { path: "/admin/saml2#saml-tab-saml11", button: "Register",
+      values: { rp: "urn:console:" + stamp + ":rp",
+                shire: "https://console-" + stamp + ".example.test/acs" },
       expect: { text: "urn:console:" + stamp + ":rp" } },
     { path: "/admin/authorization-servers", button: "Add",
       values: { id: "as" + stamp.slice(0, 8), label: "Console AS",
@@ -3808,7 +3883,7 @@ function writeForms(stamp) {
                 peer: "https://partner.example/" + stamp.slice(0, 8) },
       expect: { text: "fed" + stamp.slice(0, 8),
                 api: "/admin-api/federation" } },
-    { path: "/admin/vc-verifier-config", button: "Add",
+    { path: "/admin/vc#vc-tab-verifier-request", button: "Add",
       values: { claim: "given_name" },
       expect: {} },
     // **THE TRUST DOMAIN IS THE REALM'S, AND HARDCODING `example.org` HERE
@@ -3825,7 +3900,7 @@ function writeForms(stamp) {
     // accepts, and a refusal means the page and the handler disagree. Reading
     // the domain off the page would make that assertion vacuous in the one
     // case it exists to catch.
-    { path: "/admin/spiffe/entries", button: "Create",
+    { path: "/admin/cert-issuance#cert-spiffe-entries", button: "Create",
       values: { spiffeId: "spiffe://" + REALM_DOMAIN + "/console/" +
                           stamp.slice(0, 8),
                 parentId: "spiffe://" + REALM_DOMAIN +
@@ -3880,8 +3955,14 @@ async function everyWriteRoundTrips(driver) {
     // AND THE VALUE COMES BACK. This is the half a notice cannot give.
     if (one.expect.text) {
       const redrawn = await open(driver, realm(one.path));
+      // THE WHOLE PAGE, NOT THE VISIBLE TAB: since the console's pages became
+      // tabs (#428, Metadata first), the list a write lands in is often a
+      // panel the page does not open on, and `innerText` leaves a hidden
+      // panel out. `textContent` reads every panel the page drew.
+      const drawn = redrawn.text + "\n" + String(await driver.executeScript(
+        "return document.body ? document.body.textContent : '';"));
       check(one.path + " draws the value it was given", function () {
-        assert.ok(redrawn.text.indexOf(one.expect.text) >= 0,
+        assert.ok(drawn.indexOf(one.expect.text) >= 0,
           "AFTER THE WRITE, " + one.path + " MUST DRAW " +
           JSON.stringify(one.expect.text) + ". The console answered with a " +
           "notice and the page does not show it — which is exactly what a " +
@@ -4005,6 +4086,16 @@ async function theHandlersNothingEverPressed(driver) {
 // `data:` link a browser saves with no script — and the page the reader goes
 // back to afterwards must carry no part of it.
 // ---------------------------------------------------------------------------
+// THE PRINCIPALS ARE A TAB OF /admin/kerberos, AND THE ASSERTION SETTINGS A
+// TAB OF /admin/saml2, SINCE THE PROTOCOL PAGES WERE CONSOLIDATED INTO TABS
+// (2026-10-11); the fragment opens the tab.
+const PRINCIPALS_TAB = "/admin/kerberos#kerberos-tab-principals";
+// AND SPIFFE'S FOUR PAGES SUB-TABS OF PROTOCOLS → CERT ISSUANCE SINCE
+// 2026-10-12; the fragment opens the sub-tab.
+const SPIFFE_TAB = "/admin/cert-issuance#cert-spiffe-overview";
+const SPIFFE_ENTRIES_TAB = "/admin/cert-issuance#cert-spiffe-entries";
+const SAML_ASSERTIONS_TAB = "/admin/saml2#saml-tab-assertions";
+
 async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
   log.debug("Entering theKerberosPrincipalsPageCreatesAndDeletes().");
   log.info("=== /admin/kerberos/principals: create a service key, delete it " +
@@ -4024,13 +4115,12 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
   };
 
   try {
-    const page = await open(driver, root("/admin/kerberos/principals"));
-    check("the Kerberos principals page draws, with no key on it", function () {
+    const page = await open(driver, root(PRINCIPALS_TAB));
+    check("the Kerberos principals tab draws, with no key on it", function () {
       assert.strictEqual(page.status, 200,
-        "/admin/kerberos/principals should answer 200; it answered " +
-        page.status);
-      assert.ok(page.text.indexOf("Kerberos principals") >= 0,
-        "the page should be titled Kerberos principals");
+        PRINCIPALS_TAB + " should answer 200; it answered " + page.status);
+      assert.ok(page.text.indexOf("Kerberos") >= 0,
+        "the page should be the Kerberos page");
       assert.ok(page.text.indexOf("$aesgcm$") < 0,
         "no sealed value may be drawn on the page");
     });
@@ -4038,7 +4128,7 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
     const form = await formIndexFilling(driver, ["spn"]);
     check("the create form is on the page", function () {
       assert.ok(form >= 0,
-        "no form on /admin/kerberos/principals draws an `spn` box, so the " +
+        "no form on " + PRINCIPALS_TAB + " draws an `spn` box, so the " +
         "create control this suite presses has been renamed or has gone");
     });
     await fillAndPress(driver, form, { spn: spn },
@@ -4063,7 +4153,7 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
     });
 
     const listed = await held();
-    const redrawn = await open(driver, root("/admin/kerberos/principals"));
+    const redrawn = await open(driver, root(PRINCIPALS_TAB));
     check("the principal is listed on the page AND through the API, with no " +
           "keytab", function () {
       assert.ok(listed && listed.held === true,
@@ -4098,7 +4188,7 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
         "GET /admin-api/kerberos/principals must list the previous kvno as " +
         "kept after the rotate: " + JSON.stringify(afterRotate));
     });
-    await open(driver, root("/admin/kerberos/principals"));
+    await open(driver, root(PRINCIPALS_TAB));
     const dropPressed = await pressTheRowButton(driver, spn, ["Drop previous " +
         "versions"]);
     const droppedAt = await driver.getCurrentUrl();
@@ -4177,6 +4267,9 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
 // ---------------------------------------------------------------------------
 async function theTruststorePageAddsAndRemoves(driver) {
   log.debug("Entering theTruststorePageAddsAndRemoves().");
+  // `admin-ui/web_pages.ts`' protocolTabs(): the slug of the path, then the
+  // tab's name.
+  const ANCHORS_TAB = "/admin/tls/trust#tls-trust-tab-anchors";
   log.info("=== /admin/tls/trust: add a minted CA, remove it by its row ===");
   const credentials = require("../tools/pep-credential.js");
   const label = "console-truststore-" + names.runStamp().toLowerCase()
@@ -4225,7 +4318,13 @@ async function theTruststorePageAddsAndRemoves(driver) {
         outcomeOf(landed, "error"));
     });
 
-    const redrawn = await open(driver, root("/admin/tls/trust"));
+    // THE ANCHORS ARE A TAB (rcbj, 2026-10-12): the page opens on its
+    // Metadata tab and `innerText` leaves a hidden panel out, so a read-back
+    // of the bare page could never find the row. It is opened at the
+    // anchors tab, as a person clicking it does — and so is the read-back
+    // after the remove, where a hidden panel would let "gone" pass
+    // whatever the list held.
+    const redrawn = await open(driver, root(ANCHORS_TAB));
     const afterAdd = await held();
     check("the CA comes back on the page AND through the API", function () {
       assert.ok(redrawn.text.indexOf(label) >= 0 &&
@@ -4243,7 +4342,7 @@ async function theTruststorePageAddsAndRemoves(driver) {
     });
     const removedAt = await driver.getCurrentUrl();
     const afterRemove = await held();
-    const removedPage = await open(driver, root("/admin/tls/trust"));
+    const removedPage = await open(driver, root(ANCHORS_TAB));
     check("the row button removed exactly that CA and nothing else",
           function () {
       assert.strictEqual(outcomeOf(removedAt, "error"), "",
@@ -4438,7 +4537,13 @@ async function theDelegationPageDefinesAndGrants(driver) {
   // would hand it a promise, it would count the check as passed and any
   // failure inside would surface as an unhandled rejection long after the
   // ledger said the run was green.
-  const register = await open(driver, realm("/admin/delegation"));
+  //
+  // ON THE REGISTER'S OWN TAB (2026-10-12): Monitoring → Delegation is drawn
+  // as tabs since that day, the register on `register`, and the page opens
+  // on Metadata. `survey()` reads `innerText`, which a hidden panel is not in,
+  // so the bare path read a page that held the grant and showed none of it.
+  const register = await open(driver, realm(
+    "/admin/delegation#delegation-tab-register"));
   check("the delegation page's register agrees with it", function () {
     assert.ok(register.text.indexOf(baseUri + "write") >= 0,
       "ONE WRITE, TWO PAGES. The grant was typed on the application's page " +
@@ -5105,6 +5210,33 @@ async function theFieldGridIsPressed(driver) {
     assert.ok(advanced.hasRadio, "the advanced view draws no radios for " +
               BOOL);
   });
+  const oauthFields = await driver.executeScript(`
+    return ["oauthTokenEndpointAuthMethod", "oauthGrantType",
+            "oauthAllowedScope"].every(function (name) {
+      const cell = document.getElementById("fgc-" + name);
+      return !!cell && cell.checkVisibility();
+    });
+  `);
+  check("the OAuth create form shows its auth, grant and allowed-scope " +
+        "fields", function () {
+    assert.strictEqual(oauthFields, true,
+      "the OAuth fields should be visible when OAuth 2.0 is selected");
+  });
+
+  await press("button[name=switchview]", "", { protocol: "saml11",
+                                               name: "SAML 1.1 app" });
+  const samlCertificate = await driver.executeScript(`
+    const cell = document.getElementById("fgc-samlSigningCertificate");
+    return !!cell && cell.checkVisibility();
+  `);
+  check("the SAML 1.1 create form shows its signing certificate field",
+        function () {
+    assert.strictEqual(samlCertificate, true,
+      "samlSigningCertificate should be visible when SAML 1.1 is selected");
+  });
+
+  await press("button[name=switchview]", "", { protocol: "oauth2",
+                                               name: "Console grid app" });
 
   await press(GROW, "", {});
   const grown = await state();
@@ -5532,7 +5664,7 @@ async function theAssertionSettingsPageSaves(driver) {
   log.debug("Entering theAssertionSettingsPageSaves().");
   const KEY = "saml2.assertionLifetimeMin";
 
-  const page = await open(driver, realm("/admin/saml-assertions"));
+  const page = await open(driver, realm(SAML_ASSERTIONS_TAB));
   const form = await formIndexFilling(driver, [KEY]);
   check("/admin/saml-assertions draws the assertion settings", function () {
     assert.ok(form >= 0,
@@ -5551,7 +5683,7 @@ async function theAssertionSettingsPageSaves(driver) {
       "refused: " + outcomeOf(landed, "error"));
   });
 
-  const redrawn = await open(driver, realm("/admin/saml-assertions"));
+  const redrawn = await open(driver, realm(SAML_ASSERTIONS_TAB));
   check("and it redraws the value it was given", function () {
     assert.strictEqual(String(valueOfControl(redrawn, KEY)), wanted,
       "/admin/saml-assertions must redraw " + KEY + " as " + wanted +
@@ -5751,11 +5883,11 @@ async function theSpiffePageRotatesAndFederates(driver) {
   // 1. ROTATE. What it must do is change the authority's key — so the thing to
   //    read afterwards is the bundle, not the notice.
   const before = await apiJson("/realm/" + REALM + "/admin-api/spiffe");
-  await open(driver, realm("/admin/spiffe"));
+  await open(driver, realm(SPIFFE_TAB));
   const rotate = await formIndexPosting(driver, "rotate");
-  check("/admin/spiffe draws a rotate control", function () {
+  check(SPIFFE_TAB + " draws a rotate control", function () {
     assert.ok(rotate >= 0,
-      "/admin/spiffe should draw a control that rotates the signing " +
+      SPIFFE_TAB + " should draw a control that rotates the signing " +
       "authority; it draws none.");
   });
   await fillAndPress(driver, rotate, { which: "x509" });
@@ -5782,11 +5914,11 @@ async function theSpiffePageRotatesAndFederates(driver) {
   //    bundle is pushed in, never pulled (spiffe/CLAUDE.md) — so a domain
   //    that does not exist is the honest thing to set.
   const domain = "console-" + names.runStamp().slice(0, 8) + ".example";
-  await open(driver, realm("/admin/spiffe"));
+  await open(driver, realm(SPIFFE_TAB));
   const federate = await formIndexPosting(driver, "federation-set");
-  check("/admin/spiffe draws a federation control", function () {
+  check(SPIFFE_TAB + " draws a federation control", function () {
     assert.ok(federate >= 0,
-      "/admin/spiffe should draw a control that sets a foreign trust " +
+      SPIFFE_TAB + " should draw a control that sets a foreign trust " +
       "domain's bundle; it draws none.");
   });
   await fillAndPress(driver, federate, {
@@ -5810,10 +5942,10 @@ async function theSpiffePageRotatesAndFederates(driver) {
       JSON.stringify(status.body.federated).slice(0, 300));
   });
 
-  const redrawn = await open(driver, realm("/admin/spiffe"));
+  const redrawn = await open(driver, realm(SPIFFE_TAB));
   check("and the page draws it back", function () {
     assert.ok(redrawn.text.indexOf(domain) >= 0,
-      "/admin/spiffe must draw the federated trust domain " + domain +
+      SPIFFE_TAB + " must draw the federated trust domain " + domain +
       " after its own form set it; the service holds it and the page does " +
       "not mention it, which is the reader being told their change did not " +
       "happen.");
@@ -6393,7 +6525,7 @@ async function theConsoleRefusesWhatItShould(driver) {
       "this service already serves, and a realm by that name would shadow " +
       "the console itself the moment realms.pathSegment were cleared");
 
-  await pressAndBeRefused(driver, "/admin/spiffe/entries",
+  await pressAndBeRefused(driver, SPIFFE_ENTRIES_TAB,
       ["spiffeId", "parentId", "selectors"],
       { spiffeId: "not-a-spiffe-id", parentId: "spiffe://example.org/x",
         selectors: "unix:uid:1000" },
@@ -7401,6 +7533,56 @@ async function theBrowserConsoleIsClean(driver) {
 // ---------------------------------------------------------------------------
 // THE RUN.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ACCOUNT API'S DOCUMENT, IN THE CONSOLE (#568).
+//
+// The user portal became a static application over `/account-api`, and the
+// console's *Account API* page draws that API's OpenAPI document from
+// `GET /admin-api/account-api` — every operation, by tag. Two claims: the
+// operation answers the document the account API publishes itself, and the
+// page draws one fold per operation of it and calls nothing.
+// ---------------------------------------------------------------------------
+async function theAccountApiPageDrawsItsDocument(driver) {
+  log.debug("Entering theAccountApiPageDrawsItsDocument().");
+  log.info("=== the account API's document (#568) ===");
+  const answer = await apiJson("/admin-api/account-api");
+  const published = await common.httpJson(base + "/account-api/openapi.json");
+  const doc = (answer.body && answer.body.document) || {};
+  check("GET /admin-api/account-api answers the account API's OpenAPI 3.1 " +
+        "document, the one /account-api/openapi.json publishes", function () {
+    assert.strictEqual(answer.status, 200, JSON.stringify(answer.body)
+      .slice(0, 300));
+    assert.ok(/^3\.1\./.test(String(doc.openapi || "")),
+      "openapi is " + JSON.stringify(doc.openapi));
+    assert.deepStrictEqual(Object.keys(doc.paths || {}).sort(),
+      Object.keys((published.body && published.body.paths) || {}).sort(),
+      "the console's copy and the published one describe different paths");
+    assert.ok(Number(answer.body.operations) >= 40,
+      "only " + answer.body.operations + " operations");
+  });
+  await open(driver, root("/admin/account-api"));
+  const drawn = await driver.wait(async function () {
+    const n = await driver.executeScript(
+      "return document.querySelectorAll('details.op').length;");
+    return n > 0 ? n : false;
+  }, 20000, "the Account API page drew no operation");
+  check("the console's Account API page draws one fold per operation of " +
+        "the document, and no form that calls it", function () {
+    assert.strictEqual(drawn, Number(answer.body.operations),
+      "the page drew " + drawn + " operations and the document has " +
+      answer.body.operations);
+  });
+  const forms = await driver.executeScript(
+    "return document.querySelectorAll('.main form[action*=\"account-api\"]')" +
+    ".length;");
+  check("and nothing on it posts to the account API: every operation acts " +
+        "on the signed-in person's own account, with their token",
+        function () {
+    assert.strictEqual(forms, 0, forms + " form(s) post there");
+  });
+  log.debug("Leaving theAccountApiPageDrawsItsDocument().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving IYA STS admin console at " + base + "/admin");
@@ -7472,6 +7654,7 @@ async function test() {
       // LAST: it switches this run's session to a read-only reader and
       // back, and every section above needs the writer.
       await theRolesArePressedAndEnforced(driver, created);
+      await theAccountApiPageDrawsItsDocument(driver);
       // AND THE SIGN OUT BUTTON, WHICH MUST BE THE LAST THING: pressing it
       // closes this console against this run's own session, so nothing that
       // needs the console may come after it.

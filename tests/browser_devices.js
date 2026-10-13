@@ -93,19 +93,8 @@ function childMain() {
         req.end(body);
       });
     };
-    return { go: go, jar: jar };
+    return { go: go, jar: jar, userAgent: userAgent };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
   const pathOf = function (location) {
     const u = new URL(String(location || ''), 'http://127.0.0.1');
     return u.pathname + u.search;
@@ -118,6 +107,7 @@ function childMain() {
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -176,24 +166,41 @@ function childMain() {
            i++) {
         at = await b.go('GET', pathOf(at.headers.location));
       }
+      // THE SCREEN OVER `/authn-api` (#571): its view, then the act, in
+      // this browser's jar; a step the act names (the code) is opened as
+      // the surface opens it — its shell, then its view (#572).
       const screen = pathOf(at.headers.location);
-      const page = await b.go('GET', screen);
-      const form = Object.assign(hiddenFields(page.text), {
-        username: username, password: 'anything', action: 'login' });
+      const page = await authnScreen.open({ port: port, jar: b.jar,
+        userAgent: b.userAgent, at: screen });
+      const fields = { username: username, password: 'anything',
+                       action: 'login' };
       if (remember) {
-        form.remember_browser = '1';
+        fields.remember_browser = '1';
       }
-      return { page: page, answer: await b.go('POST', screen.split('?')[0],
-                                             { form: form }) };
+      const answer = await authnScreen.follow({ port: port, jar: b.jar,
+        userAgent: b.userAgent, at: screen, opened: page, fields: fields });
+      // Every cookie the act and the page set, as this browser reads them.
+      answer.setCookie = [].concat(
+        (answer.answer && answer.answer.headers['set-cookie']) || [],
+        (answer.shell && answer.shell.headers['set-cookie']) || [],
+        (answer.headers && answer.headers['set-cookie']) || []);
+      return { page: page, answer: answer };
     };
     const secret = { value: '' };
-    const codeStep = function (b, answer, step) {
-      const mfaId = (answer.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1] || '';
-      return b.go('POST', '/authn/totp', { form: {
-        mfa_id: mfaId,
-        code: totp.codeAt(secret.value, Date.now() + step * 30000),
-        csrf_token: hiddenFields(answer.text).csrf_token || '' } });
+    // The one-time code step (#572): its view says so, and the code goes
+    // to its act, whose answer is read as the form's was — a redirect as
+    // its 303, the cookies it set as `setCookie`.
+    const asksCode = function (answer) {
+      return answer.status === 200 && !!answer.view &&
+             answer.view.page === 'totp';
+    };
+    const codeStep = async function (b, answer, step) {
+      const done = await authnScreen.stepAct({ port: port, jar: b.jar,
+        userAgent: b.userAgent, opened: answer, op: 'totp',
+        body: { code: totp.codeAt(secret.value,
+                                  Date.now() + step * 30000) } });
+      done.setCookie = [].concat(done.headers['set-cookie'] || []);
+      return done;
     };
     const cookieName = browserDevices.cookieName();
     // A sign-in from a browser holding ONLY the remembered-browser cookie:
@@ -240,9 +247,9 @@ function childMain() {
       totp.codeAt(begun.secret, Date.now() - 4 * 30000));
     const b1 = browser(port, CHROME);
     const first = await passwordStep(b1, authorizeAt, 'bd-alice', true);
-    note(/name="remember_browser"/.test(first.page.text),
+    note(!!(first.page.view && first.page.view.remember),
          'B1. the sign-in screen offers "Remember this browser"');
-    note(first.answer.status === 200 && /one-time code/i.test(first.answer.text),
+    note(asksCode(first.answer),
          'B2. a person with an authenticator app is asked for the code',
          first.answer.status);
     const firstDone = await codeStep(b1, first.answer, -3);
@@ -292,8 +299,7 @@ function childMain() {
     // --- E. skip off: still asked ------------------------------------------
     const b1e = withCookie(CHROME, gen1Cookie);
     const second = await passwordStep(b1e, authorizeAt, 'bd-alice', false);
-    note(second.answer.status === 200 &&
-         /one-time code/i.test(second.answer.text),
+    note(asksCode(second.answer),
          'E1. with the policy off, a remembered browser is still asked for ' +
          'the second factor', second.answer.status);
     await codeStep(b1e, second.answer, -2);
@@ -336,16 +342,14 @@ function childMain() {
       code_challenge_method: 'S256' }).toString();
     const console1 = await passwordStep(consoleBrowser, consoleAuthorize,
                                         'bd-alice', false);
-    note(console1.answer.status === 200 &&
-         /one-time code/i.test(console1.answer.text),
+    note(asksCode(console1.answer),
          'F3. the admin console always asks, remembered browser or not',
          console1.answer.status);
 
     // --- G. another browser -------------------------------------------------
     const b2 = withCookie(FIREFOX, gen3Cookie);
     const moved = await passwordStep(b2, authorizeAt, 'bd-alice', false);
-    note(moved.answer.status === 200 &&
-         /one-time code/i.test(moved.answer.text) &&
+    note(asksCode(moved.answer) &&
          devices.byId(d1.id).status === 'active',
          'G1. the current cookie in a different browser is not trusted to ' +
          'skip the second factor, and is not a copy',
@@ -357,8 +361,7 @@ function childMain() {
     note(devices.byId(d1.id).status === 'compromised',
          'H1. generation 1 presented after 3 is a copied cookie: the device ' +
          'is compromised (STS-DEVICE-0041)');
-    const copyDone = copy.answer.status === 200 &&
-                     /one-time code/i.test(copy.answer.text)
+    const copyDone = asksCode(copy.answer)
       ? await codeStep(b3, copy.answer, -1) : copy.answer;
     const clearedIn = function (answer) {
       return ((answer && answer.setCookie) || []).some(function (l) {

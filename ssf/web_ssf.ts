@@ -39,59 +39,27 @@ class SsfPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static body(ctx, json) {
+  static body(ctx, json, settingsGroups) {
     const t = ctx.t;
+    const params = kit.pageParamsOf(ctx.query || {});
+    const streamNav = json.paging && json.paging.streams
+      ? kit.pageNavPair('/admin/ssf', params, json.paging.streams, t)
+      : { head: '', foot: '' };
 
+    // THE TILES COUNT THE WHOLE TRANSMITTER (#313's sweep): the cards below
+    // are one page of the streams, so the counts come from `streamTotals`,
+    // which the view model took before the slice.
+    const totals = json.streamTotals || {};
     const tiles = '<div class="tiles">' +
-      kit.tile(json.streamDetail ? json.streamDetail.length : 0,
-        t.text('consoleSsf.tile.stream')) +
-      kit.tile((json.streamDetail || []).filter(function (row) {
-        return row.status === 'enabled';
-      }).length,
-        t.text('consoleSsf.tile.enabled')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + row.counters.delivered;
-      }, 0),
-        t.text('consoleSsf.tile.delivered')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + row.counters.failed;
-      }, 0),
-        t.text('consoleSsf.tile.refused')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + row.queue.length;
-      }, 0),
-        t.text('consoleSsf.tile.waiting')) +
-      kit.tile((json.streamDetail || []).filter(function (row) {
-        return row.dead;
-      }).length,
-        t.text('consoleSsf.tile.deadStreams')) +
-      kit.tile((json.streamDetail || []).reduce(function (n, row) {
-        return n + (row.deadLetters || []).length;
-      }, 0),
+      kit.tile(totals.streams || 0, t.text('consoleSsf.tile.stream')) +
+      kit.tile(totals.enabled || 0, t.text('consoleSsf.tile.enabled')) +
+      kit.tile(totals.delivered || 0, t.text('consoleSsf.tile.delivered')) +
+      kit.tile(totals.failed || 0, t.text('consoleSsf.tile.refused')) +
+      kit.tile(totals.waiting || 0, t.text('consoleSsf.tile.waiting')) +
+      kit.tile(totals.dead || 0, t.text('consoleSsf.tile.deadStreams')) +
+      kit.tile(totals.deadLetters || 0,
         t.text('consoleSsf.tile.deadLetters')) +
-      kit.tile((json.receivedDetail || []).length,
-        t.text('consoleSsf.tile.received')) +
       '</div>';
-
-    const receivedRows = (json.receivedDetail || []).length
-      ? json.receivedDetail.slice(0, 25).map(function (row) {
-          return '<tr><td class="sub">' + kit.esc(row.at) + '</td><td>' +
-            kit.esc(row.summary ? row.summary.name
-              : t.text('consoleSsf.received.unreadable')) +
-            '</td>' +
-            '<td><code>' + kit.esc(row.summary ? row.summary.jti : '') +
-            '</code></td>' +
-            '<td class="' + (row.verified ? 'state-valid' : 'sub') + '">' +
-            kit.esc(row.verified ? t.text('consoleSsf.received.verified')
-              : t.text('consoleSsf.received.notVerified')) +
-            '</td>' +
-            '<td class="' + (row.correctMediaType ? 'sub' : 'state-invalid') +
-            '"><code>' + kit.esc(row.contentType ||
-              t.text('consoleSsf.received.none')) +
-            '</code></td></tr>';
-        }).join('')
-      : '<tr><td colspan="5">' + t.html('consoleSsf.received.nothing') +
-        '</td></tr>';
 
     const inner = (!json.installed
         ? '<div class="err">' + t.html('consoleSsf.notLoaded') + '</div>'
@@ -123,6 +91,16 @@ class SsfPage {
 
       (json.installed
         ? '<h2>' + t.html('consoleSsf.streams.heading') + '</h2>' +
+          // A PAGE OF CARDS, on `streamsPage`; `stream` (a dead letters'
+          // link) narrows them to one, and the way back is the unnarrowed
+          // list.
+          (json.streamFilter
+            ? '<p class="sub"><code>' + kit.esc(json.streamFilter) +
+              '</code> (<a href="' + kit.esc('/admin/ssf' +
+                kit.queryWith(params, { stream: '', streamsPage: '' })) +
+              '">' + t.html('consoleSsf.streams.all') + '</a>)</p>'
+            : '') +
+          streamNav.head +
           ((json.streamDetail || []).length
             ? json.streamDetail.map(function (row) {
               return SsfPage.ssfStreamCard(row, json, t);
@@ -130,25 +108,11 @@ class SsfPage {
             : kit.note(t.html('consoleSsf.streams.none', {
               endpoint: (json.metadata &&
                          json.metadata.configuration_endpoint) ||
-                        '/ssf/stream' })))
+                        '/ssf/stream' }))) +
+          streamNav.foot
         : '') +
 
-      (json.installed
-        ? '<h2>' + t.html('consoleSsf.pushed.heading') + '</h2>' +
-          kit.note(t.html('consoleSsf.pushed.note')) +
-          '<table><tr><th>' + t.html('consoleSsf.th.when') + '</th><th>' +
-          t.html('consoleSsf.th.event') + '</th><th>jti</th>' +
-          '<th>' + t.html('consoleSsf.th.signature') +
-          '</th><th>Content-Type</th></tr>' + receivedRows +
-          '</table>' +
-          '<form method="post" action="/admin/ssf"><div class="formrow">' +
-          '<input type="hidden" name="action" value="clear-received">' +
-          '<button class="secondary">' +
-          t.html('consoleSsf.pushed.clear') + '</button>' +
-          '</div></form>'
-        : '') +
-
-      SettingsForms.forms(json.settings, '/admin/ssf', undefined, t) +
+      SettingsForms.forms(json.settings, '/admin/ssf', settingsGroups, t) +
 
       kit.note('<a href="/ssf">' + t.html('consoleSsf.foot.person') +
       '</a> &middot; ' +

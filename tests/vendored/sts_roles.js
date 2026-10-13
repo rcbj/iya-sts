@@ -103,6 +103,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -377,6 +379,19 @@ function browser() {
   };
   log.debug("Leaving browser().");
   return self;
+}
+
+// THE SIGN-IN SCREEN OVER `/authn-api` (#571), through the one helper: the
+// screen's address, a name and PASSWORD, in the realm the screen is in. The
+// browser's cookie becomes the walk's whole jar, its session among it.
+async function screenSignIn(b, location, who) {
+  log.debug("Entering screenSignIn(). " + who);
+  const answer = await authnSignin.submit(base + "/realm/" + REALM, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookie });
+  b.cookie = answer.cookie;
+  log.debug("Leaving screenSignIn(). " + answer.next);
+  return answer;
 }
 
 const REDIRECT_URI = "https://example.test/roles-callback";
@@ -846,24 +861,18 @@ async function theAuthorizationEndpointRefuses() {
       assert.ok(/\/authn\/login\?authn=/.test(step.location),
         "it went to " + step.location);
     });
-  const screen = await refusedBrowser.go("GET", step.location);
-  const authnId = (screen.text.match(/name="authn_id" value="([^"]+)"/) ||
-                   [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-
-  const refusedSignIn = await refusedBrowser.go("POST",
-    "/realm/" + REALM + "/authn/login",
-    form({ authn_id: authnId, username: OUTSIDER, password: PASSWORD,
-           action: "login" }));
+  const refusedSignIn = await screenSignIn(refusedBrowser, step.location,
+                                           OUTSIDER);
   check("the sign-in screen itself refuses somebody who holds no required role",
     function () {
-      assert.ok(refusedSignIn.status === 200 &&
-                refusedSignIn.text.indexOf(ROLE) >= 0,
+      const said = refusedSignIn.errors.join(" ");
+      assert.ok(refusedSignIn.next === "refused" && said.indexOf(ROLE) >= 0,
         "the SESSION is gated too, and on the application the sign-in is " +
-        "for — so the screen is drawn again with the reason on it rather " +
+        "for — so the screen's act is refused with the reason on it rather " +
         "than a session being minted and refused one door later. It " +
-        "answered " + refusedSignIn.status + " and the page " +
-        (refusedSignIn.text.indexOf(ROLE) >= 0 ? "names" : "does NOT name") +
+        "answered " + refusedSignIn.status + " " + refusedSignIn.next +
+        " and the refusal " + (said.indexOf(ROLE) >= 0 ? "names"
+                                                        : "does NOT name") +
         " the role");
     });
   // A REFUSED SIGN-IN MUST LEAVE THE BROWSER SIGNED IN TO NOTHING, and HOW that
@@ -898,16 +907,10 @@ async function theAuthorizationEndpointRefuses() {
   // is about the role and not about the screen being broken.
   const holderBrowser = browser();
   step = await holderBrowser.go("GET", authorizeUrl(NARROWED));
-  const holderScreen = await holderBrowser.go("GET", step.location);
-  const holderAuthn = (holderScreen.text
-    .match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  const signedIn = await holderBrowser.go("POST",
-    "/realm/" + REALM + "/authn/login",
-    form({ authn_id: holderAuthn, username: HOLDER, password: PASSWORD,
-           action: "login" }));
+  const signedIn = await screenSignIn(holderBrowser, step.location, HOLDER);
   check("somebody who holds the role signs in", function () {
-    assert.ok((signedIn.status === 302 || signedIn.status === 303) &&
-              holderBrowser.cookie,
+    assert.ok(signedIn.next === "redirect" &&
+              /sts_session=/.test(holderBrowser.cookie),
       "it answered " + signedIn.status + " and the jar holds " +
       (holderBrowser.cookie ? "a session" : "nothing"));
   });

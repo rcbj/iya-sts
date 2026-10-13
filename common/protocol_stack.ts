@@ -84,7 +84,6 @@ interface InstalledModule {
 // report their listeners.
 interface StackSockets {
   krb5: any;
-  krb5Service: any;
   tlsServer: any;
   ldapServer: any;
   spiffeServer: any;
@@ -250,6 +249,16 @@ class ProtocolStack {
     this.build('home/home', require('../home/home'), 'Home');
     this.register(app, require('../home/home'), 'home/home');
 
+    // THE PUBLIC SURFACES' SHARED FILES (#570): the card and the locale
+    // catalogs under `/web`, answered on every listener. No constraint: it
+    // requires only libraries (`i18n`, `version`, `shell_document`) and its
+    // paths collide with nothing; beside the front door, the first surface
+    // that will draw with them (#579).
+    require('./public_assets');
+    this.build('common/public_assets', require('./public_assets'),
+               'PublicAssets');
+    this.register(app, require('./public_assets'), 'common/public_assets');
+
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that
     // use it, because this order is the route order on the /admin/sts-metadata
@@ -335,6 +344,13 @@ class ProtocolStack {
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
     this.build('authn/authn', require('../authn/authn'), 'Authn');
     this.register(app, require('../authn/authn'), 'authn/authn');
+    // THE SIGN-IN SCREEN'S API (#571): `/authn-api`, at authn's place. The
+    // screen is a static surface whose shells `authn` registers above; the
+    // views and acts are that module's, reached through its exports, and
+    // this one registers only `/authn-api/*`, which collides with nothing.
+    require('../authn/authn_api');
+    this.build('authn/authn_api', require('../authn/authn_api'), 'AuthnApi');
+    this.register(app, require('../authn/authn_api'), 'authn/authn_api');
     // THE EMAILED CODE AND LINK (#64): its six routes under `/authn/*`, the
     // paths `authn` declares and draws the buttons for. Right after `authn`,
     // whose pending steps it reads through that module's exports, and — like
@@ -430,6 +446,10 @@ class ProtocolStack {
     this.build('portal/portal_gnap',
                require('../portal/portal_gnap'),
                'PortalGnap');
+    // #604: /portal/owned/*, what the person owns.
+    this.build('portal/portal_owned',
+               require('../portal/portal_owned'),
+               'PortalOwned');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');
@@ -437,6 +457,11 @@ class ProtocolStack {
     this.build('portal/portal_self_issued',
                require('../portal/portal_self_issued'),
                'PortalSelfIssued');
+    // #589: /portal/wallet, a pre-authorized Credential Offer for the
+    // person's own wallet. It reaches the OpenID4VCI family (11-14) only
+    // when asked, so building it here loads none of it.
+    this.build('portal/portal_wallet', require('../portal/portal_wallet'),
+               'PortalWallet');
     // #130: /portal/devices, the person's own ou=devices entries.
     this.build('portal/portal_devices', require('../portal/portal_devices'),
                'PortalDevices');
@@ -466,6 +491,30 @@ class ProtocolStack {
                'PortalMail');
     this.build('portal/portal', require('../portal/portal'), 'Portal');
     this.register(app, require('../portal/portal'), 'portal/portal');
+    // THE ACCOUNT API (#568), `/account-api`: the user portal's only door
+    // since the portal became a static application. Its operations are the
+    // portal's page modules' own (built above, and the seven `account_*`
+    // modules built here), gathered when its routes are registered — right
+    // after the portal's, which collide with none of them. It reaches the
+    // authorization server's modules only when a request arrives.
+    this.build('portal/account_overview', require('../portal/account_overview'),
+               'AccountOverview');
+    this.build('portal/account_password', require('../portal/account_password'),
+               'AccountPassword');
+    this.build('portal/account_keys', require('../portal/account_keys'),
+               'AccountKeys');
+    this.build('portal/account_mfa', require('../portal/account_mfa'),
+               'AccountMfa');
+    this.build('portal/account_signing_key', require('../portal/account_signing_key'),
+               'AccountSigningKey');
+    this.build('portal/account_activation', require('../portal/account_activation'),
+               'AccountActivation');
+    this.build('portal/account_reset', require('../portal/account_reset'),
+               'AccountReset');
+    this.build('account-api/account_api',
+               require('../account-api/account_api'), 'AccountApi');
+    this.register(app, require('../account-api/account_api'),
+                  'account-api/account_api');
     // The consent screen. It must come AFTER authn.js and BEFORE oauth2.js, and
     // both halves are dependencies rather than preferences. AFTER, because it
     // reads that module's session to check that the person answering is the
@@ -791,28 +840,43 @@ class ProtocolStack {
     // `POST /KdcProxy` of its own, registered JUST BEFORE the KDC is
     // required so it runs first — it relays a request whose client is homed
     // in another cell and calls next() for everything else, after which the
-    // KDC's own handler answers exactly as it did. The KDC is one of the
-    // parent project's locked files and cannot be given the check itself.
+    // KDC's own handler answers exactly as it did. It is not inside
+    // krb5_kdc.js so that the KDC's require closure, which the parent's
+    // tests image copies, does not grow.
     // It requires only the vendored codec (a leaf set) at load and the
     // principal database lazily, so nothing moves and no cycle closes.
     // -------------------------------------------------------------------------
     require('../kerberos/krb5_home');
     this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
-    // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
-    // — it is one of the parent project's locked JavaScript files, which still
-    // register at require (rule 1) — but NOT the raw TCP/UDP listeners on port
-    // 88, which are started by krb5.listen() below. Binding a privileged port
-    // can fail, and a require that throws takes the whole service down; a route
-    // cannot.
+    // The Kerberos KDC. Requiring it registers /KdcProxy (/krb5/principals
+    // until #595 deleted it)
+    // — it is one of the JavaScript files the parent's tests image copies,
+    // which still register at require (rule 1) — but NOT the raw TCP/UDP
+    // listeners on port 88, which are started by krb5.listen() below.
+    // Binding a privileged port can fail, and a require that throws takes the
+    // whole service down; a route cannot.
     const krb5 = require('../kerberos/krb5_kdc');
-    // The Kerberos-protected service. Like the KDC it registers its HTTP view
-    // at require time and starts its socket from listen(), for the same reason.
-    const krb5Service = require('../kerberos/krb5_service');
-    // The same acceptor over HTTP: SPNEGO. It must come AFTER krb5_service.js
-    // and the order is a dependency rather than a preference — it calls that
-    // module's accept() for every Kerberos check and adds none of its own.
-    // Unlike the two above it starts nothing: it is HTTP all the way down, so
-    // requiring it is the whole of its installation.
+    // 14c's second half (#588): the KDC handed to `krb5_home`, which
+    // registers the inter-cell `kdc-message` operation and — in a service
+    // deployed as cells only — sets the router TCP and UDP 88 ask before
+    // they answer, so a message whose client is homed in another cell is
+    // answered there. Handed in rather than required from `krb5_home`, whose
+    // require of the JavaScript KDC would register its routes ahead of
+    // 14c's; and the KDC requires nothing new, so the parent project's COPY
+    // closure does not move.
+    require('../kerberos/krb5_home').install(krb5);
+    // The acceptor `/authn/spnego` uses, and its replay cache. Since #595 it
+    // registers no route and binds no socket: its demonstration view
+    // (`/krb5/service`) and the protected service's TCP socket
+    // (`krb5.servicePort`) are the development companion's now
+    // (`companion/demo_kerberos.js`). Still required here, in its old place,
+    // so the require order — and its load-time capability — is unchanged.
+    require('../kerberos/krb5_service');
+    // The SPNEGO sign-in's page shell. It must come AFTER krb5_service.js,
+    // in the order `spnego_exchange.js` needs them. Since #595 it registers
+    // nothing either: `/spnego` and `/spnego/protected` left with the
+    // demonstration for the companion, and with them their script
+    // `/spnego/pages.js` (#583).
     require('../kerberos/spnego');
     // -------------------------------------------------------------------------
     // AND THE SAME HANDSHAKE AS A SIGN-IN: /authn/spnego, which turns a
@@ -1286,8 +1350,8 @@ class ProtocolStack {
     require('../admin-ui/devices_admin');
     this.build('admin-ui/devices_admin', require('../admin-ui/devices_admin'),
                'DevicesAdmin');
-    this.register(app, require('../admin-ui/devices_admin'),
-                  'admin-ui/devices_admin');
+    // NO register(): its one route, development's compliance test control,
+    // was deleted by #597, and its three pages are the static console's.
     // 18r. ATTRIBUTE SOURCES (#94): Directory → Attribute sources. The
     // library first — a register whose wire step puts the
     // `attribute-sources.refresh` job on the scheduler (built at 18i), and
@@ -1372,6 +1436,10 @@ class ProtocolStack {
     this.build('mgmt-api/secret_destinations_api',
                require('../mgmt-api/secret_destinations_api'),
                'SecretDestinationsApi');
+    // #552: the outbound SCIM clients' operations; the client itself is built
+    // at 22, beside the SCIM server, and reached from here lazily.
+    this.build('mgmt-api/scim_clients_api',
+               require('../mgmt-api/scim_clients_api'), 'ScimClientsApi');
     this.build('oauth-oidc/provider_commands_api',
                require('../oauth-oidc/provider_commands_api'),
                'ProviderCommandsApi');
@@ -1404,8 +1472,8 @@ class ProtocolStack {
                'ApiExplorer');
     this.register(app, require('../admin-ui/api_explorer'),
                   'admin-ui/api_explorer');
-    // TLS / mutual TLS. It registers its views (/tls, /tls/sign-in,
-    // /tls/server-certificate, /tls/trust and the rest) at require time, and
+    // TLS / mutual TLS. It registers its views (/tls/sign-in,
+    // /tls/server-certificate and the rest) at require time, and
     // holds the certificate the main port, LDAPS 636 and the debugger listener
     // present and the client truststore the main port asks with. **It owns no
     // socket since 2026-09-16**, when its 8443 and 9443 listeners were deleted
@@ -1532,6 +1600,13 @@ class ProtocolStack {
     require('../scim/scim');
     this.build('scim/scim', require('../scim/scim'), 'Scim');
     this.register(app, require('../scim/scim'), 'scim/scim');
+    // #552: the outbound SCIM client, a library and no route — its clients are
+    // application entries, its wire step listens to the directory (filled at
+    // 21, above) and registers the `scim-client.deliver` and
+    // `scim-client.reconcile` scheduler jobs. Beside the server for a reader;
+    // `mgmt-api/admin_api` reaches it through `scim_clients_api` lazily.
+    this.build('scim/scim_client', require('../scim/scim_client'),
+               'ScimClients');
     // SPIFFE — the sixteenth family, and the third family here (after Kerberos
     // and the directory) whose own listeners are started from `server.js`'s
     // listen() rather than at require time.
@@ -1667,17 +1742,14 @@ class ProtocolStack {
     // on the shared outbound queue, tenant runs, the account-state register
     // — whose wire step registers the `oauth2.command-sweep` job and adds it
     // to the directory's account observers, so it is built after
-    // `ldap/ldap_server` (21); its one route is the callback. Then the mock
-    // relying party's command endpoint (development only).
+    // `ldap/ldap_server` (21); its one route is the callback. The mock
+    // relying party's command endpoint that followed it is the test peer's
+    // since #596 (`tests/peer/peer_commands.js`).
     this.build('oauth-oidc/provider_commands',
                require('../oauth-oidc/provider_commands'),
                'ProviderCommands');
     this.register(app, require('../oauth-oidc/provider_commands'),
                   'oauth-oidc/provider_commands');
-    this.build('oauth-oidc/command_mock_rp',
-               require('../oauth-oidc/command_mock_rp'), 'CommandMockRp');
-    this.register(app, require('../oauth-oidc/command_mock_rp'),
-                  'oauth-oidc/command_mock_rp');
     // -------------------------------------------------------------------------
     // 23c. XACML 3.0 — the PDP, the policy repository, the PIP, the embedded
     // PEPs and the PAP console.
@@ -1793,8 +1865,8 @@ class ProtocolStack {
     this.build('gnap/gnap_grants', require('../gnap/gnap_grants'),
                'GnapGrants');
     this.build('gnap/gnap_rs', require('../gnap/gnap_rs'), 'GnapRs');
-    // #432 phase 5: the demonstration resource server's running totals —
-    // a library the route module spends through.
+    // #432 phase 5: a resource server's running totals of a right's
+    // limits — a library (its route caller went with #593).
     this.build('gnap/gnap_spend', require('../gnap/gnap_spend'), 'GnapSpend');
     this.build('gnap/gnap_interact', require('../gnap/gnap_interact'),
                'GnapInteract');
@@ -1915,7 +1987,6 @@ class ProtocolStack {
                       this.installed.length + " instance(s) built here.");
     return {
       krb5: krb5,
-      krb5Service: krb5Service,
       tlsServer: tlsServer,
       ldapServer: ldapServer,
       spiffeServer: spiffeServer,
@@ -1950,7 +2021,6 @@ export = {
   instanceOrigins: stack.instanceOrigins.bind(stack) as
     ProtocolStack['instanceOrigins'],
   krb5: sockets.krb5,
-  krb5Service: sockets.krb5Service,
   tlsServer: sockets.tlsServer,
   ldapServer: sockets.ldapServer,
   spiffeServer: sockets.spiffeServer,

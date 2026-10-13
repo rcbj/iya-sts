@@ -122,11 +122,11 @@
 //
 // **THE TWO REALMS, THE FIXTURE ACCOUNTS AND THE PUBLISHED PASSWORDS ARE
 // DEVELOPMENT MODE (2026-09-12).** In product mode krb5_principals.js builds a
-// database without them, this KDC answers for one realm, and GET
-// /krb5/principals withholds both passwords. The ticket lifetimes, the TCP
-// request cap, the UDP reply threshold and the PAC's LogonServer are settings;
-// the PAC's invented passwordLastSet and logonCount are not invented there. See
-// kerberos/CLAUDE.md.
+// database without them and this KDC answers for one realm (GET
+// /krb5/principals, which printed both passwords, was deleted by #595). The
+// ticket lifetimes, the TCP request cap, the UDP reply threshold and the
+// PAC's LogonServer are settings; the PAC's invented passwordLastSet and
+// logonCount are not invented there. See kerberos/CLAUDE.md.
 // ---------------------------------------------------------------------------
 
 const net = require('net');
@@ -1909,7 +1909,7 @@ async function preAuthRequiredReply(client, request, fast, offer) {
                                               ', salt ' +
     JSON.stringify(client.salt) + ', s2kparams ' +
     (principals.s2kparamsMode() === 'send'
-      ? 'SENT (explicit 4096, the pre-2026-08 behaviour of this mock)'
+      ? 'SENT (explicit 4096, the pre-2026-08 behaviour of this service)'
       : 'OMITTED (as Active Directory does; the client must apply the RFC ' +
         '3962 default). Set KRB5_S2KPARAMS=send to advertise it explicitly.'));
   log.debug('Leaving preAuthRequiredReply().');
@@ -3706,12 +3706,13 @@ async function answerTgsReq(request, state) {
                'or registered on a different account' +
                (targetRealm ? ', or a trust with ' + targetRealm + ' that ' +
                    'does not exist' : '') +
-               '. This mock registers a service on first sight when its host ' +
+               '. In development mode this service registers a service on ' +
+               'first sight when its host ' +
                'matches ' +
                (principals.SERVICE_DOMAINS.join(', ') ||
                 '(nothing configured)') +
-               ', and this one does not — GET /krb5/principals lists what it ' +
-               'knows.' });
+               ', and this one does not — GET ' +
+               '/admin-api/kerberos/principals lists what it knows.' });
     }
     service = created;
   }
@@ -4954,8 +4955,10 @@ function replyFromResult(result) {
   return reply;
 }
 
-// What a socket calls for one complete message. Resolves the reply bytes,
-// never rejects: a failure is a KRB-ERROR the client can act on.
+// What a socket's complete message comes to once no router has placed it
+// elsewhere (`answerFromSocket()`, below), and what `answerMessage()` runs
+// for a message another cell relayed here. Resolves the reply bytes, never
+// rejects: a failure is a KRB-ERROR the client can act on.
 async function answerSocketMessage(bytes, transport, address, port) {
   log.debug('Entering answerSocketMessage(). transport=' + transport);
   const pool = requestPool();
@@ -4997,6 +5000,135 @@ async function answerSocketMessage(bytes, transport, address, port) {
   }
   log.debug('Leaving answerSocketMessage(). Answered by a worker.');
   return reply;
+}
+
+// ---------------------------------------------------------------------------
+// THE MESSAGE ROUTER: A PORT-88 MESSAGE ANSWERED IN ITS CLIENT'S HOME CELL
+// (#98, #588, 2026-10-12).
+//
+// In a service deployed as cells a person's keys, disabled flag, second
+// factor, PAC facts and sign-out instant are all in their HOME cell
+// (`kerberos/CLAUDE.md`, *Cells*), and MS-KKDCP has relayed a request there
+// since 2026-09-28 (`krb5_home.ts`'s `POST /KdcProxy`, ahead of ours). The
+// raw sockets had no such seam: a traveller whose packets reached a visiting
+// cell's port 88 was answered THERE — an unknown principal in product, a
+// freshly made one in development. This is the seam.
+//
+// `setMessageRouter(fn)` installs one function that both sockets ask before
+// they answer a complete message themselves:
+//
+//   fn(bytes, { transport: 'tcp' | 'udp', peer: { address, port } })
+//
+// It may answer
+//   * a Buffer (or Uint8Array) — the reply, written and framed by the socket
+//     exactly as one this module made: the TCP length prefix, and on UDP
+//     RFC 4120 section 7.2.1's size limit, so an oversized RELAYED reply is
+//     KRB_ERR_RESPONSE_TOO_BIG and the client retries over TCP, as it would
+//     have for one made here (rcbj's decision on #588); a refusal it carries
+//     under this module's Symbol is recorded on the transport's audit row;
+//   * `{ reply, refusal }` — the same, with the refusal carried in the clear
+//     because it crossed a process boundary (a structured clone, or JSON
+//     from another cell) that drops a Symbol; `replyFromResult()` puts it
+//     back, the very function a worker's answer goes through;
+//   * null (or an empty reply) — go on, and the message is answered here as
+//     it always was.
+// A router that THROWS is logged (STS-KRB-0206) and the message is answered
+// here: a placement that failed must not leave a client waiting for a reply
+// that never comes, and the KDC's own answer is what it got before this seam.
+//
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file is in the parent
+// project's tests-image COPY closure (`kerberos/CLAUDE.md`), so it requires
+// nothing new: `krb5_home.ts` installs the router from outside
+// (`common/protocol_stack.ts`, right after requiring this file), and only in a
+// service deployed as cells. With no router — single-cell mode, and every
+// in-process loader of this file — `answerFromSocket()` calls
+// `answerSocketMessage()` and nothing else, byte for byte what the sockets
+// did before. No realm is passed, because the sockets have none: `routeOf()`
+// chooses it from the Kerberos realm NAME in the bytes, at home as here.
+//
+// `answerMessage(bytes, transport, client)` is the other half: what a socket
+// would answer for a message, with no socket — the home cell runs it for a
+// request another cell relayed. It is `answerSocketMessage()` (the request
+// pool, else `handleMessage()`) inside the client's audit source, so a
+// relayed message is answered by the SAME code, in a worker where there is
+// one, and every row it causes names the client the visiting cell saw. It
+// never asks the router: a relayed message is answered where it was sent, one
+// hop (`common/cell_channel.ts`).
+// ---------------------------------------------------------------------------
+let messageRouter = null;
+
+function setMessageRouter(fn) {
+  log.debug('Entering setMessageRouter().');
+  if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+    log.debug('Leaving setMessageRouter(). Not a function.');
+    throw new TypeError('krb5: setMessageRouter() takes a function or null.');
+  }
+  messageRouter = fn || null;
+  log.debug('Leaving setMessageRouter(). ' +
+            (messageRouter ? 'Installed.' : 'Cleared.'));
+}
+
+// What a router answered, as a reply a socket writes; null to go on.
+function routedReply(answer) {
+  log.debug('Entering routedReply().');
+  if (answer === null || answer === undefined) {
+    log.debug('Leaving routedReply(). Not routed.');
+    return null;
+  }
+  if (answer instanceof Uint8Array) {
+    // Returned as it is, not copied: a copy would drop the refusal a reply
+    // made by errorReply() carries under its Symbol.
+    log.debug('Leaving routedReply(). Bytes.');
+    return answer.length ? answer : null;
+  }
+  log.debug('Leaving routedReply(). A result.');
+  return replyFromResult(answer);
+}
+
+// What a socket calls for one complete message: the router first, where one
+// is installed, and then `answerSocketMessage()`. Resolves the reply bytes,
+// never rejects.
+async function answerFromSocket(bytes, transport, address, port) {
+  log.debug('Entering answerFromSocket(). transport=' + transport);
+  const router = messageRouter;
+  if (!router) {
+    log.debug('Leaving answerFromSocket(). No router.');
+    return answerSocketMessage(bytes, transport, address, port);
+  }
+  let reply = null;
+  try {
+    reply = routedReply(await router(bytes, {
+      transport: transport,
+      peer: { address: String(address || ''), port: Number(port) || 0 }
+    }));
+  } catch (e) {
+    log.error(errorCodes.tag('STS-KRB-0206') + 'krb5: the message router ' +
+              'failed on a ' + transport + ' message from ' +
+              (address || '?') + ': ' +
+              String((e && e.message) || e).replace(/\.$/, '') +
+              '. The message is answered here.');
+    reply = null;
+  }
+  if (reply) {
+    log.debug('Leaving answerFromSocket(). Answered by the router.');
+    return reply;
+  }
+  log.debug('Leaving answerFromSocket(). Answered here.');
+  return answerSocketMessage(bytes, transport, address, port);
+}
+
+// A message with no socket — see the header above. `client` is
+// `{ address, port }` as the socket that received it saw them.
+function answerMessage(bytes, transport, client) {
+  log.debug('Entering answerMessage(). transport=' + transport);
+  const c = client || {};
+  const message = (bytes && typeof bytes.length === 'number')
+    ? Buffer.from(bytes) : Buffer.alloc(0);
+  log.debug('Leaving answerMessage().');
+  return audit.withSource({ address: String(c.address || '') }, function () {
+    return answerSocketMessage(message, String(transport || 'tcp'),
+                               c.address, c.port);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -5097,10 +5229,12 @@ function startTcp(port) {
         if (buffer.length < 4 + declared) return;
         const message = buffer.subarray(4, 4 + declared);
         buffer = buffer.subarray(4 + declared);
-        // Answered in a request worker where there is one — see
-        // answerSocketMessage() above; the framing stays here.
-        answerSocketMessage(message, 'tcp', socket.remoteAddress,
-                            socket.remotePort).then(function (reply) {
+        // Answered in the client's home cell where a router places it
+        // there, else in a request worker where there is one — see
+        // answerFromSocket() and answerSocketMessage() above; the framing
+        // stays here.
+        answerFromSocket(message, 'tcp', socket.remoteAddress,
+                         socket.remotePort).then(function (reply) {
           const framed = Buffer.alloc(4 + reply.length);
           framed.writeUInt32BE(reply.length, 0);
           Buffer.from(reply).copy(framed, 4);
@@ -5151,12 +5285,14 @@ function startUdp(port) {
   // The datagram's sender on every audit row it causes — see startTcp().
   socket.on('message', function (message, rinfo) {
     audit.withSource({ address: rinfo.address }, function () {
-      answerSocketMessage(message, 'udp', rinfo.address,
-                          rinfo.port).then(function (reply) {
+      answerFromSocket(message, 'udp', rinfo.address,
+                       rinfo.port).then(function (reply) {
         // A real KDC answers KRB_ERR_RESPONSE_TOO_BIG when its reply will not
         // fit in a datagram, and a client then retries over TCP. Reproducing
         // that is worth more than sending an oversized datagram, because the
-        // retry is the behaviour a client has to get right.
+        // retry is the behaviour a client has to get right. A reply another
+        // cell made is held to the same limit (#588, rcbj's decision): the
+        // client sees the same behaviour wherever its datagram landed.
         if (reply.length > udpMaxReplyBytes()) {
           log.info('krb5: the reply is ' + reply.length +
                    ' bytes, too big for UDP; answering ' +
@@ -5258,166 +5394,11 @@ app.post('/KdcProxy', function (req, res) {
   });
 });
 
-// A non-spec convenience so a test (and a curious human) can see what this KDC
-// knows without decrypting anything. It publishes NO keys and no CONFIGURED
-// account's password — only the principals, their supported etypes and their
-// salts, which is exactly what a client can already learn from PA-ETYPE-INFO2.
-//
-// The exceptions are in `accountPolicy` below, and only in development: the
-// password every USER account shares, and the one every service created on
-// demand shares. Neither is a secret to keep there — each is the same for
-// everybody, the README states it, and it is a fact about this KDC a client
-// cannot learn from the protocol. Product mode withholds both (see below).
-app.get('/krb5/principals', function (req, res) {
-  log.debug('Entering GET /krb5/principals.');
-  const list = principals.all().map(function (p) {
-    return {
-      principal: p.name.join('/') + '@' + p.realm,
-      nameType: p.type,
-      salt: p.salt,
-      etypes: principals.supportedEtypes(p).map(function (id) {
-        return { etype: id, name: kcrypto.etypeName(id) };
-      }),
-      requiresPreAuth: p.requiresPreAuth,
-      revoked: p.revoked,
-      passwordExpired: p.passwordExpired,
-      okAsDelegate: p.okAsDelegate,
-      kvno: p.kvno,
-      // An account that was not configured but turned up: somebody
-      // authenticated as a name nobody registered. Flagged so a reader is not
-      // left wondering why the table has entries the documentation does not
-      // describe.
-      autoCreated: p.autoCreated,
-      // A person keyed from their own password (product mode, 2026-09-12). The
-      // KEYS are never listed — they are not on the record at all — and this
-      // says only where they come from.
-      directoryKeys: !!p.directoryKeys,
-      description: p.description
-    };
-  });
-  // -------------------------------------------------------------------------
-  // THE TWO PASSWORDS ARE A TEST CONTROL, AND PRODUCT MODE WITHHOLDS THEM
-  // (2026-09-12).
-  //
-  // In development they are published on purpose — see the paragraph below —
-  // because they are a POLICY of the mock that every account shares. In
-  // product mode (`mode.opensTestControls()` false) that reasoning is gone:
-  // nothing is created on demand, and a password printed on an unauthenticated
-  // page is a long-term key printed on an unauthenticated page. So both are
-  // replaced by a sentence saying they are withheld and why, rather than
-  // omitted — a field that silently vanished would read as a bug.
-  // -------------------------------------------------------------------------
-  // BOTH answers must allow it: the realm's database was built in the mode
-  // captured when it was built (`seedsDemoPrincipals` — the PROCESS's mode for
-  // the default realm, see krb5_principals.js's SEEDS_DEMO), and the realm's
-  // mode may have been read differently since. Asking only one of them would
-  // let a development answer publish passwords a product database holds.
-  const published = principals.seedsDemoPrincipals && mode.opensTestControls();
-  const withheld = 'withheld: this service is in product mode, where a ' +
-    'password on an unauthenticated page is a long-term key anybody can use. ' +
-    'Development mode publishes it because every account there shares it.';
-  const service = principals.serviceAccount();
-  log.debug('Leaving GET /krb5/principals. ' + list.length + ' principals.');
-  res.status(200).json({
-    realm: ourRealm(),
-    kdcPort: KDC_PORT,
-    clockSkewSeconds: clockSkewSeconds(),
-    clockOffsetSeconds: clockOffsetSeconds(),
-    ticketLifetimeSeconds: ticketLifetimeSeconds(),
-    renewLifetimeSeconds: renewLifetimeSeconds(),
-    realmsServed: principals.realmsServed(),
-    // Whether the fixture accounts are here, and — where product mode refused
-    // one of the two accounts the service needs — why.
-    fixtureAccounts: principals.seedsDemoPrincipals,
-    serviceAccount: service,
-    krbtgtUnavailable: principals.krbtgtUnavailableReason() || null,
-    // The one thing about this KDC a client cannot discover from the protocol,
-    // and the one that stops somebody guessing at passwords: any username
-    // authenticates, and they all share one. Publishing it is not the leak it
-    // would be elsewhere on this page — a password every account holds and the
-    // README states is a POLICY of the mock, not a secret, and a debugger whose
-    // accounts are unusable without reading the source is worse than one that
-    // says so here.
-    accountPolicy: {
-      anyUsernameAuthenticates: mode.autoCreates(),
-      userPassword: published ? principals.USER_PASSWORD : withheld,
-      // The names that are refused instead, so KDC_ERR_C_PRINCIPAL_UNKNOWN
-      // stays reachable, plus the shape rule that keeps a missing SPN an error.
-      neverCreated: principals.reservedUnknown(),
-      // SERVICES are created on first sight too, but only for the hosts this
-      // mock is willing to be — a client derives `HTTP/<url host>` and cannot
-      // be expected to know this table. Their password is shared and published
-      // for the same reason the user one is: it is what lets a debugger open a
-      // service ticket's own EncTicketPart and read the PAC inside it, which is
-      // the one structure a client can otherwise never see. Configured service
-      // accounts keep their own separate passwords. Empty in product mode,
-      // where no service is created on demand for any host.
-      serviceHosts: mode.autoCreates() ? principals.SERVICE_DOMAINS : [],
-      serviceHostRule: 'an SPN\'s host matches when it IS one of ' +
-        'serviceHosts or ends with a dot and one of them; anything else ' +
-        'stays KDC_ERR_S_PRINCIPAL_UNKNOWN',
-      autoServicePassword: published ? principals.AUTO_SERVICE_PASSWORD :
-                           withheld,
-      note: mode.autoCreates()
-        ? 'A username not in this table is created on first sight as an ' +
-          'ordinary user, with the salt Active Directory would use (realm + ' +
-          'name) and this password. A multi-component name is a SERVICE, and ' +
-          'one is created on first sight too when its host matches ' +
-          'serviceHosts above — with autoServicePassword, so a reader can ' +
-          'open the ticket. An SPN outside those hosts is still ' +
-          'KDC_ERR_S_PRINCIPAL_UNKNOWN, which is how that error stays ' +
-          'reachable on purpose (try HTTP/app.elsewhere.invalid). The ' +
-          'CONFIGURED service, computer and krbtgt accounts keep their own ' +
-          'passwords, which are not published here.'
-        : 'Product mode: nothing is created on demand, so a name not in this ' +
-          'table is KDC_ERR_C_PRINCIPAL_UNKNOWN (a user) or ' +
-          'KDC_ERR_S_PRINCIPAL_UNKNOWN (a service), and serviceHosts is not ' +
-          'consulted. No password is published.'
-    },
-    // What this KDC serves, and what it does not. `notImplementedYet` said PAC,
-    // cross-realm referrals, S4U2Self and S4U2Proxy for as long as all four had
-    // been implemented — it was written before them and never revisited.
-    implemented: ['AS exchange', 'TGS exchange', 'PAC ([MS-PAC], all four ' +
-                                                 'signatures)',
-                  'cross-realm referrals (development mode)', 'S4U2Self',
-                  'S4U2Proxy (classic and resource-based)', 'forwarded TGTs',
-                  'renewal', 'MS-KKDCP (/KdcProxy)',
-                  // #173: where the directory is loaded (the provider rides
-                  // in its key source), so not in a process without it.
-                  'FAST in the AS exchange (RFC 6113; armor: a TGT)' +
-                    (principals.preauthProvider() ? '' : ' - not here: ' +
-                     'this process has no directory'),
-                  // #204: implicit armor, explicit armor accepted, and
-                  // hide-client-names in both exchanges.
-                  'FAST in the TGS exchange (RFC 6113 implicit armor), ' +
-                    'hide-client-names' +
-                    (principals.preauthProvider() ? '' : ' - not here: ' +
-                     'this process has no directory'),
-                  'user-to-user (ENC-TKT-IN-SKEY, RFC 4120 3.3.3)',
-                  'FAST negotiation (RFC 6806 section 11: enc-pa-rep, ' +
-                    'PA-REQ-ENC-PA-REP)',
-                  'OTP pre-authentication (RFC 6560) with an authenticator ' +
-                    'app, the password as the PIN',
-                  'authentication indicators (RFC 8129): otp',
-                  // #169: where the directory is loaded (the key rides in
-                  // its key source).
-                  'krbtgt key rotation, a previous kvno kept for the TGT ' +
-                    'lifetime (#169)' +
-                    (principals.keySourceInstalled() ? '' : ' - not here: ' +
-                     'this process has no directory'),
-                  // #179: where the directory is loaded, like FAST.
-                  'PKINIT (RFC 4556, 8070, 8636, 5349): a certificate as ' +
-                    'the pre-authentication, Diffie-Hellman only; anonymous ' +
-                    'PKINIT (RFC 8062) as FAST armor' +
-                    (principals.pkinitProvider() ? '' : ' - not here: ' +
-                     'this process has no directory')],
-    notImplementedYet: ['PKINIT RSA key transport (RFC 4556 3.2.3.2)',
-                        'kpasswd (RFC 3244)',
-                        'SID filtering across a trust',
-                        'rotation of an inter-realm trust key'],
-    principals: list
-  });
-});
+// `GET /krb5/principals`, a demonstration document listing this KDC's
+// principals with the two shared development passwords, was DELETED by #595
+// (rcbj's decisions on #591): `GET /admin-api/kerberos/principals` lists the
+// same rows — `database`, from `principals.describeAll()` — and the account
+// policy, behind the API's token and with no password in either mode.
 
 // Start both listeners on ONE port.
 //
@@ -5473,6 +5454,13 @@ module.exports = {
   answerSocketMessage: answerSocketMessage,
   registerWorkerOperation: registerWorkerOperation,
   refusalOf: refusalOf,
+  // THE CELLS SEAM (#588): `kerberos/krb5_home.ts` installs the router and
+  // answers a relayed message with answerMessage(); errorReply() is how it
+  // refuses one it cannot place (a home unreachable, a hard geofence).
+  setMessageRouter: setMessageRouter,
+  answerMessage: answerMessage,
+  answerFromSocket: answerFromSocket,
+  errorReply: errorReply,
   KDC_PORT: KDC_PORT,
   // The Kerberos realm of the AMBIENT trust realm — a getter since 2026-09-15,
   // for `krb5_principals.js`'s reason.
@@ -5481,5 +5469,9 @@ module.exports = {
     log.debug("Leaving REALM().");
     return ourRealm();
   },
-  clockSkewSeconds: clockSkewSeconds
+  clockSkewSeconds: clockSkewSeconds,
+  // The offset the KDC's clock runs at, as the mode lets `krb5.clockOffset`
+  // be: what `/krb5/principals` published until #595 deleted it, for a
+  // reader in a realm that was not served that demonstration (#585).
+  clockOffsetSeconds: clockOffsetSeconds
 };

@@ -220,7 +220,7 @@ class EstConsole {
     // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
     // answers it — the page is drawn from this view alone. It was the EST
     // group's bare rows until then.
-    return adminViews.settingsBlockOf('/admin/est');
+    return adminViews.settingsBlockOf('/admin/cert-issuance', ['EST']);
   }
 
   // Who is acting, for `createdBy` / `by` and the principal. The console's

@@ -9,14 +9,10 @@
 // THE RESOURCE SERVER'S SIDE OF GNAP: WHAT RFC 9767 LETS AN RS ASK THE AS, AND
 // HOW A PRESENTED TOKEN IS JUDGED.
 //
-// Three callers, one module, route-free:
+// Two callers, one module, route-free:
 //
 //   * `POST /gnap/introspect` and `POST /gnap/resource` (RFC 9767 sections 3.3
 //     and 3.4), whose logic is `introspect()` and `register()`.
-//   * the DEMONSTRATION RS at `/gnap/rs/resource` — the one place a client can
-//     present a GNAP token to something and see it judged the way a real RS
-//     would: the token read in its own format, its key proof checked, its
-//     rights compared with what the request needs.
 //   * the SHARED SIGNALS endpoints, which accept a GNAP access token as their
 //     third authorization scheme since 2026-09-12, so that a GNAP web
 //     application can own a stream (gnap_signals.ts). They take
@@ -25,18 +21,21 @@
 // **A TOKEN IS JUDGED BY ITS RECORD AND BY ITS FORMAT, AND BOTH MUST AGREE.**
 // This AS holds every token it issued (gnap_store.ts), which is what makes
 // introspection possible for all five formats — including the three whose
-// value a verifier could read alone. The demonstration RS does BOTH: it looks
+// value a verifier could read alone. `authenticate()` does BOTH: it looks
 // the value up (revocation, which no self-contained format can carry) AND
 // verifies it in its own format (signature, expiry, audience, binding, rights),
 // because an RS that only did the first would be an introspection client
 // pretending to be a verifier, and one that only did the second would accept a
 // revoked token until it expired — RFC 9767 section 6.3's trade-off, shown
-// rather than chosen.
+// rather than chosen. Its caller was the DEMONSTRATION RS at
+// `/gnap/rs/resource`, which #593 (2026-10-12) deleted — the test peer
+// plays a GNAP resource server, over introspection — so no route calls it
+// now; it stays as the library half of a resource server here.
 //
 // **AN AS-SPECIFIC TOKEN IS NEVER ACTIVE HERE** (RFC 9767 section 2.1.14): a
 // continuation or management access token is not in the token store at all —
 // it is an index onto a grant — so it introspects as inactive and is refused
-// by the demonstration RS by construction rather than by a check someone could
+// by `authenticate()` by construction rather than by a check someone could
 // forget.
 // ---------------------------------------------------------------------------
 
@@ -745,8 +744,7 @@ slot.buildNowUnlessDeferred();
  * The resource server's side of GNAP (RFC 9767): introspection, resource
  * registration, and judging a presented token.
  *
- * Route-free; its callers are `gnap.ts`, the demonstration resource server and
- * the Shared Signals endpoints.
+ * Route-free; its callers are `gnap.ts` and the Shared Signals endpoints.
  *
  * @namespace
  */

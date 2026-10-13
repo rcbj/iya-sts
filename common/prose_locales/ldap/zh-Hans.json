@@ -1,0 +1,1846 @@
+{
+  "ldap.service.bindPolicy": {
+    "en": "ff24480e5b0e0e15",
+    "text": "每次绑定都会成功——任何 DN、任何密码，包括匿名绑定——除了字面密码 \"invalid\"，它会以 LDAP_INVALID_CREDENTIALS (49) 应答，以便负面测试有可以失败的东西"
+  },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "只有人员可以绑定，只能在 LDAPS 636 上绑定，并且密码对照其条目上经过哈希的 userPassword 验证。匿名绑定 (48)、389 上的任何绑定 (13)、空密码 (53)、不是人员的 DN (49) 以及超过失败绑定次数上限的 DN 或地址 (53) 都会在读取密码之前被拒绝；错误的密码以及字面密码 \"invalid\" 返回 LDAP_INVALID_CREDENTIALS (49)"
+  },
+  "ldap.service.schema": {
+    "en": "0aabcadd26b32a63",
+    "text": "无。不强制任何 objectClass，也不按语法检查任何属性，因此条目可以携带客户端发送的任何属性。真正的目录会拒绝其中的大部分。"
+  },
+  "ldap.service.authenticationFacts": {
+    "en": "50b11d2cbd23b36a",
+    "text": "当接受凭据的协议说明了凭据是如何出示的——目前只有登录界面会这样做，因为 amr 是 OIDC 的词汇——条目还会携带 authnMethod（此人在这里使用过的每种 RFC 8176 方法，累积记录）、mfaAuthenticated（最近一次身份验证为 TRUE 或 FALSE，每次覆盖）和 mfaLastAuthTime（上一次进行多因素验证的时间，从不清除）。这些是本服务自己的名称，而不是模式的一部分。在密码之后进行的 WebAuthn 仪式写入 TRUE；同样的仪式以无密码方式使用时，写入 authnMethod hwk 而旁边没有 pwd，mfaAuthenticated 为 FALSE，因为无论多么防钓鱼，一个因素就是一个因素。这里没有任何东西读取它们：没有令牌携带它们，也没有端点据此作出任何决定，正如这里的组不授予任何东西一样——除了决定谁可以使用管理控制台的两个组，这是此目录中唯一的例外，且仅限于该控制台。"
+  },
+  "ldap.service.implementation": {
+    "en": "8097f8996f966e83",
+    "text": "ldapjs 3.0.7，作为 node-ldapjs 子模块固定版本，未经修改使用"
+  },
+  "ldap.service.enforcedRules.0": {
+    "en": "f35b69973b84ae59",
+    "text": "父条目不存在的添加操作返回 LDAP_NO_SUCH_OBJECT (32)"
+  },
+  "ldap.service.enforcedRules.1": {
+    "en": "bfd20d58c8b5dd5b",
+    "text": "删除带有子条目的条目返回 LDAP_NOT_ALLOWED_ON_NONLEAF (66)"
+  },
+  "ldap.service.enforcedRules.2": {
+    "en": "c23d48836f81aaa4",
+    "text": "修改操作中删除不存在的属性返回 LDAP_NO_SUCH_ATTRIBUTE (16)"
+  },
+  "ldap.service.enforcedRules.3": {
+    "en": "84c96a7e373363b1",
+    "text": "删除属性的最后一个值即删除该属性"
+  },
+  "ldap.service.enforcedRules.4": {
+    "en": "a41fc8c3be6cf1bc",
+    "text": "在 ou=users 下添加用户名已存在的条目返回 LDAP_ENTRY_ALREADY_EXISTS (68)，并指明持有该用户名的条目。每人一个条目：用户名是条目的命名 RDN 值及其携带的任何 uid，因此 uid=rcbj 和 cn=rcbj 是同一个人，只能有其中一个存在。这与控制台和 POST /admin-api/users/create 给出的拒绝相同，也是这里每个协议在验证某人身份时所归并的同一规则"
+  },
+  "ldap.service.specifications.0": {
+    "en": "152af942eb9a86bf",
+    "text": "RFC 4510（LDAP 技术规范路线图）"
+  },
+  "ldap.service.specifications.1": {
+    "en": "ce36f6cc63efd01c",
+    "text": "RFC 4511（协议）"
+  },
+  "ldap.service.specifications.2": {
+    "en": "4ef14ce29aa9d0f4",
+    "text": "RFC 4512（目录信息模型）"
+  },
+  "ldap.service.specifications.3": {
+    "en": "cd7ef4b993066ad2",
+    "text": "RFC 4514（DN 字符串表示）"
+  },
+  "ldap.service.specifications.4": {
+    "en": "b65b5adecdeec710",
+    "text": "RFC 4515（搜索过滤器字符串表示）"
+  },
+  "ldap.service.sentences.searchScopeRealms": {
+    "en": "a9a6103ce6cbf322",
+    "text": "子树搜索回答的是其起始基础 DN 所属的信任领域。{{contexts}} 是这些上下文；属于另一个领域的条目会从基于其上层的搜索中被过滤掉，需从该领域自己的基础 DN 开始搜索才能找到。指明单个 DN 的操作——添加、修改、删除、比较或基础范围搜索——在该 DN 所在之处得到应答，因为写出 DN 就指明了领域"
+  },
+  "ldap.service.sentences.searchScopeOne": {
+    "en": "55b2bbab540dbbb4",
+    "text": "未定义任何信任领域，因此只有一个上下文（{{root}}），从它开始的子树搜索回答的是整个存储"
+  },
+  "ldap.service.sentences.clientCertificates": {
+    "en": "18c68f9d37420f1c",
+    "text": "从不请求。此监听器只向客户端证明服务器，仅此而已；向它出示的客户端证书不会被请求，即使被请求也不会成为登录。主端口（{{port}}）才是请求和读取客户端证书的地方。"
+  },
+  "ldap.service.sentences.certificateSource": {
+    "en": "a969a038097605ed",
+    "text": "与主端口（{{port}}）提供的证书和密钥相同。它是{{provenance}}：GET /tls/server-certificate 以 PEM 形式提供它。两个套接字共用一个信任锚，这就是它们共享证书的原因。"
+  },
+  "ldap.service.sentences.autoCreateRule": {
+    "en": "7e10a7e3ec45179d",
+    "text": "当 <name> 首次通过任何协议向本服务进行身份验证时，会出现条目 uid=<name>,{{usersDn}}。LDAP 绑定不会创建条目（它出示的是 DN，不是用户名），OAuth 客户端也不会。经验证的 TLS 客户端证书是唯一本身已是 DN 的身份：其条目保留主体自身的叶 RDN——CN=alice,O=Example 对应 cn=alice,{{usersDn}}——或者在整个主体已位于 {{baseDn}} 之下时保留整个主体，完整的主体、颁发者、序列号和有效期作为 x509* 属性保存在条目上，这些是本服务自己的名称，而不是模式的一部分。去中心化标识符是第三种形式，既不是名称也不是 DN：已签发凭据的 did:jwk 主体、任何向 OID4VP 验证方出示的 DID。其条目位于 uid=did-<该 DID 的 SHA-256 的 12 位十六进制>,{{usersDn}}——完整写出的 did:jwk 是一个数百字符的 DN，其中大部分是密钥材料——标识符本身作为 didSubject 完整保存在条目上，其方法保存为 didMethod。请按 didSubject 而不是 uid 搜索此人：在这些条目上，uid 是摘要，didSubject 才是身份。"
+  },
+  "ldap.spiffe.sourceOfTruth": {
+    "en": "b1ca8ee3d774cf2d",
+    "text": "这些条目就是 SPIFFE 注册表。在 ou=entries 下执行 ldapmodify 会改变下一个 SVID 的样子——spiffeX509SvidTtl 改变其有效期，spiffeDnsName 改变其 subjectAltName，spiffeId 改变它属于谁的身份——因为没有任何东西缓存它们。两个容器保存的是不同种类的东西：条目是配置，代理是记录，这就是为什么代理的任何内容都不能从控制台编辑。"
+  },
+  "ldap.applications.sourceOfTruth": {
+    "en": "c927447175e35efb",
+    "text": "这些条目就是注册表。在这里执行 ldapmodify 会改变协议端点的行为——向 oauthRedirectUri 添加一个值就会添加一个重定向 URI，RFC 9700 模式随后会按精确匹配接受它。"
+  },
+  "ldap.federations.sourceOfTruth": {
+    "en": "435fdeccd74e04b0",
+    "text": "这些条目就是登记册。在这里执行 ldapmodify 是一项安全变更：fedSigningCertificate 决定本服务会相信谁的断言，fedEnabled 开启一个伙伴。没有任何东西缓存它们。"
+  },
+  "ldap.devices.sourceOfTruth": {
+    "en": "fbfeae54369b2897",
+    "text": "这些条目就是设备登记册：没有任何东西缓存它们，因此对 stsDeviceCompliance 执行 ldapmodify，在下一次读取时就是该设备的合规性。stsDeviceSecretHash 被隐藏。"
+  },
+  "ldap.roles.sourceOfTruth": {
+    "en": "88697020f123dac5",
+    "text": "这些条目就是角色登记册的成员部分。通过 ldapmodify 向 roleMemberUser 添加一个值即授予该角色，下一次签发决策就会据此作出。要求某个角色的是 ou=applications 下应用条目上的 appRequiredRole，那是另一个容器。"
+  },
+  "ldap.policies.sourceOfTruth": {
+    "en": "4f8877fec63c3904",
+    "text": "这些条目就是策略库。对 xacmlPolicyDocument 执行 ldapmodify 会改变 PDP 对下一个请求的决策，并且写入时不会进行静态验证，这与通过 /admin/xacml 的每次写入不同——因此一个不再通过类型检查的文档会回答 Indeterminate，而不是被拒绝。"
+  },
+  "ldap.peps.sourceOfTruth": {
+    "en": "b8fc2f8f4bf8c58b",
+    "text": "这里几乎每个属性都是本服务在 PEP 注册、拉取或报告时写入的记录。例外的两个是 xacmlPepEnabled，由管理员设置且重新连接的 PEP 不会清除它，以及 xacmlPepNotifyUrl，它是本服务会拨出的三个地址之一。"
+  },
+  "applications.kinds.oauth2-client.label": {
+    "en": "70d50cab8908ac09",
+    "text": "OAuth 2.0 客户端"
+  },
+  "applications.kinds.oauth2-client.what": {
+    "en": "348a7be2ebfe0753",
+    "text": "在授权端点或令牌端点出示的 client_id。"
+  },
+  "applications.kinds.oidc-relying-party.label": {
+    "en": "d1c72d0dc209cf8d",
+    "text": "OpenID Connect 依赖方"
+  },
+  "applications.kinds.oidc-relying-party.what": {
+    "en": "af403fd2e4478e84",
+    "text": "请求了 openid 作用域时的同一个 client_id——依赖方是还想要 ID 令牌的 OAuth 客户端，因此一条记录通常同时带有这两种类型。"
+  },
+  "applications.kinds.saml2-service-provider.label": {
+    "en": "d9997212d7ad263b",
+    "text": "SAML 2.0 服务提供方"
+  },
+  "applications.kinds.saml2-service-provider.what": {
+    "en": "f83fcd03aa0aca09",
+    "text": "本服务签发的 SAML 2.0 断言的受众。"
+  },
+  "applications.kinds.saml11-relying-party.label": {
+    "en": "9abb39b3d0f1ed3c",
+    "text": "SAML 1.1 依赖方"
+  },
+  "applications.kinds.saml11-relying-party.what": {
+    "en": "4d826e30dbea03d6",
+    "text": "SAML 1.1 断言的受众——这是 WS-Federation 依赖方默认得到的内容，因此这两者通常一起出现。"
+  },
+  "applications.kinds.wsfed-relying-party.label": {
+    "en": "357be565b6f394e2",
+    "text": "WS-Federation 应用"
+  },
+  "applications.kinds.wsfed-relying-party.what": {
+    "en": "8882d3936c581ca7",
+    "text": "来自 wsignin1.0 请求的 wtrealm（第 13.2.1 节）。"
+  },
+  "applications.kinds.wstrust-relying-party.label": {
+    "en": "c7d4443f1d20d799",
+    "text": "WS-Trust 依赖方"
+  },
+  "applications.kinds.wstrust-relying-party.what": {
+    "en": "27bcd37dd10ee019",
+    "text": "来自 RequestSecurityToken 的 AppliesTo——令牌所针对的服务。"
+  },
+  "applications.kinds.oid4vp-verifier.label": {
+    "en": "8f530299a9f890c0",
+    "text": "OpenID4VP 验证方"
+  },
+  "applications.kinds.oid4vp-verifier.what": {
+    "en": "ecba6c8462d69614",
+    "text": "本服务的验证方在授权请求中出示的 client_id。"
+  },
+  "applications.kinds.federation-identity-provider.label": {
+    "en": "3f6b9e4e19beb32d",
+    "text": "联合身份提供方"
+  },
+  "applications.kinds.federation-identity-provider.what": {
+    "en": "0d2adcc59a7c1995",
+    "text": "本实例作为服务提供方与之联合的外部身份服务——它向本服务验证人员身份，而不是向本服务请求任何东西，这使它成为这里唯一一种不是客户端的类型。它仍然在此注册表中，因为此容器要回答的问题是“本服务与哪些参与方打过交道？”，而联合伙伴是其中影响最大的：它是本服务会相信其签名的参与方。参见 federation/CLAUDE.md。关系本身——端点、证书、属性映射——存放在 ou=federations 下而不是这里；这条记录是作为参与方的伙伴，那一条是与它的安排。"
+  },
+  "applications.kinds.kerberos-service.label": {
+    "en": "c60a52be697d41a7",
+    "text": "Kerberos 服务主体"
+  },
+  "applications.kinds.kerberos-service.what": {
+    "en": "066a9468344f9c0d",
+    "text": "为其签发了票据的服务主体名称，或接受方被要求充当的服务主体名称。"
+  },
+  "applications.kinds.gnap-client.label": {
+    "en": "ea237766411168ed",
+    "text": "GNAP 客户端实例"
+  },
+  "applications.kinds.gnap-client.what": {
+    "en": "42cf02b486bd48ab",
+    "text": "发出了 GNAP 授权请求的密钥（或实例标识符）。"
+  },
+  "applications.kinds.gnap-resource-server.label": {
+    "en": "5a9da6b3e05542bf",
+    "text": "GNAP 资源服务器"
+  },
+  "applications.kinds.gnap-resource-server.what": {
+    "en": "dcbb24cab569794d",
+    "text": "调用了面向资源服务器的 API 的密钥：内省、资源集注册或下游令牌派生。"
+  },
+  "applications.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "applications.protocols.oauth2.what": {
+    "en": "fe4f3acd275e39a1",
+    "text": "授权端点和令牌端点处的 client_id。"
+  },
+  "applications.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "applications.protocols.oidc.what": {
+    "en": "1ce7cc23cb0f3a91",
+    "text": "请求 openid 作用域、因而请求 ID 令牌的同一个 client_id。依赖方就是 OAuth 客户端，因此这两项通常一起勾选；只勾选这一项也是合法的，表示该条目用于 OIDC 流程。"
+  },
+  "applications.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "applications.protocols.saml2.what": {
+    "en": "cae55da402c3a60c",
+    "text": "/saml2 上 Web Browser SSO 配置文件中的服务提供方 entityID，或在这里其他任何地方签发的 SAML 2.0 断言的受众。"
+  },
+  "applications.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "applications.protocols.saml11.what": {
+    "en": "0f0b81ee62d1009e",
+    "text": "/saml11 上两种浏览器配置文件的依赖方——也是 WS-Federation 应用默认得到的内容，这就是这两项通常一起勾选的原因。"
+  },
+  "applications.protocols.wsfed.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "applications.protocols.wsfed.what": {
+    "en": "cd68aba0fbb971af",
+    "text": "wsignin1.0 请求中的 wtrealm（第 13.2.1 节）。"
+  },
+  "applications.protocols.wstrust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "applications.protocols.wstrust.what": {
+    "en": "9cedca1464312341",
+    "text": "RequestSecurityToken 中的 AppliesTo——令牌为之签发的服务。"
+  },
+  "applications.protocols.krb5.label": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "applications.protocols.krb5.what": {
+    "en": "e0907807887b2538",
+    "text": "可以为其签发票据的服务主体名称，或接受方可能被要求充当的服务主体名称。这涵盖了对受 Kerberos 保护的服务的 SPNEGO（HTTP Negotiate，RFC 4559），它携带的是同一张票据。使用 SPNEGO 让人员登录到此应用并不是一个协议族：请在 appAuthnMechanism 中列出 spnego，并声明应用获取令牌或断言所通过的协议。"
+  },
+  "applications.protocols.oid4vci.label": {
+    "en": "6a5c76ded81999e5",
+    "text": "OpenID4VCI"
+  },
+  "applications.protocols.oid4vci.what": {
+    "en": "485e6cdaf91b1a44",
+    "text": "从颁发方领取可验证凭据的钱包。钱包在该流程中不出示自己的应用标识符——它作为 OAuth 客户端进行身份验证并被记录为 OAuth 客户端——因此此协议族没有对应的类型，也永远不会有任何东西把它标记为已见过。"
+  },
+  "applications.protocols.oid4vp.label": {
+    "en": "e2031ac8e75c04a0",
+    "text": "OpenID4VP"
+  },
+  "applications.protocols.oid4vp.what": {
+    "en": "23aae2a858af04d4",
+    "text": "请求出示凭据的授权请求中的验证方 client_id。"
+  },
+  "applications.protocols.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "联合"
+  },
+  "applications.protocols.federation.what": {
+    "en": "51f9dc86ae390cb9",
+    "text": "联合关系另一端的外部身份服务。它是此注册表中唯一不是本服务客户端的东西——它向本服务验证人员身份。它的出现以关系所使用的协议记录，因此这种条目上的协议标签与普通客户端的无法区分，只有类型能将它们区分开——这正是此表按类型匹配的全部原因。关系本身存放在 ou=federations 下；参见 federation/CLAUDE.md。"
+  },
+  "applications.protocols.ldap.label": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "applications.protocols.ldap.what": {
+    "en": "9e2b2e44593ddedf",
+    "text": "在 389 或 LDAPS 636 上绑定的目录客户端。这里的每次绑定都会成功，而且都不指明应用，因此永远不会有任何东西为此协议族记录出现——勾选它只说明该条目的用途，别无其他。"
+  },
+  "applications.protocols.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "applications.protocols.scim.what": {
+    "en": "ce2bae136c7ecd7f",
+    "text": "/scim/v2 上的预配客户端。该界面验证的是其调用方——采用 RFC 7644 第 2 节所列六种方案中的任何一种——而不是应用标识符，因此与 LDAP 一样，没有任何东西会把此协议族写入 appProtocol。"
+  },
+  "applications.protocols.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "applications.protocols.spiffe.what": {
+    "en": "6d81b6713ac464a6",
+    "text": "Workload API 上的工作负载，或 SPIRE Server API 上的代理或管理员。SPIFFE 身份在 ou=spiffe 下有自己的条目，而不是在这里（参见 spiffe/CLAUDE.md），因此这只是一项声明，永远不是记录。"
+  },
+  "applications.protocols.mtls.label": {
+    "en": "84f3396586f6fc6d",
+    "text": "TLS / 双向 TLS"
+  },
+  "applications.protocols.mtls.what": {
+    "en": "eb9407b59ae6b377",
+    "text": "按 RFC 8705 向令牌端点进行身份验证的客户端。从应用的凭据部分签发给该应用的 TLS 客户端证书，无需注册任何内容即可以 tls_client_auth 方式验证它；来自其他颁发机构的证书需要五个主体参数之一（oauthTlsClientAuthSubjectDn 和四个 oauthTlsClientAuthSan* 属性），而 self_signed_tls_client_auth 读取 jwks x5c 或 oauthTlsClientCertificateThumbprint——因此勾选此项只是给自己的备注，那些才是配置。"
+  },
+  "applications.protocols.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "共享信号"
+  },
+  "applications.protocols.ssf.what": {
+    "en": "4042b281e588be6c",
+    "text": "共享信号接收方：在 /ssf/stream 约定流、随后接收安全事件令牌的对象。其标识符是它创建流时进行身份验证所用的任何身份，即这些 SET 携带的 `aud`，其投递端点是推送发往的位置。两者都不被视为权限——流携带自己的投递端点，而此条目是操作员写下接收方预期应是什么的地方，与该应用的其他一切放在一起。"
+  },
+  "applications.protocols.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "applications.protocols.gnap.what": {
+    "en": "86edbf0cbc0fcbab",
+    "text": "GNAP 客户端实例、GNAP 资源服务器，或两者兼是：向 /gnap（RFC 9635）或面向资源服务器的 API（RFC 9767）证明持有密钥的参与方。其密钥是 gnapKey（公钥对象）或带有封存 gnapSymmetricKey 的 gnapKeyReference；其完成 URI 与其他返回地址一样；资源服务器携带它负责应答的位置，并在注册了资源集之后携带它用于验证的 macaroon 根密钥。"
+  },
+  "applications.protocols.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "applications.protocols.acme.what": {
+    "en": "a497ff001f194be7",
+    "text": "在 /enroll/acme 上通过 ACME（RFC 8555）进行证书注册：通过 External Account Binding 密钥绑定到此应用的 ACME 账户。其证书指明 urn:sts:application:<id>，并保存在此条目上。"
+  },
+  "applications.protocols.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "applications.protocols.est.what": {
+    "en": "cc7e6d70b3c9a590",
+    "text": "在 /.well-known/est 上通过 EST（RFC 7030）进行证书注册：此应用使用其客户端 id 和密钥，或使用本领域签发给它的证书进行身份验证。"
+  },
+  "applications.protocols.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "applications.protocols.scep.what": {
+    "en": "3aa1a8167ba7b6a1",
+    "text": "在 /enroll/scep 上通过 SCEP（RFC 8894）进行证书注册：为此应用生成的一次性质询密码。"
+  },
+  "applications.protocols.did.label": {
+    "en": "be52dffd72816927",
+    "text": "去中心化标识符（DID）"
+  },
+  "applications.protocols.did.what": {
+    "en": "ccfbaceacd779cc0",
+    "text": "描述此应用的 W3C DID：did:web:<host>[:realm:<id>]:applications:<identifier>，其文档由本服务在 <base>/applications/<identifier>/did.json 上公布。该文档发布 didPublicKeyJwk 中的公钥（生成密钥对，或粘贴您自己密钥的公钥部分）、didService 中的服务以及 didAlsoKnownAs 中的 URI。不会通过此协议族签发任何东西：它是识别应用并找到其密钥的方式。"
+  },
+  "applications.protocols.secret-destination.label": {
+    "en": "c9d21f45ee42c8f9",
+    "text": "机密推送目标"
+  },
+  "applications.protocols.secret-destination.what": {
+    "en": "c604726c3f603150",
+    "text": "本服务将服务账户轮换后的密码推送到的机密管理器（#221）：AWS Secrets Manager、Google Cloud Secret Manager、Azure Key Vault，或 HashiCorp Vault / OpenBao KV 第 2 版引擎——以及仅在开发模式下的文件。机密必须已在那里存在：推送会写入新版本，从不创建机密。写入凭据（secretDestCredential）封存在此条目上，从不显示。不会通过此协议族签发任何东西。"
+  },
+  "applications.protocols.scim-client.label": {
+    "en": "9be47ed83dd2d7b2",
+    "text": "SCIM 客户端（出站预配）"
+  },
+  "applications.protocols.scim-client.what": {
+    "en": "b4c33bcec8578230",
+    "text": "本服务向其推送用户和组的远程 SCIM 2.0 服务提供方（#552）：基于 RFC 7644 的 RFC 7643 资源，随着目录变化而被创建、替换或修补、停用或删除，并按需或按计划进行对账。它使用 HTTP Basic、OAuth 2.0 client_credentials 令牌或 TLS 客户端证书进行身份验证；每个凭据都封存在此条目上，从不显示。在 协议 → SCIM → 客户端 上配置。不会通过此协议族签发任何东西。"
+  },
+  "applications.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "每个条目都带有的抽象类。"
+  },
+  "applications.schema.objectClasses.applicationProcess.what": {
+    "en": "dd82f17846370ea7",
+    "text": "唯一适合表示应用的已注册对象类。它带有 cn、description、seeAlso、ou 和 l——因此这里应用的名称是标准属性，即使应用的其他任何方面都无法使用标准属性。"
+  },
+  "applications.schema.objectClasses.stsApplication.what": {
+    "en": "1687dbb8042b2835",
+    "text": "自创的，因为没有任何已注册的 LDAP 模式包含 client_id、重定向 URI 集合、entityID 或服务主体名称。每个存储 OAuth 客户端的产品都将其保存在自己的数据库中而不是目录中，因此没有可借用的东西。这些是本服务自己的名称，就像 x509subject 和 didSubject 一样。"
+  },
+  "applications.schema.attributes.appIdentifier.what": {
+    "en": "db19692c7629ad26",
+    "text": "键：完全按照协议出示时的形式保存的标识符。当标识符太长而无法作为可读的 RDN 时，条目自身的 cn 可能是它的摘要，因此应按此属性搜索——与以 DID 命名的人员上的 didSubject 是同样的安排。"
+  },
+  "applications.schema.attributes.cn.what": {
+    "en": "6fc8c608a7cfc89a",
+    "text": "RDN 值：标识符本身，或在其长度超过 64 个字符时为 app-<12 位十六进制>。"
+  },
+  "applications.schema.attributes.appName.what": {
+    "en": "9193fd826474105f",
+    "text": "在页面上如何称呼它。注册时会提供一个名称；否则以标识符作为名称，因为为不透明的 id 编造一个友好名称就等于编造事实。"
+  },
+  "applications.schema.attributes.appHomePageUrl.what": {
+    "en": "bb7f9df5947fbef1",
+    "text": "应用自己的主页：人们访问它的地方，因此也是登录它的起点。/portal/applications 中每一行都链接到它，没有此项的条目在那里显示为不带链接，而不是带一个猜测的地址。它是声明的，从不派生——旁边的重定向 URI 是回调而不是正门，因此没有任何东西从它们计算出此项。仅限 http 或 https，因为它会成为 href。"
+  },
+  "applications.schema.attributes.appCorsOrigin.what": {
+    "en": "03bcebb131e7b340",
+    "text": "浏览器页面可以为此应用调用本服务的来源——`https://app.example.com`，每个值一个精确来源，不带路径也不带通配符。指明此应用为其客户端的请求（client_id、Basic 凭据、客户端断言，或签发给它的访问令牌）只有在其 Origin 列于此处时才会以 Access-Control-Allow-Origin 应答；完全不指明客户端的请求——发现、JWKS、DID 文档、CORS 预检——对列在本领域任何应用上的来源都会应答。留空则不允许任何第三方来源，两种模式下都是如此。本服务自己的来源（其监听器、global.publicBaseUrl、嵌入式调试器以及 global.corsOrigins）从不需要列出。写入时会规范化：协议方案和主机转为小写，默认端口被去除。"
+  },
+  "applications.schema.attributes.appKind.what": {
+    "en": "33629ff0f1ba7b81",
+    "text": "此应用是什么，每个它被看到过的角色一个值。多个值是一般情况，而且正是关键所在：请求 openid 作用域的 OAuth 客户端同时也是依赖方。"
+  },
+  "applications.schema.attributes.appProtocol.what": {
+    "en": "f52b7b33a4356dba",
+    "text": "它出现过的协议族，累积记录。"
+  },
+  "applications.schema.attributes.appAllowedProtocol.what": {
+    "en": "45439186294a129f",
+    "text": "此应用被声明用于的协议族，每个协议族一个值，取自 PROTOCOLS 发布的封闭表。它是上面 appProtocol 的声明版孪生属性，二者不能视为同一回事：那个属性记录已经发生的事，不可编辑；这个属性是某人所说的应用用途，在应用尚未连接过之前就在 /admin/applications/new 上勾选。它不授予任何东西。在产品模式中，签发策略会拒绝通过其未指明的协议族进行签发——仅声明用于 SAML 2.0 的应用会被拒绝签发访问令牌（STS-XACML-0084）；在开发模式中它不拒绝任何东西。未声明任何协议族时，两种模式下都不拒绝任何东西。"
+  },
+  "applications.schema.attributes.appAuthorizationServer.what": {
+    "en": "c825e716fe988b04",
+    "text": "此客户端使用过哪些授权服务器，按其路径中的名称——每个它被看到过的服务器一个值。此进程发布多个授权服务器，每个都有自己的能力和位于 /{id}/oauth2/… 下的端点，并且每个客户端都可以使用其中任何一个：这里没有任何东西将客户端限制在某个服务器上，因此它记录的是客户端去过哪里，而不是可以去哪里。累积记录，因为与其中两个通信的客户端是一个有两个值的客户端，而不是两个客户端。"
+  },
+  "applications.schema.attributes.description.what": {
+    "en": "81229d2596ad5f00",
+    "text": "用一句话说明此应用是什么。一个值：在有人写下描述之前，它说明应用最初是如何来到这里的。"
+  },
+  "applications.schema.attributes.appFirstSeen.what": {
+    "en": "035402abf1f3f295",
+    "text": "GeneralizedTime，此标识符首次被出示的时间。"
+  },
+  "applications.schema.attributes.appLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime，最近一次的时间。"
+  },
+  "applications.schema.attributes.appAuthentications.what": {
+    "en": "e453d78bb1daee11",
+    "text": "本服务为此应用接受了多少凭据。每次更改时赋值——一个累积多个值的计数器毫无意义——而且它是目录条目中的实时数字，这一点不寻常到值得明说：真正的目录不会保存这种数字。"
+  },
+  "applications.schema.attributes.appSessions.what": {
+    "en": "74c806c6cf9b69f8",
+    "text": "涉及它的不同浏览器登录会话有多少个。根据随身份验证汇聚点传递的会话 id 计数，因此背后没有浏览器会话的直接授权不会增加计数。"
+  },
+  "applications.schema.attributes.appUsers.what": {
+    "en": "78bcd4b5578f86b8",
+    "text": "为它进行过身份验证的不同身份有多少个。身份本身不在此列出：否则一个被两千人使用的应用会在一个条目上放两千个值。"
+  },
+  "applications.schema.attributes.appLastSession.what": {
+    "en": "74b4f32d920e36d9",
+    "text": "最近的登录会话 id。appSessions 以它为参照计数——不同的会话 id 会使计数增加——它存放在条目上而不是内存中，因为条目就是存储：没有它，即使什么都没发生，一次重启也会把已经计过的会话重新计数。"
+  },
+  "applications.schema.attributes.appLastUser.what": {
+    "en": "a33e3ab766bdbaf9",
+    "text": "最近的身份，理由相同，局限也相同：它统计的是用户的变化而不是不同用户的集合，这对一般情况是正确的，对在两个应用之间交替的人则会少计。在作出这一取舍的 seen() 中有说明。"
+  },
+  "applications.schema.attributes.appRegistered.what": {
+    "en": "1ee5893663bda0e9",
+    "text": "当此应用在这里经过了动态客户端注册时为 TRUE，当它只是一个出现过的 client_id 时为 FALSE。它记录的是应用如何来到这里，而不是什么算数：RFC 9700 模式只要条目中有 oauthRedirectUri，就以其自身的 oauthRedirectUri 判断客户端，无论它是如何来到这里的；只有在条目中没有时才以 oauth2.redirectUris 设置判断——而 OAuth 2.1 模式在这种情况下会直接拒绝。省略 token_endpoint_auth_method 时，对已注册的客户端表示 client_secret_basic，对手动创建的客户端表示无。"
+  },
+  "applications.schema.attributes.appRegisteredBy.what": {
+    "en": "7472cd23e6e908b3",
+    "text": "此应用是如何注册的（如果注册过）：\"administrator\"（在 /admin/applications/new 上或通过管理 API 创建）、\"rfc7591\"（POST /oauth2/register）、\"ldap:<bound DN>\"（在 ou=applications 下的 LDAP 添加，#504；未绑定时为 \"ldap\"）或 \"startup\"（本服务自己预置的客户端之一）。只是出现过的应用上没有此项。由此注册表和 LDAP 添加写入，LDAP 添加会保留其作者给出的值；LDAP 修改从不写入此项。在产品模式中，正是它使应用得到服务（#496）：没有此项的条目——开发模式下的出现记录所归档的条目——在每个协议入口都会被当作不存在的应用来应答。"
+  },
+  "applications.schema.attributes.appFederationRegistration.what": {
+    "en": "f86a04098367f409",
+    "text": "\"automatic\"（其第一个签名的身份验证请求）或 \"explicit\"（其实体配置被 POST 到 /oidfed/register）。"
+  },
+  "applications.schema.attributes.appFederationExpiresAt.what": {
+    "en": "0ff15cde7d7b84d0",
+    "text": "注册结束的时间，以自纪元起的秒数表示：信任链自身的到期时间，或 oidfed.registrationLifetimeS（若它更早到来）。"
+  },
+  "applications.schema.attributes.appFederationTrustAnchor.what": {
+    "en": "ea39ae6600e267d6",
+    "text": "其信任链终止于的信任锚。"
+  },
+  "applications.schema.attributes.oauthClientId.what": {
+    "en": "1e1a912a88773d34",
+    "text": "client_id，也是三个协议族的标识符属性：OpenID Connect 依赖方就是 OAuth 客户端，在 OpenID4VCI 颁发方处领取凭据的钱包也以 OAuth 客户端身份进行身份验证，因此三者都在这里声明自己的名称，而不是用三个属性把同一事实写成三种形式。通常等于 appIdentifier，即协议出现记录所写入的值；第二个值是此应用也对应的 client_id——按环境区分的 id——这就是它累积记录而不是赋值的原因。在未声明任何 OAuth 协议族的条目上没有此项。"
+  },
+  "applications.schema.attributes.oauthAudience.what": {
+    "en": "85845f64442f584e",
+    "text": "此应用所对应的受众——发给它的访问令牌所携带的 `aud`，也是客户端为访问此应用而交换令牌时在 RFC 8693 第 2.1 节的 `audience`（或 `resource`）中填写的值。它是这里另外三个协议族已经以各自名称记录的同一事实的 OAuth 写法：`wstrustAppliesTo` 是 RequestSecurityToken 中的同一事物，`samlEntityId` 是断言的 AudienceRestriction 中的同一事物，而用一个属性同时保存三者，就会得到一个必须表示最后发问的那个协议之含义的字符串。\n\n它是声明的——没有人会把受众作为自己的名称出示，因此这里没有任何东西写入它，它也无法被派生——它是 URI 而不是 client_id，因为受众本来就是这样：是资源，而不是调用资源的客户端。多个值是一般情况（按环境区分的主机名），这就是它累积记录的原因。\n\n**它会被读取，这使它成为**旁边那些声明属性中的例外。令牌交换会在这里查找 `audience`——forAudience()——这样，为 `https://esb1.example.com` 记录的委托在 /admin/delegation 及其图中会指明应用 `esb1`，而不是为一个登记册中其他地方都未提及的 URL 画一个方框。它是一次查找而不是权限：无人注册的受众仍会像以前一样被交换并原样记录，因为一个会拒绝的服务只会少一个测试用例，而不是多一个。"
+  },
+  "applications.schema.attributes.oauthClientSecret.what": {
+    "en": "3acdc90938720b6b",
+    "text": "本服务铸造或被给予的密钥。在进程持有持久密钥加密密钥的任何地方（自 2026-10-01 起），每个值都在其下封存，因此目录读取、数据库行和备份中保存的都是密文；没有持久密钥时（开发模式）则为明文。控制台和 /admin-api 在凭据保护下显示其解封后的内容。从不写入审计日志。\n\n自 2026-10-01 起可有多个，每个都是一条记录：{\"id\",\"secret\",\"created\",\"expires\",\"description\"}，两个时间以自纪元起的秒数表示，`expires` 为 0 表示永不过期。每个未过期的密钥都能进行身份验证；最新的未过期密钥是本服务用于签名和加密的密钥，也是 RFC 7591 和 7592 返回的 client_secret。单纯的值（ldapmodify、set）是没有到期时间的密钥；set 会替换所有密钥，而凭据部分则逐个添加、移除和轮换密钥，最多 oauth2.clientSecretsMax 个。"
+  },
+  "applications.schema.attributes.oauthRedirectUri.what": {
+    "en": "36056278a77af2f2",
+    "text": "注册时登记的重定向 URI，以及本服务为该应用接受过的任何 redirect_uri。两者并不是同一种声明，注册表也不会悄悄合并它们——参见 appRedirectUriObserved。"
+  },
+  "applications.schema.attributes.appRedirectUriObserved.what": {
+    "en": "8ef752a64a9931a4",
+    "text": "在本服务应答过的授权请求中看到的 redirect_uri。与 oauthRedirectUri 分开保存，因为“已注册”和“已使用”是不同的事实，而 RFC 9700 第 2.1 节的全部内容就是不要混淆它们：精确匹配检查读取已注册列表，而此项是客户端实际行为的证据。"
+  },
+  "applications.schema.attributes.appReturnAddressObserved.what": {
+    "en": "c0072e90e57245a4",
+    "text": "此条目上哪些返回地址从未被任何人注册过。每个值为 `<attribute> <address>`——例如 `samlAssertionConsumerService https://sp.example.com/acs`——标记的是开发模式请求所指明的地址，开发模式会把它写入条目，因为它相信每个地址。产品模式将带标记的地址视为未注册，并像拒绝根本不在条目上的地址一样拒绝它，因此从开发模式切换到产品模式的领域不会悄悄信任开发模式学到的东西。操作员可以确认一个地址（标记去除，地址保留）、丢弃一个地址（两者都去除），或显式写入该地址（这即为确认）。在此属性存在之前记录的地址不带标记，无法与已注册的地址区分——请手动审查这些地址。"
+  },
+  "applications.schema.attributes.oauthPostLogoutRedirectUri.what": {
+    "en": "2008a5c4fcddceb4",
+    "text": "已注册的 post_logout_redirect_uri，RP-Initiated Logout 在所有模式下都对其进行精确匹配（#124）。"
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutUri.what": {
+    "en": "8c640a5c7d635f32",
+    "text": "通知此客户端用户已注销的位置——OpenID Connect Front-Channel Logout 1.0 第 2 节的 frontchannel_logout_uri。注销页面在隐藏的 iframe 中加载它，若客户端有要求，则在查询字符串中附带 iss 和 sid。它是单值的，因为规范为每个客户端定义一个 URI，这与旁边的重定向 URI 不同；未注册此项的客户端完全不会收到通知，并会在 /logout 上如此列出，而不是被悄悄跳过。"
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutSessionRequired.what": {
+    "en": "501fcc040a4dd31f",
+    "text": "如果此客户端要求上述通知中带有 `iss` 和 `sid`，则为 TRUE——Front-Channel Logout 1.0 第 2 节的 frontchannel_logout_session_required。这很重要，因为在一个浏览器中有多个会话的 RP 没有 sid 就无法分辨是哪个会话结束了，而 RFC 7591 第 2 节规定省略的布尔值为 FALSE 而不是未知——因此这里缺少值表示客户端没有要求，这与客户端尚未注册是不同的事实。"
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutUri.what": {
+    "en": "3b143ba0baa349f2",
+    "text": "用户注销时本服务 POST 注销令牌的位置——OpenID Connect Back-Channel Logout 1.0 第 2.2 节的 backchannel_logout_uri。凡是此客户端曾在其上获得授权响应的会话被注销，都会在注销应答之后，按出站策略（https 且验证证书；产品模式下不允许内部地址）以服务器到服务器的方式发送一个。与前端通道 URI 一样是单值的：规范为每个客户端定义一个。https 且不带片段；仅当客户端为机密客户端且出站策略允许通过 http 发送时才可用 http（federation.outboundAllowHttp，开发模式；第 2.2 节，#123）。"
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutSessionRequired.what": {
+    "en": "ceb948059d9c1807",
+    "text": "如果此客户端要求注销令牌中带有 `sid`，则为 TRUE——Back-Channel Logout 1.0 第 2.2 节的 backchannel_logout_session_required。本服务发送的每个注销令牌中都带有 `sid` 和 `sub`，因此该标志总会得到满足；记录它是因为“false”和“未说明”是关于客户端的不同事实，与前端通道标志一样。"
+  },
+  "applications.schema.attributes.oauthGrantType.what": {
+    "en": "0b1c949fd4f2f952",
+    "text": "此客户端可以使用的授权类型——RFC 7591 第 2 节的 grant_types，来自注册或由管理员写入。令牌端点在所有模式下都会拒绝其他任何授权（unauthorized_client）；空列表不限制任何东西。客户端实际使用过的是 oauthGrantTypeObserved。"
+  },
+  "applications.schema.attributes.oauthResponseType.what": {
+    "en": "6be9c178253c7d2c",
+    "text": "此客户端可以请求的 response_type 值——RFC 7591 第 2 节的 response_types，来自注册或由管理员写入，每个值一个响应类型（\"code\"、\"code id_token\"）。授权端点在所有模式下都会拒绝其他任何值（unauthorized_client）；空列表不限制任何东西。客户端实际请求过的是 oauthResponseTypeObserved。"
+  },
+  "applications.schema.attributes.oauthGrantTypeObserved.what": {
+    "en": "377bd68db76fa783",
+    "text": "在令牌端点看到此客户端使用过的授权类型。是记录而不是权限：oauthGrantType 才是它可以使用的。"
+  },
+  "applications.schema.attributes.oauthResponseTypeObserved.what": {
+    "en": "4f06a60676c6cdb9",
+    "text": "在授权端点看到此客户端请求过的 response_type。是记录而不是权限：oauthResponseType 才是它可以请求的。"
+  },
+  "applications.schema.attributes.oauthScope.what": {
+    "en": "04292dc39076baaf",
+    "text": "此应用请求过的作用域，随其请求累积。是观察到的，从不是声明的：不会据此允许或拒绝任何东西。应用可以被签发什么由 oauthAllowedScope 决定。"
+  },
+  "applications.schema.attributes.oauthAllowedScope.what": {
+    "en": "318365370d864543",
+    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此，而且每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
+  },
+  "applications.schema.attributes.oauthPermissionBaseUri.what": {
+    "en": "a2b16552f308a9b4",
+    "text": "此应用定义的每个权限所依附的基础 URI，也是使这里的权限名称全局唯一的东西。权限由此值后跟其名称来标识——基础 `https://example.com/` 加名称 `write` 就是权限 `https://example.com/write`——这是客户端放入 `scope` 的内容，访问令牌随后也以它为受众。Entra ID 称之为 Application ID URI，并写作 `api://<guid>`；形式相同，这里并不要求该协议方案。\n\n通过本模块写入时，它会被规范化为以分隔符结尾——末尾不是 `/`、`#` 或 `:` 时会添加一个 `/`——因为基础加名称是简单的拼接，否则 `https://example.com` 加 `write` 会得到 `https://example.comwrite`。`ldapmodify` 与对其他属性一样也能访问此属性，并且不会被规范化，因此手动写入的基础就严格按其字面含义。\n\n单值，它是这一组中唯一一个不先作出决定就无法扩展的属性：两个基础意味着条目上的每个权限都有两个标识符，而将作用域转换为受众的查找就必须选一个放入 `aud`。"
+  },
+  "applications.schema.attributes.oauthPermission.what": {
+    "en": "0c47fe049bbc6c7b",
+    "text": "此应用公开的一个权限，每个值一个。值是权限的名称——`read`、`write`、`Widgets.ReadWrite.All`——后面可选择跟 `|` 和描述：`write|Change widgets on somebody's behalf`。第一个 `|` 是分隔符，之后的每一个都属于描述，因此描述可以包含该字符，名称则不能。\n\n名称必须是合法的 OAuth 作用域令牌（RFC 6749 第 3.3 节——不含空格、双引号或反斜杠），因为这是客户端将放入 `scope` 参数的内容，也是令牌的 `scope` 声明中返回的内容。`ldapmodify` 写入时不会强制这一点；本模块和两个控制台会强制。\n\n权限必须先存在，才能授予任何人，这是此功能唯一的顺序规则，并在 updateApplication() 中检查，以便控制台表单和管理 API 不会对此产生分歧。它在授予时检查，而不是在这里：此属性是定义，一个尚未有人使用的定义是正常的第一步，而不是错误。"
+  },
+  "applications.schema.attributes.oauthRoleGatedPermission.what": {
+    "en": "fa1c86d8fb8ce2fb",
+    "text": "此应用定义的、只签发给持有授权该权限的角色的主体的权限。每个值一个，即 `oauthPermission` 给出的权限名称（`write`，而不是完整标识符）。请求受控权限的人员或应用，只有在持有其 `rolePermission` 指明完整标识符（基础加名称）的角色期间才会被签发该权限；否则该权限会从令牌中去除（RFC 6749 第 3.3 节），而不请求其他任何东西的请求会被以 `invalid_scope` 拒绝。未在此列出的权限仍像以往一样签发，这使得每个现有客户端在有人选择启用之前都能继续工作。\n\n通过本模块写入时，名称必须是此条目自己的权限之一；`ldapmodify` 不会被检查，而不指明任何已定义权限的值不控制任何东西，因为没有请求能指明它。"
+  },
+  "applications.schema.attributes.oauthResourceMetadata.what": {
+    "en": "46f443d9a9272cd3",
+    "text": "配置此应用所依据的受保护资源元数据文档（RFC 9728），以紧凑 JSON 形式保存。其 `resource` 是由它创建的条目的默认名称、`oauthPermissionBaseUri` 和 `oauthAudience`，其 `scopes_supported` 是权限；其他每个成员——`authorization_servers`、`jwks_uri`、`bearer_methods_supported`、DPoP 成员——都只记录在这里。\n\n它仅是声明：没有任何东西读回它，没有任何东西重新获取它，更改它也不会改变它所填写的任何属性。通过本模块写入的值必须是带有 `resource` 的 JSON 对象；`ldapmodify` 不会被检查。"
+  },
+  "applications.schema.attributes.oauthResourceMetadataUrl.what": {
+    "en": "0e8c5a19327706e7",
+    "text": "受保护资源元数据文档的获取来源，当它是获取而来而不是粘贴或上传时。只作记录，不会再次拨出：获取是管理员在 /admin/applications/new 或 POST /admin-api/applications/load-resource-metadata 上的操作，没有任何东西会刷新它。"
+  },
+  "applications.schema.attributes.oauthDelegatedPermission.what": {
+    "en": "78e514ee83d20e97",
+    "text": "此应用在另一个应用上被授予的权限——完整的权限标识符，基础 URI 与名称一起：`https://example.com/write`。它是委托关系，保存在客户端而不是资源上，理由与 Entra 相同，外加一条：客户端是将在 `scope` 中指明它的一方，因此回答“能否满足此请求”的条目就是请求所标识的条目。\n\n**它会被读取，而且是在决定令牌内容的唯一位置读取。**与已定义权限匹配的 `scope` 值会成为访问令牌的 `aud`（基础 URI）及其 `scope`（名称）——参见 oauth2.js 的 audienceScopes()。在产品模式中，未授予的权限总会在授权端点和令牌端点被以 `invalid_scope` 拒绝。在开发模式中，它只会被报告，不拒绝任何东西，除非开启了 `oauth2.delegatedPermissionsEnforced`，而它默认关闭：被测试的客户端会经历两种答案。\n\n无法解析为任何已定义权限的值不是错误，也不会被隐藏。资源的条目可能已被删除，或者权限已从其下移除；`/admin/delegation` 会将这种授予显示为悬空，这与此控制台对待无法解析的名称时所采用的三态诚实原则相同。"
+  },
+  "applications.schema.attributes.oauthGlobalConsent.what": {
+    "en": "7e0e74028e48880c",
+    "text": "人们登录此应用时不会被询问的作用域。每个作用域一个值，完全按照客户端放入 `scope` 参数的形式书写——`openid`、`profile`，或完整的委托权限标识符，例如 `https://example.com/write`。\n\n**它是覆盖项而不是记录。**当 `oauth2.consentRequired` 开启时（这是默认值），对于此人尚未就此应用同意过的任何作用域，授权端点都会绘制 /oauth2/consent；在这里指明的作用域对所有人都会跳过，并且不会向任何人的条目写入任何内容。因此移除一个值会再次询问所有人——包括本会同意的人——而移除某人自己的 `oauthConsent` 只会询问此人。\n\n**它以配对为键，而不仅以作用域为键。**在这里同意 `read` 是为此应用同意它；五分钟后注册的、拼写相同单词的另一个应用仍会被询问。\n\n不指明任何应用所定义权限的值不是错误，也不会被隐藏——大多数作用域都不是权限。它必须是合法的 RFC 6749 第 3.3 节作用域令牌，因为带空格的值永远无法匹配一个作用域；`ldapmodify` 与对其他属性一样也能访问此属性，并且不会被检查，/admin/consent 会显示它写入了什么。"
+  },
+  "applications.schema.attributes.appOwner.what": {
+    "en": "a86634b10a7034de",
+    "text": "对该应用程序负责的本领域人员或组（#604），以 DN 表示，与组和角色的所有者相同。多值，最多 25 个。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。用户门户列出一个人所拥有的内容。"
+  },
+  "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
+    "en": "2d52b0e0fe8e25ca",
+    "text": "全局同意被撤回的时间，格式为 `<when> <scope>`，时间精确到毫秒。刷新授权会拒绝在此之前授予、依赖该覆盖项的刷新令牌，即使覆盖项之后被重新添加也是如此——被撤回的授权不会因下一次授权而复活。每个作用域一个值；较晚的撤回取代较早的。由同意登记册写入，从不由表单写入。"
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthMethod.what": {
+    "en": "3e1fd60dfab74200",
+    "text": "它如何进行身份验证——它在令牌端点可以使用的每种方法，请求可以出示其中任何一种。`none`（公共客户端）不能与其他任何方法同时持有。RFC 7591 第 2 节规定注册省略此项时默认为 client_secret_basic，这就是为什么省略意味着机密客户端而不是未知。"
+  },
+  "applications.schema.attributes.oauthNativeSso.what": {
+    "en": "582a2cbef470da1a",
+    "text": "TRUE 允许此客户端请求 device_sso 作用域——从而获得 device_secret——并作为第一个或第二个应用参与 Native SSO 令牌交换。其他任何值（默认）都会拒绝两者。交换的两个应用都必须持有它，并共享 oauthNativeSsoGroup。注册只能通过受信任的软件声明来设置它，因为组就是边界，客户端不能自行选择。"
+  },
+  "applications.schema.attributes.oauthNativeSsoGroup.what": {
+    "en": "78d42281463c5a94",
+    "text": "Native SSO 组：可以共享一个设备会话的应用——实际上是同一供应商的应用。除非接收 ID 令牌的应用与提出请求的应用共享该组，否则令牌交换会被拒绝。1 到 64 个字母、数字及 . _ : -；空值或格式错误的值会使客户端退出 Native SSO。"
+  },
+  "applications.schema.attributes.oauthBackchannelTokenDeliveryMode.what": {
+    "en": "ebaef707274ab832",
+    "text": "CIBA `backchannel_token_delivery_mode`：poll、ping 或 push。没有此项的客户端完全不能使用反向通道身份验证端点。"
+  },
+  "applications.schema.attributes.oauthBackchannelClientNotificationEndpoint.what": {
+    "en": "f4bad1b37661210d",
+    "text": "CIBA `backchannel_client_notification_endpoint`：按出站策略向其 POST ping 或 push 的 https URL。ping 和 push 必需。"
+  },
+  "applications.schema.attributes.oauthCommandEndpoint.what": {
+    "en": "849117c9b5e7b475",
+    "text": "OpenID Provider Commands `command_endpoint`（#151）：按出站策略向其 POST 命令令牌的 https URL。没有此项的客户端不会收到任何命令。"
+  },
+  "applications.schema.attributes.oauthBackchannelAuthenticationRequestSigningAlg.what": {
+    "en": "cdfc398e17d181c0",
+    "text": "CIBA `backchannel_authentication_request_signing_alg`：设置后，此客户端的每个身份验证请求都必须是使用此算法签名的请求对象（第 7.1.1 节）。"
+  },
+  "applications.schema.attributes.oauthBackchannelUserCodeParameter.what": {
+    "en": "6c0f2095e873b568",
+    "text": "TRUE：此客户端的每个身份验证请求都携带此人的 `user_code`（CIBA 第 7.1 节），这是此人在 /portal/ciba 上设置的机密，可阻止只知道名字的客户端向其发送请求。"
+  },
+  "applications.schema.attributes.oauthSubjectType.what": {
+    "en": "cf054cc8fd5f57e3",
+    "text": "OIDC Core 第 8 节的 `subject_type`：`public`（默认，也是空值的含义）为每个客户端提供相同的 `sub`；`pairwise` 为此客户端提供一个专属的 sub，由人员、扇区和每个节点共享的机密派生，因此不同扇区的两个客户端无法关联同一个人；`ephemeral`（#149）为每次身份验证提供一个随机的 sub，对该次身份验证签发的所有内容都相同，之后不再使用。"
+  },
+  "applications.schema.attributes.oauthSectorIdentifierUri.what": {
+    "en": "2b77aa6b404dbdc0",
+    "text": "OIDC Core 第 8.1 节的 `sector_identifier_uri`：一个 https URL，其主机就是派生 pairwise `sub` 所针对的扇区，因此同一组织的多个重定向主机看到同一个主体。指明它的注册会获取该 URL，并且其每个重定向 URI 都必须列在它提供的 JSON 数组中；由管理员在这里写入的值是管理员的声明，不会被获取。留空：扇区为重定向 URI 的主机，此时它们必须全部共享同一个主机。"
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
+    "en": "c3cee680e93f74e1",
+    "text": "OIDC Core 第 9 节 / RFC 7591 的 `token_endpoint_auth_signing_alg`：此客户端的身份验证断言必须使用的唯一一种 JWS 算法。使用其他任何算法签名的断言在所有模式下都会被拒绝。留空：该方法允许的任何算法。"
+  },
+  "applications.schema.attributes.oauthJwks.what": {
+    "en": "ecb31a10d74a0998",
+    "text": "客户端的公钥，以 JWKS 文档形式——private_key_jwt 据以验证的依据（RFC 7591 `jwks`）。这是 RFC 9700 第 2.5 节推荐的非对称凭据，也是这里唯一一个不是机密的凭据属性：它是公钥材料，对任何读取它的人都毫无价值，这正是优先选择它而不是共享密钥的全部意义。"
+  },
+  "applications.schema.attributes.oauthJwksUri.what": {
+    "en": "99f551bf8039ea17",
+    "text": "RFC 7591 `jwks_uri`，https。自 #120 起在需要密钥时按 federation/federation_http.ts 的出站策略（https、不跟随重定向、大小上限、产品模式下拒绝内部地址）获取，缓存 oauth2.clientJwksCacheS，对于未知的 kid 最多每 oauth2.clientJwksRefetchS 重新获取一次。绝不与 `oauthJwks` 并存：RFC 7591 第 2 节只允许二者之一。"
+  },
+  "applications.schema.attributes.oauthIntrospectionSignedResponseAlg.what": {
+    "en": "d3d0457a7d5c2198",
+    "text": "RFC 9701 第 6 节的 `introspection_signed_response_alg`：此应用以 `Accept: application/token-introspection+jwt` 请求 /oauth2/introspect 时收到的 JWT 内省响应的 JWS 算法。留空表示 RS256，即该节的默认值。可以是 `introspection_signing_alg_values_supported` 中的任何算法——本服务持有密钥的每种非对称算法，以及以此应用自己的 client_secret 为密钥的 HS256/384/512。`none` 会被拒绝：第 5 节规定响应必须受到密码学保护。"
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseAlg.what": {
+    "en": "e7f4e5a5308b2858",
+    "text": "RFC 9701 第 6 节的 `introspection_encrypted_response_alg`：用于将签名的内省响应加密给此应用的 JWE 密钥管理算法，使其成为嵌套 JWT。留空表示不加密。可以是非对称算法之一（RSA-OAEP、RSA-OAEP-256、ECDH-ES 及其密钥包装变体），密钥取自此条目的 `oauthJwks`，或其 `oauthJwksUri` 返回的密钥集（#120）。对称算法族会被拒绝：它们用于加密发给本服务的文档。"
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseEnc.what": {
+    "en": "a5b33f9189532b52",
+    "text": "RFC 9701 第 6 节的 `introspection_encrypted_response_enc`：JWE 内容加密算法。设置了 `oauthIntrospectionEncryptedResponseAlg` 后，留空表示 A128CBC-HS256。没有该属性时不得设置此项，尝试这样写入会被拒绝；若条目只留有此项（通过 `ldapmodify`，或清除了算法），JWT 内省响应会失败并给出原因，而不是以未加密形式发出。"
+  },
+  "applications.schema.attributes.oauthRequestUri.what": {
+    "en": "5aed34e258774de3",
+    "text": "OpenID Connect Registration 的 `request_uris`：此客户端可以发送的 request_uri 值（RFC 9101 第 5.2 节），每行一个。授权端点只有在 request_uri 是其中之一时才会获取它，去除任何 #片段后进行精确比较——无人注册的 request_uri 会被以 invalid_request_uri 拒绝且从不拨出，这使得获取不会成为服务器端请求伪造。https，或仅在开发模式下可用 http。"
+  },
+  "applications.schema.attributes.oauthRequestObjectSigningAlg.what": {
+    "en": "0f2db9e8b6d6472a",
+    "text": "OpenID Connect Registration 的 `request_object_signing_alg`：此客户端的请求对象唯一被接受的 JWS 算法。留空表示 request_object_signing_alg_values_supported 中的任何算法。只有在根本接受未签名请求对象的情况下才能注册 `none`——开发模式，且不要求签名请求对象。"
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionAlg.what": {
+    "en": "32ae3a1152bab999",
+    "text": "OpenID Connect Registration `request_object_encryption_alg`：设置后，来自此客户端的请求对象必须使用此 JWE 密钥管理算法加密（RFC 9101 第 6.1 节）——对于 RSA-OAEP 和 ECDH-ES，加密给本领域发布在 /oauth2/jwks 中的请求对象密钥（use: enc）；对于对称算法族，加密给此客户端自己的 client_secret。为空表示加密是可选的。"
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionEnc.what": {
+    "en": "fb477df5cfbc6756",
+    "text": "OpenID Connect Registration `request_object_encryption_enc`：来自此客户端的请求对象必须使用的 JWE 内容加密算法。设置了 `oauthRequestObjectEncryptionAlg` 后，为空表示 A128CBC-HS256；没有该属性时不得设置此属性。"
+  },
+  "applications.schema.attributes.oauthRequireSignedRequestObject.what": {
+    "en": "c9c63effbd13dd2a",
+    "text": "RFC 9101 第 10.5 节 `require_signed_request_object`，仅针对此客户端：TRUE 表示以 invalid_request 拒绝来自它的、不携带 `request` 或 `request_uri` 的授权请求，以及使用 `none` 签名的请求对象。FALSE 或为空时遵从 oauth2.requireSignedRequestObject。"
+  },
+  "applications.schema.attributes.oauthRequirePushedAuthorizationRequests.what": {
+    "en": "09a53af1a788654f",
+    "text": "RFC 9126 第 6 节 `require_pushed_authorization_requests`，仅针对此客户端：TRUE 表示以 invalid_request 拒绝来自它的、不携带在 /oauth2/par 签发的 request_uri 的授权请求。FALSE 或为空时遵从 oauth2.requirePushedAuthorizationRequests。"
+  },
+  "applications.schema.attributes.oauthHttpSignedRequests.what": {
+    "en": "e5c1786e8608f23a",
+    "text": "FAPI 2.0 HTTP Signatures，仅针对此客户端：TRUE 表示以 401 拒绝携带此客户端访问令牌、但未带有由其 jwks 或 jwks_uri 中某个密钥生成的有效 \"fapi-2-request\" 签名（RFC 9421）的资源服务器请求。FALSE 或为空时遵从 oauth2.httpSignatures。"
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsType.what": {
+    "en": "103312425b7a3ae9",
+    "text": "此应用作为资源服务器所拥有的一种访问类型——每个值一种，RFC 9396 authorization_details 和 GNAP 访问权限都读取它。可以是一个裸类型名，也可以是一个 JSON 对象 {\"type\", \"description\", \"locations\", \"schema\", \"actions\", \"datatypes\", \"privileges\", \"required\", \"interaction\", \"consentActions\", \"bearer\", \"maxLifetimeS\", \"acr\", \"derivableFrom\", \"introspectionClaims\", \"limits\"}：`locations` 是此类型的权限可以指明的地址（权限基准 URI 和 oauthAudience 始终算在内），`schema` 是此类型的每项权限都必须满足的 JSON Schema，`actions`、`datatypes` 和 `privileges` 是它可以指明的值，`required` 是它必须携带的成员，`bearer: false` 表示携带它的令牌受发送方约束，`maxLifetimeS` 是此类令牌的最长有效期，`derivableFrom` 是它可以从中派生的类型（RFC 9767 第 4 节），`introspectionClaims` 是在内省时告知此资源服务器的关于此人的信息，`limits` 是权限的限制必须满足的 JSON Schema（一个子集）。`interaction`（always、default、never）、`consentActions` 和 `acr` 对 GNAP 决定是否询问资源所有者以及要求何种强度的登录（#432 第 6 阶段）。未声明的类型在任何模式下都会被 RFC 9396 以 invalid_authorization_details 拒绝，在产品模式下也会被 GNAP 拒绝。"
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
+    "en": "5a0acf9625882942",
+    "text": "RFC 9396 第 10 节 `authorization_details_types`：此客户端唯一可以使用的 authorization_details 类型，每个值一种。为空表示此授权服务器支持的任何类型。"
+  },
+  "applications.schema.attributes.oauthStepUpAcrValues.what": {
+    "en": "847d2fc846138cb9",
+    "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk、phr 和 phrh 由密码加安全密钥满足；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"
+  },
+  "applications.schema.attributes.oauthStepUpMaxAge.what": {
+    "en": "fdd12480b52b8006",
+    "text": "RFC 9470 第 3 节的 max_age：此应用在访问令牌背后接受的最久远的身份验证，以整秒计。auth_time 更早或缺失的令牌会收到 401 insufficient_user_authentication 质询并附带 max_age。0 表示此刻这一秒内的身份验证。为空表示不作要求。"
+  },
+  "applications.schema.attributes.oauthIdTokenSignedResponseAlg.what": {
+    "en": "8a855d8855d28896",
+    "text": "OpenID Connect Registration `id_token_signed_response_alg`：此客户端的 ID Token 所用的 JWS 签名算法——其反向通道 Logout Token 和 Command Token 也用它。为空表示 RS256（在 FAPI 1.0 Advanced 下为 PS256）。可以是 id_token_signing_alg_values_supported 中的任何算法；HMAC 算法以客户端密钥为密钥。`none` 会被拒绝。"
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseAlg.what": {
+    "en": "183714d075e4bf22",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_alg`：签名之后，将其 ID Token（以及 Logout Token）加密给它所用的 JWE 密钥管理算法。为空表示不加密。须为非对称算法，密钥取自 `oauthJwks` 或 `oauthJwksUri`。"
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseEnc.what": {
+    "en": "48ee797ab8e75fa2",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_enc`：JWE 内容加密算法。设置了 `oauthIdTokenEncryptedResponseAlg` 后，为空表示 A128CBC-HS256；没有该属性时不得设置此属性。"
+  },
+  "applications.schema.attributes.oauthUserinfoSignedResponseAlg.what": {
+    "en": "ef48efadfd32f3ee",
+    "text": "OpenID Connect Registration `userinfo_signed_response_alg`：发给此客户端的 UserInfo 响应所用的 JWS 签名算法，这使响应成为携带 `iss` 和 `aud` 的 `application/jwt`。为空（或 `none`）表示普通 JSON，除非它被加密。"
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseAlg.what": {
+    "en": "76a0ae0574f3ef25",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_alg`：将 UserInfo 响应加密给此客户端所用的 JWE 密钥管理算法（如有签名，则在签名之后）。为空表示不加密。须为非对称算法，加密给 `oauthJwks` 或 `oauthJwksUri`。"
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseEnc.what": {
+    "en": "6852fab2d2fc0d6a",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_enc`：JWE 内容加密算法。设置了 `oauthUserinfoEncryptedResponseAlg` 后，为空表示 A128CBC-HS256；没有该属性时不得设置此属性。"
+  },
+  "applications.schema.attributes.oauthAuthorizationSignedResponseAlg.what": {
+    "en": "1287c2f4ab72e7da",
+    "text": "JARM 第 3 节 `authorization_signed_response_alg`：此客户端的 JWT 安全授权响应（`response_mode` 为 `jwt`、`query.jwt` 等）所用的 JWS 算法。为空表示 RS256（在 FAPI 1.0 Advanced 下为 PS256）。`none` 会被拒绝（JARM 第 3 节）。"
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseAlg.what": {
+    "en": "9c508446b117e1da",
+    "text": "JARM 第 3 节 `authorization_encrypted_response_alg`：将 JWT 安全授权响应加密给此客户端所用的 JWE 密钥管理算法。为空表示不加密。须为非对称算法，加密给 `oauthJwks` 或 `oauthJwksUri`。"
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseEnc.what": {
+    "en": "c06c3ef3bf155771",
+    "text": "JARM 第 3 节 `authorization_encrypted_response_enc`：JWE 内容加密算法。设置了 `oauthAuthorizationEncryptedResponseAlg` 后，为空表示 A128CBC-HS256；没有该属性时不得设置此属性。"
+  },
+  "applications.schema.attributes.oauthDefaultAcrValues.what": {
+    "en": "2420d2fb6289e439",
+    "text": "OpenID Connect Registration `default_acr_values`：当请求既未指明 `acr_values` 也未指明必需的 acr 声明时，为此客户端请求的 acr 值——以空格分隔，最优先的在前。为空表示不请求任何值。"
+  },
+  "applications.schema.attributes.oauthDefaultMaxAge.what": {
+    "en": "4aab318613c37bad",
+    "text": "OpenID Connect Registration `default_max_age`：当请求未指明 `max_age` 时，此客户端接受的最久远的登录，以整秒计——更早的登录会让此人重新登录。0 表示此刻这一秒内的登录。为空表示不作要求。"
+  },
+  "applications.schema.attributes.oauthAssertionIssuer.what": {
+    "en": "f927674d2d7a1f5f",
+    "text": "此应用可以在 RFC 7523 第 2.1 节授权许可中出示的 `iss` 值，而且它是这里少数会被读取的声明属性之一。JWT 持有者断言本身就是全部授权——该许可中没有浏览器、没有密码，也没有同意步骤——因此接受任何人的断言，就意味着任何能访问此端口的人都能以任何人的身份获得访问令牌。因此，这是本服务中继联合之后第二个没有宽松选项的功能，`oauth2.jwtBearerRequireRegisteredIssuer` 默认开启。\n\n客户端关于自身签发的断言以其自己的 client_id 作为 `iss`，无需在此填写值：该查找已通过 oauthClientId 成功，而要求操作员把 client_id 写两遍，只是一个不包含任何决策的配置步骤。此属性会累积，因为一个应用可能合理地以按环境区分的颁发者名称进行断言。"
+  },
+  "applications.schema.attributes.oauthAssertionJwks.what": {
+    "en": "3abc3d2dd9035aef",
+    "text": "本服务签发给此应用的公钥，以 JWKS 文档形式保存，每个密钥都带有 `x5c`（其证书链）和 `x5t#S256`。由 /admin/pki 上的 Issue 控件和 POST /admin-api/pki/issue 写入。\n\n它是 `oauthJwks` 之外的第二个属性，绝不会覆盖后者。一个注册了自己的密钥、后来又由操作员签发了一对密钥的客户端，有两种签名方式，两者都是有人刻意安排的——覆盖第一种，就会在有人为第二种按下按钮的那一刻悄无声息地终结第一种。client_auth.js 和 assertion_grant.js 都会读取两者，取其或。这是公钥材料，因此与 oauthJwks 一样，对读取此目录的人毫无价值。"
+  },
+  "applications.schema.attributes.oauthAssertionCertificate.what": {
+    "en": "b4cbd65aec258415",
+    "text": "叶证书，PEM 格式，其主体是此应用，颁发者是本领域的签发 CA。与上面 `x5c` 的第一个成员字节完全相同，只是采用了可以粘贴到 `openssl x509 -text` 中的形式。"
+  },
+  "applications.schema.attributes.oauthAssertionCertificateChain.what": {
+    "en": "b7a32cc9139e6bd2",
+    "text": "签发 CA 和中间 CA，PEM 格式，按此顺序——即叶证书随附的内容。根证书刻意不包含在内：根是信任锚，依赖方如果因为根随证书链到达就接受它，就等于接受了一张为自己作保的证书。"
+  },
+  "applications.schema.attributes.oauthAssertionPrivateKey.what": {
+    "en": "8b668a69fa54d2c9",
+    "text": "私钥，PEM 格式。**只要密钥加密密钥的寿命长于进程，它在静态存储时就是密封的**——通过 common/keystore.js 使用 AES-256-GCM，与密封本服务自己的签名密钥、common/pki.js 的三个 CA 密钥对以及身份验证器共享密钥的机制和密钥完全相同。因此，在每次绑定都成功的 TCP 389 上执行 ldapsearch、一个 ldif 文件、一行数据库记录以及它们的备份，持有的都是 `$aesgcm$…` 而不是可用的密钥。经由此模块的界面——/admin/applications 和 GET /admin-api/applications，两者都需要凭据——拿到的是 PEM，因为密封保护的是存储，而不是操作员领取已签发凭据的控制台；SEALED_FIELDS 论证了这一划分。在开发模式下它以明文写入，这与其旁边的身份验证器密钥遵循的规则和理由相同：那里的密钥加密密钥是临时的，因此用一个不会跨越重启存活的密钥去密封一个会跨越重启存活的条目，会让私钥部分永久变成垃圾，而证书却能恢复。它绝不会写入审计日志，本服务也不保留它的第二份副本——common/pki.js 只在签发时交出一次，随后便忘记它。"
+  },
+  "applications.schema.attributes.oauthAssertionKid.what": {
+    "en": "0bdfcb2fca7999a3",
+    "text": "所签发密钥的 `kid`，与本服务中的每个 kid 一样由密钥材料派生（RFC 7638）。在其 JWS 头部中指明它的断言会将验证范围缩小到该密钥；未指明的断言会针对为此应用注册的每个密钥逐一尝试，这是正确的，而非宽松。"
+  },
+  "applications.schema.attributes.oauthAssertionExpiresAt.what": {
+    "en": "bf8bf93da43a7bf7",
+    "text": "所签发证书的过期时间，以 GeneralizedTime 表示。它是关于证书的事实，而不是策略：这里没有任何东西会因为此日期已过就拒绝断言——拒绝断言的是证书无法构建路径，这在检查证书链的地方检查。显示在 /admin/pki 上，以便操作员看到即将失效的东西。"
+  },
+  "applications.schema.attributes.oauthAssertionKeySource.what": {
+    "en": "9763e439aef61fa1",
+    "text": "上面的 RFC 7523 密钥对从何而来，因而也说明谁持有其私钥部分。`issued`——在此生成并由本领域的签发 CA 签名，私钥位于 `oauthAssertionPrivateKey`。`uploaded-realm-ca`——由本领域自己的证书颁发机构签发的证书，代替生成的密钥对上传。`uploaded-external-ca`——来自其他颁发机构的证书，连同直到自签名根的完整证书链一起上传，每一环都经过验证。对于两种上传值，私钥都由应用持有，本服务从未持有过。\n\n这是关于已做之事的事实，而不是策略：没有验证者读取它，在它出现之前写入的条目也不带有它——在那种条目上，控制台把已密封的私钥视为 `issued`，因为只有这种情况才可能把私钥放到条目上。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionIssuer.what": {
+    "en": "fd1408bafa076faa",
+    "text": "此应用可以在 RFC 7522 第 2.1 节授权许可中出示的 `<Issuer>` 值。它是 `oauthAssertionIssuer` 在 SAML 2.0 配置文件中的同类属性，并出于同样的理由被读取：持有者断言本身就是全部授权——没有浏览器、没有密码、没有同意步骤——因此接受任何人的断言，就意味着任何能访问此端口的人都能以任何人的身份获得访问令牌。`oauth2.saml2BearerRequireRegisteredIssuer` 默认开启。\n\n它是与 JWT 属性分开的独立属性，而不是共享列表：被信任以一种格式进行断言的一方，并不因此被信任以另一种格式进行断言；为 RFC 7523 声明了颁发者的操作员，不得在不知情的情况下也为 RFC 7522 声明了它。按简单字符串比较（RFC 3986 第 6.2.1 节）进行比较，这是 RFC 7522 第 3 节第 1 项所要求的——不做大小写折叠，也不容忍末尾斜杠。此属性会累积，理由与 JWT 属性相同。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionSigningCertificate.what": {
+    "en": "2f3d2c8cf3ae0cc7",
+    "text": "此方签署其 RFC 7522 断言所用的证书，PEM 格式，按值注册。它相当于 `oauthJwks`，只是用于签名为 XML Signature 而非 JWS 的配置文件——SAML 中没有 JWKS，一方注册的就是证书。\n\n一个值中可以包含多个 PEM 块，因为轮换证书的一方在旧证书签名的断言仍在传输期间会同时持有两张证书。这是公钥材料，因此与 `oauthJwks` 一样，对读取此目录的人毫无价值。\n\n**断言自身 `<ds:KeyInfo>` 中携带的证书不能替代此属性。** 它仅用于在此处已注册的证书中进行选择，绝不会被单独当作密钥使用，这正是此配置文件比 RFC 7523 更严格的地方：一条通向本领域根证书的链证明的是领域签发了某个密钥，却说明不了是哪个应用持有它，因此接受它会让某个应用的 RFC 7523 叶证书签署 SAML 断言。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificate.what": {
+    "en": "d1e47484136de9b4",
+    "text": "本服务为 RFC 7522 签发给此应用的叶证书，PEM 格式，其主体是此应用，颁发者是本领域的签发 CA。由 /admin/pki 上选择 SAML 2.0 用途的 Issue 控件写入，也由带 `purpose: \"saml\"` 的 POST /admin-api/pki/issue 写入。它与旁边的 `oauthAssertionCertificate` 是基于不同密钥对的不同证书，其 subjectAltName 带有 RFC 7522 配置文件 URI，以便脱离上下文读取证书时也能看出它是为哪个配置文件签发的。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificateChain.what": {
+    "en": "49df2430d4c7cf4c",
+    "text": "签发 CA 和中间 CA，PEM 格式，按此顺序——即上面的叶证书随附的内容。根证书刻意不包含在内，理由与 JWT 证书链一行所述相同：依赖方如果因为根随证书链到达就接受它，就等于接受了一张为自己作保的证书。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionPrivateKey.what": {
+    "en": "63981c5c57f70802",
+    "text": "RFC 7522 密钥对的私钥，PEM 格式。**只要密钥加密密钥的寿命长于进程，它在静态存储时就是密封的**，所用机制和密钥与旁边的 `oauthAssertionPrivateKey` 相同——请参阅那一行，那里论证了全部内容。本服务不保留它的第二份副本：common/pki.js 只在签发时交出一次，随后便忘记它。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionThumbprint.what": {
+    "en": "7788d86bee182127",
+    "text": "所签发证书的 SHA-256 指纹，base64url 编码。它在 SAML 中的作用相当于 JWT 配置文件中的 `oauthAssertionKid`，之所以写法不同，是因为两种格式携带的句柄不同：JWS 头部指明一个 `kid`，而 XML Signature 携带证书本身，因此将出示的 <ds:KeyInfo> 与已注册内容相匹配的是指纹。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionExpiresAt.what": {
+    "en": "21956043d5d0e1df",
+    "text": "所签发的 RFC 7522 证书的过期时间，以 GeneralizedTime 表示。它是关于证书的事实，而不是策略，与 `oauthAssertionExpiresAt` 完全一样：这里没有任何东西会因为此日期已过就拒绝断言。显示在 /admin/pki 上，以便操作员看到即将失效的东西。"
+  },
+  "applications.schema.attributes.oauthSamlAssertionKeySource.what": {
+    "en": "885b1731802e4f71",
+    "text": "上面的 RFC 7522 密钥对从何而来，所用词汇和理由与 `oauthAssertionKeySource` 相同：`issued`、`uploaded-realm-ca` 或 `uploaded-external-ca`。它是与 JWT 属性分开的独立属性，因为两个密钥对是分开的——一个可能在此签发，而另一个则是别人的证书。"
+  },
+  "applications.schema.attributes.oauthSoftwareStatementIssuer.what": {
+    "en": "c6834fb57ae3ff4c",
+    "text": "此应用在 POST /oauth2/register（RFC 7591 第 2.3 节）为其软件声明作保的 `iss` 值——此应用是软件发布者，指明其中某个颁发者的声明会针对它的 `jwks`、它在 /admin/pki 获得的 RFC 7523 密钥对，或本领域签发给它的 x5c 进行验证。此属性会被读取：当 `oauth2.softwareStatementRequireTrustedIssuer` 开启时，来自无人声明的颁发者的声明会以 unapproved_software_statement 被拒绝；受信任的声明会固定所注册的元数据，并可打开已关闭的注册端点。\n\n它是与 `oauthAssertionIssuer` 分开的独立属性：被信任说明某人是谁的一方，并不因此被信任说明哪些软件可以注册为什么。本领域自己签发的声明无需声明。此属性会累积，理由与断言颁发者相同。"
+  },
+  "applications.schema.attributes.oauthIssuedSoftwareStatement.what": {
+    "en": "6e1666963d910326",
+    "text": "本领域最近一次为此应用签发的软件声明，以紧凑 JWS 形式保存，类型为 `software-statement+jwt`，`sub` 指明此应用。在 POST /oauth2/register 出示它的客户端会以它固定的成员注册。它不是机密——RFC 7591 第 2.3 节预期声明随软件的每一份副本一起分发——也不是每次签发的声明的记录：再次签发会替换此值，而较早的声明在过期或本领域签名密钥更换之前仍可通过验证。"
+  },
+  "applications.schema.attributes.appSoftwareStatementIssuer.what": {
+    "en": "4bd7d529acd9f5fc",
+    "text": "此客户端注册时所用软件声明的 `iss`；未出示声明时不存在。不携带声明的 RFC 7592 更新以及删除注册都会将其清除。"
+  },
+  "applications.schema.attributes.appSoftwareStatementTrusted.what": {
+    "en": "b995b37e9b9438b5",
+    "text": "当该声明已针对本领域信任的颁发者验证时为 TRUE；当因 `oauth2.softwareStatementRequireTrustedIssuer` 关闭而未经验证即被接受时为 FALSE。在原本关闭的端点上凭 TRUE 声明注册的客户端，每次更新都必须出示来自同一颁发者的受信任声明。"
+  },
+  "applications.schema.attributes.appSoftwareStatementPublisher.what": {
+    "en": "5b7f331c8b1c940f",
+    "text": "信任经由的应用：声明该颁发者的应用，或者——对于本领域签发的声明——声明所签发给的应用。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSubjectDn.what": {
+    "en": "5e4d2971c2881d13",
+    "text": "RFC 8705 第 2.1.2 节 `tls_client_auth_subject_dn`：此客户端进行身份验证所用 PKI 证书的主体 DN，采用 RFC 4514 形式。自 2026-09-13 起按名称进行比较（common/certificate_subject.js：属性类型折叠，值按 caseIgnoreMatch 比较，多值 RDN 的各 AVA 顺序不限），并且只与证书链已通过验证的证书比较。它是五个主体参数之一，一个客户端最多注册其中一个——第二个会被拒绝（STS-REG-0131、STS-REG-0135）。一个都不注册时，tls_client_auth 仍然会认证本领域签发给此应用的证书。它也是 `mtls` 族的标识符属性，并且是单值的，而这里其他所有标识符都会累积，因为 RFC 8705 说证书须匹配 \"the single expected subject\"。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanDns.what": {
+    "en": "112f46fd50b192e5",
+    "text": "RFC 8705 第 2.1.2 节 `tls_client_auth_san_dns`：此客户端进行身份验证所用的证书必须携带的 dNSName，比较时不区分大小写、忽略末尾的点，绝不按通配符比较。五个主体参数之一；参见 oauthTlsClientAuthSubjectDn。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanUri.what": {
+    "en": "1d73c827b1f6f2f1",
+    "text": "RFC 8705 第 2.1.2 节 `tls_client_auth_san_uri`：证书必须携带的 uniformResourceIdentifier，按精确匹配比较。五个主体参数之一。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanIp.what": {
+    "en": "bdaffe89241efe64",
+    "text": "RFC 8705 第 2.1.2 节 `tls_client_auth_san_ip`：证书必须携带的 iPAddress，IPv4 或 IPv6，按地址本身而非其书写形式比较。五个主体参数之一。"
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanEmail.what": {
+    "en": "fde7039fac656aab",
+    "text": "RFC 8705 第 2.1.2 节 `tls_client_auth_san_email`：证书必须携带的 rfc822Name，域部分不区分大小写比较，本地部分精确比较（RFC 5280 第 7.5 节）。五个主体参数之一。"
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateBoundAccessTokens.what": {
+    "en": "0f2ad8a5c3044e38",
+    "text": "RFC 8705 第 3.4 节 `tls_client_certificate_bound_access_tokens`，TRUE 或 FALSE。TRUE 表示此客户端声明其令牌是证书绑定的，并且在任何模式下都要求它履行这一声明：它通过不带客户端证书的连接发出的令牌请求会被拒绝（STS-OAUTH-0487），而不是得到一个未绑定的令牌——第 3.4 节把这一点留给授权服务器决定。FALSE 或不存在时不改变任何东西——出示证书的客户端仍然会得到绑定的令牌。"
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateThumbprint.what": {
+    "en": "1aad4795617491a1",
+    "text": "用于 RFC 8705 第 2.2 节 self_signed_tls_client_auth：此客户端进行身份验证所用证书的 DER 的 base64url SHA-256。这是本服务自己的名称，与 RFC 所命名的内容并存：自 2026-09-13 起，当证书是此客户端所注册 jwks 中某个密钥的 x5c[0] 时，它也能认证该客户端（第 2.2.2 节）。可通过 GET /tls/sign-in 获取证书的指纹，或自行计算：openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url。"
+  },
+  "applications.schema.attributes.oauthConfidential.what": {
+    "en": "ae52d212279d2378",
+    "text": "TRUE/FALSE，即 RFC 9700 模式对它作出的判定——因而决定了是否要求它使用 PKCE，以及是否检查它的密钥。写在这里，以便可以直接读取答案而不必推断。"
+  },
+  "applications.schema.attributes.samlEntityId.what": {
+    "en": "3987c430d22d9352",
+    "text": "服务提供方的 entityID——断言受众，也是两个 SAML 族的标识符属性。SAML 1.1 在协议中没有自己的 entityID（没有可供它传输的请求消息），而代替它的东西——Shibboleth 的 providerId、路径段或 TARGET 的源——指的是同一方，因此由一个属性来保存，而不是用两个属性，那样在一个应用首次同时被声明用于两者时就会互相矛盾。此属性会累积：响应两个 entityID 的应用仍是一个应用。\n\n它会被读取，作为 forAppliesTo() 的第二部分：WS-Trust AppliesTo 与为其签发的断言的 AudienceRestriction 是同一个字符串，因此在这里而不是在 `wstrustAppliesTo` 上注册它的应用，在委托图上仍会有自己的方框。查找方式相同；自 #496 起，当它解析出的 AppliesTo 所指的应用未注册时（appRegisteredBy），在产品模式下会被拒绝。"
+  },
+  "applications.schema.attributes.samlAssertionConsumerService.what": {
+    "en": "fd890662f96f022c",
+    "text": "断言使用者服务 URL——SAML 响应被回发的地址，也是两个 SAML 族的重定向 URI。直到 2026-08-25，它还保存 WS-Federation 的 `wreply`；后来移到了 wsfedReplyUrl，因为 SAML 页面读取此属性作为单点注销的后备，而出现在其中的 wreply 会让 WS-Federation 应用看起来像是指定了一个 SAML ACS。仅在产品模式下检查：开发模式会把响应发送到请求要求的任何地方，并在此记录该地址；产品模式只投递到已在此列表中的地址，在那里观察到的地址绝不会被添加。开发模式在此记录的内容会在 appReturnAddressObserved 上做标记，产品模式会拒绝带标记的地址，直到操作员确认为止——因此从开发模式切换到产品模式的领域不会信任开发模式学到的东西。在该标记出现之前记录的值不带标记，仍需审查。"
+  },
+  "applications.schema.attributes.samlSingleLogoutService.what": {
+    "en": "afe0a7928da789d7",
+    "text": "为此服务提供方发送 <samlp:LogoutResponse> 的地址，以及由此身份提供方发起注销时 LogoutRequest 的去向。这是声明的，而非观察得到的：LogoutRequest 不携带回送地址，因此只有 SP 元数据或操作员能够说明。使用元数据时会把其中的 SingleLogoutService 位置写到这里（并把每个端点的绑定和 ResponseLocation 写到 samlSloEndpoint 上，后者会被优先读取）。没有记录时，后备依次为 saml2.defaultSingleLogoutService，然后是上面的断言使用者服务 URL——这是本服务公开声明的猜测，而不是悄悄进行的。"
+  },
+  "applications.schema.attributes.samlNameIdFormat.what": {
+    "en": "7f5ead1978717201",
+    "text": "此服务提供方曾在 NameIDPolicy 中请求过的每一种 NameID Format，累积保存。它是证据而不是配置：此身份提供方会按请求的格式作答，包括无人听说过的格式，因此这里的值不会限制下一次请求。"
+  },
+  "applications.schema.attributes.samlResponseBinding.what": {
+    "en": "d9d4d1b00c05d3ef",
+    "text": "它曾要求以何种 ProtocolBinding 返回响应——HTTP-POST、HTTP-Redirect 或 HTTP-Artifact。对于正在接受测试的服务提供方来说，有多个值是常见情况，这正是此属性是一个列表的原因。"
+  },
+  "applications.schema.attributes.samlSigningCertificate.what": {
+    "en": "a2ead784b1dff911",
+    "text": "服务提供方已注册的签名证书，base64 DER，每个值一张。来自此服务提供方的已签名 AuthnRequest、LogoutRequest 或 LogoutResponse 会针对这些证书进行验证——在任何模式下都是如此——一张都验证不通过时会被拒绝。由使用其元数据（每个 KeyDescriptor use=\"signing\" 或未指定 use 的）、SAML 2.0 控制台页面、POST /admin-api/saml2/set-signing-certificate、确认下面观察到的证书或手工写入。其密钥必须能生成本服务可验证的 XML 签名——RSA、EC、EdDSA、DSA、ML-DSA 或 SLH-DSA（STS-REG-0160）。它绝不会根据请求写入：请求在其 ds:KeyInfo 中携带的证书会写到 samlObservedSigningCertificate 上。2026-09-17 之前写入的值是从请求中捕获的，没有来源记录——在信任之前请先审查。这是公钥材料，因此与 oauthClientSecret 不同，它对读取此目录的人毫无价值。"
+  },
+  "applications.schema.attributes.samlObservedSigningCertificate.what": {
+    "en": "91dce6d63a1aaa80",
+    "text": "最近一个已签名请求在其 ds:KeyInfo 中携带的证书，base64 DER，仅当它不是已注册的 samlSigningCertificate 值之一时记录。只是观察到的，并不受信任：请求自带的密钥无法证明是谁发送了请求，因此在任何模式下都不用于验证。当条目中没有其他证书时，开发模式仍会把断言加密给它；产品模式不会。操作员可以在 SAML 2.0 页面上，或通过 POST /admin-api/saml2/confirm-signing-certificate 和 /discard-signing-certificate 确认它（它会移到 samlSigningCertificate 上）或丢弃它。只有一个值——最近的那个——因此一连串携带伪造密钥的请求无法让条目不断变大。"
+  },
+  "applications.schema.attributes.samlAuthnRequestVerification.what": {
+    "en": "6acc91b675eb6f89",
+    "text": "检查最近一个请求的签名得到的结果：`verified`、`failed`、`unsigned` 或 `no-certificate`（已签名，但没有可用于检查的已注册证书），后跟绑定和算法。与旁边的 samlAuthnRequestSigned 一样是被赋值的。"
+  },
+  "applications.schema.attributes.samlSpMetadataUrl.what": {
+    "en": "4de7dca3c5546c56",
+    "text": "此服务提供方的元数据发布地址。它由应用页面上的“刷新元数据”操作和 POST /admin-api/applications/refresh-metadata 获取，绝不会在流程运行期间获取——如果签发断言必须等待别人的 Web 服务器，那么每次登录的可靠性就只能与那台服务器相当。获取所写入的内容就是使用该文档所写入的全部内容——参见下面的 samlSpMetadata。\n\n这是本服务中的第二个出站请求界面；联合是第一个，也是唯一的另一个。它遵循同样的拒绝规则——URL 必须是此条目所携带的，协议方案必须是 http 或 https，并且请求会超时。"
+  },
+  "applications.schema.attributes.samlSpMetadata.what": {
+    "en": "f94a9d0c56e1e3f0",
+    "text": "服务提供方的元数据文档，原样缓存。它是刷新操作所存储的内容，也是为本服务无法访问其元数据的服务提供方在 SAML 2.0 页面上传（或通过 POST /admin-api/saml2/upload-metadata 上传）元数据时所存储的内容。使用它（2026-09-17）会把其中的 AssertionConsumerService 和 SingleLogoutService 端点写为已注册的回送地址（samlAssertionConsumerService、samlAcsEndpoint、samlSingleLogoutService、samlSloEndpoint），并写入其签名证书（samlSigningCertificate）、加密证书（samlEncryptionCertificate）、NameIDFormat、AuthnRequestsSigned 和 WantAssertionsSigned，以及 validUntil 和 cacheDuration。手工设置此属性只会存储文档而不使用任何内容——请使用上传。\n\n除提取出的内容外，还会保留文档本身，以便读者看到实际使用了什么。没有文档支撑的证书是一个无人能够核查的值。"
+  },
+  "applications.schema.attributes.samlEncryptionCertificate.what": {
+    "en": "9105bb16521de17b",
+    "text": "断言加密所用的证书，base64 DER 或 PEM。由元数据获取根据 <md:KeyDescriptor use=\"encryption\"> 写入——若没有，则退而使用未限定的 KeyDescriptor，规范说明它同时用于两种用途——对于完全没有元数据的服务提供方，也可以手工设置。\n\n它决定发出的内容。这里没有证书时，会使用已注册的 samlSigningCertificate，然后——仅在开发模式下——使用观察到的证书；都没有时，断言以明文发送（开发模式）或被拒绝（产品模式），页面会说明这一点。"
+  },
+  "applications.schema.attributes.samlAcsEndpoint.what": {
+    "en": "3bc462623206e5a8",
+    "text": "来自已使用元数据的一个 <md:AssertionConsumerService>，形式为 `<index> <isDefault> <binding> <location>`——isDefault 为 `true`、`false`，未说明时为 `-`。指明 AssertionConsumerServiceIndex 的 SAML 2.0 AuthnRequest 会在该端点、以其绑定方式应答；指明 AssertionConsumerServiceURL 的请求必须指明其中之一（一旦使用了元数据，在任何模式下都是如此）；两者都未指明的请求发往默认端点（saml-metadata-2.0-os 第 2.2.3 节）。在未显式请求配置文件时，SAML 1.1 使用已注册的绑定和位置来选择 Browser/POST 或 Browser/Artifact。"
+  },
+  "applications.schema.attributes.samlSloEndpoint.what": {
+    "en": "50fc4269807fa1f6",
+    "text": "来自已使用元数据的一个 <md:SingleLogoutService>，形式为 `<binding> <location>` 或 `<binding> <location> <responseLocation>`。LogoutResponse 发往 ResponseLocation（如有）；若服务提供方发布了 LogoutRequest 到达时所用的绑定，则以该绑定发送。"
+  },
+  "applications.schema.attributes.samlSpNameIdFormat.what": {
+    "en": "5c24c66a2d887053",
+    "text": "服务提供方元数据所声明的 <md:NameIDFormat> 值。与 samlNameIdFormat（它请求过的格式）不同，这些值具有限制作用：指明其他格式的 NameIDPolicy 会得到 InvalidNameIDPolicy 应答（saml-core-2.0-os 第 3.4.1.1 节），默认格式也从这些值中选择。"
+  },
+  "applications.schema.attributes.samlSpAuthnRequestsSigned.what": {
+    "en": "9859c664a8b4172e",
+    "text": "当元数据声明 AuthnRequestsSigned=\"true\" 时为 TRUE：此时无论 saml2.requireSignedAuthnRequests 如何设置，来自此服务提供方的未签名请求都会被拒绝，并且此身份提供方提供给它的元数据会声明 WantAuthnRequestsSigned=\"true\"。"
+  },
+  "applications.schema.attributes.samlSpWantAssertionsSigned.what": {
+    "en": "e0f4d22138fd10d6",
+    "text": "当元数据声明 WantAssertionsSigned=\"true\" 时为 TRUE：即使 saml2.signAssertion（或 saml2SignAssertion）关闭，断言也会被签名——这是在产品模式下；开发模式遵从该设置（这是一个测试用例），并记录服务提供方提出了不同的要求。"
+  },
+  "applications.schema.attributes.samlSpWantAssertionsEncrypted.what": {
+    "en": "0435ae5ea89e68d9",
+    "text": "当已使用的元数据发布了标记为 use=\"encryption\" 的 KeyDescriptor 时为 TRUE——表示服务提供方声明它拥有用于加密断言的密钥，而 SAML 2.0 元数据本身没有对应的属性（互操作配置文件将该密钥视为请求）。此时无论 saml2.encryptAssertion 如何设置，断言在任何模式下都会加密给该密钥。"
+  },
+  "applications.schema.attributes.samlSpMetadataValidUntil.what": {
+    "en": "144abddd1e7267dc",
+    "text": "已使用文档的有效 validUntil——取任何外层 EntitiesDescriptor、EntityDescriptor 及其 SPSSODescriptor 中最早的那个。已过期的文档在使用时会被拒绝；一旦超过此时间，来自该服务提供方的每个请求都会被拒绝（STS-SAML-0074），直到使用了更新的文档为止。"
+  },
+  "applications.schema.attributes.samlSpMetadataCacheDuration.what": {
+    "en": "14f91b25e0604839",
+    "text": "已使用文档的有效 cacheDuration（其链中最短的那个），以它所携带的 xs:duration 表示。自文档被使用起经过这段时间后，文档即为过时：后台刷新器会在可能时重新获取它（saml2.spMetadataRefresh），而在其 validUntil 之前它仍然有效。"
+  },
+  "applications.schema.attributes.samlSpMetadataConsumedAt.what": {
+    "en": "f4b47a01d6cdaafd",
+    "text": "文档最近一次被使用的时间和方式：`<ISO instant> <refresh|upload|mdq>`——`mdq` 表示从 Metadata Query 响应方获取的文档，后台刷新器可以再次获取它。"
+  },
+  "applications.schema.attributes.samlSpMetadataSignature.what": {
+    "en": "918bec6e5d05e1d7",
+    "text": "检查已使用文档自身签名得到的结果：`verified`、`unsigned` 或 `signed-not-verified`（已签名，但没有可用于检查的 samlSpMetadataSigningCertificate）。"
+  },
+  "applications.schema.attributes.samlSpMetadataSigningCertificate.what": {
+    "en": "cdb98da69d5f24ce",
+    "text": "此服务提供方的元数据必须使用的签名证书，base64 DER。设置后，未签名或签名无法针对它通过验证的文档会被拒绝，条目上的任何内容都不会改变。未设置时，已签名的文档会被使用并记录为 signed-not-verified：此时的信任行为就是操作员对 URL（或文档）的选择，而显式刷新或上传正是这种选择。"
+  },
+  "applications.schema.attributes.saml2EncryptAssertion.what": {
+    "en": "759b4ebf4d0a40a8",
+    "text": "TRUE 或 FALSE：加密签发给此服务提供方的断言，覆盖 saml2.encryptAssertion。这是四个设置中最值得按应用设置的一个——一个服务提供方要求加密而其他服务提供方无法读取加密断言，这种环境是常见情况，而全服务范围的开关无法表达它。"
+  },
+  "applications.schema.attributes.saml2EncryptionAlgorithm.what": {
+    "en": "fa273f083d4148cb",
+    "text": "用于此服务提供方的分组密码——aes256-gcm、aes128-gcm、aes256-cbc 或 aes128-cbc——覆盖 saml2.encryptionAlgorithm。不属于这四者之一的值会被忽略并给出警告，改用全服务范围的选择，与无法解析的数字的处理方式完全相同。"
+  },
+  "applications.schema.attributes.saml2KeyTransportAlgorithm.what": {
+    "en": "e2972659824b67ae",
+    "text": "为此服务提供方包装内容密钥的方式——rsa-oaep-mgf1p、rsa-oaep（SHA-256，MGF1-SHA-256；#168）或 rsa-1_5——覆盖 saml2.keyTransportAlgorithm。存在只接受 rsa-1_5 的设备，这正是此设置按应用设定、而不是为整个服务一次性决定的原因。"
+  },
+  "applications.schema.attributes.saml2EncryptLogoutNameId.what": {
+    "en": "6d5adf9b1aaa6b01",
+    "text": "TRUE 或 FALSE：在发给此服务提供方的 LogoutRequest 中发送 <saml:EncryptedID> 而不是 <saml:NameID>，覆盖 saml2.encryptLogoutNameId。它与上面的断言开关分开，因为在每个具备这两种能力的服务提供方库中，它们都是独立的能力：能解密断言的服务提供方，可能仍期望注销消息中是普通的 NameID。"
+  },
+  "applications.schema.attributes.oauthAccessTokenTtlS.what": {
+    "en": "a97604c8265b331c",
+    "text": "签发给此客户端的访问令牌的有效期，以秒计，仅对它覆盖 oauth2.accessTokenTtlS。它会成为令牌的 `exp`，因此在签名时写入，这里的任何东西都无法缩短已签发的令牌。在某个客户端上将其设为 30，即可观察该客户端刷新，而其他所有客户端照常运行。"
+  },
+  "applications.schema.attributes.oauthIdTokenTtlS.what": {
+    "en": "8cc6c14509612cb8",
+    "text": "OIDC ID Token 的同类设置，覆盖 oauth2.idTokenTtlS。它与访问令牌的设置分开，因为两者的读者不同：ID Token 在登录时被使用一次，而访问令牌在其有效期内会被一直出示。"
+  },
+  "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
+    "en": "47a623e69e617b6d",
+    "text": "刷新令牌的同类设置，覆盖 oauth2.refreshTokenTtlS。小于或等于 oauthAccessTokenTtlS 的值是合法的，但这样的授权永远无法被有效续期——/admin/token-lifetimes 会针对全服务范围的这对设置报告这种组合，而在这里同样可能出现。"
+  },
+  "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
+    "en": "37eeca0107443e0c",
+    "text": "仅限 RFC 9700 模式：刷新链在被切断之前可以闲置多久，对此客户端覆盖 oauth2.refreshIdleSeconds。它从链中任一令牌最近一次被兑换时开始计算，而不是从签发时开始，因此繁忙的客户端会保住其授权，而沉寂的客户端则不会。在 RFC 9700 模式之外，没有任何东西读取它，这是该设置的特性，而不是此属性的特性。"
+  },
+  "applications.schema.attributes.oauthClaimsAccessToken.what": {
+    "en": "e284080e7c1bb9a6",
+    "text": "此应用自己的访问令牌声明，以 JSON 数组形式保存，各行与本领域的自定义声明页面相同。对于签发给此客户端的令牌，它们会添加到本领域的访问令牌声明中，同名时应用的行替换领域的行。"
+  },
+  "applications.schema.attributes.oauthClaimsIdToken.what": {
+    "en": "bf6d6d58355a3d7d",
+    "text": "此应用自己的 ID Token 声明，以 JSON 数组形式保存，各行与本领域的自定义声明页面相同。对于此客户端，它们会添加到本领域的 ID Token 声明中，同名时以此为准。"
+  },
+  "applications.schema.attributes.oauthClaimsUserinfo.what": {
+    "en": "45d44e8df029c130",
+    "text": "此应用自己的 UserInfo 声明，以 JSON 数组形式保存，各行与本领域的 UserInfo 声明页面相同。它们会添加到应答此客户端的本领域 UserInfo 声明中，同名时以此为准。"
+  },
+  "applications.schema.attributes.oauthClaimAttributesAccessToken.what": {
+    "en": "0bb51f4496678312",
+    "text": "此应用自己为其访问令牌选择的目录属性，以 JSON 数组形式保存，内容为本领域自定义声明目录中的属性名。存在时，对于签发给此客户端的令牌，它会替换本领域的选择；不存在时使用本领域的选择。"
+  },
+  "applications.schema.attributes.oauthClaimAttributesIdToken.what": {
+    "en": "281e877a92a4cd99",
+    "text": "此应用自己为其 ID Token 选择的目录属性，一个由声明目录属性名组成的 JSON 数组，存在时替换本领域的选择。"
+  },
+  "applications.schema.attributes.oauthClaimAttributesUserinfo.what": {
+    "en": "bc1313ec18da0769",
+    "text": "此应用自己为应答它的 UserInfo 响应选择的目录属性，一个由声明目录属性名组成的 JSON 数组，存在时替换本领域的选择。"
+  },
+  "applications.schema.attributes.oauthClaimsCombineAccessToken.what": {
+    "en": "0fdd9c637c2aed07",
+    "text": "本领域的访问令牌声明与此应用自己的声明如何组合（#395），类型化的行和勾选的目录属性均适用：application（仅此应用自己的）、union（领域的加上它自己的）、intersection（仅两者都有的）或 realm（仅领域的）。未设置时，它的行添加到领域的行中并按名称优先，它的选择替换领域的选择。自身不持有任何内容的应用，无论此处如何设置都获得领域的内容。"
+  },
+  "applications.schema.attributes.oauthClaimsCombineIdToken.what": {
+    "en": "5712c8d8fec06866",
+    "text": "本领域的 ID Token 声明与此应用自己的声明如何组合（#395），类型化的行和勾选的目录属性均适用：application（仅此应用自己的）、union（领域的加上它自己的）、intersection（仅两者都有的）或 realm（仅领域的）。未设置时，它的行添加到领域的行中并按名称优先，它的选择替换领域的选择。自身不持有任何内容的应用，无论此处如何设置都获得领域的内容。"
+  },
+  "applications.schema.attributes.oauthClaimsCombineUserinfo.what": {
+    "en": "114411a8522be187",
+    "text": "本领域的 UserInfo 声明与此应用自己的声明如何组合（#395），类型化的行和勾选的目录属性均适用：application（仅此应用自己的）、union（领域的加上它自己的）、intersection（仅两者都有的）或 realm（仅领域的）。未设置时，它的行添加到领域的行中并按名称优先，它的选择替换领域的选择。自身不持有任何内容的应用，无论此处如何设置都获得领域的内容。"
+  },
+  "applications.schema.attributes.oauthAccessTokenClaim.what": {
+    "en": "cf887c3be9a18ff1",
+    "text": "此资源服务器希望在发给它的访问令牌（其 oauthAudience 值之一，或以其 client_id 作为 scope 指明）中获得的身份声明，取自 OpenID Connect Core 第 5.4 节的 profile、email、address 和 phone 声明。每个声明只有在涵盖它的 scope 已被授予时才会发布；在面向多个资源服务器的令牌中，只有每个资源服务器都声明了的声明才会放入。不存在时，令牌不携带来自这一层的任何此类声明——preferred_username 也包括在内。"
+  },
+  "applications.schema.attributes.oauthPermissionClaims.what": {
+    "en": "81cd9d9de131a21b",
+    "text": "此资源服务器的每项权限所携带的声明，以 JSON 对象形式保存，从权限名（其 oauthPermission 值之一）映射到本领域声明目录中的属性名列表。发给此应用且某项权限已被授予的访问令牌，会以目录中的声明名称携带此人在该权限对应属性上的值；授予该权限即授予这些声明，包括标准的 OpenID Connect 声明。按 oauthAccessTokenClaimsCombine 的规定与客户端的声明组合。"
+  },
+  "applications.schema.attributes.oauthAccessTokenClaimsCombine.what": {
+    "en": "bf5a0b995021c02e",
+    "text": "在发给此资源服务器的令牌上，客户端的访问令牌声明与此资源服务器声明的声明（oauthAccessTokenClaim）如何组合：'union'（默认）、'intersection'（仅两者都携带的声明）、'client'（仅客户端的）或 'resource'（仅声明的）。多个意见不一致的资源服务器之间按交集组合。无论选择哪种，授权未涵盖的内容都不会发布。"
+  },
+  "applications.schema.attributes.oauthRevokeRefreshOnLogout.what": {
+    "en": "4a6e20c0380356cf",
+    "text": "TRUE 或 FALSE：注销是否吊销此客户端的刷新令牌，覆盖 oauth2.revokeRefreshOnLogout。FALSE 才是值得关注的情况，也是按客户端设置此项有意义的原因——注销后还能通过刷新回到会话中的客户端，在真实部署中是一个真实存在的缺陷，而这使它可以针对一个客户端重现，其余客户端则行为正常。"
+  },
+  "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
+    "en": "25b5b04c83819b5b",
+    "text": "由此客户端执行的 RFC 8693 令牌交换，是否在交换得到的访问令牌之外还获得一个 `refresh_token`，仅对它覆盖 oauth2.tokenExchangeRefreshToken。取三个词之一：`never`、`when-requested`（全服务范围的默认值——客户端以 RFC 8693 第 2.1 节的 `requested_token_type` 请求，只有请求了才会得到）或 `always`。\n\n它在执行交换的客户端上读取，而不是在受众上读取，因为刷新令牌是交给客户端的：它是该方持有、吊销并最终兑换的凭据。在值得关注的情况下，交换所涉及的主体在此注册表中根本没有条目，因为交换的全部意义就在于来自别处的 subject_token。\n\n**它适用于 OAuth 2.0 和 OpenID Connect 族，不适用于其他任何族，而且与这里的其他所有属性不同，这一点是强制执行的。** 未声明用于这两族之一的条目会被两个控制台入口和管理 API 拒绝，并指明需要先勾选的族——因为这里的值是关于令牌端点的策略，而一个任何令牌请求都无法指向的条目若携带它，看起来就像它已生效一样。此行上方的说明块对此进行了论证。`ldapmodify` 与访问其他属性一样可以访问此属性，且不受检查。\n\n不属于这三个词之一的值在写入时不算错误，但也不会被悄悄忽略：settingFor() 会发出警告，指明条目、属性及其所持有的值，并由全服务范围的设置决定——与此条目上其他每个覆盖项一样，诚实地对待三种状态。"
+  },
+  "applications.schema.attributes.appRequiredRole.what": {
+    "en": "03d0f9a2b65f3598",
+    "text": "某人在此应用被签发任何东西之前必须持有的角色——令牌、断言、WS-Federation 响应或会话。多值，持有其中任意一个即可。不存在表示所有人，即所有人都持有的内置角色，这就是未配置的应用不拒绝任何人的原因。该决定由 XACML PDP 根据 xacml.issuancePolicy 指定的策略作出，而不是由签发点中的某个 if 作出，因此拒绝的理由是一条人人可以阅读的策略。"
+  },
+  "applications.schema.attributes.appAllowedToDelegateTo.what": {
+    "en": "5308a92257a7b8f9",
+    "text": "此应用作为 WS-Trust OnBehalfOf / ActAs 请求或 RFC 8693 令牌交换的中介时，可以代表他人为之获取令牌的目标——相当于前端上的 Kerberos msDS-AllowedToDelegateTo。每个值为一个应用标识符（或字面的受众 / AppliesTo）。在产品模式下强制执行；开发模式会在 /admin/delegation 上记录本应被拒绝的内容。在目标上设置 appAllowedToActOnBehalfOf 是允许同一对组合的另一种方式。"
+  },
+  "applications.schema.attributes.appAllowedToActOnBehalfOf.what": {
+    "en": "ec2ab22c5113f585",
+    "text": "此应用作为委托的目标时，接受代表他人行事的中介——相当于在后端设置的、基于资源的 Kerberos msDS-AllowedToActOnBehalfOfOtherIdentity。每个值为一个中介应用标识符。"
+  },
+  "applications.schema.attributes.appDelegationSubjectGroup.what": {
+    "en": "ccd774803e78bb21",
+    "text": "此中介可以代表的人，以组 DN 表示：主体必须是其中某个组的成员。为空表示任何未受保护的人——带有 stsNotDelegated 的人，或控制台 Admin Read 或 Admin Write 名册的成员，无论此处如何设置都绝不会被委托。"
+  },
+  "applications.schema.attributes.appDelegationSemantics.what": {
+    "en": "9faf00ab16755dec",
+    "text": "此应用允许的语义：`delegation`、`impersonation` 或两者。作为执行者——令牌交换的客户端、WS-Trust OnBehalfOf / ActAs 的请求方、Kerberos S4U 请求的服务——它说明此应用可以做什么；为空表示仅允许委托，因此要冒充他人需要在此设置 `impersonation`（Kerberos 的 TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION）。作为主体，它说明可以以它的身份做什么；为空表示两者皆可。由签发策略作出决定；这是它的事实之一。"
+  },
+  "applications.schema.attributes.appDefaultDelegationSemantics.what": {
+    "en": "172f18f5cdd5396c",
+    "text": "`delegation` 或 `impersonation`：当请求未说明时，此应用参与的行为属于哪一种——先看执行者的默认值，再看主体的，最后是 delegation.defaultSemantics。"
+  },
+  "applications.schema.attributes.appNotDelegated.what": {
+    "en": "08d03ae79d14ab20",
+    "text": "TRUE 或 FALSE，默认 FALSE：在任何协议中都没有人可以代表此应用行事——NOT_DELEGATED，即应用版本的个人 stsNotDelegated。"
+  },
+  "applications.schema.attributes.appMayAct.what": {
+    "en": "46cfc90a8de4561b",
+    "text": "此应用指定为其代理的一方（个人或另一个应用）的 DN，只能有一个：关于它的令牌会按签发策略的赋值携带 RFC 8693 第 4.4 节的 may_act 并指明该方，其他任何人交换该令牌都会被拒绝。个人的对应属性是 stsMayAct。"
+  },
+  "applications.schema.attributes.appGroupsClaim.what": {
+    "en": "01129d11979c9b3d",
+    "text": "TRUE 或 FALSE：签发给此应用的任何内容是否携带组声明，覆盖 groups.claim。在某个应用上设为 FALSE，即可测试遇到意外声明就会出错的客户端，而不必从其他所有地方拿掉该声明。"
+  },
+  "applications.schema.attributes.appGroupsClaimName.what": {
+    "en": "4fc6ecdda2fd1881",
+    "text": "此应用的组声明名称，覆盖 groups.claimName。正是这个属性让此组设置在这里占有一席之地：`groups`、`roles`、`memberOf` 以及 URI 形式的声明名称都很常见，在每个真实部署中都因依赖方而异，而单一的全服务范围名称意味着一次只能测试其中一种。"
+  },
+  "applications.schema.attributes.appGroupsClaimValue.what": {
+    "en": "68134f2525fc0453",
+    "text": "声明中携带每个组的名称还是完整 DN，覆盖 groups.claimValue。依赖方确实各不相同：一个按 `cn` 匹配，下一个则是针对 LDAP DN 编写的。"
+  },
+  "applications.schema.attributes.appGroupsClaimFromMemberOf.what": {
+    "en": "a49254d4644665d9",
+    "text": "为此应用从何处读取组，覆盖 groups.claimFromMemberOf——此人的 memberOf 属性，或对组容器的搜索。在此目录中两者一致；区分它们是值得的，因为真实目录的 memberOf 可能滞后。"
+  },
+  "applications.schema.attributes.wsfedAssertionLifetimeMin.what": {
+    "en": "9a4a30909e2c05ca",
+    "text": "为此依赖方签发的 WS-Federation 登录响应中 SAML 1.1 断言的有效期，以分钟计，覆盖 wsfed.assertionLifetimeMin。它设置断言的 Conditions 以及包裹它的 RequestSecurityTokenResponse 的 wsu:Lifetime，因此外层信封与其中的文档不会互相矛盾。它与 saml11AssertionLifetimeMin 分开：一个应用可能两者都使用，而 WS-Federation 会话与 Browser/POST 断言的使用方式不同。"
+  },
+  "applications.schema.attributes.saml2CustomAttributes.what": {
+    "en": "6a7f74a34549ac13",
+    "text": "此服务提供方自己的 SAML 2.0 属性，以 JSON 数组形式保存，各行与本领域的自定义 SAML 属性页面相同（允许 nameFormat）。在面向此受众的断言中，它们会添加到本领域的 SAML 2.0 属性中，同名时以此为准。"
+  },
+  "applications.schema.attributes.saml11CustomAttributes.what": {
+    "en": "c1469888e73b177f",
+    "text": "此依赖方自己的 SAML 1.1 属性，以 JSON 数组形式保存，各行与本领域的自定义 SAML 属性页面相同（允许 namespace）。在面向此受众的断言中（SAML 1.1、WS-Federation、WS-Trust），它们会添加到本领域的 SAML 1.1 属性中，同名时以此为准。"
+  },
+  "applications.schema.attributes.saml2ClaimAttributes.what": {
+    "en": "1975b37dcacff86c",
+    "text": "此服务提供方自己为其 SAML 2.0 断言选择的目录属性，一个由声明目录属性名组成的 JSON 数组，存在时替换本领域的选择。"
+  },
+  "applications.schema.attributes.saml11ClaimAttributes.what": {
+    "en": "bb6b41c7ea67806c",
+    "text": "此依赖方自己为其 SAML 1.1 断言（SAML 1.1、WS-Federation、WS-Trust）选择的目录属性，一个由声明目录属性名组成的 JSON 数组，存在时替换本领域的选择。"
+  },
+  "applications.schema.attributes.saml2ClaimsCombine.what": {
+    "en": "d0a05b0063187eff",
+    "text": "本领域的 SAML 2.0 属性与此应用自己的属性如何组合（#395），类型化的行和勾选的目录属性均适用：application（仅此应用自己的）、union（领域的加上它自己的）、intersection（仅两者都有的）或 realm（仅领域的）。未设置时，它的行添加到领域的行中并按名称优先，它的选择替换领域的选择。自身不持有任何内容的应用，无论此处如何设置都获得领域的内容。"
+  },
+  "applications.schema.attributes.saml11ClaimsCombine.what": {
+    "en": "a19640f716396460",
+    "text": "本领域的 SAML 1.1 属性与此应用自己的属性如何组合（#395），类型化的行和勾选的目录属性均适用：application（仅此应用自己的）、union（领域的加上它自己的）、intersection（仅两者都有的）或 realm（仅领域的）。未设置时，它的行添加到领域的行中并按名称优先，它的选择替换领域的选择。自身不持有任何内容的应用，无论此处如何设置都获得领域的内容。"
+  },
+  "applications.schema.attributes.vcCredentialClaimAttributes.what": {
+    "en": "5df9a1b2f23cb7e9",
+    "text": "此客户端自己为可验证凭证所携带的目录属性所作的选择，一个由声明目录属性名组成的 JSON 数组。存在时，对于凭此客户端的访问令牌签发的凭证，它会替换本领域的凭证声明选择；颁发者元数据仍然公布本领域的选择。"
+  },
+  "applications.schema.attributes.saml2AssertionLifetimeMin.what": {
+    "en": "5980ad42371e28c5",
+    "text": "此服务提供方的断言的有效期，以分钟计，仅对它覆盖 saml2.assertionLifetimeMin。它会同时成为 Conditions/NotOnOrAfter 和持有者 SubjectConfirmationData/NotOnOrAfter，两端都按 saml.clockSkewS 放宽——后者不按应用设置，因为它是关于此环境中各时钟的事实，而不是关于某个依赖方的事实。"
+  },
+  "applications.schema.attributes.saml2SignAssertion.what": {
+    "en": "119214c380ca0bfc",
+    "text": "TRUE 或 FALSE：对签发给此服务提供方的 <saml:Assertion> 签名，仅对它覆盖 saml2.signAssertion。FALSE 是一个测试用例而不是错误——接受未签名断言的服务提供方存在漏洞，而这正是在不同时关闭其他所有应用签名的情况下发现此类漏洞的方法。这就是此项按应用设置的全部原因。"
+  },
+  "applications.schema.attributes.saml2SignResponse.what": {
+    "en": "bb83449f1266566e",
+    "text": "TRUE 或 FALSE：为此服务提供方对包裹断言的 <samlp:Response> 签名，覆盖 saml2.signResponse。在 HTTP Redirect 绑定上，它还控制第 3.4.4.1 节的查询字符串签名，重定向响应实际上正是靠这个签名来验证的。"
+  },
+  "applications.schema.attributes.saml2NameIdFormat.what": {
+    "en": "c71975e6bdd39ec9",
+    "text": "当此服务提供方的 AuthnRequest 的 NameIDPolicy 未请求任何格式时，为其使用的 NameID Format，覆盖 saml2.nameIdFormat。确实指明了格式的请求仍会按其指明的格式应答——这是默认值而不是限制，并且刻意不与旁边的 samlNameIdFormat 进行核对，后者是此服务提供方请求过的格式列表。"
+  },
+  "applications.schema.attributes.saml2ArtifactTtlS.what": {
+    "en": "f6fd526344172dcd",
+    "text": "为此服务提供方生成的工件可被解析的时长，以秒计，覆盖 saml2.artifactTtlS。无论此值多长，工件同时也是一次性的——解析即销毁，这是第 3.6.4.1 节所要求的，任何有效期都无法表达这一点。"
+  },
+  "applications.schema.attributes.saml11AssertionLifetimeMin.what": {
+    "en": "1c1e8ff577d70a0c",
+    "text": "saml2AssertionLifetimeMin 的 SAML 1.1 对应项，为此依赖方覆盖 saml11.assertionLifetimeMin。它与 2.0 属性分开，理由与两个设置分开相同：两个配置文件是分别实现、使用方式不同的，同时声明用于两者的应用合理地需要两个答案。"
+  },
+  "applications.schema.attributes.saml11SignAssertion.what": {
+    "en": "6123c6863711aa4b",
+    "text": "TRUE 或 FALSE：为此依赖方对 SAML 1.1 <saml:Assertion> 签名，覆盖 saml11.signAssertion。Browser/POST 配置文件要求断言必须签名（saml-profile-1.1 第 4.2.1.4 节），因此这里的 FALSE 恰恰是测试用例：仍然接受它的依赖方存在漏洞。"
+  },
+  "applications.schema.attributes.saml11SignResponse.what": {
+    "en": "b5c3ac0c3a3f20d3",
+    "text": "TRUE 或 FALSE：为此依赖方对 SAML 1.1 <samlp:Response> 签名，覆盖 saml11.signResponse，引用指向 ResponseID。"
+  },
+  "applications.schema.attributes.saml11NameIdFormat.what": {
+    "en": "0e4deac01ea4ef16",
+    "text": "为此依赖方使用的 NameIdentifier Format，覆盖 saml11.nameIdFormat。SAML 1.1 没有请求消息，因此没有任何东西能请求某种格式，这是唯一决定格式的东西——这使它成为两个按应用设置的格式属性中更有用的一个。"
+  },
+  "applications.schema.attributes.saml11ArtifactTtlS.what": {
+    "en": "1887a455954e9b4f",
+    "text": "为此依赖方生成的 SAML 1.1 工件可被解析的时长，以秒计，覆盖 saml11.artifactTtlS。由 Browser/Artifact 配置文件的 SOAP 响应方兑换它，仅一次。"
+  },
+  "applications.schema.attributes.samlAuthnRequestSigned.what": {
+    "en": "2150507140b66231",
+    "text": "当来自此服务提供方的最近一个 AuthnRequest 携带签名时为 TRUE——POST 绑定上的封装 ds:Signature，或 Redirect 绑定上第 3.4.4.1 节的 Signature 参数。它是被赋值的而不是累积的，因为它是关于最近一次请求的事实，一串布尔值的历史说明不了任何问题。"
+  },
+  "applications.schema.attributes.wsfedRealm.what": {
+    "en": "86782168726d7440",
+    "text": "来自 wsignin1.0 请求的 WTREALM（第 13.2.1 节）——WS-Federation 的标识符属性。会累积，理由与这里的每个标识符相同。"
+  },
+  "applications.schema.attributes.wsfedReplyUrl.what": {
+    "en": "1d6376f1797ef43c",
+    "text": "为此应用回发登录响应的地址：第 13.2.1 节的 `wreply`，即 WS-Federation 的重定向 URI。直到 2026-08-25，它都被写入 samlAssertionConsumerService，这把 wreply 放进了 SAML 页面读取断言使用者服务和单点注销后备地址的属性中——一个属性保存两种协议的回送地址，于是 WS-Federation 应用看起来拥有一个它从未指定过的 SAML ACS。两个事实，两个属性。与旁边的 SAML 属性一样，它仅在产品模式下检查：开发模式不拒绝任何 wreply，因为一个会拒绝的服务只会减少而不是增加测试用例；产品模式只回发到此列表中的地址，观察到的地址绝不会被添加。开发模式记录的 wreply 会在 appReturnAddressObserved 上做标记，产品模式会拒绝它直到其被确认；在该标记出现之前记录的值不带标记，在领域切换到产品模式之前仍需审查。"
+  },
+  "applications.schema.attributes.wsfedSignOutUri.what": {
+    "en": "493ac4121c2076ca",
+    "text": "为此应用发送 wsignoutcleanup1.0 通知的地址——WS-Federation 的注销 URI，此表直到 2026-08-30 才有这一项。它是声明的，而非观察得到的，这使它成为 samlSingleLogoutService 而非 wsfedReplyUrl 的同类：清理是在会话结束时发送的，而那时本可能携带 wreply 的请求早已结束。\n\n**注销目前尚未读取它**，这一点明确说明而非暗示。`cleanupTargetsFor()` 根据 `session.wsfedRealms` 构建其列表，后者记录每个登录响应实际发往的 wreply——因此本服务今天通知的是它观察到的地址，而此属性是操作员声明的地址。它们是两个不同的事实，而后者才是设置应用的人能够预先说明的。把它接入为未带 wreply 登录的领域的后备地址是显而易见的下一步，但这里刻意没有这样做：此变更添加的是字段和存储，而改变清理的去向是对协议行为的改变。"
+  },
+  "applications.schema.attributes.wstrustAppliesTo.what": {
+    "en": "9a8d1ca262be725c",
+    "text": "来自 RequestSecurityToken 的 APPLIESTO 地址——令牌为之签发的服务，也是 WS-Trust 的标识符属性。会累积。\n\n**它会被读取**，这在 2026-08-27 之前并非如此；它是 `oauthAudience` 的例外通过第二种协议体现出来：一个为访问 `https://esb.example.com` 而请求令牌的 OnBehalfOf 或 ActAs，会在 /admin/delegation 上记录到注册了该地址的应用名下，因此一条委托跳转链会绘制成一幅图，而不是一些以 URL 命名、图中其他部分从未提及的方框。在开发模式下这是查找而不是许可——无人注册的 AppliesTo 也会被签发令牌并按原样记录；在产品模式下则会被拒绝（#496）。参见 forAppliesTo()，它先查询此属性，再查询 `samlEntityId`。"
+  },
+  "applications.schema.attributes.wstrustJwtScope.what": {
+    "en": "86ac83dbe366a17b",
+    "text": "为此应用签发的 WS-Trust JWT 所携带的 OAuth 2.0 scope，每个值一个 scope（#485）。WS-Trust 以此应用为 AppliesTo 签发的 JWT（wst:TokenType urn:ietf:params:oauth:token-type:jwt）会在其 `scope` 声明中携带它们，以空格分隔（RFC 9068 第 2.2.3 节）；未设置时不携带 `scope`。SAML 令牌不受影响。\n\n**每个 scope 的判定方式与 OAuth 访问令牌相同**，以此应用作为客户端：`oauthAllowedScope` 声明它可以被签发什么（在产品模式下；本服务的受保护 scope 在任何模式下都是如此），并由签发策略的逐 scope 问题作出决定。被策略丢弃的值会被从令牌中去掉并记入审计（STS-OAUTH-0579），绝不会被签发。指明未声明 scope 的写入在这里会被接受，因为声明可能改变，而且开发模式会授予未声明的 scope：请同时在 oauthAllowedScope 上声明它。策略将会丢弃的值会在设置处给出警告（#488）：在此字段旁、在 Save 的回复中，以及在 /admin-api 写入回复和应用视图的 `warnings` 中。"
+  },
+  "applications.schema.attributes.krb5ServicePrincipalName.what": {
+    "en": "2e8e5f607172bae7",
+    "text": "SPN，例如 HTTP/sts@EXAMPLE.COM——Kerberos v5 的标识符属性。Kerberos 服务与这里的其他应用一样是一个应用，并且是本服务可能按需创建其标识符的那一种（KRB5_SERVICE_DOMAINS）。它会累积，而在这里这是常见情况而非特例：一个服务通常响应多个 SPN——HTTP/host 和 HTTP/host.example.com——而真实的 KDC 会将它们全部关联到一个账户。"
+  },
+  "applications.schema.attributes.krb5ClaimsPac.what": {
+    "en": "0abf4d44f51d3755",
+    "text": "此服务自己的 PAC 声明，以 JSON 数组形式保存，各行与本领域的 Kerberos PAC 声明页面相同。它们会添加到为此应用某个 SPN 签发的服务票据所携带的声明中（即签发它所用的 TGT 的声明），同名时应用的行替换该声明。仅在 krb5.pacClaims 开启时有效。"
+  },
+  "applications.schema.attributes.krb5TrustedForDelegation.what": {
+    "en": "3b66e9eeaaad2290",
+    "text": "TRUE 或 FALSE，默认 FALSE：此 Kerberos 服务受信任可进行委托——不受约束的委托（Active Directory 的 TRUSTED_FOR_DELEGATION）。它的服务票据带有 ok-as-delegate，告诉客户端可以把它的 TGT 转发到这里；持有被转发 TGT 的任何人都可以在任何地方以此人的身份行事。受保护者的 TGT 永远不可转发，因此无论此项如何设置都不会被转发。约束委托（appAllowedToDelegateTo、appAllowedToActOnBehalfOf）是更安全的替代方案。"
+  },
+  "applications.schema.attributes.krb5ServiceKeys.what": {
+    "en": "35f24692c1cc40a5",
+    "text": "服务主体的随机长期密钥，每种加密类型一个，保存在一个值中：一个 JSON 文档，在密钥旁指明 SPN、领域和 kvno；只要密钥加密密钥的寿命长于进程，它就以该密钥密封。之所以用一个值而不是每种加密类型一个值，是为了让密钥无法在密封不失效的情况下被移到另一个条目或另一个 kvno 上。它等同于密码：在每个页面和每个 /admin-api 回复中都被隐去，它唯一一次离开本服务，是作为创建或轮换时交出的 keytab。"
+  },
+  "applications.schema.attributes.krb5ServiceKeyInfo.what": {
+    "en": "c7f1cd5d22b9cff1",
+    "text": "`krb5ServiceKeys` 所保存的内容，但不含密钥：kvno、加密类型、密钥生成时间以及是否已密封。与密钥在同一操作中写入，因此两者不会描述不同的代。"
+  },
+  "applications.schema.attributes.appEnrolledCertificate.what": {
+    "en": "8aa24cf06f1d004f",
+    "text": "通过注册协议签发给此应用的每张证书一条 JSON 记录：序列号、协议、配置文件、主体、名称、有效期、请求者、密钥是否在此生成、证书及其签发链，以及吊销标记。属于公开材料。仅由 common/cert_enrollment.ts 写入。"
+  },
+  "applications.schema.attributes.appEnrolledPrivateKey.what": {
+    "en": "68a37a841eb0e1f0",
+    "text": "本服务为上述某张证书生成的私钥（EST 服务器端密钥生成，或控制台由服务器生成的密钥对），形式为 `<serial>:<PEM>`，只要密钥加密密钥的寿命长于进程就会被密封。在每个页面和 /admin-api 回复中都被隐去；只在签发时交出一次。"
+  },
+  "applications.schema.attributes.appAcmeEabKey.what": {
+    "en": "a77a4c24f3169e88",
+    "text": "为此应用签发的 ACME External Account Binding 密钥，每个一条 JSON 记录：密钥 id、已密封的 HMAC 密钥、其过期时间以及它所绑定的账户。这是有效凭据，在每个页面和 /admin-api 回复中都被隐去。"
+  },
+  "applications.schema.attributes.appScepChallenge.what": {
+    "en": "5cfc533567cbdfbe",
+    "text": "为此应用签发的 SCEP 质询密码，每个一条 JSON 记录：id、机密的 SHA-256 摘要、配置文件、过期时间以及兑换时间。在每个页面和 /admin-api 回复中都被隐去。"
+  },
+  "applications.schema.attributes.appCertificateHostName.what": {
+    "en": "1ed851c949c198fb",
+    "text": "此应用可以通过 ACME、EST 或 SCEP 为其获得证书的 DNS 名称或 IP 地址。注册它就是全部的控制权证明：本服务从不连接某个名称来验证它。由管理员设置；由 common/cert_enrollment.ts 读取。"
+  },
+  "applications.schema.attributes.appRegistrationJson.what": {
+    "en": "5766d34ddf2a5c0b",
+    "text": "原样保存的 RFC 7591 注册内容，作为 JSON 存于一个属性中。之所以在这里，是因为 RFC 7591 允许客户端注册任意元数据，而 RFC 7592 的读取操作必须交回所注册的内容——这是任何固定的 LDAP 属性集合都无法表示的。重建记录时，它是起点而不是定论：凡是在上面也有对应属性的成员，随后都会被该属性覆盖，因此对 oauthRedirectUri 的 ldapmodify 才是 RFC 9700 模式所强制执行的内容。仅在需要更改没有自己属性的成员时才编辑此项。"
+  },
+  "applications.schema.attributes.appRegistrationAccessToken.what": {
+    "en": "c7a3a95ccee6d6fb",
+    "text": "RFC 7592 注册访问令牌，它保护对此客户端的读取、更新和删除操作。只要进程持有持久的密钥加密密钥，它就像 oauthClientSecret 一样被密封（自 2026-10-01 起），并且绝不写入审计日志。"
+  },
+  "applications.schema.attributes.oid4vpClientId.what": {
+    "en": "7254425d22df2918",
+    "text": "请求出示凭证的授权请求中验证方的 CLIENT_ID——OpenID4VP 的标识符属性。本服务自己的验证方从配置（oid4vp.clientId）而不是从调用方获取它，因此该记录会在首次验证出示时出现；在此声明的值是某人正在配置的外部验证方。"
+  },
+  "applications.schema.attributes.federationPartnerId.what": {
+    "en": "6b7f63d65cdd8229",
+    "text": "联合伙伴对自己的称呼——外部身份提供方的 entityID，或者在关系使用 OpenID Connect 时为其颁发者标识符。关系本身不在这里：端点、证书和属性映射位于 ou=federations 之下，/federation/acs/{id} 实际上是针对它们进行验证的（参见 federation/CLAUDE.md）。此条目是作为一方的伙伴，而此属性是它使用的名称——因此这里的值不会与任何人建立联合，而这是本服务中这句话真正有分量的唯一地方。"
+  },
+  "applications.schema.attributes.ldapBindDn.what": {
+    "en": "f1e68cbe5820e3d4",
+    "text": "“目录客户端在 389 或 LDAPS 636 上绑定所用的 DN”。永远不会有东西写入它，也永远不会有东西读取它：在开发模式下“每次绑定都会成功”——任何 DN、任何密码、匿名——而在产品模式下只有人员可以绑定，因此应用改为通过 SCIM 读取目录。这是操作员记录某个应用预期使用哪个凭据的地方，与该应用的其他信息放在一起。"
+  },
+  "applications.schema.attributes.scimClientId.what": {
+    "en": "9fa8008ba9df8d03",
+    "text": "在 /scim/v2 的配置客户端的名称——它出示的令牌所属的 OAuth client_id，或它在 Basic 中发送的用户名。该界面以 RFC 7644 第 2 节所列六种方案中的任何一种对调用方进行身份验证，而不是凭应用标识符，因此不会在此写入任何内容；这个值是一种声明，而是否要求凭据完全由 SCIM 入口决定。"
+  },
+  "applications.schema.attributes.acmeAllowedProfiles.what": {
+    "en": "de16295602b7cfb4",
+    "text": "此应用可以被签发的 ACME 配置文件。列出内容时，它会为此应用覆盖 acme.allowedProfiles，可宽可窄；为空则沿用领域的列表。五个 CA、OCSP 和 KDC 配置文件永远不会被签发。"
+  },
+  "applications.schema.attributes.acmeDefaultProfile.what": {
+    "en": "4b0f22f11ec6337b",
+    "text": "当请求未指明配置文件时，此应用通过 ACME 被签发的配置文件，覆盖 acme.defaultProfile。仅在对它生效的列表允许时使用。"
+  },
+  "applications.schema.attributes.acmeCertificateLifetimeDays.what": {
+    "en": "32178dcf7b3e4ef3",
+    "text": "此应用通过 ACME 被签发的证书的有效期，以天计，覆盖 acme.certificateLifetimeDays（可长可短）。任何证书的有效期都不会超过其签发 CA。"
+  },
+  "applications.schema.attributes.estAllowedProfiles.what": {
+    "en": "fe0432c6af1e6225",
+    "text": "此应用可以被签发的 EST 配置文件。列出内容时，它会为此应用覆盖 est.allowedProfiles，可宽可窄；为空则沿用领域的列表。五个 CA、OCSP 和 KDC 配置文件永远不会被签发。"
+  },
+  "applications.schema.attributes.estDefaultProfile.what": {
+    "en": "c4ee79f2c43d72a3",
+    "text": "当请求未指明配置文件时，此应用通过 EST 被签发的配置文件，覆盖 est.defaultProfile。仅在对它生效的列表允许时使用。"
+  },
+  "applications.schema.attributes.estCertificateLifetimeDays.what": {
+    "en": "ea0b1720d4a2f466",
+    "text": "此应用通过 EST 被签发的证书的有效期，以天计，覆盖 est.certificateLifetimeDays（可长可短）。任何证书的有效期都不会超过其签发 CA。"
+  },
+  "applications.schema.attributes.scepAllowedProfiles.what": {
+    "en": "c5d9d1351151d0c4",
+    "text": "此应用可以被签发的 SCEP 配置文件。列出内容时，它会为此应用覆盖 scep.allowedProfiles，可宽可窄；为空则沿用领域的列表。五个 CA、OCSP 和 KDC 配置文件永远不会被签发。"
+  },
+  "applications.schema.attributes.scepDefaultProfile.what": {
+    "en": "c1fa1a123597d8f1",
+    "text": "当请求未指明配置文件时，此应用通过 SCEP 被签发的配置文件，覆盖 scep.defaultProfile。仅在对它生效的列表允许时使用。"
+  },
+  "applications.schema.attributes.scepCertificateLifetimeDays.what": {
+    "en": "0c245cd0b371079a",
+    "text": "此应用通过 SCEP 被签发的证书的有效期，以天计，覆盖 scep.certificateLifetimeDays（可长可短）。任何证书的有效期都不会超过其签发 CA。"
+  },
+  "applications.schema.attributes.estBasicAuthentication.what": {
+    "en": "d46cf350842998c4",
+    "text": "EST 是否接受此应用的客户端 id 和密钥（HTTP Basic，RFC 7030 第 3.2.3 节），覆盖 est.basicAuthentication：TRUE 表示接受，FALSE 表示拒绝，无论领域如何设置；未设置则由领域决定。"
+  },
+  "applications.schema.attributes.estCertificateAuthentication.what": {
+    "en": "a50d58c25992eab8",
+    "text": "EST 是否接受本领域签发给此应用的证书（TLS 客户端身份验证，RFC 7030 第 3.3.2 节），覆盖 est.certificateAuthentication：TRUE 表示接受，FALSE 表示拒绝；未设置则由领域决定。"
+  },
+  "applications.schema.attributes.estServerKeyGeneration.what": {
+    "en": "7b442138976271e8",
+    "text": "EST /serverkeygen（RFC 7030 第 4.4 节）是否可以为此应用生成密钥，覆盖 est.serverKeyGeneration：TRUE 表示允许，FALSE 表示拒绝；未设置则由领域决定。"
+  },
+  "applications.schema.attributes.enrollMaxCertificates.what": {
+    "en": "4f16c3693e154521",
+    "text": "此应用可持有的未过期注册证书数量（ACME、EST 和 SCEP 合计），覆盖 pki.enrollmentMaxCertificatesPerEntry（可高可低）。"
+  },
+  "applications.schema.attributes.didPublicKeyJwk.what": {
+    "en": "0e71b81250b48154",
+    "text": "应用的 DID 文档所发布的公钥，每个值一个 JWK，每个都是一个以其 kid（未携带 kid 时为其 RFC 7638 指纹）命名的 JsonWebKey2020 验证方法，并列在 authentication 和 assertionMethod 之下。仅限公开成员：携带 d、p、q、dp、dq、qi、oth、k 或 priv 的值会被拒绝。在应用页面上生成密钥对时，私钥部分只交出一次，不会保存在这里。"
+  },
+  "applications.schema.attributes.didPrivateKeys.what": {
+    "en": "a302dcc5f0442754",
+    "text": "本服务生成的 DID 密钥的私钥部分，以私有 JWK 组成的 JSON 数组形式保存，静态存储时像应用的 RFC 7523 密钥对一样以密钥加密密钥密封。保留它们是为了让本服务能够按请求为应用签署 Domain Linkage Credential（DIF Well-Known DID Configuration）；手工粘贴到 didPublicKeyJwk 中的密钥在这里没有私钥部分，无法签署。仅由“生成密钥对”写入。"
+  },
+  "applications.schema.attributes.didService.what": {
+    "en": "e5ce72a596909938",
+    "text": "DID 文档所指明的服务，形式为 <type>|<serviceEndpoint>：例如 LinkedDomains|https://app.example.com。类型是一个记号；端点是绝对 http 或 https URL。每个都会成为一个 id 为 <did>#service-<n> 的服务条目。"
+  },
+  "applications.schema.attributes.didAlsoKnownAs.what": {
+    "en": "5a74e5a6c69ffbcd",
+    "text": "同一应用的另一个标识符，作为 DID 文档的 alsoKnownAs 发布：一个绝对 URI，例如应用的 Web 源或其 client_id URL。DID Core 将其视为一种声称而不是证明；由依赖方进行核查。"
+  },
+  "applications.schema.attributes.secretDestProvider.what": {
+    "en": "999c0334f7036e11",
+    "text": "此目标是哪种机密管理器：aws（Secrets Manager，PutSecretValue）、gcp（Secret Manager，AddSecretVersion）、azure（Key Vault，setSecret）、vault（HashiCorp Vault 或 OpenBao KV 版本 2 引擎，带 check-and-set 的写入）或 file（仅限开发模式）。密钥管理服务不是目标：它存储的是密钥，而不是机密。"
+  },
+  "applications.schema.attributes.secretDestPayload.what": {
+    "en": "afacd48434fc8c13",
+    "text": "推送写入的内容：password（裸密码，默认值）或 json——{\"username\", \"password\", \"realm\", \"rotatedAt\"}，读取方按字段从中取出密码的对象，与本服务自己读取机密的方式相同（keys.kekField 等）。在 Vault 中，版本是映射，password 写入 secretDestField 指定的那一个字段。"
+  },
+  "applications.schema.attributes.secretDestRegion.what": {
+    "en": "b18c846aef149c6a",
+    "text": "aws：机密所在的 AWS 区域（us-east-1）。"
+  },
+  "applications.schema.attributes.secretDestProject.what": {
+    "en": "6bb1d4dc14be4ba4",
+    "text": "gcp：短机密名称所在的项目，以便服务账户将其机密命名为 sts-svc-backup，而不是 projects/<project>/secrets/sts-svc-backup。完整的资源名称按原样使用。"
+  },
+  "applications.schema.attributes.secretDestEndpoint.what": {
+    "en": "42bf9494550ebc2f",
+    "text": "azure：vault URL（https://<name>.vault.azure.net）。vault：Vault 或 OpenBao 地址（https://vault.example.com:8200）。仅限 https——写入凭据和密码都会经过它。"
+  },
+  "applications.schema.attributes.secretDestMount.what": {
+    "en": "364ce1b692cdde7c",
+    "text": "vault：KV 版本 2 引擎的挂载位置；为空时为 secret。"
+  },
+  "applications.schema.attributes.secretDestField.what": {
+    "en": "22aeaa69eeb5f6d9",
+    "text": "vault，使用 password 载荷时：密码写入的版本字段；为空时为 value，这也是本服务自己读取 Vault 时的默认字段。"
+  },
+  "applications.schema.attributes.secretDestDirectory.what": {
+    "en": "ea50b002c10c07e7",
+    "text": "file（仅限开发模式）：机密名称作为文件所在的绝对目录。文件必须已经存在；离开该目录的名称会被拒绝。"
+  },
+  "applications.schema.attributes.secretDestCaCertificates.what": {
+    "en": "2ddb41551cc111c9",
+    "text": "vault：Vault 监听器所链接到的 CA 的 PEM 证书，与公共根证书一起受信任。证书是公开的；证书始终会被验证。"
+  },
+  "applications.schema.attributes.secretDestCredential.what": {
+    "en": "0e3e22596dd9d73c",
+    "text": "目标的写入凭据，它可以写入指定机密的版本，且不应能做其他任何事：aws 为 JSON {\"accessKeyId\", \"secretAccessKey\"[, \"sessionToken\"]}；gcp 为服务账户密钥文件的 JSON；azure 为 JSON {\"tenantId\", \"clientId\", \"clientSecret\"}；vault 为令牌。它与本服务读取自己的密钥加密密钥和数据库密码所用的只读凭据是分开的。当密钥持久保存时以密钥加密密钥密封，在每个页面、/admin-api 回复和目录读取中都被隐去，并且绝不记录到日志。"
+  },
+  "applications.schema.attributes.scimClientBaseUrl.what": {
+    "en": "8576dcce5d9aa880",
+    "text": "远程 SCIM 基准 URI（RFC 7644 第 1.3 节），在服务提供方使用 /v2 段时包括该段：https://idp.example.com/scim/v2。仅限 https（第 7.2 节）；不得包含查询、片段或用户信息（第 7.1 节）。"
+  },
+  "applications.schema.attributes.scimClientEnabled.what": {
+    "en": "f0836917befa5243",
+    "text": "TRUE 表示推送变更并进行对账；FALSE（默认）保留配置但不发送任何内容。"
+  },
+  "applications.schema.attributes.scimClientAuthMethod.what": {
+    "en": "fe00a32026bba611",
+    "text": "请求的身份验证方式（RFC 7644 第 2 节）：basic（使用 scimClientUsername 和 scimClientPassword 的 HTTP Basic）、oauth2（从 scimClientTokenEndpoint 获取 client_credentials 令牌，作为 Bearer 令牌发送）或 none（仅使用 TLS 客户端证书，如已配置）。"
+  },
+  "applications.schema.attributes.scimClientUsername.what": {
+    "en": "46d34680b8229ade",
+    "text": "basic：服务提供方识别此客户端所用的用户名。"
+  },
+  "applications.schema.attributes.scimClientPassword.what": {
+    "en": "0bd798150c823e27",
+    "text": "basic：密码。当密钥持久保存时以密钥加密密钥密封，在每个页面、/admin-api 回复和目录读取中都被隐去，并且绝不记录到日志。"
+  },
+  "applications.schema.attributes.scimClientTokenEndpoint.what": {
+    "en": "2fff62508823be4f",
+    "text": "oauth2：服务提供方所信任的授权服务器的令牌端点。仅限 https。"
+  },
+  "applications.schema.attributes.scimClientOAuthClientId.what": {
+    "en": "7db4d9638e6d19a4",
+    "text": "oauth2：此客户端在那里注册所用的 client_id。"
+  },
+  "applications.schema.attributes.scimClientOAuthClientSecret.what": {
+    "en": "532cf20542b7031b",
+    "text": "oauth2：客户端密钥。已密封、被隐去且绝不记录到日志。"
+  },
+  "applications.schema.attributes.scimClientOAuthClientAuth.what": {
+    "en": "ede4e8f4cfdb1611",
+    "text": "oauth2：客户端在令牌端点的身份验证方式——client_secret_basic（默认）或 client_secret_post（RFC 6749 第 2.3.1 节）。"
+  },
+  "applications.schema.attributes.scimClientOAuthScope.what": {
+    "en": "9f692d33ed80633f",
+    "text": "oauth2：请求的 scope，以空格分隔（对于本服务自己的 /scim/v2 为 scim:write）。为空表示不请求任何 scope。"
+  },
+  "applications.schema.attributes.scimClientOAuthResource.what": {
+    "en": "b8d133b2b811132b",
+    "text": "oauth2：在授权服务器需要时，随令牌请求发送的 RFC 8707 资源指示符。"
+  },
+  "applications.schema.attributes.scimClientTlsSource.what": {
+    "en": "59a022632ff98966",
+    "text": "向服务提供方出示的 TLS 客户端证书：none（默认）、issued（由本领域的 CA 从其 tls-client 签发 CA 签发，可在 /admin/pki 上吊销）或 uploaded（scimClientTlsCertificate 和 scimClientTlsPrivateKey）。无论 scimClientAuthMethod 如何设置，它都会被出示。"
+  },
+  "applications.schema.attributes.scimClientTlsCertificate.what": {
+    "en": "b666cc747004775b",
+    "text": "客户端证书，PEM 格式，其证书链跟在后面。公开。"
+  },
+  "applications.schema.attributes.scimClientTlsPrivateKey.what": {
+    "en": "93b05dbd701d0139",
+    "text": "客户端证书的私钥，PEM 格式。已密封、被隐去且绝不记录到日志。"
+  },
+  "applications.schema.attributes.scimClientCaCertificates.what": {
+    "en": "cd2239779722a5f1",
+    "text": "服务提供方的 TLS 证书所链接到的 CA 的 PEM 证书，与公共根证书一起受信任。证书及其主机名始终会被验证。"
+  },
+  "applications.schema.attributes.scimClientScopeMode.what": {
+    "en": "372adf4f4a44227b",
+    "text": "推送哪些人：all（领域中的每个人）、groups（scimClientScopeGroups 的成员）或 filter（scimClientScopeFilter 匹配的人）。离开范围的人会在那里被取消配置。"
+  },
+  "applications.schema.attributes.scimClientScopeGroups.what": {
+    "en": "8377e938c9251688",
+    "text": "groups 范围：其成员会被推送的组，每个为组的 cn 或 DN。"
+  },
+  "applications.schema.attributes.scimClientScopeFilter.what": {
+    "en": "eb63610a69d08d21",
+    "text": "filter 范围：个人条目必须匹配的 RFC 4515 LDAP 过滤器，例如 (department=Sales)。"
+  },
+  "applications.schema.attributes.scimClientGroupMode.what": {
+    "en": "c83feac3531f87f7",
+    "text": "推送哪些组，每个组只带其范围内的成员：none、selected（scimClientGroups）、member-groups（范围内的人所属的每个组）或 all。"
+  },
+  "applications.schema.attributes.scimClientGroups.what": {
+    "en": "b69fad674e7a8af5",
+    "text": "选定的组：每个为组的 cn 或 DN。"
+  },
+  "applications.schema.attributes.scimClientDeprovision.what": {
+    "en": "fa13a73140f18534",
+    "text": "当某人在这里被删除或离开范围时，在那里会发生什么：deactivate（active 为 false，默认）或 delete。这里被禁用的账户在那里始终为 active false。"
+  },
+  "applications.schema.attributes.scimClientReconcileMinutes.what": {
+    "en": "a40bdc8ff019b288",
+    "text": "由集群调度器对整个范围进行对账的频率，以分钟计：范围内的每个人和每个组都会被推送，服务提供方以本领域的 externalId 持有、但已不在范围内的内容会被取消配置。0（默认）表示仅在管理员要求时对账。"
+  },
+  "applications.schema.attributes.ssfReceiverId.what": {
+    "en": "25f9e6acd671b643",
+    "text": "Shared Signals 接收方的名称——即它在 /ssf/stream 创建流时进行身份验证所用的身份，也是该流所携带的每个 Security Event Token 的 `aud`。与它上面四个仅用于声明的标识符不同，这个标识符确实由协议写入：创建流会记录一次观察，因为接收方完成身份验证并获准建立流，正是此注册表存在所要保存的那类事件。它仍然不授予任何东西——决定接收方获得什么的是流，而流携带它自己的受众。"
+  },
+  "applications.schema.attributes.ssfDeliveryEndpoint.what": {
+    "en": "1e2bc78133a2e93d",
+    "text": "此接收方期望事件被推送到的地址——一个 RFC 8935 投递端点。它是一种声明，没有任何东西读取它：推送发往流上的端点，即接收方创建流时指定的端点，本服务不会从应用条目中获取要连接的 URL：这里记录的 URL 是关于接收方是什么的注记，而流上的 URL 是本服务会向其建立连接的 URL。两者刻意不放在同一个存储中。"
+  },
+  "applications.schema.attributes.ssfAllowedEvents.what": {
+    "en": "4f31fdedab6d1306",
+    "text": "此应用拥有的流可以被发送哪些 Shared Signals 事件类型。每行一个值，每个值要么是一个完整的配置文件——`caep`（八个会话事件）或 `risc`（十四个账户事件）——要么是一个事件类型 URI，例如 https://schemas.openid.net/secevent/caep/event-type/session-revoked。为空表示不受限制。SSF 自身的验证事件和流更新事件始终允许。它会被强制执行两次：此应用创建或更新的流只会被同意这里允许的类型（它请求的其他类型不会出现在 `events_delivered` 中，流的日志会说明原因），并且每次投递都会再次检查，因此删除一个值会让现有的流不再接收该类型。所有者是在 /ssf/stream 完成身份验证的一方，与此条目的标识符或其 ssfReceiverId 值进行匹配。"
+  },
+  "applications.schema.attributes.ssfCaepIncludeReasons.what": {
+    "en": "059ef3d0fe452b85",
+    "text": "TRUE 或 FALSE：在此接收方的流所携带的 CAEP 事件中发送 reason_admin 和 reason_user。两者都是可选成员（CAEP 1.0 第 2 节），因此两种答案都符合规范。"
+  },
+  "applications.schema.attributes.ssfCaepReasonLanguage.what": {
+    "en": "100441045f6dec57",
+    "text": "在此接收方的流上，CAEP 原因成员所使用的 BCP 47 语言标签键。无论如何它们都保持为以标签为键的对象。"
+  },
+  "applications.schema.attributes.ssfCaepOmitEventTimestamp.what": {
+    "en": "64e3c89f9f918ec8",
+    "text": "TRUE 或 FALSE：在此接收方的流所携带的 CAEP 事件中省略 event_timestamp（可选，CAEP 1.0 第 2 节）。"
+  },
+  "applications.schema.attributes.ssfRiscIncludeReasons.what": {
+    "en": "87fd9888a9716f80",
+    "text": "TRUE 或 FALSE：在此接收方的流上，在定义了 reason_admin 和 reason_user 的 RISC 事件中发送它们。"
+  },
+  "applications.schema.attributes.ssfRiscReasonLanguage.what": {
+    "en": "f381d51fb9949509",
+    "text": "在此接收方的流上，RISC 原因成员所使用的 BCP 47 语言标签键。"
+  },
+  "applications.schema.attributes.ssfRiscOmitEventTimestamp.what": {
+    "en": "f3d2b4cf9c458620",
+    "text": "TRUE 或 FALSE：在此接收方的流上，在定义了 event_timestamp 的 RISC 事件中省略它。"
+  },
+  "applications.schema.attributes.ssfSigningAlgorithm.what": {
+    "en": "4e33e62e91d9c511",
+    "text": "此接收方的 Security Event Token 所用的 JWS 签名算法。每种都是此发送方在其 JWKS 中发布了密钥的算法，因此接收方始终能够验证。"
+  },
+  "applications.schema.attributes.ssfMinVerificationInterval.what": {
+    "en": "3994c1382024d169",
+    "text": "秒数：此接收方的流上的 min_verification_interval（SSF 1.0 第 8.1.1 节，由发送方提供）。请求更短间隔的接收方会被拒绝。"
+  },
+  "applications.schema.attributes.ssfInactivityTimeoutS.what": {
+    "en": "5e2f9c2067c275ce",
+    "text": "秒数：此接收方的流上的 inactivity_timeout（SSF 1.0 第 8.1.1 节，由发送方提供）；0 表示无。"
+  },
+  "applications.schema.attributes.ssfInactivityAction.what": {
+    "en": "ee8022952a9ec9a9",
+    "text": "当此接收方的某个流超过其非活动超时时会发生什么。"
+  },
+  "applications.schema.attributes.ssfVerificationEveryS.what": {
+    "en": "923b6f96adaf217c",
+    "text": "此发送方在此接收方的流上主动发送验证事件的间隔秒数；0 表示不发送。"
+  },
+  "applications.schema.attributes.ssfStreamStatusOnCreate.what": {
+    "en": "529d7f85e9b424fd",
+    "text": "此接收方创建的流的初始状态。"
+  },
+  "applications.schema.attributes.ssfMaxStreams.what": {
+    "en": "aea69ff44391bddd",
+    "text": "此接收方可同时持有的流数量。"
+  },
+  "applications.schema.attributes.ssfMaxSubjectsPerStream.what": {
+    "en": "c6bf17308cf86a2e",
+    "text": "此接收方的一个流可以指明的主体数量。"
+  },
+  "applications.schema.attributes.ssfMaxQueuedEvents.what": {
+    "en": "bce67526a337e6c5",
+    "text": "此接收方的一个流可保存的未投递事件数量。"
+  },
+  "applications.schema.attributes.ssfPollMaxEvents.what": {
+    "en": "7059c22de4f7bb2c",
+    "text": "对此接收方的流进行一次轮询最多返回的事件数（RFC 8936 允许发送方返回少于 maxEvents 的事件）。"
+  },
+  "applications.schema.attributes.ssfDeadLetterMaxPerStream.what": {
+    "en": "d6a27411e99ce504",
+    "text": "此接收方的一个流保留的死信数量。"
+  },
+  "applications.schema.attributes.ssfPushTimeoutMs.what": {
+    "en": "68440f363578ed9e",
+    "text": "等待此接收方的推送端点应答的毫秒数。"
+  },
+  "applications.schema.attributes.ssfPushRetries.what": {
+    "en": "193c97284b3b02e8",
+    "text": "向此接收方推送失败后重试的次数，超过后成为死信。"
+  },
+  "applications.schema.attributes.ssfPushRetryDelayMs.what": {
+    "en": "4e5bbb896a8e1382",
+    "text": "向此接收方两次推送尝试之间的毫秒数。"
+  },
+  "applications.schema.attributes.gnapInstanceId.what": {
+    "en": "5bf2a9c4ae9566c8",
+    "text": "静态实例标识符（RFC 9635 第 2.3.1 节）：客户端代替其密钥作为 `client` 发送的字符串。随后它必须证明的密钥是此条目上的 gnapKey 或 gnapKeyReference。授权服务器分发的动态标识符（第 3.5 节）不写在这里。"
+  },
+  "applications.schema.attributes.gnapKey.what": {
+    "en": "f0520a38e076cf8b",
+    "text": "客户端实例或资源服务器的公钥，采用 RFC 9635 第 7.1 节的 JSON 密钥对象形式：一种证明方法，以及 jwk、cert 或 cert#S256 中的恰好一个。按值发送的请求正是通过密钥指纹与此条目进行匹配的。"
+  },
+  "applications.schema.attributes.gnapKeyIdentity.what": {
+    "en": "e1ed7ac7ee02a735",
+    "text": "gnapKey 的指纹身份（JWK 为 jkt:...，证书为 x5t:...），在 GNAP 创建条目时写入，以便无需重新读取密钥即可找到它。"
+  },
+  "applications.schema.attributes.gnapKeyReference.what": {
+    "en": "d8aec54850661b34",
+    "text": "密钥引用（RFC 9635 第 7.1.1 节）：客户端作为 `key` 发送的不透明字符串。设置了 gnapSymmetricKey 时解析为它，否则解析为 gnapKey。"
+  },
+  "applications.schema.attributes.gnapKeyProof.what": {
+    "en": "1c6aefeeff99f7f3",
+    "text": "密钥引用所绑定的证明方法（第 7.1.1 节：\"MUST be bound to a single proofing mechanism\"）：httpsig、jwsd 或 jws。默认为 httpsig。"
+  },
+  "applications.schema.attributes.gnapMtlsTrust.what": {
+    "en": "c51b28815693cab2",
+    "text": "仅针对此客户端，此客户端通过双向 TLS 证明的密钥如何被信任（#107）：`pki` 或 `pinned`，与领域的 gnap.mtlsTrust 相同。它只能让领域的设置更严格——在领域为 pinned 时设为 `pki`——而在领域为 pki 时 `pinned` 会被拒绝（STS-REG-0196），若之后领域改为 pki 则被忽略。为空时遵从领域。在 pki 下，证书必须链接到客户端信任库，并由本领域签发给此条目，或者携带它所注册的那一个 RFC 8705 主体参数（oauthTlsClientAuthSubjectDn 或某个 oauthTlsClientAuthSan* 属性）。"
+  },
+  "applications.schema.attributes.gnapSymmetricKey.what": {
+    "en": "ded5d8a8476372b4",
+    "text": "用于密钥引用的共享密钥，base64url，至少 32 字节——这是 GNAP 唯一允许对称密钥的情况，因为它永远不会在网络上传输（第 7.1.2 节）。当密钥持久保存时以密钥加密密钥密封，在产品模式下对 LDAP 读取者隐去。"
+  },
+  "applications.schema.attributes.gnapSymmetricAlg.what": {
+    "en": "6bdcccc92db67444",
+    "text": "共享密钥签名所用的算法：对于 jwsd 和 jws 为 HS256（默认）、HS384 或 HS512；对于 httpsig 为 hmac-sha256。"
+  },
+  "applications.schema.attributes.gnapClassId.what": {
+    "en": "cf0254b61fae8a9c",
+    "text": "客户端软件的 class_id（第 2.3 节）。已注册的值优先于请求所携带的值。"
+  },
+  "applications.schema.attributes.gnapDisplayUri.what": {
+    "en": "2eac54c277b83c17",
+    "text": "客户端的 display.uri，显示在批准页面上（第 2.3.2 节）。"
+  },
+  "applications.schema.attributes.gnapLogoUri.what": {
+    "en": "15cc8de2d5eecf88",
+    "text": "客户端的 display.logo_uri。只绘制 data: 图像；其他任何 URI 都显示为链接（第 11.16 节）。"
+  },
+  "applications.schema.attributes.gnapFinishUri.what": {
+    "en": "5a8f71c45d66489d",
+    "text": "此客户端可以被送回或推送到的交互完成 URI（第 2.5.2 节）。这是回送地址：在产品模式下，未在此列出的完成 URI 会被拒绝。"
+  },
+  "applications.schema.attributes.gnapInteractionStartModes.what": {
+    "en": "764406fc42ad4c3c",
+    "text": "此客户端可以使用的交互启动模式（redirect、app、user_code、user_code_uri）。为空表示授权服务器提供的所有模式。"
+  },
+  "applications.schema.attributes.gnapAllowedAccess.what": {
+    "en": "a9291497eb549cb6",
+    "text": "此客户端可以请求的、或此资源服务器可以注册的访问类型和引用字符串。为空表示任意。"
+  },
+  "applications.schema.attributes.gnapBearerTokens.what": {
+    "en": "7b779b458f033217",
+    "text": "FALSE 表示以 invalid_flag 拒绝此客户端的 bearer 标志。"
+  },
+  "applications.schema.attributes.gnapSkipInteraction.what": {
+    "en": "83695731fd2cce04",
+    "text": "TRUE 使其成为受信任的客户端实例（第 2.3.3 节）：不请求任何主体信息的授权在没有资源所有者、没有交互的情况下被批准，而携带已验证用户断言的授权则为该人批准。仅对已注册的条目生效，绝不适用于 GNAP 当场创建的条目。"
+  },
+  "applications.schema.attributes.gnapAccessTokenFormat.what": {
+    "en": "453628f81688d935",
+    "text": "签发给此客户端的令牌，或面向此资源服务器的令牌所用的 RFC 9767 令牌格式：jwt-signed、jwt-encrypted、macaroon、biscuit 或 zcap。"
+  },
+  "applications.schema.attributes.gnapAccessTokenLifetimeS.what": {
+    "en": "fc21e3ffa049e1a6",
+    "text": "签发给此客户端的访问令牌的有效期，以秒计。"
+  },
+  "applications.schema.attributes.gnapResourceServerUri.what": {
+    "en": "52d42256a31f2bd6",
+    "text": "此资源服务器所应答的位置。位置以其中之一开头的访问权限以此条目为受众，针对它的令牌会使用此资源服务器的格式、JWE 密钥和 macaroon 密钥生成。"
+  },
+  "applications.schema.attributes.gnapOwnerLookupUri.what": {
+    "en": "c07831202c3c5254",
+    "text": "此资源服务器回答资源归谁所有的地址（#432 第 5 阶段）：一个 https URL 模板，在其路径中包含一次 {identifier}，例如 https://rs.example.com/owners/{identifier}。授权服务器获取它时会将标识符经百分号编码后填入该段，并读取 {\"owner\": \"<DN>\"}（404：无人拥有）；批准指明该标识符的权限的人必须是该人或该组的成员。"
+  },
+  "applications.schema.attributes.gnapJweKey.what": {
+    "en": "754dbf2167a8ecea",
+    "text": "此资源服务器用于 jwt-encrypted 令牌的公共加密密钥（一个 JWK），以便只有此资源服务器能够读取这些令牌。"
+  },
+  "applications.schema.attributes.gnapMacaroonKey.what": {
+    "en": "20db1983f230f494",
+    "text": "此资源服务器验证其 macaroon 令牌所用的 macaroon 根密钥，base64url。在资源服务器首次注册资源集时由授权服务器写入；当密钥持久保存时以密钥加密密钥密封。"
+  },
+  "applications.schema.attributes.gnapScopedSignals.what": {
+    "en": "2671ec903329beba",
+    "text": "FALSE 表示此 Web 应用不参与 Shared Signals 范围限定：此时它拥有的流会像其他任何接收方的流一样携带关于所有人的事件。"
+  },
+  "applications.schema.attributes.spiffeWorkloadId.what": {
+    "en": "57058ad7e2424d0b",
+    "text": "此应用预期持有的 SPIFFE ID——spiffe://<trust domain>/<path>。SPIFFE 身份在 ou=spiffe 下有其自己的条目（参见 spiffe/CLAUDE.md），SVID 实际上是根据那里的注册表签发的，因此此属性不写入也不读取任何内容：它是此注册表中的应用与那个注册表中的身份之间的关联，由人工说明，因为没有任何协议会说明它。"
+  },
+  "applications.schema.attributes.appFederationRelationship.what": {
+    "en": "2353119c3b8b44f3",
+    "text": "对此应用的用户进行身份验证所经由的联合关系——每个值是本信任领域中 ou=federations 下某个条目的 `fedId`，该条目的 `fedRole` 为 service-provider。这两点都在读取时而不是写入时检查：身份提供方一侧的关系方向相反（本服务向该伙伴进行断言，因此没有可以登录的东西），而注册表是按领域划分的，因此指向另一领域中某个关系的 id 在这里什么也不指向。\n\n它保存的是一个列表，这正是让一个应用能够提供多个身份提供方的原因。在开启自动重定向的情况下只有一个可用值，是添加此属性时所针对的情况，并且保持不变：浏览器直接前往该伙伴。有多个可用值时会绘制 /authn/select-idp，由此人选择其中之一——这是缩小到此应用伙伴范围内的主领域发现，而不是针对本服务的所有关系进行。它们不必使用同一协议：一个 SAML 2.0 伙伴和一个 OpenID Connect 伙伴在这里是两个值，在那里是两个按钮，因为列表所指的是一个人可以在哪里完成身份验证，而不是如何验证。\n\n指向本服务无法使用的关系的值会在屏幕上报告而不是被丢弃，每个值一行：一个中间项被禁用的三项列表，不应看起来像两项列表。\n\n它不由任何人写入。没有协议出示它，也没有观察能推导出它——应用的主身份提供方是某人作出的安排，而不是本服务能够观察到的东西——因此它是可编辑的，初始为空。"
+  },
+  "applications.schema.attributes.appFederationAutoRedirect.what": {
+    "en": "f049a40c629458fa",
+    "text": "如果登录此应用的人应被直接送往上面指定的伙伴、中间不经过登录屏幕，则为 TRUE。这是通过配置而不是询问来完成的主领域发现，而只有一个联合身份提供方的部署实际上就是这样做的。\n\n一旦指定了关系，它默认为 TRUE，因为指定了一个关系却还得点击按钮，是谁都不想要的状态；设为 FALSE 可保留屏幕，此时伙伴是唯一提供的按钮。因此在这里，值缺失表示“是”而不是“未知”，这与 RFC 7591 第 2 节对省略的布尔值所规定的含义相反——之所以明确说出来，是因为这两条规则在同一个条目上相遇。\n\n指定了多个关系时，它的含义与一贯的含义完全相同——“不经过登录屏幕”——变化的是这样做之后剩下什么。只有一个关系时，它是直接重定向到伙伴。有多个关系时，它是 /authn/select-idp 上的选择器：每个伙伴一个按钮，没有密码字段，这就是在没有登录屏幕的情况下完成登录屏幕的工作。它永远不意味着“替他们选一个”；没有任何布尔值能说明某人的雇主是哪个身份提供方。\n\n因此，在指定了多个关系时 FALSE 就是屏幕，密码框下方每个伙伴一个按钮——与 FALSE 一贯的作用相同，只是伙伴变成了复数。\n\n没有指定任何关系时，它什么也不做，而不是报错：两者是分开编辑的，一个已被清除的关系所遗留的值不应拒绝下一次写入。"
+  },
+  "applications.schema.attributes.appAuthnMechanism.what": {
+    "en": "7d4ba95b80f7683e",
+    "text": "此应用的用户可以用来登录的机制，取自 fedAuthnMechanism 所用的封闭列表：password、password-mfa、webauthn、spnego、wallet、federation。一个都不勾选表示全部允许。\n\n在两种模式下，对每次通过浏览器登录此应用都会强制执行：会话所依据的机制不在列表中的人，会被送去用列表中的机制重新登录，而用不在列表中的机制完成的登录会被拒绝。非浏览器入口（密码授权、WS-Trust、LDAP 绑定）不在此范围内。\n\n只列出一个时，它也决定登录的去向：`spnego` 将此人送往 /authn/spnego，凭其机器持有的 Kerberos 票据登录；`wallet` 送往 /authn/wallet；`federation` 送往 appFederationRelationship 中指定的关系；`password`、`password-mfa` 和 `webauthn` 是登录屏幕的三种形态。列出多个时，绘制的屏幕只提供这些机制。\n\n本服务已关闭的机制——krb5.spnegoAuthentication 关闭时的 `spnego`、oid4vp.signIn 关闭时的 `wallet`——会在屏幕上报告，并且无法提供。\n\n它不由任何人写入：没有协议出示它，因此它是可编辑的，初始为空。"
+  },
+  "applications.schema.attributes.appMfaMechanism.what": {
+    "en": "0cc6b4ecec8af7ad",
+    "text": "此应用的用户可以使用的第二因素：password、securityKey、totp、recoveryCode、emailCode、emailLink、wallet。一个都不勾选表示保持领域的身份验证策略不变。\n\n它只会缩小该策略的范围（目录 > 策略）：领域已关闭的第二因素在这里保持关闭，而在领域无法发送邮件时，邮件方式的第二因素仍然永远不会提供。它说明的是哪些第二因素，而不是是否需要第二因素——后者仍由领域、账户和风险决定。\n\n登录屏幕只会要求这里列出的第二因素。一个都不持有的人会被提供一种用于设置（在列出的情况下为安全密钥或身份验证器应用）——如果他持有某个第二因素，则在给出该因素之后。\n\n在两种模式下，对每次通过浏览器登录此应用都会强制执行：会话中给出的第二因素不在此列表中的人，会被送去重新登录。非浏览器入口（密码授权、WS-Trust、LDAP 绑定）不在此范围内。\n\n它不由任何人写入：没有协议出示它，因此它是可编辑的，初始为空。"
+  },
+  "devices.schema.objectClasses.device.what": {
+    "en": "d480f4c7cd3a1226",
+    "text": "cn，以及标准的 owner 和 description。"
+  },
+  "devices.schema.objectClasses.stsDevice.what": {
+    "en": "a8d77e5e94f00be8",
+    "text": "下面的每个 stsDevice* 属性：所有者类型、应用、密钥、证明、合规性、状态、描述性标签、注册以及 Native SSO。"
+  },
+  "devices.schema.attributes.cn.what": {
+    "en": "e3e1cbc76383e39a",
+    "text": "设备 id，一个 UUID。"
+  },
+  "devices.schema.attributes.owner.what": {
+    "en": "20552d2a82296c6e",
+    "text": "其唯一所有者的 DN：一个人或一个应用。"
+  },
+  "devices.schema.attributes.stsDeviceOwnerKind.what": {
+    "en": "7b8d9312393bf1b0",
+    "text": "person 或 application。"
+  },
+  "devices.schema.attributes.description.what": {
+    "en": "18482faa4e7ecf07",
+    "text": "它的标签。"
+  },
+  "devices.schema.attributes.stsDeviceApplication.what": {
+    "en": "98905a8e55fa4198",
+    "text": "使用过它的每个应用的 DN。"
+  },
+  "devices.schema.attributes.stsDeviceKey.what": {
+    "en": "500fcea967956d89",
+    "text": "每个密钥一个 JSON 值：id、kind（x509、jwk、webauthn）、thumbprint、label、added、addedBy、proof、attestation 以及公开材料。绝不包含机密。"
+  },
+  "devices.schema.attributes.stsDeviceKeyThumbprint.what": {
+    "en": "28d0e44cd4e26efd",
+    "text": "每个密钥一个 <kind>:<thumbprint>，每次写入时由 stsDeviceKey 派生，以便 LDAP 过滤器可以按密钥找到设备。"
+  },
+  "devices.schema.attributes.stsDeviceCredentialId.what": {
+    "en": "5c367d4336aa3edd",
+    "text": "每个已关联 WebAuthn 密钥的凭据 id，每次写入时由 stsDeviceKey 派生，以便登录时通过索引找到其设备。"
+  },
+  "devices.schema.attributes.stsDeviceAttestation.what": {
+    "en": "c06a57ab13bda511",
+    "text": "当任一密钥的证明已通过验证时为 attested，否则为 self-asserted。每次写入时派生。"
+  },
+  "devices.schema.attributes.stsDeviceCompliance.what": {
+    "en": "90630ca11c38c021",
+    "text": "compliant 或 not-compliant；缺失表示未知。"
+  },
+  "devices.schema.attributes.stsDeviceComplianceChange.what": {
+    "en": "ff1e956941db4c7c",
+    "text": "JSON：最近一次合规性变更——status、previous、at、source（admin、mdm、test-control、caep）、actor、reason。"
+  },
+  "devices.schema.attributes.stsDeviceStatus.what": {
+    "en": "cae725abd42266df",
+    "text": "compromised；缺失表示 active。"
+  },
+  "devices.schema.attributes.stsDeviceStatusChange.what": {
+    "en": "5bd1d7f64e5bb6b1",
+    "text": "JSON：最近一次状态变更。"
+  },
+  "devices.schema.attributes.stsDeviceRiskLevel.what": {
+    "en": "6a2a30b54f4d72c8",
+    "text": "LOW、MEDIUM 或 HIGH（CAEP 的风险级别）；缺失表示未评估。由风险评分和入侵事件设置。"
+  },
+  "devices.schema.attributes.stsDeviceRiskChange.what": {
+    "en": "cc0db159344881ab",
+    "text": "JSON：最近一次风险级别变更——level、previous、at、source（risk、compromise、admin）、actor、reason。"
+  },
+  "devices.schema.attributes.stsDeviceBrowser.what": {
+    "en": "16fa8dcc3a7975f0",
+    "text": "JSON：记住的浏览器的状态（#265）——令牌代次、当前代与上一代的签发时间、它所绑定的浏览器，以及最近一次在其上给出第二因素的时间。不含令牌，也不含机密。"
+  },
+  "devices.schema.attributes.stsDevicePlatform.what": {
+    "en": "0d8e2225e2bd158d",
+    "text": "ios、ipados、android、macos、windows、linux、chromeos 或 other。"
+  },
+  "devices.schema.attributes.stsDeviceModel.what": {
+    "en": "57494abd3e39355e",
+    "text": "描述性。"
+  },
+  "devices.schema.attributes.stsDeviceOs.what": {
+    "en": "57494abd3e39355e",
+    "text": "描述性。"
+  },
+  "devices.schema.attributes.stsDeviceEnrolment.what": {
+    "en": "f5796c5015933387",
+    "text": "JSON：method（native-sso、admin、portal、est、scep）、at、actor。"
+  },
+  "devices.schema.attributes.stsDeviceSecretHash.what": {
+    "en": "c7709d14767009ba",
+    "text": "其 Native SSO device_secret 的 SHA-256。在每次 LDAP 读取中都被隐去。"
+  },
+  "devices.schema.attributes.stsDeviceSession.what": {
+    "en": "4e1ef4b44bea18f1",
+    "text": "该机密适用的单点登录会话。"
+  },
+  "devices.schema.attributes.stsDeviceLastUsed.what": {
+    "en": "8c5617e5acd3ea36",
+    "text": "最近一次使用的时间，ISO 8601 格式。"
+  },
+  "xacmlPolicies.schema.objectClasses.xacmlPolicy.what": {
+    "en": "df332e0eeff63c92",
+    "text": "一个 XACML 3.0 Policy 或 PolicySet，以其编写时的文档形式存储。此容器就是策略存储库——在这里对 xacmlPolicyDocument 执行 ldapmodify，会改变 PDP 在下一个请求上的决定。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyId.what": {
+    "en": "b1c3c568e23849c7",
+    "text": "文档中的 PolicyId 或 PolicySetId。在写入时派生，用于列出和解析 PolicyIdReference；文档才是事实依据。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyDocument.what": {
+    "en": "9bc6b993b0d6c0df",
+    "text": "XACML 3.0 XML。这就是策略。条目上的其他所有内容都从它派生。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlVersion.what": {
+    "en": "ddb54fc06797469d",
+    "text": "文档的 Version 属性。派生。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlKind.what": {
+    "en": "90f98881070fc199",
+    "text": "\"Policy\" 或 \"PolicySet\"。派生。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlCombiningAlgId.what": {
+    "en": "8457173a3dcce81d",
+    "text": "文档所指明的规则组合或策略组合算法。派生，并显示在控制台上，因为它是策略中影响最大的一行。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlEnabled.what": {
+    "en": "9ba8d73484fcced4",
+    "text": "\"TRUE\" 或 \"FALSE\"。被禁用的策略留在存储库中但不参与评估。它不是派生的——它是这里唯一一项关于部署而非关于文档的事实，这就是它作为属性而不是 XML 中的注释存在的原因。"
+  },
+  "xacmlPolicies.schema.attributes.xacmlIsRoot.what": {
+    "en": "b927978feb9fe3f1",
+    "text": "PDP 起始的策略上为 \"TRUE\"。没有根的存储库不作任何决定，并会说明这一点；有两个根的存储库会在写入时被拒绝，而不是从中挑选一个。"
+  },
+  "xacmlPolicies.schema.attributes.description.what": {
+    "en": "7aa4f682ef6437eb",
+    "text": "文档自己的 <Description>（如有）。"
+  },
+  "xacmlPeps.schema.objectClasses.xacmlPep.what": {
+    "en": "2b063c0577e29981",
+    "text": "一个已向此策略决策点注册的远程策略执行点。这一行是记录而不是许可——从不注册的 PEP 仍然可以拉取存储库并执行策略。一行所换来的是控制台上的一席之地，以及一个用于变更提醒的地址。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepIdentity.what": {
+    "en": "aa1e6b32f2237675",
+    "text": "certificatePlan() 为此证书的身份所命名的 DN。注册不会在那里创建条目——复用的是命名规则而不是条目创建，因为 PEP 是一个组件，而 ou=users 统计的是人。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepCertificateSubject.what": {
+    "en": "a7bb93a757915e8c",
+    "text": "注册到达时所用客户端证书的完整主体。之所以在 DN 之外完整保存，是因为 DN 只是叶节点，而这才是实际出示的内容。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepThumbprint.what": {
+    "en": "caeb8d9bfef75798",
+    "text": "该证书的 RFC 8705 x5t#S256——其 DER 的 SHA-256，base64url 编码。令牌端点绑定证书绑定访问令牌时使用的是同一计算、同一函数，因此两种写法不会产生偏差。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAuthenticated.what": {
+    "en": "0d3cc605fa81dd70",
+    "text": "注册经由携带客户端证书的连接到达时为 \"TRUE\"；xacml.pepRequireCertificate 关闭且未携带证书时为 \"FALSE\"。既不隐藏也不混同：未经身份验证的注册是一行什么也没证明的记录，控制台会在该行上而不是在脚注中说明这一点。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepNotifyUrl.what": {
+    "en": "0b05ac938bf3376e",
+    "text": "如果 PEP 提供了地址，变更提醒 POST 到这里。提醒永远不是机制本身——PEP 按自己的间隔拉取，即使没有它也会趋于一致——因此 URL 缺失、被拒绝或无法访问，只会增加延迟，别无其他代价。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepBias.what": {
+    "en": "9d0aed2bdeb99a4b",
+    "text": "远程 PEP 报告其正在使用的偏向。由它报告，绝不在此设置：它是该 PEP 自己的配置（PEP_BIAS），一个看似能设置它的控件只会悄无声息地什么也不做。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepResource.what": {
+    "en": "b53451dce7081be1",
+    "text": "远程 PEP 声称它所保护的内容。来自 PEP 的自由文本，作为它关于自身的声称显示。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepEnabled.what": {
+    "en": "d83c2cb6edef6347",
+    "text": "\"TRUE\" 或 \"FALSE\"。被禁用的 PEP 保留其行和计数器，但不会收到提醒。它并不会停止执行策略，控制台也会说明这一点——这里没有任何东西能伸进另一个进程把它关掉。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRegisteredAt.what": {
+    "en": "edb9e97207f6ea2f",
+    "text": "此 PEP 首次注册的时间。在重新注册时保留，因为每小时重启一次的组件是一个值得看到的事实，而每次重启都重置时间的条目永远无法显示这一点。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
+    "en": "eca573eaea822db7",
+    "text": "最近一次心跳或拉取。xacml.pepStaleAfterS 是自此之后多久控制台会显示“stale”——刻意地，这不会改变本服务的任何行为。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
+    "en": "44708a3c15a93cf6",
+    "text": "此 PEP 最近一次报告其持有的存储库摘要。与 syncToken() 比较以判断它是否为最新，因此是否最新是由本服务推算出来的，而不是由 PEP 声称的。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyCount.what": {
+    "en": "f985e1174e1c1b66",
+    "text": "PEP 声称从那次拉取中加载的策略数量。与此存储库的数量不一致，就是 PEP 拉取成功后又拒绝了某个文档的特征。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepDecisions.what": {
+    "en": "ca35f28698ce6c91",
+    "text": "远程 PEP 报告其已作出的决定，累计计数。这是它自己进程中的自己的计数——本服务没有看到这些决定，而这正是远程 PEP 的意义所在。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAllowed.what": {
+    "en": "7a24f64947edb3c3",
+    "text": "其中允许的数量。与决定数并列而不是从中推导，因为两者之差正是偏向和义务规则实际发挥的作用。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRefused.what": {
+    "en": "820782cb1ba96ee7",
+    "text": "其中拒绝的数量，包括因无法履行义务而被拒绝的 Permit（第 7.2 节）。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepUndischargeable.what": {
+    "en": "a252138a66875fb2",
+    "text": "这些拒绝中有多少是 Permit 上无法履行的义务。单独计数，因为这是唯一一种从客户端看来像缺陷、实际上却是规范在正常工作的执行结果。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepVersion.what": {
+    "en": "b6078cbbbfdb9576",
+    "text": "远程 PEP 声称自己是什么。自由文本。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
+    "en": "a4283bfe7916574e",
+    "text": "最近一次提醒的结果——状态，或拒绝的说明语句。这是记录失败提醒的唯一地方，理由与 ssf_streams.js 对被拒绝推送所述相同：根据定义，从接收端是看不到它的。"
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "PEP 注册时关于自身所说的任何内容。"
+  }
+}

@@ -134,14 +134,18 @@ class ErrorCodesPage {
 
       kit.note(t.html('consoleErrorCodes.note.http')) +
 
-      '<h2>' + t.html('consoleErrorCodes.subsystems.heading') + '</h2>' +
+      // TWO TABS (2026-10-12; `WebPages.protocolTabs()`): the subsystems and
+      // the codes; the notes above them are Metadata.
+      '<h2 data-tab="subsystems">' +
+      t.html('consoleErrorCodes.subsystems.heading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleErrorCodes.th.prefix') +
       '</th><th>' + t.html('consoleErrorCodes.th.subsystem') + '</th><th ' +
       'class="num">' + t.html('consoleErrorCodes.th.codes') +
       '</th><th class="num">' + t.html('consoleErrorCodes.th.seen') +
       '</th><th>' + t.html('consoleErrorCodes.th.raisedFrom') +
       '</th></tr>' + subsystemRows +
-      '</table><h2>' + t.html('consoleErrorCodes.codes.heading') +
+      '</table><h2 data-tab="codes">' +
+      t.html('consoleErrorCodes.codes.heading') +
       '</h2><form ' +
       'method="get" action="/admin/error-codes"><div ' +
       'class="formrow"><label for="subsystem">' +

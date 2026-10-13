@@ -58,6 +58,10 @@ import InstanceSlot = require('../common/instance_slot');
 import listenerMap = require('../common/listener_map');
 // The page's renderer (#446): a `web_` module, loadable in a browser.
 import ListenersPage = require('./web_listeners');
+// The templates the policy's truststore is filled from, and the namespace
+// `prose()` extracts (#543). Safe at the top: nothing `server_prose` loads
+// requires this file, which `protocol_stack.ts` reaches at 18k-iii.
+import serverProse = require('../common/server_prose');
 
 type Req = any;
 type Res = any;
@@ -88,9 +92,8 @@ const LISTENERS = [
     what: 'The embedded protocol debugger, where one is embedded.' },
   { id: 'kdc', name: 'Kerberos KDC', setting: 'krb5.kdcPort', kind: null,
     what: 'TCP and UDP 88; Kerberos messages, not TLS.' },
-  { id: 'krb5-service', name: 'Kerberos test service',
-    setting: 'krb5.servicePort', kind: null,
-    what: 'The SPNEGO-protected test service.' },
+  // The Kerberos test service (`krb5.servicePort`) was a demonstration
+  // socket here until #595 moved it to the development companion.
   { id: 'revocation', name: 'Revocation (plain HTTP)',
     setting: 'pki.httpPort', kind: null, http: 'revocation',
     group: 'Listener: Revocation (plain HTTP)',
@@ -115,6 +118,35 @@ const LISTENERS = [
     what: 'Mutual TLS between the cells of one service; TLS 1.3 always.' }
 ];
 
+// ---------------------------------------------------------------------------
+// THE LISTENERS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b), this file's
+// part: each built-in listener's name, purpose and the client authentication
+// its protocol fixes, and the words `described()` writes into a policy. A
+// listener's `group` names a settings group and is an id; a custom
+// listener's label is the administrator's, and its `why` is `tls/listeners`'s.
+// `hosted_applications.js` and `listener_map.js` carry the rest of the
+// namespace.
+// ---------------------------------------------------------------------------
+/**
+ * What `described()` writes where a policy names no value, and the
+ * truststore's four readings, as templates: `file` the trust anchors file.
+ */
+const VIEW_PROSE = Object.freeze({
+  nodeDefault: '(node default)',
+  opensslDefault: '(OpenSSL default)',
+  notBound: 'not bound on this node',
+  protocolTrust: '(the protocol\'s own trust bundle)',
+  ownFile: 'its own file {{file}}',
+  ownFileAndRoot: 'its own file {{file}} and the service Root',
+  anchors: 'the service\'s anchors',
+  anchorsAndRoot: 'the service\'s anchors and the service Root'
+});
+
+/**
+ * The `/admin-api` routes whose answers carry this namespace's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/listeners'];
+
 interface ListenersAdminDeps {
   log: typeof helpers.log;
   admin: typeof admin;
@@ -137,6 +169,40 @@ class ListenersAdmin {
    * See the module's `PAGE`.
    */
   static readonly PAGE = PAGE;
+  /**
+   * The words `described()` writes, as templates (#543).
+   */
+  static readonly VIEW_PROSE = VIEW_PROSE;
+  /**
+   * The routes whose answers carry the listeners namespace's prose.
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this file's part of the listeners namespace (#543 phase 2b):
+   * each built-in listener's name, purpose and fixed client authentication,
+   * keyed by its id, and `described()`'s words.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering ListenersAdmin.prose().");
+    // Keyed by `id` by hand: `harvest()` would key a row by its `name`,
+    // which is prose.
+    const rows: Record<string, Json> = {};
+    LISTENERS.forEach(function (row: Json): void {
+      rows[row.id] = { name: row.name, what: row.what,
+                       clientAuth: row.clientAuth };
+    });
+    const out = serverProse.harvest('listeners.builtin', rows,
+                                    ['name', 'what', 'clientAuth']);
+    Object.keys(VIEW_PROSE).forEach(function (key: string): void {
+      out['listeners.policy.' + key] = VIEW_PROSE[key];
+    });
+    helpers.log.debug("Leaving ListenersAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds an instance over the modules it depends on.
@@ -189,16 +255,20 @@ class ListenersAdmin {
       }),
       tls12Ciphers: tls12,
       pqcOnly: !!policy.pqcOnly,
-      groups: options.ecdhCurve || '(node default)',
-      signatureAlgorithms: options.sigalgs || '(OpenSSL default)',
+      groups: options.ecdhCurve || VIEW_PROSE.nodeDefault,
+      signatureAlgorithms: options.sigalgs || VIEW_PROSE.opensslDefault,
       sessionTimeoutS: policy.sessionTimeoutS,
       sessionCacheSize: policy.sessionCacheSize,
       truststore: policy.kind === 'spiffeServer' ||
                   policy.kind === 'spiffeBroker' || policy.kind === 'cell'
-        ? '(the protocol\'s own trust bundle)'
-        : (policy.trustAnchorsFile ? 'its own file ' + policy.trustAnchorsFile
-                                   : 'the service\'s anchors') +
-          (policy.trustIssued ? ' and the service Root' : ''),
+        ? VIEW_PROSE.protocolTrust
+        : serverProse.fill(
+          policy.trustAnchorsFile
+            ? (policy.trustIssued ? VIEW_PROSE.ownFileAndRoot
+                                  : VIEW_PROSE.ownFile)
+            : (policy.trustIssued ? VIEW_PROSE.anchorsAndRoot
+                                  : VIEW_PROSE.anchors),
+          { file: policy.trustAnchorsFile }),
       clientAuth: policy.clientAuth
     };
   }
@@ -267,7 +337,7 @@ class ListenersAdmin {
         clientAuth: one.clientAuth,
         certificateSource: one.certificateFile ? 'file' : 'issued',
         tls: one.tls,
-        state: here ? here.state : 'not bound on this node',
+        state: here ? here.state : VIEW_PROSE.notBound,
         why: here ? here.why : '', code: here ? here.code : '',
         certificate: here ? here.certificate : null,
         policy: self.described(tlsServer().policyFor('custom', one.id)),
@@ -444,6 +514,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
+  // The listeners namespace's part from this file (#543).
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: (): Record<string, string> => ListenersAdmin.prose(),
   // For `mgmt-api/admin_api.ts` (rule 7).
   listenersView: slot.forward('listenersView'),
   listenersAction: slot.forward('listenersAction')

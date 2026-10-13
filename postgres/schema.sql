@@ -94,6 +94,15 @@
 
 BEGIN;
 
+-- NOTICES OFF, WARNINGS AND ERRORS KEPT. On a NEW database every
+-- `ALTER … ADD COLUMN IF NOT EXISTS` below finds the column its `CREATE
+-- TABLE` just made and says "already exists, skipping" — fourteen lines of
+-- noise in the container's first start that read like a fault. Those ALTERs
+-- are the upgrade path for an OLDER database and stay; only the chatter goes.
+-- Session-wide rather than LOCAL, so it outlives the COMMIT and covers the
+-- grants at the bottom too.
+SET client_min_messages = warning;
+
 -- ---------------------------------------------------------------------------
 -- A SCHEMA OF ITS OWN, AND NOT `public`, FOR ONE REASON: A SCHEMA IS WHERE
 -- CREATE IS GRANTED.

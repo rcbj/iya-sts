@@ -11,18 +11,25 @@
 // The other half of the SD-JWT VC story: the issuance flow (vc_issuer.ts) puts
 // a credential in a wallet, and this is the Verifier that asks for part of it.
 //
-//   GET  /oid4vp/verifier          the Verifier's web page (where a
-//                                  presentation starts, same device)
-//   GET  /oid4vp/start             builds an Authorization Request and either
-//                                  sends the browser to the wallet with it or
-//                                  displays it as a QR code (cross device)
 //   GET  /oid4vp/request/:id       the signed Request Object, fetched by
 //                                  reference (RFC 9101 / OID4VP request_uri)
 //   POST /oid4vp/response          the Response URI: response_mode direct_post,
 //                                  where the vp_token arrives and is VERIFIED
-//   GET  /oid4vp/result/:state     non-spec: the verdict, so the wallet page and
-//                                  the tests can read what the Verifier decided
-//   GET  /oid4vp/done              the Verifier's "thank you" page
+//
+// **WHO STARTS A VERIFICATION, AND WHERE THE WALLET GOES AFTERWARDS (#594,
+// 2026-10-12).** An administrator, or an application holding Admin Write,
+// at `POST /admin-api/verifications/start` (#587) — `startVerification()`
+// builds the request — and the verdict is read at `GET
+// /admin-api/verifications?state=` (`verificationOutcome()`). The bar
+// door's own pages (`/oid4vp/verifier`, `/oid4vp/start`, `/oid4vp/done`)
+// and the non-spec `/oid4vp/result/:state` were a demonstration and left the
+// service for the development companion (`companion/`, #591's decision 1).
+// What the Response Endpoint answers is OpenID4VP 1.0 section 8.2's: a
+// `redirect_uri` when the STARTER named one (`completionUriFor()`, held to
+// the starting client's registered redirect URIs wherever only registered
+// addresses are accepted), and an empty object when it named none — the
+// section's "MAY", where the service used to name its own demonstration
+// page, which a product realm did not serve.
 //
 // **AND SINCE 2026-09-17 (#38) A PRESENTATION CAN SIGN SOMEBODY IN** — not
 // from these endpoints, which answer a wallet, but from `/authn/wallet`
@@ -76,7 +83,7 @@
 // shape: `VcVerifier` takes the helpers it uses, the settings, the mode, the
 // error codes, the revocation check, the identity registry, the request
 // configuration, the signer and verifier, and the two stores through its
-// constructor, and registers its six endpoints from `registerRoutes(app)`.
+// constructor, and registers its three endpoints from `registerRoutes(app)`.
 // Loading the module does not call it (#50, R1): the module exports it, and
 // `common/protocol_stack.ts` calls it at the point in the route order where
 // requiring this module used to register the endpoints. The stores stay
@@ -101,8 +108,6 @@ import realms = require('../common/realms');
 import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
-import qrcode = require('qrcode');
-import app = require('../common/app');
 import helpers = require('../common/helpers');
 import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
@@ -452,11 +457,22 @@ const SIGNED_CLIENT_ID_PREFIXES = ['pre-registered', 'decentralized_identifier',
                                    'openid_federation', 'x509_san_dns',
                                    'x509_hash'];
 const X509_PREFIXES = ['x509_san_dns', 'x509_hash'];
+// SIOPv2 (#129): a self-issued ID Token alone, or with a presentation, and
+// the two response modes a Verifier here may ask for besides direct_post.
+const RESPONSE_TYPES = ['vp_token', 'id_token', 'vp_token id_token'];
+const RESPONSE_MODES = ['direct_post', 'direct_post.jwt', 'form_post'];
+// How a started request reaches the wallet: the browser sent to it, or a
+// QR code for a wallet on another device.
+const START_MODES = ['same-device', 'cross-device'];
+const BY = ['value', 'reference'];
 
 const OID4VC_QUERY = validation.z.looseObject({
+  // `deferred` and `direct` are accepted here as they always were, and the
+  // start reads anything but `cross-device` as same-device. The operation's
+  // document offers only START_MODES, the two that mean something.
   mode: validation.types.opt(validation.types.oneOf(
-    ['same-device', 'cross-device', 'deferred', 'direct'])),
-  by: validation.types.opt(validation.types.oneOf(['value', 'reference'])),
+    START_MODES.concat(['deferred', 'direct']))),
+  by: validation.types.opt(validation.types.oneOf(BY)),
   format: validation.types.opt(validation.types.oneOf(VCI_FORMATS)),
   wallet: validation.types.opt(validation.types.uri),
   state: validation.types.opt(validation.types.opaque),
@@ -465,9 +481,9 @@ const OID4VC_QUERY = validation.z.looseObject({
   // SIOPv2 (#129): a self-issued ID Token alone, or with a presentation,
   // and the two response modes a Verifier here may ask for.
   response_type: validation.types.opt(validation.types.oneOf(
-    ['vp_token', 'id_token', 'vp_token id_token'])),
+    RESPONSE_TYPES)),
   response_mode: validation.types.opt(validation.types.oneOf(
-    ['direct_post', 'direct_post.jwt', 'form_post'])),
+    RESPONSE_MODES)),
   // THE CLIENT IDENTIFIER OF THIS ONE REQUEST (#230): the Verifier chooses
   // it per request (OpenID4VP section 5.9), so the start page may name any
   // prefix a signed request can carry; naming one makes the request signed.
@@ -803,14 +819,19 @@ class VcVerifier {
    * accepted, must name the configured wallet or an allowed one.
    *
    * @param req - the request
+   * @param named - optional; the wallet the caller named, where it is not
+   *   the request's `wallet` query parameter
    * @returns `{ url }`, or `{ error }` naming the refused wallet
    */
-  vpWalletFor(req: any) {
+  vpWalletFor(req: any, named?: unknown) {
     const { log, config, mode } = this.deps;
     log.debug("Entering VcVerifier.vpWalletFor().");
     const configured = String(this.vpWalletUrl() || '').replace(/\/+$/, '');
-    const asked = req.query.wallet ?
-                  String(req.query.wallet).replace(/\/+$/, '') : '';
+    // THE WALLET A CALLER NAMED (#587): `POST /admin-api/verifications/
+    // start` names it in its body and passes it here (the demonstration's
+    // `/oid4vp/start` named it in its query until #594).
+    const wanted = named !== undefined ? named : req.query.wallet;
+    const asked = wanted ? String(wanted).replace(/\/+$/, '') : '';
     if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
       const allowed = (config.value('oid4vp.allowedWalletUrls') || []).map(
           (one) => {
@@ -828,10 +849,48 @@ class VcVerifier {
                         'parameter off.' };
       }
     }
-    log.debug("Leaving VcVerifier.vpWalletFor().");
-    return { url: (asked ||
-                   configured) + String(config.value(
-                       'oid4vp.walletPresentationPath') || '') };
+    // NO WEB WALLET UNLESS ONE IS CONFIGURED OR NAMED (2026-10-12): the
+    // default is empty, and a request is then handed to a wallet APP by
+    // its scheme (`walletScheme()`) rather than to an address that is no
+    // wallet at all.
+    const chosen = asked || configured;
+    log.debug("Leaving VcVerifier.vpWalletFor(). " +
+              (chosen ? "A web wallet." : "No web wallet."));
+    return { url: chosen ? chosen + String(config.value(
+                     'oid4vp.walletPresentationPath') || '') : '',
+             named: !!asked };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SCHEME A WALLET APP IS HANDED A REQUEST UNDER (2026-10-12).
+  //
+  // A Verifier that does not know which wallet the person holds hands the
+  // request to whichever one the device has registered for the scheme:
+  // `openid4vp://` (OpenID4VP 1.0), or `haip-vp://` where
+  // `oid4vp.walletInvocation` says so (OpenID4VC HAIP 1.0 section 5.1). A
+  // self-issued ID Token alone is SIOPv2's `siopv2://` (SIOPv2 section 7.2)
+  // whatever the setting says. The query after the `?` is
+  // `vpRequestQuery()`'s, so a request by reference is `client_id` and
+  // `request_uri`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the custom URL scheme, with its `://`, a wallet app is handed
+   * this transaction's request under.
+   *
+   * @param record - the transaction
+   * @returns `openid4vp://`, `haip-vp://` or `siopv2://`
+   */
+  walletScheme(record: any): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.walletScheme().");
+    if (record && record.responseType === 'id_token') {
+      log.debug("Leaving VcVerifier.walletScheme(). SIOPv2.");
+      return 'siopv2://';
+    }
+    const scheme = String(config.value('oid4vp.walletInvocation') || '') ===
+      'haip-vp' ? 'haip-vp://' : 'openid4vp://';
+    log.debug("Leaving VcVerifier.walletScheme(). " + scheme);
+    return scheme;
   }
 
   // How old a Key Binding JWT may be. It is signed for one presentation, so
@@ -969,8 +1028,7 @@ class VcVerifier {
   //   x509_hash                 the base64url SHA-256 of that certificate's
   //                             DER (#230).
   //
-  // `asked` is the prefix one request named (`/oid4vp/start`'s
-  // `client_id_prefix`); the realm's setting otherwise. An x509 prefix also
+  // `asked` is the prefix one start named (its `client_id_prefix`); the realm's setting otherwise. An x509 prefix also
   // answers the `algorithm` the request must be signed with, because the
   // certificate is over the realm key for that algorithm and no other.
   //
@@ -1023,6 +1081,45 @@ class VcVerifier {
     }
     log.debug("Leaving VcVerifier.signedClientId(). Pre-registered.");
     return { clientId: this.vpClientId(), header: {}, kidDid: '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A SIGN-IN'S REQUEST IS SIGNED UNDER, AND ANSWERED BY (2026-10-12).
+  //
+  // A wallet sign-in is asked of whatever wallet the person holds, which has
+  // never heard of this service: `oid4vp.signInClientIdPrefix` (x509_hash
+  // by default, OpenID4VC HAIP 1.0 section 5) and
+  // `oid4vp.signInResponseMode` (direct_post.jwt, HAIP section 5.1). A
+  // verification an administrator starts keeps `oid4vp.clientIdPrefix`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the Client Identifier prefix a wallet sign-in's request is
+   * signed under (`oid4vp.signInClientIdPrefix`).
+   *
+   * @returns the prefix
+   */
+  signInClientIdPrefix(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.signInClientIdPrefix().");
+    const configured = String(config.value('oid4vp.signInClientIdPrefix') ||
+                              '');
+    const prefix = SIGNED_CLIENT_ID_PREFIXES.indexOf(configured) >= 0 ?
+      configured : 'x509_hash';
+    log.debug("Leaving VcVerifier.signInClientIdPrefix(). " + prefix);
+    return prefix;
+  }
+
+  // The response mode a sign-in asks for: the one a caller named, where it
+  // is one a sign-in may use, else `oid4vp.signInResponseMode`.
+  private signInResponseMode(asked?: unknown): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifier.signInResponseMode().");
+    const named = String(asked || '');
+    const mode = named === 'direct_post' || named === 'direct_post.jwt' ?
+      named : String(config.value('oid4vp.signInResponseMode') ||
+                     'direct_post.jwt');
+    log.debug("Leaving VcVerifier.signInResponseMode(). " + mode);
+    return mode;
   }
 
   // The prefix a signed request carries: the one a request named when it is
@@ -1451,11 +1548,23 @@ class VcVerifier {
     // arrangement (dcApiRequest()), over the Response URI. The OpenID
     // conformance suite's verifier plan has a variant for it, and the start
     // page refused the mode until then.
-    const responseMode = !signIn && (opts.responseMode === 'form_post' ||
-                                     opts.responseMode === 'direct_post.jwt')
-      ? String(opts.responseMode) : 'direct_post';
+    //
+    // A SIGN-IN asks for `oid4vp.signInResponseMode` (2026-10-12):
+    // `direct_post.jwt` by default, which OpenID4VC HAIP 1.0 section 5.1
+    // requires, and `direct_post` for a wallet that cannot encrypt. Never
+    // `form_post`, whose answer arrives through a browser the binding
+    // cookie would not be sent from.
+    const responseMode = signIn
+      ? (this.signInResponseMode(signIn.responseMode) === 'direct_post.jwt'
+        ? 'direct_post.jwt' : 'direct_post')
+      : ((opts.responseMode === 'form_post' ||
+          opts.responseMode === 'direct_post.jwt')
+        ? String(opts.responseMode) : 'direct_post');
+    // A sign-in's request is signed under `oid4vp.signInClientIdPrefix`
+    // (2026-10-12) unless the caller named one.
     const signed = byReference ?
-      this.signedClientId(req, opts.clientIdPrefix) : null;
+      this.signedClientId(req, opts.clientIdPrefix ||
+        (signIn ? this.signInClientIdPrefix() : '')) : null;
     const clientId = signed ? signed.clientId :
                      ('redirect_uri:' + responseUri);
     const ttlMs = signIn && signIn.ttlMs > 0 ? Number(signIn.ttlMs) :
@@ -1971,58 +2080,299 @@ class VcVerifier {
     return query;
   }
 
-  // The Verifier's screen in a cross-device presentation.
-  private renderVpQrPage(res: any, opts: any) {
-    const { log, xmlEscape, errorCodes } = this.deps;
-    log.debug("Entering VcVerifier.renderVpQrPage().");
-    qrcode.toDataURL(opts.requestUri,
-                     { errorCorrectionLevel: 'M', margin: 2, width: 320 })
-      .then((dataUrl) => {
-        const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-          'charset="utf-8"><title>The Bar Door — scan to ' +
-          'present</title><style>body{font-family:system-ui,-apple-system,' +
-          '"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-          'display:flex;align-items:center;justify-content:center;' +
-          'min-height:100vh;color:#222}.card{background:#fff;border:1px ' +
-          'solid #d5d5dd;border-radius:10px;padding:30px 34px;width:560px;' +
-          'box-shadow:0 6px 24px rgba(0,0,0,.08);text-align:center}' +
-          'h1{font-size:1.25em;margin:0 0 6px}p{line-height:1.5;color:#333}' +
-          'img.qr{margin:14px auto;display:block;border:1px solid #eee;' +
-          'border-radius:8px}.uri{word-break:break-all;' +
-          'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-          'font-size:.72em;color:#555;background:#fafafa;border:1px solid ' +
-          '#eee;border-radius:6px;padding:8px;text-align:left}' +
-          '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
-          'font-size:.78em;color:#777;text-align:left}' +
-          'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
-          '</style></head><body><div class="card"><h1>Scan this with your ' +
-          'wallet</h1><p>Your wallet will show you exactly which claims we ' +
-          'are asking for before anything is sent.</p><img class="qr" ' +
-          'id="request_qr" alt="OID4VP Authorization Request QR code" ' +
-          'src="' + dataUrl + '"><div class="uri" ' +
-          'id="request_uri">' + xmlEscape(opts.requestUri) + '</div><div ' +
-          'class="meta">OID4VP cross-device flow. The wallet is on your ' +
-          'other device, so it cannot be redirected — it reads the request ' +
-          'from this code and POSTs the presentation straight back to us ' +
-          '(<code>response_mode=direct_post</code>). The <code>nonce</code> ' +
-          'in the request is what stops a presentation from being replayed. ' +
-          'If your wallet is on this device, <a id="open_in_wallet" ' +
-          'href="' + xmlEscape(opts.walletUrl) + '">open ' +
-          'it here</a>.</div></div></body></html>\n';
-        res.status(200).type('text/html').send(page);
-        log.debug("Leaving VcVerifier.renderVpQrPage().");
-      })
-      .catch((e) => {
-        log.debug("Caught in VcVerifier.renderVpQrPage(): " +
-                  ((e && e.message) || e));
-        log.error(errorCodes.tag('STS-VC-0034') +
-                  "could not render the presentation QR code: " + e.message);
-        errorCodes.mark(res, 'STS-VC-0034');
-        res.status(500).type('text/plain').send('Could not render the ' +
-                                                'Authorization Request QR ' +
-                                                'code: ' + e.message);
+  // ---------------------------------------------------------------------------
+  // STARTING A VERIFICATION (#587, 2026-10-12; the one door since #594).
+  //
+  // `POST /admin-api/verifications/start` — an administrator's act, or an
+  // application's holding Admin Write (the development companion's bar door
+  // among them, #594) — builds the request through this method: the
+  // validation of what was asked, the certificate issued first for an x509
+  // Client Identifier, `buildVpRequest()`, the query and the wallet rule. It
+  // returns what was built and sends nothing; the operation answers it as
+  // JSON. Until #594 the demonstration's `/oid4vp/start` was a second door
+  // onto it.
+  //
+  // It takes the REQUEST because the request's origin is read a dozen times
+  // below it — the response URI, the did:web, the OpenID Federation entity
+  // identifier, the x509 name — and a request is what each of those asks for.
+  // `asked` is the operation's body: `format`, `by`, `client_id_prefix`,
+  // `response_type`, `response_mode`, `mode` and `wallet`. `options`
+  // carries what the operation checked itself: `completionUri`, the
+  // address the Response Endpoint names afterwards (`completionUriFor()`).
+  //
+  // A REFUSAL IS A VALUE, `{ ok: false, status, code, error }`: 400
+  // STS-VC-0032 for what the schema refuses, 500 with the builder's own
+  // code for a request that cannot be built (a Verifier Attestation this
+  // realm cannot use, an x509 Client Identifier with nothing to certify —
+  // STS-VC-0092, STS-VC-0110 to STS-VC-0113), and 400 STS-VC-0033 for a
+  // wallet this realm will not send a request to.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds a presentation request as `POST /admin-api/verifications/start`
+   * asks, and says how a wallet is handed it.
+   *
+   * @param req - the request, whose origin and realm the request is built on
+   * @param asked - what was asked: `format`, `by`, `client_id_prefix`,
+   *   `response_type`, `response_mode`, `mode` and `wallet`
+   * @param where - the input group's name for a refusal (`query`, `body`)
+   * @param options - `completionUri`: where the Response Endpoint sends the
+   *   wallet afterwards, already checked by `completionUriFor()`
+   * @returns `{ ok: true, record, query, wallet, walletUrl, requestUri,
+   *   mode }`, or `{ ok: false, status, code, error }`
+   */
+  async startVerification(req: any, asked: any, where: string,
+                          options?: { completionUri?: string }) {
+    const { log, vpConfig } = this.deps;
+    log.debug("Entering VcVerifier.startVerification(). where=" + where);
+    const checked = validation.checkParsed(asked || {}, where, OID4VC_QUERY);
+    if (!checked.ok) {
+      log.debug("Leaving VcVerifier.startVerification(). " + checked.detail);
+      return { ok: false, status: 400, code: 'STS-VC-0032',
+               error: String(checked.detail) };
+    }
+    const given: any = checked.value;
+    // A named Client Identifier Prefix (#230) is one a SIGNED request
+    // carries, so naming one asks for a request by reference.
+    const clientIdPrefix = String(given.client_id_prefix || '');
+    const byReference = String(given.by || '') === 'reference' ||
+                        !!clientIdPrefix;
+    const startMode = String(given.mode || 'same-device');
+    // Which credential format to ask for. Anything unrecognised — and a link
+    // that names none, which is the ordinary case — falls back to the
+    // CONFIGURED default rather than to a constant; dc+sd-jwt is what that
+    // default starts as, so a link that worked before this page existed asks
+    // for what it always did.
+    const format = vpConfig.formatOf(String(given.format || ''));
+    let record: any = null;
+    try {
+      if (byReference) {
+        // The Verifier's certificate, issued before the synchronous build
+        // reads it, for an x509 Client Identifier; nothing otherwise.
+        await this.prepareSignedClientId(req, clientIdPrefix);
+      }
+      record = this.buildVpRequest(req,
+                                   { byReference: byReference,
+                                     clientIdPrefix: clientIdPrefix,
+                                     format: format,
+                                     responseType: String(
+                                       given.response_type || ''),
+                                     responseMode: String(
+                                       given.response_mode || '') });
+    } catch (e) {
+      // What stops a request being built: a configured Verifier
+      // Attestation this realm cannot use, or an x509 Client Identifier
+      // with no certificate or name to carry (#230) — each logged where
+      // it is found, with its code.
+      log.debug("Caught in VcVerifier.startVerification(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving VcVerifier.startVerification(). Not built.");
+      return { ok: false, status: 500,
+               code: String((e && e.code) || 'STS-VC-0092'),
+               error: String((e && e.message) || e) };
+    }
+    const query = this.vpRequestQuery(req, record);
+    const walletChoice = this.vpWalletFor(req, String(given.wallet || ''));
+    if (walletChoice.error) {
+      log.debug("Leaving VcVerifier.startVerification(). " +
+                walletChoice.error);
+      return { ok: false, status: 400, code: 'STS-VC-0033',
+               error: walletChoice.error };
+    }
+    // A WEB WALLET where one is named or configured; otherwise the wallet
+    // app the device has for the scheme (2026-10-12).
+    const scheme = this.walletScheme(record);
+    const wallet = walletChoice.url || scheme;
+    // WHERE THE WALLET GOES AFTERWARDS (#594): on the transaction, through
+    // the store, so the node that answers the wallet's POST reads it.
+    const completion = String((options && options.completionUri) || '');
+    if (completion) {
+      record.completionUri = completion;
+      this.saveTransaction(record);
+    }
+    log.debug("Leaving VcVerifier.startVerification(). state=" +
+              record.state + ", mode=" + startMode);
+    return {
+      ok: true, record: record, query: query, wallet: wallet,
+      walletUrl: wallet + '?' + query,
+      // SIOPv2 section 7.2's static `siopv2:` for an ID Token alone; the
+      // wallet scheme (`oid4vp.walletInvocation`) whenever a presentation is
+      // asked for — what the cross-device QR code carries.
+      requestUri: scheme + '?' + query,
+      mode: startMode
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHERE THE WALLET IS SENT ONCE THE VERIFIER HAS ANSWERED (#594).
+  //
+  // OpenID4VP 1.0 section 8.2: the Response Endpoint MAY answer a
+  // `redirect_uri`, and the wallet then sends the End-User's browser there.
+  // Whose page that is belongs to whoever STARTED the verification, so the
+  // start names it (`redirect_uri` in its body) — the service's own
+  // demonstration page that every verification used to name left with the
+  // demonstration. Held to the rule every other return address here obeys
+  // (`mode.acceptsUnregisteredAddresses()`): where only registered
+  // addresses are accepted, it must be one of the STARTING CLIENT's
+  // registered redirect URIs (`applications.clientConfigOf()`, the register
+  // the authorization endpoint holds its own redirect URIs to), matched
+  // whole; anywhere else any absolute http(s) URL with no fragment. Refused
+  // `STS-VC-0123` either way, never replaced. A start that names none is
+  // answered by the Response Endpoint with no `redirect_uri`, which the
+  // section allows and which is what another device's wallet wants.
+  // ---------------------------------------------------------------------------
+  /**
+   * Checks the address a verification's starter names for its wallet to be
+   * sent to afterwards.
+   *
+   * @param asked - the `redirect_uri` the start named ('' for none)
+   * @param clientId - the starting client's id, '' when unknown
+   * @returns `{ uri }` ('' for none), or `{ error }`
+   */
+  completionUriFor(asked: unknown, clientId: string) {
+    const { log, mode } = this.deps;
+    log.debug("Entering VcVerifier.completionUriFor().");
+    const uri = String(asked || '');
+    if (!uri) {
+      log.debug("Leaving VcVerifier.completionUriFor(). None.");
+      return { uri: '' };
+    }
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(uri);
+    } catch (e) {
+      log.debug("Caught in VcVerifier.completionUriFor(): " +
+                ((e && e.message) || e));
+      // Refused below, by name.
+      parsed = null;
+    }
+    if (!parsed || !/^https?:$/.test(parsed.protocol) || parsed.hash ||
+        uri.indexOf('#') >= 0) {
+      log.debug("Leaving VcVerifier.completionUriFor(). Not a URL.");
+      return { error: 'redirect_uri must be an absolute http or https URL ' +
+                      'with no fragment.' };
+    }
+    if (mode.acceptsUnregisteredAddresses()) {
+      log.debug("Leaving VcVerifier.completionUriFor(). Accepted.");
+      return { uri: uri };
+    }
+    // Lazily: the register is a library every family has loaded by the
+    // time a verification is started, and a top-level require here is one
+    // more edge for a cycle to close through.
+    const registered = clientId
+      ? (require('../common/applications').clientConfigOf(clientId)
+          .redirect_uris || []).map(String)
+      : [];
+    if (registered.indexOf(uri) < 0) {
+      log.debug("Leaving VcVerifier.completionUriFor(). Unregistered.");
+      return { error: 'redirect_uri "' + uri + '" is not one of the ' +
+                      'redirect URIs registered for ' +
+                      (clientId ? 'the client "' + clientId + '"'
+                                : 'the caller') +
+                      ', and this realm does not send a wallet to an ' +
+                      'address a request named. Register it on the ' +
+                      'application, or leave redirect_uri off.' };
+    }
+    log.debug("Leaving VcVerifier.completionUriFor(). Registered.");
+    return { uri: uri };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE VERIFIER DECIDED (#587). `GET /admin-api/verifications?state=`
+  // answers exactly this (and the demonstration's `/oid4vp/result/:state`
+  // did, until #594). It reads
+  // the store directly rather than through `transactionFor()`, as the result
+  // page always has: an expired transaction is still reported until the
+  // sweep removes it, because "what did it decide" outlives "may it still be
+  // answered".
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the verdict a presentation request's state names, as the result
+   * endpoint answers it.
+   *
+   * @param state - the request's state
+   * @returns `{ state, nonce, client_id, requested, dcql_query, received,
+   *   verdict }`, or null for a state with no record
+   */
+  verificationOutcome(state: unknown) {
+    const { log, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.verificationOutcome().");
+    const key = String(state || '');
+    const record = key ? vpTransactions.get(key) : null;
+    if (!record) {
+      log.debug("Leaving VcVerifier.verificationOutcome(). Unknown state.");
+      return null;
+    }
+    log.debug("Leaving VcVerifier.verificationOutcome(). received=" +
+              !!record.verdict);
+    return {
+      state: record.state,
+      nonce: record.nonce,
+      client_id: record.clientId,
+      requested: record.requested || [],
+      dcql_query: record.request.dcql_query,
+      received: !!record.verdict,
+      verdict: record.verdict
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE VERIFICATIONS STILL OPEN IN THIS REALM (#587), newest first: the
+  // console's outcome list on the Verifier request tab and `GET
+  // /admin-api/verifications` with no `state`. A WALLET SIGN-IN IS LEFT OUT —
+  // it is a person signing in, which Monitoring → Sessions reports, and its
+  // transaction names who; this lists what the bar door was asked to verify.
+  // A row says what was asked and what was decided, never the presentation
+  // or a disclosed value: the claim NAMES are listed, and the values are one
+  // `?state=` away for an administrator who asks for that one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists the realm's open verifications, newest first.
+   *
+   * @param limit - the most rows to answer
+   * @returns `{ verifications, total, limit }`
+   */
+  recentVerifications(limit: number) {
+    const { log, vpTransactions } = this.deps;
+    log.debug("Entering VcVerifier.recentVerifications().");
+    const now = Date.now();
+    const rows: any[] = [];
+    vpTransactions.forEach(function (record) {
+      if (!record || record.signIn || record.expires < now) {
+        return;
+      }
+      const verdict = record.verdict || null;
+      rows.push({
+        state: record.state,
+        format: record.format || '',
+        responseType: record.responseType || 'vp_token',
+        responseMode: record.responseMode || '',
+        byReference: !!record.byReference,
+        clientId: record.clientId,
+        requested: record.requested || [],
+        expiresAt: new Date(record.expires).toISOString(),
+        received: !!verdict,
+        ok: verdict ? !!verdict.ok : null,
+        decidedAt: verdict ? (verdict.at || null) : null,
+        claims: verdict ? Object.keys(verdict.claims || {}) : [],
+        failedChecks: verdict ? (verdict.checks || [])
+          .filter(function (one) {
+            return one && one.ok === false;
+          })
+          .map(function (one) {
+            return String(one.name || '');
+          }) : [],
+        error: verdict && verdict.error ? String(verdict.error) : ''
       });
-    log.debug("Leaving VcVerifier.renderVpQrPage().");
+    });
+    rows.sort(function (a, b) {
+      return a.expiresAt < b.expiresAt ? 1 : (a.expiresAt > b.expiresAt ?
+                                               -1 : 0);
+    });
+    const cap = Math.max(1, Number(limit) || 1);
+    log.debug("Leaving VcVerifier.recentVerifications(). " + rows.length +
+              " open.");
+    return { verifications: rows.slice(0, cap), total: rows.length,
+             limit: cap };
   }
 
   // ---------------------------------------------------------------------------
@@ -2945,17 +3295,19 @@ class VcVerifier {
   }
 
   // Where a wallet sends the End-User once this Verifier has answered: the
-  // bar door's thank-you page, or — for a sign-in — back to the page the
-  // browser that started it is waiting on, carrying the `response_code` when
-  // there is one. The path is the one the sign-in module put on the
+  // page the verification's starter named (#594, `completionUriFor()`), or
+  // nothing — '' — when it named none; or, for a sign-in, back to the page
+  // the browser that started it is waiting on, carrying the `response_code`
+  // when there is one. The path is the one the sign-in module put on the
   // transaction; this module does not know it.
   private afterResponseUri(req: any, record: any, responseCode: string) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.afterResponseUri().");
     const base = baseUrlOf(req);
     if (!record.signIn || !record.signIn.completePath) {
-      log.debug("Leaving VcVerifier.afterResponseUri(). The bar door.");
-      return base + '/oid4vp/done?state=' + encodeURIComponent(record.state);
+      log.debug("Leaving VcVerifier.afterResponseUri(). The starter's: " +
+                (record.completionUri ? 'named' : 'none'));
+      return String(record.completionUri || '');
     }
     log.debug("Leaving VcVerifier.afterResponseUri(). A sign-in.");
     const path = String(record.signIn.completePath);
@@ -3775,6 +4127,16 @@ class VcVerifier {
       if (!ok) {
         errorCodes.mark(res, 'STS-VC-0090');
       }
+      if (!next) {
+        // The starter named no page (#594): the browser that posted is
+        // told, in plain text, that the answer arrived, and sent nowhere.
+        res.status(200).type('text/plain').set('Cache-Control', 'no-store')
+           .send('The Verifier received your wallet\'s answer. You may ' +
+                 'close this page.');
+        log.debug("Leaving VcVerifier.answerSelfIssued(). form_post, no " +
+                  "page named, ok=" + ok);
+        return;
+      }
       res.redirect(303, next);
       log.debug("Leaving VcVerifier.answerSelfIssued(). form_post, ok=" + ok);
       return;
@@ -3793,8 +4155,8 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.answerSelfIssued(). Refused.");
       return;
     }
-    res.status(200).type('application/json').send(JSON.stringify({
-      redirect_uri: next }));
+    res.status(200).type('application/json').send(JSON.stringify(
+      this.responseAnswer(next)));
     log.debug("Leaving VcVerifier.answerSelfIssued(). Accepted.");
   }
 
@@ -3909,7 +4271,19 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.saveTransaction().");
   }
 
-  // The six endpoints, in the order they were registered at load before
+  // The Response Endpoint's 200 body (OpenID4VP 1.0 section 8.2): the
+  // `redirect_uri` when there is a page to send the wallet to, and an empty
+  // object when the starter named none (#594).
+  private responseAnswer(next: string): Record<string, string> {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifier.responseAnswer().");
+    log.debug("Leaving VcVerifier.responseAnswer(). " +
+              (next ? 'A page.' : 'None.'));
+    return next ? { redirect_uri: next } : {};
+  }
+
+  // The three endpoints (the bar door's pages and the result left for the
+  // companion, #594), in the order they were registered at load before
   // #50's R1. Called by `common/protocol_stack.ts`.
   /**
    * Registers the Verifier's routes under `/oid4vp`, in the order they were
@@ -3924,227 +4298,6 @@ class VcVerifier {
             errorCodes, stats, vpConfig, vpTransactions,
             vpRequests } = this.deps;
     log.debug("Entering VcVerifier.registerRoutes().");
-    app.get('/oid4vp/verifier', (req, res) => {
-      log.debug("Entering the verifier web page. format=" +
-                (req.query.format || 'dc+sd-jwt'));
-      const base = baseUrlOf(req);
-      // Which format this verifier will ask for. A wallet arriving from the
-      // debugger's presentation step 0 names the format it is actually holding,
-      // because the format is the VERIFIER's choice and a wallet cannot convert
-      // a credential into another one. Without carrying it through these links,
-      // every button below would start a dc+sd-jwt request whatever the holder
-      // has.
-      const askedPage = validation.check(req, 'query', OID4VC_QUERY);
-      if (!askedPage.ok) {
-        log.debug('Leaving the verifier web page. ' + askedPage.detail);
-        errorCodes.mark(res, 'STS-VC-0032');
-        return res.status(400).type('text/plain').send(askedPage.detail + '\n');
-      }
-      const pageFormat = String(req.query.format || '');
-      // Recognised through the configuration's own lookup rather than compared
-      // here, which is what makes `?format=dc+sd-jwt` work: a plus in a query
-      // string is a space by the time express has parsed it, so the literal
-      // comparison this replaced answered "no such format" for the one format
-      // whose id contains one.
-      const named = vpConfig.formatById(pageFormat);
-      const knownFormat = named ? named.id : '';
-      const withFormat = (path) => {
-        log.debug("Entering withFormat().");
-        if (!knownFormat) {
-          log.debug("Leaving withFormat().");
-          return path;
-        }
-        log.debug("Leaving withFormat().");
-        return path + (path.indexOf('?') === -1 ? '?' : '&') + 'format=' +
-               encodeURIComponent(knownFormat);
-      };
-      const askingFor = vpConfig.formatOf(knownFormat);
-      // What this door is currently configured to ask for. Read here rather
-      // than at require time, so that the page a tester is looking at and the
-      // request the button builds cannot disagree — the console can change this
-      // between the two.
-      const wantedClaims = vpConfig.requestedClaims();
-      // The claims an ldp_vc request will silently NOT carry, because the
-      // vendored JSON-LD context defines no term for them. Said on the page
-      // rather than left to be found in a presentation that disclosed less than
-      // was asked for.
-      const ldpOmitted = askingFor === 'ldp_vc' ? vpConfig.ldpOmitted() : [];
-      // What the request will name the credential by: a vct for an SD-JWT VC, a
-      // type array for the two W3C formats. Read from the configuration rather
-      // than decided again here — this page saying "type
-      // urn:idptools:sd-jwt-vc:identity" over a request that named a type array
-      // is exactly the kind of small lie that costs somebody an afternoon.
-      const askingType = vpConfig.formatById(askingFor).identifierText;
-      const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-        'charset="utf-8"><title>The Bar Door — are you over ' +
-        '21?</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
-        'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
-        'align-items:center;justify-content:center;min-height:100vh;' +
-        'color:#222}.card{background:#fff;border:1px solid #d5d5dd;' +
-        'border-radius:10px;padding:30px 34px;width:560px;box-shadow:0 6px ' +
-        '24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 6px}' +
-        'p{line-height:1.5;color:#333}a.cta{display:inline-block;' +
-        'margin-top:14px;margin-right:10px;padding:10px 16px;' +
-        'border-radius:6px;background:#12107c;color:#fff;' +
-        'text-decoration:none;font-weight:600}' +
-        'a.cta.secondary{background:#fff;color:#12107c;border:1px solid ' +
-        '#12107c}p.alt{margin-top:20px;font-size:.92em;color:#555}' +
-        '.meta{margin-top:22px;padding-top:14px;border-top:1px solid #eee;' +
-        'font-size:.78em;color:#777}code{font-family:ui-monospace,' +
-        'SFMono-Regular,Menlo,monospace}</style></head><body><div ' +
-        'class="card"><h1>The Bar Door</h1>' +
-        (wantedClaims.length
-          ? '<p>We need to see that you are who you say you are — but only ' +
-              'that. Present the ' +
-            '<code>' + xmlEscape(wantedClaims.join(', ')) + '</code> ' +
-            'claim(s) from a credential of type ' +
-            '<code>' + xmlEscape(askingType) + '</code>, and nothing else.</p>'
-          // A configuration naming no claims is a real setting and not an empty
-          // page: DCQL with no `claims` member asks for the whole credential,
-          // which is the opposite of everything else this door says, so it says
-          // THAT instead of printing an empty list.
-          : '<p>This door is currently asking for <strong>no particular ' +
-            'claim</strong>, which in DCQL means the whole credential: the ' +
-            'request carries no <code>claims</code> member, so your wallet ' +
-            'is being asked for a credential of type <code>' +
-            xmlEscape(askingType) + '</code> and everything in it.</p>') +
-        (ldpOmitted.length
-          ? '<p class="alt">' + ldpOmitted.length +
-            (ldpOmitted.length === 1 ? ' of these is' : ' of these are') +
-            ' asked for in the other formats and not in this one: ' +
-            '<code>' + xmlEscape(ldpOmitted.join(', ')) + '</code> — an ' +
-            '<code>ldp_vc</code> credential is signed over canonicalized ' +
-            'JSON-LD, so a claim the vendored context defines no term for ' +
-            'cannot be named at all, and it is dropped from the query rather ' +
-            'than asked for under a name that would fail canonicalization.</p>'
-          : '') +
-        '<p><a class="cta" id="present_by_value" href="' +
-        xmlEscape(withFormat('/oid4vp/start')) +
-        '">Present your credential</a>' +
-        '<a class="cta secondary" id="present_by_reference" href="' +
-        xmlEscape(withFormat('/oid4vp/start?by=reference')) + '">' +
-        'Present it (signed request by reference)</a></p>' +
-        '<p class="alt">Wallet on another device?<br>' +
-        '<a class="cta secondary" id="present_cross_device" href="' +
-        xmlEscape(withFormat('/oid4vp/start?mode=cross-device')) + '">' +
-        'Show a QR code (cross-device)</a></p>' +
-        '<p class="alt">This request asks for a <code>' + xmlEscape(askingFor) +
-        '</code> credential. A presentation cannot convert between formats, ' +
-        'so a wallet holding a different one has nothing to answer with — ' +
-        'pick the format you hold:<br><a class="cta secondary" ' +
-        'id="present_sd_jwt_vc" ' +
-        'href="/oid4vp/start?format=dc%2Bsd-jwt">Present an SD-JWT VC</a> <a ' +
-        'class="cta secondary" id="present_jwt_vc_json" ' +
-        'href="/oid4vp/start?format=jwt_vc_json">Present a JWT VC</a> <a ' +
-        'class="cta secondary" id="present_ldp_vc" ' +
-        'href="/oid4vp/start?format=ldp_vc">Present an LDP VC ' +
-        '(BBS)</a></p><p class="alt"><code>jwt_vc_json</code> has no ' +
-        'selective disclosure, so presenting it hands over every claim it ' +
-        'carries. <code>ldp_vc</code> discloses over canonical statements ' +
-        'with a bbs-2023 derived proof, and each presentation is unlinkable ' +
-        'to the last.</p><div class="meta">This is the Verifier in OID4VP. ' +
-        'It builds an Authorization Request with ' +
-        '<code>response_type=vp_token</code>, a <code>dcql_query</code> ' +
-        'naming the claims above, a fresh <code>nonce</code>, and ' +
-        '<code>response_mode=direct_post</code> — so your wallet POSTs the ' +
-        'presentation to ' +
-        '<code>' + xmlEscape(base) + '/oid4vp/response</code> rather than ' +
-        'putting it in a URL. The wallet is at ' +
-        '<code>' + xmlEscape(this.vpWalletUrl()) + '</code>. What it asks ' +
-        'for is configuration, not a constant: <a ' +
-        'href="/admin/vc-verifier-config">/admin/vc-verifier-config</a> ' +
-        'chooses the claims and the format, from the same catalogue of LDAP ' +
-        'attribute ' +
-        'types the issuer fills a credential from.</div></div></body></html>\n';
-      res.status(200).type('text/html').send(page);
-      log.debug("Leaving the verifier web page.");
-    });
-
-    // The link on that page: build the request and hand it to the wallet.
-    app.get('/oid4vp/start', async (req, res) => {
-      log.debug("Entering the presentation start endpoint. mode=" +
-                (req.query.mode || 'same-device') +
-                ", format=" + (req.query.format || 'dc+sd-jwt'));
-      const askedStart = validation.check(req, 'query', OID4VC_QUERY);
-      if (!askedStart.ok) {
-        log.debug('Leaving the presentation start endpoint. ' +
-                  askedStart.detail);
-        errorCodes.mark(res, 'STS-VC-0032');
-        return res.status(400).type('text/plain').send(askedStart.detail +
-                                                       '\n');
-      }
-      // A named Client Identifier Prefix (#230) is one a SIGNED request
-      // carries, so naming one asks for a request by reference.
-      const clientIdPrefix = String(req.query.client_id_prefix || '');
-      const byReference = String(req.query.by || '') === 'reference' ||
-                          !!clientIdPrefix;
-      const startMode = String(req.query.mode || 'same-device');
-      // Which credential format to ask for. Anything unrecognised — and a link
-      // that names none, which is the ordinary case — falls back to the
-      // CONFIGURED default rather than to a constant; dc+sd-jwt is what that
-      // default starts as, so a link that worked before this page existed asks
-      // for what it always did.
-      const format = vpConfig.formatOf(String(req.query.format || ''));
-      let record: any = null;
-      try {
-        if (byReference) {
-          // The Verifier's certificate, issued before the synchronous build
-          // reads it, for an x509 Client Identifier; nothing otherwise.
-          await this.prepareSignedClientId(req, clientIdPrefix);
-        }
-        record = this.buildVpRequest(req,
-                                     { byReference: byReference,
-                                       clientIdPrefix: clientIdPrefix,
-                                       format: format,
-                                       responseType: String(
-                                         req.query.response_type || ''),
-                                       responseMode: String(
-                                         req.query.response_mode || '') });
-      } catch (e) {
-        // What stops a request being built: a configured Verifier
-        // Attestation this realm cannot use, or an x509 Client Identifier
-        // with no certificate or name to carry (#230) — each logged where
-        // it is found, with its code.
-        log.debug("Caught in the presentation start endpoint: " +
-                  ((e && e.message) || e));
-        errorCodes.mark(res, (e && e.code) || 'STS-VC-0092');
-        return res.status(500).type('text/plain').send(
-          ((e && e.message) || String(e)) + '\n');
-      }
-      const query = this.vpRequestQuery(req, record);
-      const walletChoice = this.vpWalletFor(req);
-      if (walletChoice.error) {
-        log.debug("Leaving the presentation start endpoint. " +
-                  walletChoice.error);
-        errorCodes.mark(res, 'STS-VC-0033');
-        return res.status(400).type('text/plain').send(walletChoice.error +
-                                                       '\n');
-      }
-      const wallet = walletChoice.url;
-
-      if (startMode !== 'cross-device') {
-        // Same device: the browser IS the wallet's user agent, so send it
-        // there.
-        res.redirect(302, wallet + '?' + query);
-        log.debug("Leaving the presentation start endpoint. Redirected to " +
-                  "the wallet.");
-        return;
-      }
-      // Cross device: display the request for the wallet on the other device to
-      // scan, as the openid4vp URI a wallet registers for.
-      this.renderVpQrPage(res, {
-        base: baseUrlOf(req),
-        // SIOPv2 section 7.2's static `siopv2:` for an ID Token alone; the
-        // OpenID4VP scheme whenever a presentation is asked for.
-        requestUri: (record.responseType === 'id_token' ? 'siopv2://?' :
-                     'openid4vp://?') + query,
-        walletUrl: wallet + '?' + query,
-        record: record
-      });
-      log.debug("Leaving the presentation start endpoint. Displayed a QR " +
-                "code.");
-    });
-
     // The Request Object, fetched by reference (request_uri). Signed, and
     // served with the media type RFC 9101 defines for it.
     app.get('/oid4vp/request/:id', (req, res) => {
@@ -4264,7 +4417,10 @@ class VcVerifier {
       body = opened.body;
       const state = String(body.state || '');
       let record = vpTransactions.get(state);
-      if (record && !record.signIn &&
+      // A sign-in is held to its response mode as the bar door is
+      // (2026-10-12): a sign-in that asked for an encrypted answer takes no
+      // plaintext one (OpenID4VC HAIP 1.0 section 5.1).
+      if (record &&
           (record.responseMode === 'direct_post.jwt') !== opened.encrypted) {
         log.debug("Leaving the OID4VP response endpoint. The response " +
                   "mode was not the one asked for.");
@@ -4324,9 +4480,8 @@ class VcVerifier {
         // outstanding for ever.
         vpTransactions.set(state, record);
         errorCodes.mark(res, 'STS-VC-0037');
-        res.status(200).type('application/json').send(JSON.stringify({
-          redirect_uri: this.afterResponseUri(req, record, '')
-        }));
+        res.status(200).type('application/json').send(JSON.stringify(
+          this.responseAnswer(this.afterResponseUri(req, record, ''))));
         log.debug("Leaving the OID4VP response endpoint. The wallet refused: " +
                   body.error);
         return;
@@ -4350,7 +4505,7 @@ class VcVerifier {
                                              { aud: record.clientId });
       if (!answer.shapeOk) {
         if (record.signIn) {
-          this.recordAnswer(record, answer, 'direct_post');
+          this.recordAnswer(record, answer, String(record.responseMode));
         } else {
           record.verdict = {
             ok: false, at: new Date().toISOString(),
@@ -4374,7 +4529,8 @@ class VcVerifier {
       // (OID4VP section 8.2), and only its SHA-256 is kept.
       let responseCode = '';
       if (record.signIn) {
-        const outcome = this.recordAnswer(record, answer, 'direct_post');
+        const outcome = this.recordAnswer(record, answer,
+                                          String(record.responseMode));
         if (outcome.ok) {
           responseCode = this.deps.randomId(24);
           record.signIn.responseCodeHash =
@@ -4476,81 +4632,14 @@ class VcVerifier {
                 (record.signIn
                   ? 'it was made to sign in, and ' +
                     record.signIn.outcome.reason
-                  : 'it was made to the Verifier at /oid4vp/verifier, which ' +
-                    'signs nobody in — a wallet signs in at /authn/wallet.')
+                  : 'it was made for a verification, which signs nobody ' +
+                    'in — a wallet signs in at /authn/wallet.')
         });
       }
-      res.status(200).type('application/json').send(JSON.stringify({
-        redirect_uri: this.afterResponseUri(req, record, responseCode)
-      }));
+      res.status(200).type('application/json').send(JSON.stringify(
+        this.responseAnswer(this.afterResponseUri(req, record,
+                                                  responseCode))));
       log.debug("Leaving the OID4VP response endpoint. Accepted.");
-    });
-
-    // Not in the spec: the verdict, so the wallet's own page (and the test
-    // suite) can show what this Verifier decided and why. A real Verifier tells
-    // the End-User in its own UI; this makes the same information
-    // machine-readable. Its CORS header is `common/cors.js`'s decision
-    // (2026-09-13) — the `*` this route set for itself would have let any page
-    // read a presentation's verdict.
-    app.get('/oid4vp/result/:state', (req, res) => {
-      log.debug("Entering the presentation result endpoint. state=" +
-                req.params.state);
-      const record = vpTransactions.get(String(req.params.state));
-      if (!record) {
-        log.debug("Leaving the presentation result endpoint. Unknown state.");
-        errorCodes.mark(res, 'STS-VC-0042');
-        return oauthError(res, 404, 'invalid_request', 'No such presentation.');
-      }
-      res.status(200).type('application/json').send(JSON.stringify({
-        state: record.state,
-        nonce: record.nonce,
-        client_id: record.clientId,
-        requested: record.requested || [],
-        dcql_query: record.request.dcql_query,
-        received: !!record.verdict,
-        verdict: record.verdict
-      }));
-      log.debug("Leaving the presentation result endpoint. received=" +
-                !!record.verdict);
-    });
-
-    // Where the wallet sends the End-User once the Verifier has answered.
-    app.get('/oid4vp/done', (req, res) => {
-      log.debug("Entering the verifier done page.");
-      const record = vpTransactions.get(String(req.query.state || ''));
-      const verdict = record && record.verdict;
-      const ok = !!(verdict && verdict.ok);
-      const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-          'charset="utf-8">' +
-        '<title>The Bar Door — ' + (ok ? 'come on in' : 'not today') +
-        '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-        'Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
-        'align-items:center;justify-content:center;min-height:100vh;' +
-        'color:#222}.card{background:#fff;border:1px solid #d5d5dd;' +
-        'border-radius:10px;padding:30px 34px;width:560px;box-shadow:0 6px ' +
-        '24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 6px}' +
-        'p{line-height:1.5;color:#333}ul{line-height:1.5}.ok{color:#2e7d32;' +
-        'font-weight:700}.bad{color:#b00020;font-weight:700}' +
-        'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
-        '</style></head><body><div class="card"><h1>The Bar Door</h1>' +
-        (verdict
-          ? '<p class="' + (ok ? 'ok' : 'bad') + '" id="verdict">' +
-            (ok ? 'Presentation accepted.' : 'Presentation refused.') + '</p>' +
-            '<ul id="claims">' +
-            Object.keys(verdict.claims || {}).map((k) => {
-              return '<li><code>' + xmlEscape(k) + '</code>: <code>' +
-                     xmlEscape(typeof verdict.claims[k] === 'object'
-                       ? JSON.stringify(verdict.claims[k]) :
-                               String(verdict.claims[k])) + '</code></li>';
-            }).join('') + '</ul>' +
-            '<p style="font-size:.85em;color:#666">We asked for <code>' +
-            xmlEscape((verdict.requested || []).join(', ')) + '</code> and ' +
-                'that is all we know about you.</p>'
-          : '<p id="verdict">Nothing has been presented for this request ' +
-              'yet.</p>') +
-        '</div></body></html>\n';
-      res.status(200).type('text/html').send(page);
-      log.debug("Leaving the verifier done page. ok=" + ok);
     });
 
     log.debug("Leaving VcVerifier.registerRoutes().");
@@ -4621,7 +4710,28 @@ export = {
   // through the one store.
   signInDcqlQuery: slot.forward('signInDcqlQuery'),
   vpRequestQuery: slot.forward('vpRequestQuery'),
+  // THE START AND THE OUTCOME (#587; the only doors since #594), for
+  // `mgmt-api/admin_api.ts` and `admin-core/admin_views.ts`.
+  startVerification: slot.forward('startVerification'),
+  // What a start may name, read by `POST /admin-api/verifications/start`'s
+  // document so its closed sets are these lists rather than copies (#86).
+  START_VOCABULARY: {
+    format: VCI_FORMATS.slice(),
+    by: BY.slice(),
+    mode: START_MODES.slice(),
+    response_type: RESPONSE_TYPES.slice(),
+    response_mode: RESPONSE_MODES.slice(),
+    client_id_prefix: SIGNED_CLIENT_ID_PREFIXES.slice()
+  },
+  verificationOutcome: slot.forward('verificationOutcome'),
+  // Where a starter's wallet is sent afterwards (#594), for the start.
+  completionUriFor: slot.forward('completionUriFor'),
+  recentVerifications: slot.forward('recentVerifications'),
   vpWalletFor: slot.forward('vpWalletFor'),
+  // The scheme a wallet app is handed a request under (2026-10-12).
+  walletScheme: slot.forward('walletScheme'),
+  // A sign-in's Client Identifier prefix (2026-10-12), for `vc_signin.ts`.
+  signInClientIdPrefix: slot.forward('signInClientIdPrefix'),
   signInOutcome: slot.forward('signInOutcome'),
   signInFormats: slot.forward('signInFormats'),
   verifyAnswer: slot.forward('verifyAnswer'),

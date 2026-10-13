@@ -4,7 +4,8 @@
 // File: sts_xacml_endpoints.js
 //
 // ---------------------------------------------------------------------------
-// THE EIGHT /xacml ENDPOINTS, DRIVEN OVER HTTP.
+// THE SEVEN /xacml ENDPOINTS, DRIVEN OVER HTTP (eight until #596 moved
+// `GET /xacml/protected`, the demonstration PEP, to the remote PEP).
 //
 // `tests/xacml_conformance.js` holds the ENGINE to 455 cases somebody else
 // wrote, `tests/xacml_service.js` holds the store, the PIP and the JSON
@@ -58,7 +59,9 @@
 // CONTROL WITH A PROTOCOL CONSEQUENCE: a template built through `/admin-api`
 // decides at `/xacml/pdp`, a policy disabled on `/admin/xacml/policies`
 // disappears from what a remote PEP pulls, an obligation added in the editor
-// turns a Permit into a refusal at `/xacml/protected`, and a PEP disabled on
+// turns a Permit into a refusal in the console's what-if (a PEP's verdict;
+// the remote PEP enforcing it is `sts_xacml_remote_pep.js`'s), and a PEP
+// disabled on
 // `/admin/xacml/peps` stays disabled when it re-registers. That is exactly the
 // argument `sts_consent.js` makes one file over, and splitting these in two was
 // refused for its reason: the assertion that matters is that the authoring door
@@ -77,7 +80,8 @@
 // reachable and asserted.
 //
 // It also makes the SETTINGS safe. Six sections turn `xacml.enabled`,
-// `xacml.remotePeps`, `xacml.pepBias` and `xacml.pepRequireCertificate` off and
+// `xacml.remotePeps` and `xacml.pepRequireCertificate` (and, until #596,
+// `xacml.pepBias`) off and
 // on, and every one of those is process-wide when set at the top level: a job
 // that turned XACML off and died would leave every later job in the run driving
 // a service answering 501. Set inside the realm they reach nothing else — and
@@ -350,6 +354,33 @@ function requestFor(subject, action, resource) {
   return request;
 }
 
+// WHAT A PEP WOULD DO WITH A DECISION, under both biases: the console's
+// what-if, `GET /admin-api/xacml/decide` (#596). The embedded demonstration
+// PEP at `/xacml/protected`, which sections 2 and 5 enforced through until
+// then, is the remote PEP's `GET /protected` now — a PEP for ONE realm, the
+// launcher's, so its own job drives it there; this realm's PDP is asked
+// here, and the bias the setting used to flip is an argument of the
+// what-if.
+async function previewFor(subject, action) {
+  log.debug("Entering previewFor().");
+  const r = await get(api("/xacml/decide?subject=" +
+                          encodeURIComponent(subject) + "&action=" +
+                          encodeURIComponent(action)));
+  assert.ok(r.status === 200 && r.body && r.body.asked === true &&
+            Array.isArray(r.body.enforcements) &&
+            r.body.enforcements.length === 2,
+    "GET /admin-api/xacml/decide should answer the decision and both " +
+    "biases' enforcement; it answered " + r.status + " " +
+    String(r.text).slice(0, 300));
+  const by = {};
+  r.body.enforcements.forEach(function (one) {
+    by[one.bias] = one;
+  });
+  log.debug("Leaving previewFor().");
+  return { decision: r.body.decision, obligations: r.body.obligations,
+           enforcement: r.body.enforcement, byBias: by };
+}
+
 async function decisionFor(subject, action, resource) {
   log.debug("Entering decisionFor().");
   const r = await xPost("/xacml/pdp", requestFor(subject, action, resource));
@@ -395,17 +426,17 @@ var rogue = null;     // verified, and in no group
 // ---------------------------------------------------------------------------
 // A THIRD IDENTITY, AND IT IS A THIRD BECAUSE THERE ARE TWO ROLES.
 //
-// The four XACML endpoints proper — GET /xacml, POST /xacml/pdp, GET
-// /xacml/policies, GET /xacml/protected — went behind the same certificate
-// chain as /xacml/pep/* and a DIFFERENT role: `XACML_USER`, granted by
-// `cn=xacml-users`, where the three PEP endpoints want `REMOTE_PEPS` from
+// The XACML endpoints proper — GET /xacml, POST /xacml/pdp, GET
+// /xacml/policies (and GET /xacml/protected until #596) — went behind the
+// same certificate chain as /xacml/pep/* and a DIFFERENT role:
+// `XACML_USER`, granted by `cn=xacml-users`, where the three PEP endpoints want `REMOTE_PEPS` from
 // `cn=remote-peps`.
 //
 // **SO THIS FILE HOLDS TWO ADMITTED IDENTITIES AND NEITHER OPENS THE OTHER'S
 // DOOR**, which is the property section 0 below asserts in both directions. A
 // single identity put in both groups would have been fewer lines and would
 // have made that assertion unwritable — and the whole reason there are two
-// roles is that admitting a caller to the demonstration surface must not
+// roles is that admitting a caller to the XACML surface proper must not
 // silently admit it to the endpoints publishing the documents this service
 // enforces its own access with.
 // ---------------------------------------------------------------------------
@@ -422,7 +453,8 @@ async function mintTheCredentials() {
     subject: "CN=" + XACML_USER_CN + ",OU=xacml-users,O=iya-sts tests" });
   for (const one of [trusted, rogue, xacmlUser]) {
     const posted = await credentials.trustAnchor(base, one.anchorPem);
-    assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this " +
+    assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+      "Root CA this " +
       "file just built; it answered " + posted.status + " " +
       String(posted.why || posted.body).slice(0, 200) + ". Without the " +
       "anchor every assertion below is about an unverified certificate.");
@@ -607,7 +639,7 @@ function postWithCertificate(url, payload, identity) {
 // 1. THE SURFACE DESCRIBES ITSELF, AND THE DESCRIPTION IS READ OFF THE SERVICE.
 //
 // `GET /xacml` is the document a client meets first. The assertion is not that
-// it renders: it is that the eight endpoints it advertises are the eight that
+// it renders: it is that the seven endpoints it advertises are the seven that
 // answer, and that every count on it agrees with the endpoint that owns the
 // number. A description that drifted from the surface it describes is the one
 // defect a page like this can have.
@@ -622,9 +654,29 @@ async function theSurfaceDescribesItself() {
       "GET /xacml answered " + html.status);
     assert.ok(/text\/html/.test(html.type),
       "GET /xacml should be HTML for a person; it is " + html.type);
-    assert.ok(html.text.indexOf("Policy Decision Point") > 0,
-      "the page should say what this service is; it says " +
+    // SINCE #584 THE PAGE IS DRAWN IN THE BROWSER: the shell loads the
+    // description pages' script from this family's own path and carries
+    // the document in data-sts-state, so what it says is asserted there.
+    // A realm's page names its script under the realm's prefix: app.js
+    // rebases root-relative addresses onto it.
+    assert.ok(/<script src="(?:\/realm\/[^/"]+)?\/xacml\/description\.js"/
+      .test(html.text),
+      "GET /xacml should be the description pages' shell; it is " +
       html.text.slice(0, 200));
+    const m = /data-sts-state="([^"]*)"/.exec(html.text);
+    const state = m ? JSON.parse(m[1].replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")) : null;
+    assert.ok(state && state.view && state.view.kind === "xacml" &&
+              state.view.document &&
+              /XACML 3\.0/.test(state.view.document.specification),
+      "the shell should carry the XACML description; it carries " +
+      JSON.stringify(state).slice(0, 200));
+  });
+  const script = await xGet("/xacml/description.js");
+  check("its script answers a caller the page admits", function () {
+    assert.strictEqual(script.status, 200,
+      "GET /xacml/description.js answered " + script.status);
   });
 
   const doc = await xGet("/xacml?format=json");
@@ -642,12 +694,11 @@ async function theSurfaceDescribesItself() {
   const advertised = (doc.body.endpoints || []).map(function (one) {
     return one.method + " " + one.path;
   }).sort();
-  check("the document advertises exactly the eight endpoints", function () {
+  check("the document advertises exactly the seven endpoints", function () {
     assert.deepStrictEqual(advertised, [
       "GET /xacml",
       "GET /xacml/pep/policies",
       "GET /xacml/policies",
-      "GET /xacml/protected",
       "POST /xacml/pdp",
       "POST /xacml/pep/heartbeat",
       "POST /xacml/pep/register",
@@ -673,7 +724,6 @@ async function theSurfaceDescribesItself() {
       "GET /xacml": "XACML_USER",
       "POST /xacml/pdp": "XACML_USER",
       "GET /xacml/policies": "XACML_USER",
-      "GET /xacml/protected": "XACML_USER",
       "POST /xacml/pep/register": "REMOTE_PEPS",
       "GET /xacml/pep/policies": "REMOTE_PEPS",
       "POST /xacml/pep/heartbeat": "REMOTE_PEPS",
@@ -691,7 +741,7 @@ async function theSurfaceDescribesItself() {
     assert.notStrictEqual(doc.body.access.xacmlUserGroup,
                           doc.body.access.remotePepGroup,
       "THE TWO GROUPS MUST NOT BE THE SAME ONE. If they ever are, admitting " +
-      "a caller to the demonstration surface silently admits it to the " +
+      "a caller to the XACML surface proper silently admits it to the " +
       "endpoints publishing the documents this service enforces its own " +
       "access with. Both are \"" + doc.body.access.xacmlUserGroup + "\".");
   });
@@ -726,7 +776,7 @@ async function theSurfaceDescribesItself() {
       policies.body.rootNote);
   });
 
-  log.info("[surface] OK — the document names eight endpoints, each with the " +
+  log.info("[surface] OK — the document names seven endpoints, each with the " +
            "role it wants, and its counts come from the repository rather " +
            "than from itself.");
   log.debug("Leaving theSurfaceDescribesItself().");
@@ -758,49 +808,30 @@ async function anEmptyRepositoryDecidesNothing() {
       JSON.stringify(answer.Status));
   });
 
-  const denied = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                            "&action=GET");
-  check("the deny-biased PEP refuses that with 403", function () {
-    assert.strictEqual(denied.status, 403,
+  const preview = await previewFor(ADMIN_PERSON, "GET");
+  const denied = preview.byBias["deny-biased"];
+  const allowed = preview.byBias["permit-biased"];
+  check("a deny-biased PEP refuses that", function () {
+    assert.strictEqual(preview.decision, "NotApplicable",
+      "the what-if should report the same NotApplicable beside the " +
+      "enforcement, because they are different facts; it reported " +
+      preview.decision);
+    assert.ok(denied && denied.allowed === false,
       "deny-biased means anything that is not Permit is a refusal; the " +
-      "embedded PEP answered " + denied.status);
-    assert.strictEqual(denied.body.decision, "NotApplicable",
-      "and it should report the DECISION beside the enforcement, because " +
-      "they are different facts; it reported " + denied.body.decision);
-    assert.strictEqual(denied.body.allowed, false, "allowed should be false");
-    assert.strictEqual(denied.body.bias, "deny-biased",
-      "the bias it enforced with is " + denied.body.bias);
+      "deny-biased outcome is " + JSON.stringify(denied));
+    assert.deepStrictEqual(preview.enforcement, denied,
+      "and it is the outcome the page draws (`enforcement`): every " +
+      "embedded PEP's bias, and the remote PEP's default");
   });
-
-  await setSetting("xacml.pepBias", "permit-biased");
-  const allowed = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                             "&action=GET");
   check("the SAME decision is allowed by a permit-biased PEP", function () {
-    assert.strictEqual(allowed.status, 200,
-      "permit-biased means anything that is not Deny is allowed; the PEP " +
-      "answered " + allowed.status + " " + String(allowed.text).slice(0, 200));
-    assert.strictEqual(allowed.body.decision, "NotApplicable",
-      "THE PDP MUST NOT HAVE CHANGED ITS MIND. `xacml.pepBias` is the PEP's " +
-      "decision and not the PDP's, so the decision either side of the flip " +
-      "must be the same NotApplicable and only the enforcement differs. It " +
-      "answered " + allowed.body.decision + ", which would mean the setting " +
-      "reached the engine.");
-    assert.strictEqual(allowed.body.allowed, true, "allowed should be true");
-    assert.strictEqual(allowed.body.bias, "permit-biased",
-      "the bias it enforced with is " + allowed.body.bias);
-  });
-  await resetSetting("xacml.pepBias");
-
-  const back = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                          "&action=GET");
-  check("resetting the setting puts the refusal back", function () {
-    assert.strictEqual(back.status, 403,
-      "after /admin-api/config/reset the PEP should be deny-biased again; " +
-      "it answered " + back.status);
+    assert.ok(allowed && allowed.allowed === true,
+      "permit-biased means anything that is not Deny is allowed; the " +
+      "permit-biased outcome is " + JSON.stringify(allowed) + ". THE PDP " +
+      "DID NOT CHANGE ITS MIND — one decision, two enforcements — which is " +
+      "what `xacml.pepBias` used to show by being flipped (#596).");
   });
 
-  log.info("[bias] OK — one decision, two enforcements, and the PDP said the " +
-           "same thing both times.");
+  log.info("[bias] OK — one decision, two enforcements.");
   log.debug("Leaving anEmptyRepositoryDecidesNothing().");
 }
 
@@ -962,7 +993,11 @@ async function aMalformedRequestIsRefused() {
 }
 
 // ===========================================================================
-// 5. THE EMBEDDED PEP, AND THE PART OF SECTION 7.2 IMPLEMENTATIONS SKIP.
+// 5. A PEP'S VERDICT, AND THE PART OF SECTION 7.2 IMPLEMENTATIONS SKIP.
+//
+// Asked of the console's what-if since #596, which runs the same enforce()
+// the embedded demonstration PEP at `/xacml/protected` did; the remote PEP
+// container enforcing it for real is `sts_xacml_remote_pep.js` section 4b.
 //
 // An obligation is the half of a decision that says "yes, AND you must also do
 // this". A PEP that allows the access while dropping the obligation has
@@ -977,44 +1012,43 @@ async function aMalformedRequestIsRefused() {
 // ===========================================================================
 async function anUndischargeableObligationRefuses() {
   log.debug("Entering anUndischargeableObligationRefuses().");
-  log.info("=== The embedded PEP and an obligation it cannot discharge ===");
+  log.info("=== A PEP's verdict and an obligation it cannot discharge ===");
 
-  const before = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                            "&action=GET");
+  const before = await previewFor(ADMIN_PERSON, "GET");
   check(ADMIN_PERSON + " is allowed before any obligation exists", function () {
-    assert.strictEqual(before.status, 200,
+    assert.strictEqual(before.enforcement.allowed, true,
       ADMIN_PERSON + " is the admin and the policy permits them; the PEP " +
-                     "answered " +
-      before.status + " " + String(before.text).slice(0, 200));
-    assert.deepStrictEqual(before.body.obligations, [],
+      "would answer " + JSON.stringify(before.enforcement));
+    assert.deepStrictEqual(before.obligations, [],
       "and the decision carries no obligations yet; it carries " +
-      JSON.stringify(before.body.obligations));
+      JSON.stringify(before.obligations));
   });
 
   await act("add-policy-obligation", { policy: POLICY, path: "", on: "Permit" },
             "added an obligation to the policy");
 
-  const refused = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                             "&action=GET");
+  const refused = await previewFor(ADMIN_PERSON, "GET");
   check("an undischargeable obligation turns the Permit into a refusal",
         function () {
-    assert.strictEqual(refused.status, 403,
-      "section 7.2: a PEP that cannot discharge an obligation must refuse. " +
-      "It answered " + refused.status + " " +
-      String(refused.text).slice(0, 300));
-    assert.strictEqual(refused.body.decision, "Permit",
+    assert.strictEqual(refused.decision, "Permit",
       "AND THE DECISION IS STILL PERMIT, which is the whole point — the PDP " +
       "permitted and the PEP refused, and reporting the refusal as a Deny " +
       "would hide which of the two said no. It reported " +
-      refused.body.decision);
-    assert.strictEqual(refused.body.allowed, false);
-    assert.ok(String(refused.body.why).indexOf("obligation") > 0,
-      "and the refusal should name the obligation as the cause; it says: " +
-      refused.body.why);
-    assert.deepStrictEqual(refused.body.obligations,
-      [{ id: "urn:sts:xacml:obligation:1", discharged: false }],
-      "the obligation should be reported UNDISCHARGED rather than omitted; " +
-      "it reports " + JSON.stringify(refused.body.obligations));
+      refused.decision);
+    ["deny-biased", "permit-biased"].forEach(function (bias) {
+      const one = refused.byBias[bias];
+      assert.strictEqual(one.allowed, false,
+        "section 7.2: a PEP that cannot discharge an obligation must " +
+        "refuse, WHATEVER its bias. The " + bias + " outcome is " +
+        JSON.stringify(one));
+      assert.ok(String(one.why).indexOf("obligation") > 0,
+        "and the refusal should name the obligation as the cause; it " +
+        "says: " + one.why);
+    });
+    assert.deepStrictEqual(refused.obligations,
+      ["urn:sts:xacml:obligation:1"],
+      "the obligation should be reported rather than omitted; it reports " +
+      JSON.stringify(refused.obligations));
   });
 
   // Find it in the tree rather than guessing its path: the editor's own view is
@@ -1036,31 +1070,28 @@ async function anUndischargeableObligationRefuses() {
               on: "Permit" },
             "renamed the obligation to the one this PEP knows");
 
-  const discharged = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                                "&action=GET");
+  const discharged = await previewFor(ADMIN_PERSON, "GET");
   check("the one obligation this PEP knows IS discharged, and access returns",
         function () {
-    assert.strictEqual(discharged.status, 200,
+    assert.strictEqual(discharged.enforcement.allowed, true,
       "with the obligation renamed to " + DISCHARGEABLE + " the PEP can " +
-      "discharge it and the Permit stands; it answered " + discharged.status +
-      " " + String(discharged.text).slice(0, 300));
-    assert.deepStrictEqual(discharged.body.obligations,
-      [{ id: DISCHARGEABLE, discharged: true }],
-      "and it should say so on the row rather than silently allowing; it " +
-      "reports " + JSON.stringify(discharged.body.obligations));
+      "discharge it and the Permit stands; it would answer " +
+      JSON.stringify(discharged.enforcement));
+    assert.deepStrictEqual(discharged.obligations, [DISCHARGEABLE],
+      "and the decision still carries it; it reports " +
+      JSON.stringify(discharged.obligations));
   });
 
   // Put the policy back to what section 6 and 7 expect. The obligation was the
   // subject here; leaving it would make every later Permit carry one.
   await act("remove", { policy: POLICY, path: obligation.path },
             "removed the obligation again");
-  const clean = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
-                           "&action=GET");
+  const clean = await previewFor(ADMIN_PERSON, "GET");
   check("removing the obligation leaves an ordinary Permit", function () {
-    assert.strictEqual(clean.status, 200);
-    assert.deepStrictEqual(clean.body.obligations, [],
+    assert.strictEqual(clean.enforcement.allowed, true);
+    assert.deepStrictEqual(clean.obligations, [],
       "the obligation should be gone; the decision carries " +
-      JSON.stringify(clean.body.obligations));
+      JSON.stringify(clean.obligations));
   });
 
   log.info("[obligations] OK — one Permit enforced three ways, and only the " +
@@ -1646,7 +1677,7 @@ async function turningItOff() {
   await setSetting("xacml.enabled", false);
   const allOff = [
     ["POST", "/xacml/pdp"], ["GET", "/xacml/policies"],
-    ["GET", "/xacml/protected"], ["GET", "/xacml/pep/policies"],
+    ["GET", "/xacml/pep/policies"],
     ["POST", "/xacml/pep/register"], ["POST", "/xacml/pep/heartbeat"],
     ["POST", "/xacml/pip"]
   ];
@@ -1782,7 +1813,13 @@ async function createTheRealm() {
       name: "XACML endpoint test realm",
       description: "Created by tests/vendored/sts_xacml_endpoints.js; LEFT " +
                    "IN PLACE on purpose, so that a failed run can be read " +
-                   "afterwards. Remove it by hand when you are done with it."
+                   "afterwards. Remove it by hand when you are done with it.",
+      // A DEVELOPMENT REALM IN EVERY MODE (#585): the embedded PEP at
+      // /xacml/protected, which most sections enforced through until #596,
+      // was a demonstration a product realm was not served. The gate, the
+      // PDP, the repository, the what-if and the remote PEPs' doors are the
+      // same in both modes; the realm stays as it was.
+      overrides: { "global.mode": "development" }
     })
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
@@ -1843,7 +1880,7 @@ async function theRealmIsLeftBehind() {
 // 0. THE GATE, AND THE TWO ROLES THAT ARE NOT ONE ROLE (2026-09-06).
 //
 // **THIS SECTION IS AN INVERTED MATRIX AND THAT IS THE WHOLE VALUE OF IT.**
-// Every one of these eight endpoints is behind the same four-link chain — a
+// Every one of these seven endpoints is behind the same four-link chain — a
 // certificate this service VERIFIED, a DN resolved to a directory entry, the
 // roles that entry holds, a policy decision — and they split on the LAST link
 // into two roles granted by two groups.
@@ -1875,7 +1912,7 @@ async function theGateSplitsOnTheRole() {
   log.info("=== The gate: two roles, two groups, four callers ===");
 
   const proper = [["GET", "/xacml"], ["POST", "/xacml/pdp"],
-                  ["GET", "/xacml/policies"], ["GET", "/xacml/protected"]];
+                  ["GET", "/xacml/policies"]];
   const pepSide = [["POST", "/xacml/pep/register"],
                    ["GET", "/xacml/pep/policies"],
                    ["POST", "/xacml/pep/heartbeat"],
@@ -1917,13 +1954,13 @@ async function theGateSplitsOnTheRole() {
   }
 
   // THE TWO DIAGONALS. Everything above this point would pass against a
-  // service holding one role for all eight endpoints.
+  // service holding one role for all seven endpoints.
   for (const [method, path] of proper) {
     const wrongRole = await drive(method, path, trusted);
     check("REMOTE_PEPS does NOT open " + method + " " + path, function () {
       assert.strictEqual(wrongRole.status, 403,
         method + " " + path + " answered " + wrongRole.status + " to the " +
-        "identity holding REMOTE_PEPS. These four want XACML_USER, and a " +
+        "identity holding REMOTE_PEPS. These three want XACML_USER, and a " +
         "service where one role opened both sets would pass every other " +
         "assertion in this file.");
       assert.ok(String(wrongRole.body && wrongRole.body.error_description)
@@ -1971,7 +2008,7 @@ async function theGateSplitsOnTheRole() {
       "section below it.");
   });
 
-  log.info("[gate] OK — four callers against eight endpoints, and the two " +
+  log.info("[gate] OK — four callers against seven endpoints, and the two " +
            "diagonals that show the roles are not one role.");
   log.debug("Leaving theGateSplitsOnTheRole().");
 }
@@ -2311,7 +2348,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_xacml_endpoints")
-  .description("Drive IYA STS's eight /xacml endpoints over HTTP in a " +
+  .description("Drive IYA STS's seven /xacml endpoints over HTTP in a " +
       "throwaway trust realm: the decision endpoint and its refusals, the " +
       "repository, the embedded PEP's bias and its obligation rule, and the " +
       "three a remote PEP registers, pulls and reports on.")

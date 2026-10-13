@@ -20,7 +20,7 @@ oauth-oidc/          the authorization server, RFC 9700 mode, DPoP, mTLS,
 authn/               the sign-in screen and the WebAuthn relying party
 saml/                the two assertion builders
 ws-trust/            WS-Trust 1.0-1.4
-ws-federation/       WS-Federation 1.2 and the mock relying party
+ws-federation/       WS-Federation 1.2
 kerberos/            the KDC, the acceptor, SPNEGO, and the codec
 ldap/                the embedded directory
 persistence/         the only place this service writes anything down:
@@ -82,9 +82,10 @@ live router so it cannot go stale by omission, but it reports two kinds of drift
 and the parent project's test fails on both: a route registered and undescribed,
 and a description whose path is not registered (what a rename produces).
 
-Coverage notes there must start `full`, `partial` or `mock` and say what is
-missing. A list of fifty specifications that did not mention that this service
-checks no passwords would be the most misleading thing in the repository.
+Coverage notes there must start `full`, `partial` or `minimal` and say what is
+missing. A list of fifty specifications that did not mention that in development
+mode this service checks no passwords would be the most misleading thing in the
+repository.
 
 ## Adding a console page
 

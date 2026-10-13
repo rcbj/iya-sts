@@ -26,13 +26,10 @@
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
 //   GET  /oauth2/check_session  the OP iframe, and its script beside it
 //                            (Session Management, #121; off by default)
-//   *    /oauth2/step-up/resource/:application
-//                            NON-SPEC: RFC 9470's stand-in resource server
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
 //                            is on, and every requirement it does and does not
 //                            enforce (oauth2_bcp.js)
 //   GET  /oauth2/oauth21     NON-SPEC: the same for OAuth 2.1 mode (oauth21.js)
-//   *    /dpop/nonce-mode    NON-SPEC: a development test control
 //   *    /{id}/oauth2/...    every OAuth endpoint again, per named
 //                            authorization server (authorization_servers.ts)
 //   GET  /oauth2/jwks        the signing key (above, with the metadata)
@@ -2069,6 +2066,15 @@ class OAuth2Server {
       // thing a client author needs to know about this grant before writing any
       // code is that the assertion is a JWT.
       'urn:ietf:params:oauth:client-assertion-type:jwt-bearer_supported': true,
+      // OPENID4VCI 1.0 SECTION 12.3 (2026-10-12): a wallet may redeem a
+      // pre-authorized code naming no client_id, which the token endpoint has
+      // allowed in every mode since 2026-10-05 (`clientlessPreAuthorized`).
+      // ABSENT, the member defaults to false, and a wallet that read the
+      // metadata then sends a client_id of its own — which product mode
+      // judges as any other client and refuses unless it is registered. So a
+      // real wallet redeeming an offer from the portal failed where this
+      // member was missing, and is told here that it need not name itself.
+      'pre-authorized_grant_anonymous_access_supported': true,
       // RFC 7522 section 2.2's spelling of the same member. Published
       // UNCONDITIONALLY like the one above, and for its reason: it says what a
       // client_assertion_type may be, and that is true of this server whether
@@ -4882,10 +4888,11 @@ class OAuth2Server {
     // must validate this value, and no observation this server can make tells a
     // client that checks from one that does not. Spoiling it on purpose does: a
     // client that accepts the result is a client that is not checking. It is
-    // the same device as /spnego's three knobs and the literal password
-    // `invalid` — a reachable negative, off by default, and loud every single
-    // time, because an ID Token that is wrong in a way nobody remembers turning
-    // on would be the most expensive hour in this repository.
+    // the same device as the literal password `invalid` (and the three knobs
+    // `/spnego` took until #595) — a reachable negative, off by default,
+    // and loud every single time, because an ID Token that is wrong in a way
+    // nobody remembers turning on would be the most expensive hour in this
+    // repository.
     //
     // DEVELOPMENT MODE ONLY (#104, `mode.spoilsOnPurpose()`): read through
     // `mode.valueInForce()`, which answers the default in a product realm
@@ -6925,7 +6932,7 @@ class OAuth2Server {
                ' ' +
                'and this service holds ' +
                'others: ' + out.mismatched.join('; ') + '. The values held ' +
-               'are what is returned — a mock that echoed back whatever a ' +
+               'are what is returned — a service that echoed back whatever a ' +
                'client asked it to assert could not be used to test ' +
                'anything.');
     }
@@ -8053,8 +8060,9 @@ class OAuth2Server {
   // (#550, 2026-10-10).
   //
   // RFC 9068 section 3 requires a default resource indicator when a request
-  // names none, and every grant here used `<issuer>/resource`, this service's
-  // demonstration resource. For a client's own token — no person, nothing
+  // names none, and every grant here used `<issuer>/resource`, a placeholder
+  // audience no resource server answers to. For a client's own token — no
+  // person, nothing
   // asked for — that names nothing the token is for; the token most often
   // goes back to this server as an RFC 8693 actor_token, which section 2.1
   // defines as representing the acting party. So the default for this grant
@@ -9651,10 +9659,13 @@ class OAuth2Server {
     const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
                        (outer.request_uri !== undefined &&
                         outer.request_uri !== '');
-    if (!jwtSecured && !config.value('oauth2.requireSignedRequestObject') &&
-        !client.require_signed_request_object &&
-        !self.deps.fapi.requiresSignedRequestObject() &&
-        self.capabilitiesFor(req).require_signed_request_object !== true) {
+    // `signedRequired()` is the one reading of the requirement — the setting,
+    // the entry, the authorization server's metadata and FAPI — including
+    // the hosted public clients' exemption (#568).
+    if (!jwtSecured &&
+        !requestObject.signedRequired(client,
+                                      self.authorizationProfileOf(req),
+                                      String(outer.client_id || ''))) {
       log.debug("Leaving OAuth2Server.authorizeWithClient(). Not a " +
                 "JWT-secured request.");
       return self.withIdTokenHint(req, res);
@@ -10543,7 +10554,8 @@ class OAuth2Server {
     }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
-                                     self.authorizationProfileOf(req))) {
+                                     self.authorizationProfileOf(req),
+                                     clientId)) {
       log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). Pushed " +
                 "plain, and a " +
                 "signed request object is now required.");
@@ -12406,90 +12418,6 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.userinfoResponse(). Answering.");
   }
 
-  // ---------------------------------------------------------------------------
-  // GET|POST /oauth2/step-up/resource/{application} — RFC 9470's STAND-IN
-  // RESOURCE (2026-09-13).
-  //
-  // NON-SPEC, AND IT IS THE RESOURCE SERVER HALF OF A SPECIFICATION WHOSE OTHER
-  // HALF IS HERE. A registered API declares what it requires of the
-  // authentication behind a token (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`)
-  // and this answers FOR it: the token must verify, be an `at+jwt` from an
-  // authorization server this service publishes, and be addressed to that
-  // application (RFC 9068 section 4, with step 4 asked of the application);
-  // then section 3's question, whose "no" is the 401 challenge a client turns
-  // into an authorization request. Its "yes" is 200 and what it decided on.
-  //
-  // It exists because the real API is somebody else's process: a client
-  // developer testing a step-up flow against this service needs a resource that
-  // challenges, and an operator configuring a requirement on an entry needs to
-  // see what that requirement does to a token without deploying the API. It
-  // holds no data and grants nothing — the body is the token's own claims about
-  // authentication, read back to the person who presented it.
-  //
-  // **THE APPLICATION IS NAMED BY ITS REGISTRY IDENTIFIER OR ITS client_id**,
-  // the two spellings `/admin/applications` shows. One that names no entry is
-  // 404; an entry requiring nothing answers every valid token 200, and says so.
-  // ---------------------------------------------------------------------------
-  private stepUpResource(req: Req, res: Res): Json {
-    const { log, STS, dpop, applications, errorCodes, stepUp } = this.deps;
-    const self = this;
-    log.debug("Entering OAuth2Server.stepUpResource().");
-    res.set('Cache-Control', 'no-store');
-    const id = String(req.params.application || '');
-    const entry = applications.get(id) || applications.forClientId(id);
-    if (!entry) {
-      log.debug("Leaving OAuth2Server.stepUpResource(). No such application.");
-      errorCodes.mark(res, 'STS-OAUTH-0505');
-      return self.oauthError(res, 404, 'invalid_request', 'No application "' +
-        id.slice(0, 200) + '" is registered in this realm, so there is no ' +
-        'resource here to answer for it. The path names an application by ' +
-        'its ' +
-        'identifier or client_id, as /admin/applications lists it.');
-    }
-    const requirement = applications.stepUpRequirementOf(entry);
-    const presented = dpop.presentedAccessToken(req, res, 'the step-up ' +
-      'resource for "' + entry.identifier + '"', {
-      requireVerified: true,
-      audience: {
-        label: 'the application "' + entry.identifier + '"',
-        names: function (audiences) {
-          log.debug("Entering names().");
-          log.debug("Leaving names().");
-          return applications.audienceNamesEntry(entry, audiences);
-        }
-      },
-      stepUp: requirement
-    });
-    if (!presented) {
-      log.debug("Leaving OAuth2Server.stepUpResource(). The token was " +
-                "refused or " +
-                "challenged.");
-      return undefined;
-    }
-    const claims = presented.claims || {};
-    const now = Math.floor(Date.now() / 1000);
-    res.status(200).type('application/json').send(JSON.stringify({
-      resource: entry.identifier,
-      requirement: {
-        acr_values: requirement.acrValues.join(' ') || null,
-        max_age: requirement.maxAge
-      },
-      met: true,
-      token: {
-        client_id: claims.client_id || null,
-        sub: claims.sub || null,
-        acr: claims.acr || null,
-        amr: claims.amr || null,
-        auth_time: claims.auth_time || null,
-        authenticated_seconds_ago: claims.auth_time
-          ? now - Number(claims.auth_time) : null,
-        scheme: presented.scheme
-      }
-    }, null, 2));
-    log.debug("Leaving OAuth2Server.stepUpResource(). Met.");
-    return undefined;
-  }
-
   // --- what became of an authorization code
   // ----------------------------------- The functions behind the relaxation
   // described where `redeemedCodes` is declared. They are here rather than
@@ -13624,8 +13552,14 @@ class OAuth2Server {
       req, 'token_endpoint_auth_methods_supported');
     const declaredMethod = self.presentedMethodOf(req, client,
       applications.clientConfigOf(client.client_id) || {});
+    // THE TWO HOSTED PUBLIC CLIENTS (#446, #568) authenticate with `none`
+    // where a confidential-only profile advertises no such method: the
+    // profile's exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT) read for the
+    // metadata the profile writes, or the exemption would exempt nothing.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(String(declaredMethod)) < 0) {
+        advertisedAuth.indexOf(String(declaredMethod)) < 0 &&
+        !self.deps.fapi.publicClientExempt(client.client_id,
+                                           declaredMethod)) {
       log.debug("Leaving the token endpoint. " + self.profileOf(req) +
                 " does not advertise " + declaredMethod + ".");
       errorCodes.mark(res, 'STS-OAUTH-0198');
@@ -14119,9 +14053,11 @@ class OAuth2Server {
     // FAPI 1.0 Advanced section 5.2.2 items 5-6 (#139): every access token is
     // sender-constrained — by the client certificate this connection
     // presented, or (unless oauth2.fapiRequireMtls) by the DPoP proof checked
-    // above. Refused before any grant is spent.
+    // above. Refused before any grant is spent. The console and the portal,
+    // public clients whose one binding is DPoP, are told apart by `fapi.js`.
     const fapiBound = fapi.senderConstraintRefusal({
-      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) });
+      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) },
+      client.client_id, clientObservation.method);
     if (fapiBound) {
       log.debug("Leaving the token endpoint. FAPI: the token would be " +
                 "unconstrained.");
@@ -17683,8 +17619,10 @@ class OAuth2Server {
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
     const declaredMethod = self.presentedMethodOf(req, client, registered);
+    // The hosted public clients' exemption, as at the token endpoint.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(declaredMethod) < 0) {
+        advertisedAuth.indexOf(declaredMethod) < 0 &&
+        !self.deps.fapi.publicClientExempt(clientId, declaredMethod)) {
       log.debug("Leaving OAuth2Server.parRequest(). " + self.profileOf(req) +
                 " does not " +
                 "advertise " + declaredMethod + ".");
@@ -17763,8 +17701,11 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     // FAPI 2.0 section 5.3.2.2 item 4 (#140): a push authenticates its client.
+    // The hosted public clients (#446, #568) push with nothing to
+    // authenticate with: the profile's exemption, read here too.
     const fapiPushed = fapi.parAuthenticationRefusal(
-      !!observation.authenticated);
+      !!observation.authenticated ||
+      fapi.publicClientExempt(clientId, declaredMethod));
     if (fapiPushed) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI 2.0: an " +
                 "unauthenticated push.");
@@ -17934,7 +17875,7 @@ class OAuth2Server {
       objectAlg = String(verified.alg || '');
       objectEncrypted = String(verified.encrypted || '');
     } else {
-      if (requestObject.signedRequired(registered, profile)) {
+      if (requestObject.signedRequired(registered, profile, clientId)) {
         log.debug("Leaving OAuth2Server.parRequest(). A signed request " +
                   "object is required.");
         return refuse(400, 'invalid_request', 'This push carries plain ' +
@@ -19942,8 +19883,7 @@ class OAuth2Server {
                bcpCheck.description, code: bcpCheck.errorCode ||
                'STS-OAUTH-0158' };
     }
-    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
-                        24;
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes'));
     const record = self.clientRecord(self.asBaseOf(req), metadata, clientId,
                                      o.secret ? randomId(secretBytes)
                                               : undefined, undefined);
@@ -20145,8 +20085,7 @@ class OAuth2Server {
     // the literals that were here. The secret and the registration access token
     // share a size because both ARE secrets and neither is weaker than the
     // other.
-    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
-                        24;
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes'));
     const clientId = String(config.value('oauth2.registeredClientIdPrefix') ||
                             '') +
                      randomId(Number(
@@ -20459,7 +20398,7 @@ class OAuth2Server {
     // #46). `dpop.ts` registers nothing (rule 3), so the middleware it builds
     // is registered HERE, above this module's first route — and so above every
     // route that verifies a proof: the token endpoint, the PAR endpoint,
-    // UserInfo and the step-up stand-in below, and the credential endpoints,
+    // UserInfo below, and the credential endpoints,
     // SCIM and Shared Signals, all registered after this module (rule 1:
     // middleware applies only to routes added after it). Nothing required above
     // this module reads a DPoP header. It does nothing for a request without
@@ -20539,19 +20478,18 @@ class OAuth2Server {
     // FAPI 1.0 Baseline section 6.2.1 items 11 and 13: a resource server
     // "shall set the response header x-fapi-interaction-id to the value
     // received from the corresponding FAPI client request header or to a
-    // RFC4122 UUID value if the request header was not provided". UserInfo,
-    // Grant Management's `/oauth2/grants/{id}` and the step-up stand-in are
-    // the resources this service serves, and the OpenID conformance suite's
-    // FAPI 1.0 plans read the header off UserInfo. In EVERY mode rather than
+    // RFC4122 UUID value if the request header was not provided". UserInfo
+    // and Grant Management's `/oauth2/grants/{id}` are the resources this
+    // service serves, and the OpenID conformance suite's FAPI 1.0 plans read
+    // the header off UserInfo. In EVERY mode rather than
     // under a FAPI profile: the header is a correlation id that carries
     // nothing, and asking a named server's profile here, before its route has
     // entered it, would be the one place that could get it wrong. A value the
     // client sent is echoed only when it has the UUID's shape, so this never
     // reflects arbitrary text into a header.
     // -------------------------------------------------------------------------
-    app.use(['/oauth2/userinfo', '/oauth2/grants', '/oauth2/step-up/resource',
-             '/:as/oauth2/userinfo', '/:as/oauth2/grants',
-             '/:as/oauth2/step-up/resource'],
+    app.use(['/oauth2/userinfo', '/oauth2/grants',
+             '/:as/oauth2/userinfo', '/:as/oauth2/grants'],
             function (req: Req, res: Res, next: () => void): void {
       log.debug("Entering the x-fapi-interaction-id middleware.");
       const sent = String(req.headers['x-fapi-interaction-id'] || '');
@@ -20728,10 +20666,10 @@ class OAuth2Server {
     // oauth2.rfc9700 — so it is turned on at /admin/config or through POST
     // /admin-api/config like every other setting, which is what gives it a
     // console control, a management API operation and an audit row without a
-    // line being written for any of the three. /dpop/nonce-mode is a switch as
-    // well, and a test control: it writes the setting
-    // `oauth2.dpopNonceRequired` for the realm it is reached in (see its header
-    // below).
+    // line being written for any of the three. Whether DPoP proofs must carry
+    // a server nonce is the same kind of thing — the per-realm setting
+    // `oauth2.dpopNonceRequired` — and since #597 there is no other switch
+    // for it.
     //
     // Read-only, so there is no console control here and therefore nothing for
     // rule 7 in CLAUDE.md to require of the management API.
@@ -20769,104 +20707,8 @@ class OAuth2Server {
 
     app.post('/oauth2/userinfo', self.userinfoResponse.bind(self));
 
-    app.get('/oauth2/step-up/resource/:application',
-            self.stepUpResource.bind(self));
-
-    app.post('/oauth2/step-up/resource/:application',
-             self.stepUpResource.bind(self));
-
     // --- token endpoint
     // ---------------------------------------------------------
-    // -------------------------------------------------------------------------
-    // NON-SPEC: the DPoP nonce switch.
-    //
-    // RFC 9449 sections 8 and 9 let a server demand a server-supplied nonce in
-    // every proof, which turns the first request of a session into a 401/retry
-    // handshake. Whether to do that is a deployment's choice, and both answers
-    // are worth being able to try — a wallet that handles the happy path but
-    // not the handshake is a wallet that works until it meets a server that
-    // asks.
-    //
-    // So it is a runtime switch: a test, or somebody reading the page, can turn
-    // it on, watch the retry, and turn it off again without restarting the
-    // service. GET reports; POST {"required": true|false} sets — the runtime
-    // setting `oauth2.dpopNonceRequired` since 2026-09-12 (below). Listed on
-    // /admin/sts-metadata as non-spec, because it is.
-    // -------------------------------------------------------------------------
-    app.get('/dpop/nonce-mode', function (req, res) {
-      log.debug("Entering the DPoP nonce-mode endpoint (read).");
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-        .send(JSON.stringify(dpop.state(), null, 2));
-      log.debug("Leaving the DPoP nonce-mode endpoint (read).");
-    });
-
-    // -------------------------------------------------------------------------
-    // TWO THINGS CHANGED ABOUT THE WRITE ON 2026-09-12.
-    //
-    // **IT IS PER TRUST REALM.** It set one switch for the whole process, so a
-    // test turning nonces on at /realm/acme/dpop/nonce-mode demanded them of
-    // every client of every other realm. It writes `oauth2.dpopNonceRequired`
-    // now, which lands on the realm it is reached in — see
-    // `dpop.setNonceMode()`.
-    //
-    // **IT IS A TEST CONTROL AND PRODUCT MODE REFUSES IT.** Anybody who can
-    // reach the port could change a security policy of the authorization server
-    // and empty its replay cache in the same call. In product the setting is
-    // still changeable, through the two doors that already require a credential
-    // — /admin/oauth2 and POST /admin-api/config/set — and this endpoint says
-    // so. The READ above stays open in both modes: it reports a policy a client
-    // needs to know to talk to this server at all.
-    // -------------------------------------------------------------------------
-    app.post('/dpop/nonce-mode', function (req, res) {
-      log.debug("Entering the DPoP nonce-mode endpoint (write).");
-      if (!mode.opensTestControls()) {
-        log.warn('oauth2: POST /dpop/nonce-mode was refused — product mode ' +
-                 'does not open test controls.');
-        log.debug("Leaving the DPoP nonce-mode endpoint. Refused in product " +
-                  "mode.");
-        errorCodes.mark(res, 'STS-OAUTH-0178');
-        return self.oauthError(res, 403, 'access_denied',
-          'POST /dpop/nonce-mode is a test control and this realm is in ' +
-          'product mode, where test controls are closed. Set ' +
-          'oauth2.dpopNonceRequired instead — on /admin/oauth2 or with POST ' +
-          '/admin-api/config/set, both ' +
-          'of which require a credential.');
-      }
-      const body = parseBody(req);
-      // Only an explicit boolean, so a typo cannot silently leave the switch in
-      // a state nobody chose: a test that means to turn nonces OFF and leaves
-      // them on makes every later section in the run fail for an invisible
-      // reason.
-      const wanted = body.required;
-      if (wanted !== true && wanted !== false && wanted !== 'true' &&
-          wanted !== 'false') {
-        log.debug("Leaving the DPoP nonce-mode endpoint. Refused.");
-        errorCodes.mark(res, 'STS-OAUTH-0179');
-        return self.oauthError(res, 400, 'invalid_request',
-          'Send {"required": true} or {"required": false}.');
-      }
-      try {
-        dpop.setNonceMode(wanted === true || wanted === 'true');
-      } catch (e) {
-        log.error(errorCodes.tag('STS-OAUTH-0180') + 'oauth2: the DPoP nonce ' +
-                                                     'switch could not be ' +
-                                                     'written: ' +
-                  e.message);
-        log.debug("Leaving the DPoP nonce-mode endpoint. The setting " +
-                  "refused it.");
-        errorCodes.mark(res, 'STS-OAUTH-0180');
-        return self.oauthError(res, 500, 'server_error', e.message);
-      }
-      // A change of policy invalidates nothing already issued, but the replay
-      // cache holds this realm's proofs and a test that has just been refusing
-      // proofs on purpose wants a clean slate for the next section.
-      dpop.forgetProofs();
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-        .send(JSON.stringify(dpop.state(), null, 2));
-      log.debug("Leaving the DPoP nonce-mode endpoint (write). required=" +
-                dpop.nonceModeOn());
-    });
-
     // -------------------------------------------------------------------------
     // THE WRAPPER, AND IT IS NOT CEREMONY.
     //
@@ -20979,7 +20821,7 @@ class OAuth2Server {
     app.get('/docs', function (req, res) {
       log.debug("Entering the service documentation endpoint.");
       res.type('text/plain').send(
-        'Mock authorization server (service_documentation).\n\n' +
+        'Authorization server (service_documentation).\n\n' +
         'Every endpoint in ' + baseUrlOf(req) +
         '/.well-known/oauth-authorization-server ' +
         'answers.\nTokens are RS256 JWTs signed with the key ' +
@@ -20991,14 +20833,14 @@ class OAuth2Server {
 
     app.get('/policy', function (req, res) {
       log.debug("Entering the policy document endpoint.");
-      res.type('text/plain').send('Mock authorization server policy ' +
+      res.type('text/plain').send('Authorization server policy ' +
                                   '(op_policy_uri). Test data only.\n');
       log.debug("Leaving the policy document endpoint.");
     });
 
     app.get('/tos', function (req, res) {
       log.debug("Entering the terms of service endpoint.");
-      res.type('text/plain').send('Mock authorization server terms of ' +
+      res.type('text/plain').send('Authorization server terms of ' +
                                   'service (op_tos_uri). Test data only.\n');
       log.debug("Leaving the terms of service endpoint.");
     });

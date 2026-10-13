@@ -53,6 +53,8 @@
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -306,7 +308,11 @@ async function test() {
   // 4. AN UNDECLARED TYPE.
   // =========================================================================
   log.info("=== 4. an undeclared type ===");
-  r = await ask([{ type: "cat-nobody-declares-this", actions: ["read"] }]);
+  // At a registered resource server's address: a right naming no resource
+  // server at all is refused invalid_request in every mode since #593
+  // (STS-GNAP-0904), which is not what this section is about.
+  r = await ask([{ type: "cat-nobody-declares-this", actions: ["read"],
+                   locations: [OTHER_URI] }]);
   if (PRODUCT) {
     check("4. product: an undeclared type is refused", function () {
       h.refused(r, "request_denied", "an undeclared type");
@@ -460,11 +466,12 @@ async function test() {
   const pending = r.json;
   const b = h.browser();
   const approval = await h.reachApproval(b, pending.interact.redirect, OWNER);
+  // The page is drawn from its view since #578: what was narrowed is in it.
   check("7b. the approval page says what the policy narrowed", function () {
-    assert.ok(/narrowed what the application asked for/.test(
-      approval.page.text), approval.page.text.slice(0, 600));
-    assert.ok(/actions refund/.test(approval.page.text),
-              approval.page.text.slice(0, 600));
+    assert.ok(approval.view && (approval.view.narrowed || []).length,
+              JSON.stringify(approval.view));
+    assert.ok(/actions refund/.test(h.rightsText(approval.view)),
+              h.rightsText(approval.view));
   });
   r = await h.answer(b, approval, "allow");
   const finished = h.finishParams(r.location, r);
@@ -528,33 +535,25 @@ async function test() {
         if (res.location.indexOf(RP_REDIRECT) === 0) {
           break;
         }
+        // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE
+        // #571: signed in through the one helper, with this browser's jar.
+        if (/\/authn\/login\?authn=/.test(res.location)) {
+          res = await authnSignin.signInWithJar(h.realmBase,
+            h.absolute(res.location),
+            { action: "login", username: OWNER, password: PASSWORD },
+            rp.jar);
+          continue;
+        }
+        // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+        // answered over /authn-api/consent through the one helper, with
+        // this browser's jar, the lowered limits beside Allow; its answer
+        // comes back as the form's 303, or the refusal at its status.
+        if (authnSignin.isConsent(res.location)) {
+          res = await authnSignin.consentWithJar(h.absolute(res.location),
+            "allow", rp.jar, { limits: lowering || {} });
+          continue;
+        }
         res = await rp.go("GET", res.location);
-        continue;
-      }
-      const authnId = (res.text.match(/name="authn_id" value="([^"]+)"/) ||
-                       [])[1];
-      if (res.status === 200 && authnId) {
-        res = await rp.go("POST", "/realm/" + h.realm + "/authn/login",
-                          { authn_id: authnId, username: OWNER,
-                            password: PASSWORD, action: "login",
-                            csrf_token: h.csrfOf(res.text) });
-        continue;
-      }
-      const consentAction = (res.text.match(
-        /<form method="post" action="([^"]*oauth2\/consent[^"]*)"/) || [])[1];
-      if (res.status === 200 && consentAction) {
-        const form = {};
-        (res.text.match(/<input type="hidden"[^>]*>/g) || [])
-          .forEach(function (tag) {
-            const name = /name="([^"]+)"/.exec(tag);
-            const value = /value="([^"]*)"/.exec(tag);
-            if (name) {
-              form[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-            }
-          });
-        form.action = "allow";
-        Object.assign(form, lowering || {});
-        res = await rp.go("POST", consentAction.replace(/&amp;/g, "&"), form);
         continue;
       }
       break;
@@ -656,13 +655,20 @@ async function test() {
   const limitedPair = pkce();
   const drawn = await rp.go("GET", authorizeUrl(asked,
                                                 pkceExtra(limitedPair)));
-  const drawnPage = drawn.status === 302 || drawn.status === 303
-    ? await rp.go("GET", drawn.location) : drawn;
+  // The screen's view carries the detail's limits, which its page draws as
+  // controls (#576).
+  const drawnView = authnSignin.isConsent(drawn.location)
+    ? await authnSignin.consentPage(h.absolute(drawn.location), {
+      cookie: Object.keys(rp.jar).map(function (k) {
+        return k + "=" + rp.jar[k];
+      }).join("; ") }) : null;
   check("8g. the consent screen draws the limit as a control", function () {
-    assert.ok(/name="lim_t0r0_amount" value="50"/.test(drawnPage.text),
-              String(drawnPage.text).slice(0, 800));
+    const limited = drawnView && drawnView.view &&
+      (drawnView.view.limits || [])[0];
+    assert.ok(limited && String(limited.limits.amount) === "50",
+              JSON.stringify(drawnView && drawnView.view).slice(0, 800));
   });
-  r = await follow(drawnPage, { "lim_t0r0_amount": "20" });
+  r = await follow(drawn, { "lim_t0r0_amount": "20" });
   const limitedCode = new URL(r.location || "https://x/").searchParams
     .get("code");
   const redeem = function (form) {

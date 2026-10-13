@@ -54,7 +54,33 @@ class OidfedPage {
    * @returns the body as HTML
    */
   static render(view: Json, ctx?: Json): string {
-    return OidfedPage.body(view, (ctx || kit.context()).t);
+    const c = ctx || kit.context();
+    return OidfedPage.body(view, c.t, c.query);
+  }
+
+  // THE PAGING CONTROLS (#313's sweep): one per list the view pages, each
+  // from the answer's own `paging` and carrying every other parameter, so
+  // moving one list leaves the other six where they were. An answer without
+  // `paging` draws none.
+  /**
+   * Builds the paging control of every paged list.
+   *
+   * @param json - the view
+   * @param query - the page's query
+   * @param t - the page's translator
+   * @returns each list's head and foot, by the view's member name
+   */
+  static navs(json: Json, query: Json, t: Json): Json {
+    const paging = json.paging || {};
+    const params = kit.pageParamsOf(query || {});
+    const out: Json = {};
+    ['keys', 'subordinates', 'formerSubordinates', 'trustAnchors',
+     'issuedMarks', 'heldMarks', 'markPolicies'].forEach(function (member) {
+      out[member] = paging[member]
+        ? kit.pageNavPair('/admin/oidfed', params, paging[member], t)
+        : { head: '', foot: '' };
+    });
+    return out;
   }
 
   /**
@@ -155,9 +181,11 @@ class OidfedPage {
    *
    * @param json - `oidfed.view()`'s answer
    * @param t - the page's translator
+   * @param nav - optional; the paging controls, from `navs()`
    * @returns the markup
    */
-  static sectionKeys(json: Json, t: Json): string {
+  static sectionKeys(json: Json, t: Json, nav?: Json): string {
+    const pager = (nav || {}).keys || { head: '', foot: '' };
     const self = this;
     const rows = json.keys.length ? json.keys.map(function (k: Json) {
       const control = k.state === 'retired' && !k.revokedAt
@@ -178,15 +206,17 @@ class OidfedPage {
         control + '</td></tr>';
     }).join('') : '<tr><td colspan="7" class="sub">' +
       t.html('consoleOidfed.noKey') + '</td></tr>';
-    return '<h2>' + t.html('consoleOidfed.keysHeading') + '</h2>' +
+    return '<h2 data-tab="keys">' +
+      t.html('consoleOidfed.keysHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.keysNote', { alg: json.signingAlg })) +
+      pager.head +
       '<table><thead><tr><th>kid</th><th>' +
       t.html('consoleOidfed.thAlgorithm') + '</th><th>' +
       t.html('consoleOidfed.thState') + '</th>' +
       '<th>' + t.html('consoleOidfed.thMade') + '</th><th>' +
       t.html('consoleOidfed.thPublishedUntil') + '</th><th>' +
       t.html('consoleOidfed.thAtRest') + '</th><th></th></tr>' +
-      '</thead><tbody>' + rows + '</tbody></table>' +
+      '</thead><tbody>' + rows + '</tbody></table>' + pager.foot +
       this.form('rotate-key', '', t.text('consoleOidfed.rotateNow')) + ' ' +
       // The word to type stays `compromised` in every language: it is what
       // the server compares the confirmation with (#539).
@@ -201,10 +231,12 @@ class OidfedPage {
    *
    * @param json - `oidfed.view()`'s answer
    * @param t - the page's translator
+   * @param nav - optional; the paging controls, from `navs()`
    * @returns the markup
    */
-  static sectionSubordinates(json: Json, t: Json): string {
+  static sectionSubordinates(json: Json, t: Json, nav?: Json): string {
     const self = this;
+    const pager = (nav || {}).subordinates || { head: '', foot: '' };
     const reasonField = '<input name="reason" placeholder="' +
                         attr(t.text('consoleOidfed.phReason')) + '" ' +
                         'size="18"> <input name="informationUri" ' +
@@ -236,20 +268,23 @@ class OidfedPage {
           esc((s.entityTypes || []).join(', ')) + '</td><td>' +
           (s.metadataPolicy ? t.html('consoleOidfed.yes') : '') +
           (s.constraints ? ' constraints' : '') +
-          '</td><td>' + status + self.history(s.events, t) + '</td><td>' +
+          '</td><td>' + status + self.history(s.events, t, s.eventsTotal) +
+          '</td><td>' +
           acts + '</td></tr>';
       }).join('')
       : '<tr><td colspan="6" class="sub">' +
         t.html('consoleOidfed.noSubordinates') + '</td></tr>';
-    return '<h2>' + t.html('consoleOidfed.subordinatesHeading') + '</h2>' +
+    return '<h2 data-tab="subordinates">' +
+      t.html('consoleOidfed.subordinatesHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.subordinatesNote')) +
+      pager.head +
       '<table><thead><tr><th>' + t.html('consoleOidfed.thEntity') +
       '</th><th>' + t.html('consoleOidfed.thKeys') + '</th><th>' +
       t.html('consoleOidfed.thTypes') + '</th>' +
       '<th>' + t.html('consoleOidfed.thPolicy') + '</th><th>' +
       t.html('consoleOidfed.thStatus') +
       '</th><th></th></tr></thead><tbody>' + rows +
-      '</tbody></table>' + this.sectionFormer(json, t) +
+      '</tbody></table>' + pager.foot + this.sectionFormer(json, t, nav) +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'add-subordinate') +
       '<p><input name="entityId" placeholder="https://entity.example" ' +
@@ -278,13 +313,18 @@ class OidfedPage {
    *
    * @param events - the subordinate's events
    * @param t - the page's translator
+   * @param total - optional; how many events there are, when the view
+   *   carries only the latest
    * @returns the markup
    */
-  static history(events: Json, t: Json): string {
+  static history(events: Json, t: Json, total?: number): string {
     const list: Json[] = Array.isArray(events) ? events : [];
     if (!list.length) {
       return '';
     }
+    // The view carries a subordinate's LATEST events and how many there are
+    // (#313's sweep); the whole history is the public endpoint's.
+    const all = Number(total) > list.length ? Number(total) : list.length;
     const rows = list.map(function (e: Json): string {
       return '<tr><td>' + esc(new Date(Number(e.iat) * 1000).toISOString()) +
         '</td><td><code>' + esc(e.event) + '</code></td><td>' +
@@ -294,8 +334,12 @@ class OidfedPage {
                              '</a>' : '') + '</td></tr>';
     }).join('');
     return '<details><summary>' +
-           t.html('consoleOidfed.historyCount', { n: list.length }) +
+           t.html('consoleOidfed.historyCount', { n: all }) +
            '</summary>' +
+           (all > list.length
+             ? '<p class="sub">' + t.html('consoleOidfed.historyLatest',
+                 { shown: list.length }) + '</p>'
+             : '') +
            '<table><tbody>' + rows + '</tbody></table></details>';
   }
 
@@ -305,10 +349,12 @@ class OidfedPage {
    *
    * @param json - `oidfed.view()`'s answer
    * @param t - the page's translator
+   * @param nav - optional; the paging controls, from `navs()`
    * @returns the markup
    */
-  static sectionFormer(json: Json, t: Json): string {
+  static sectionFormer(json: Json, t: Json, nav?: Json): string {
     const self = this;
+    const pager = (nav || {}).formerSubordinates || { head: '', foot: '' };
     const former: Json[] = json.formerSubordinates || [];
     if (!former.length) {
       return '';
@@ -318,13 +364,14 @@ class OidfedPage {
         (f.localRealm ? t.html('consoleOidfed.realmDeleted',
                                { realm: f.localRealm })
                       : t.html('consoleOidfed.revoked')) +
-        self.history(f.events, t) + '</td></tr>';
+        self.history(f.events, t, f.eventsTotal) + '</td></tr>';
     }).join('');
     return '<h3>' + t.html('consoleOidfed.formerHeading') +
-           '</h3><table><thead><tr><th>' +
+           '</h3>' + pager.head + '<table><thead><tr><th>' +
            t.html('consoleOidfed.thEntity') + '</th>' +
            '<th>' + t.html('consoleOidfed.thHistory') +
-           '</th></tr></thead><tbody>' + rows + '</tbody></table>';
+           '</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+           pager.foot;
   }
 
   // The Entity Collection (#136): the crawl kept, and Crawl now.
@@ -361,7 +408,8 @@ class OidfedPage {
     // `jobOff` is the view's own sentence, drawn as it comes (#539), and
     // kept out of the message: a parameter's apostrophe is escaped as
     // `&#39;` where esc() writes `&apos;`, which would change the page.
-    return '<h2>' + t.html('consoleOidfed.collectionHeading') + '</h2>' +
+    return '<h2 data-tab="collection">' +
+      t.html('consoleOidfed.collectionHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.collectionNote') + ' ' +
         (c.jobOff ? t.html('consoleOidfed.crawlOff') + esc(c.jobOff) +
                     t.html('consoleOidfed.crawlOffEnd')
@@ -376,10 +424,12 @@ class OidfedPage {
    *
    * @param json - `oidfed.view()`'s answer
    * @param t - the page's translator
+   * @param nav - optional; the paging controls, from `navs()`
    * @returns the markup
    */
-  static sectionAnchors(json: Json, t: Json): string {
+  static sectionAnchors(json: Json, t: Json, nav?: Json): string {
     const self = this;
+    const pager = (nav || {}).trustAnchors || { head: '', foot: '' };
     const rows = json.trustAnchors.map(function (a: Json) {
       return '<tr><td>' + self.code(a.entityId) + '</td><td>' +
         (a.localRealm ? t.html('consoleOidfed.realmNamed',
@@ -390,14 +440,16 @@ class OidfedPage {
           t.text('consoleOidfed.remove'), true)) +
         '</td></tr>';
     }).join('');
-    return '<h2>' + t.html('consoleOidfed.anchorsHeading') + '</h2>' +
+    return '<h2 data-tab="anchors">' +
+      t.html('consoleOidfed.anchorsHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.anchorsNote')) +
+      pager.head +
       '<table><thead><tr><th>' + t.html('consoleOidfed.thAnchor') +
       '</th><th>' + t.html('consoleOidfed.thKeys') +
       '</th><th></th></tr></thead>' +
       '<tbody>' + (rows || '<tr><td colspan="3" class="sub">' +
                    t.html('consoleOidfed.noneRow') + '</td></tr>') +
-      '</tbody></table>' +
+      '</tbody></table>' + pager.foot +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'add-trust-anchor') +
       '<p><input name="entityId" placeholder="https://anchor.example" ' +
@@ -415,10 +467,15 @@ class OidfedPage {
    *
    * @param json - `oidfed.view()`'s answer
    * @param t - the page's translator
+   * @param nav - optional; the paging controls, from `navs()`
    * @returns the markup
    */
-  static sectionMarks(json: Json, t: Json): string {
+  static sectionMarks(json: Json, t: Json, nav?: Json): string {
     const self = this;
+    const none = { head: '', foot: '' };
+    const issuedNav = (nav || {}).issuedMarks || none;
+    const heldNav = (nav || {}).heldMarks || none;
+    const policyNav = (nav || {}).markPolicies || none;
     // `type`, not `t`, since #539: `t` is the page's translator, always.
     const types = json.markTypes.map(function (type: Json) {
       return '<tr><td>' + self.code(type.type) + '</td><td>' +
@@ -457,7 +514,8 @@ class OidfedPage {
       return '<tr><td colspan="' + n + '" class="sub">' +
              t.html('consoleOidfed.noneRow') + '</td></tr>';
     };
-    return '<h2>' + t.html('consoleOidfed.marksHeading') + '</h2>' +
+    return '<h2 data-tab="marks">' +
+      t.html('consoleOidfed.marksHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.marksNote')) +
       '<h3>' + t.html('consoleOidfed.typesIssued') +
       '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
@@ -478,29 +536,32 @@ class OidfedPage {
       t.html('consoleOidfed.issueThisType') +
       '</button></p></form>' +
       '<h3>' + t.html('consoleOidfed.issuedHeading') +
-      '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
+      '</h3>' + issuedNav.head + '<table><thead><tr><th>' +
+      t.html('consoleOidfed.thType') +
       '</th><th>' + t.html('consoleOidfed.thTo') + '</th><th>' +
       t.html('consoleOidfed.thStatus') +
       '</th><th>' + t.html('consoleOidfed.thExpires') +
       '</th><th></th></tr></thead><tbody>' +
-      (issued || empty(5)) + '</tbody></table>' +
+      (issued || empty(5)) + '</tbody></table>' + issuedNav.foot +
       '<h3>' + t.html('consoleOidfed.carriedHeading') +
-      '</h3><table><thead><tr><th>' + t.html('consoleOidfed.thType') +
+      '</h3>' + heldNav.head + '<table><thead><tr><th>' +
+      t.html('consoleOidfed.thType') +
       '</th>' +
       '<th>' + t.html('consoleOidfed.thIssuer') + '</th><th>' +
       t.html('consoleOidfed.thExpires') +
       '</th><th></th></tr></thead><tbody>' +
-      (held || empty(4)) + '</tbody></table>' +
+      (held || empty(4)) + '</tbody></table>' + heldNav.foot +
       this.form('add-held-mark', '<input name="trustMark" size="60" ' +
                 'placeholder="' + attr(t.text('consoleOidfed.phTrustMark')) +
                 '" required>', t.text('consoleOidfed.carryIt')) +
       '<h3>' + t.html('consoleOidfed.policyHeading') +
-      '</h3><table><thead><tr>' +
+      '</h3>' + policyNav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleOidfed.thType') + '</th><th>' +
       t.html('consoleOidfed.thIssuers') + '</th><th>' +
       t.html('consoleOidfed.thOwner') +
       '</th><th></th></tr></thead>' +
       '<tbody>' + (policies || empty(4)) + '</tbody></table>' +
+      policyNav.foot +
       '<form method="post" action="/admin/oidfed">' +
       this.hidden('action', 'set-mark-policy') +
       '<p><input name="type" placeholder="' +
@@ -527,7 +588,8 @@ class OidfedPage {
   static sectionResolve(json: Json, extra: Json, t: Json): string {
     const shown = extra ? '<pre>' + esc(JSON.stringify(extra, null, 2)) +
                           '</pre>' : '';
-    return '<h2>' + t.html('consoleOidfed.resolveHeading') + '</h2>' +
+    return '<h2 data-tab="resolve">' +
+      t.html('consoleOidfed.resolveHeading') + '</h2>' +
       kit.note(t.html('consoleOidfed.resolveNote',
                       { n: String(json.resolutions.length) })) +
       this.form('resolve', '<input name="sub" placeholder="https://entity.' +
@@ -544,18 +606,23 @@ class OidfedPage {
    *
    * @param json - the view, with `resolution` when one was just made
    * @param t - the page's translator
+   * @param query - optional; the page's query, which the paging links
+   *   carry
    * @returns the body as HTML
    */
-  static body(json: Json, t: Json): string {
+  static body(json: Json, t: Json, query?: Json): string {
+    const nav = this.navs(json, query, t);
     const inner =
       kit.note(t.html('consoleOidfed.intro', { role: json.role })) +
-      this.sectionEntity(json, t) + this.sectionKeys(json, t) +
-      this.sectionSubordinates(json, t) + this.sectionCollection(json, t) +
-      this.sectionAnchors(json, t) +
-      this.sectionMarks(json, t) +
+      this.sectionEntity(json, t) + this.sectionKeys(json, t, nav) +
+      this.sectionSubordinates(json, t, nav) +
+      this.sectionCollection(json, t) +
+      this.sectionAnchors(json, t, nav) +
+      this.sectionMarks(json, t, nav) +
       this.sectionResolve(json, json.resolution, t) +
       SettingsForms.forms(json.settings, '/admin/oidfed') +
-      '<p class="links"><a href="/admin/oidfed?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="/admin/oidfed?format=json">' +
+      'JSON</a> · ' +
       '<code>GET /admin-api/oidfed</code> · <a href="' +
       esc(json.configurationUrl) + '">' +
       t.html('consoleOidfed.linkEntityConfiguration') + '</a> · ' +

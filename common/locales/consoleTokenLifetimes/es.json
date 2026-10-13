@@ -2,7 +2,7 @@
   "intro": "Cuánto tiempo son válidos un token de acceso, un ID Token y un token de actualización emitidos aquí, cuánto puede estar sin usarse una cadena de actualización, si un cierre de sesión revoca los tokens de actualización de su sesión, y cuánto puede desviarse un reloj antes de que este servicio deje de creer en uno de sus propios tokens. Los seis son ",
   "introLink": "ajustes de configuración",
   "introEnd": " y esta página es un camino más corto a las mismas seis filas — escribe mediante la misma función, así que un cambio hecho aquí y otro hecho allí son el mismo cambio.",
-  "nextToken": "<strong>Un cambio se aplica al PRÓXIMO token y a nada ya emitido.</strong> Una duración queda grabada en un token como su claim <code>exp</code> al firmarse, así que un token en manos de un cliente no puede acortarse ni alargarse después con nada de esta página. Es una propiedad de una declaración firmada y no una limitación de aquí — para retirar de la circulación un token emitido, revócalo en ",
+  "nextToken": "<strong>Un cambio se aplica al PRÓXIMO token y a nada ya emitido.</strong> Una duración queda grabada en un token como su claim <code>exp</code> al firmarse, así que un token en manos de un cliente no puede acortarse ni alargarse después con nada de esta página. Es una propiedad de una declaración firmada y no una limitación de aquí — para retirar de la circulación un token emitido, revóquelo en ",
   "tokensPage": "la página de tokens",
   "nextTokenEnd": ". ",
   "sixHeading": "Los seis ajustes",
@@ -43,5 +43,5 @@
   "nRevoked": "{n} revocado(s)",
   "notPerClient": "no por cliente",
   "accessOutlives": "<strong>El token de acceso dura al menos tanto como el token de actualización</strong> ({access} frente a {refresh}). Es legal y se emite tal como está configurado, pero la concesión nunca puede renovarse de forma útil: cuando un cliente necesita un nuevo token de acceso, la credencial con la que lo renovaría también ha caducado. Es una buena forma de ver cómo un cliente descubre que no tiene vuelta atrás.",
-  "skewOutlives": "<strong>El desfase de reloj es al menos tan largo como la propia duración del token de acceso</strong> ({skew} frente a {access}). Cada endpoint que lo vuelve a leer lo aceptará durante toda su vida y luego otro tanto, así que un token de acceso caducado nunca se rechaza en ningún sitio aquí — incluida la introspección, que seguirá declarándolo activo. Reduce el desfase o aumenta la duración, salvo que eso sea justo lo que se está probando."
+  "skewOutlives": "<strong>El desfase de reloj es al menos tan largo como la propia duración del token de acceso</strong> ({skew} frente a {access}). Cada endpoint que lo vuelve a leer lo aceptará durante toda su vida y luego otro tanto, así que un token de acceso caducado nunca se rechaza en ningún sitio aquí — incluida la introspección, que seguirá declarándolo activo. Reduzca el desfase o aumente la duración, salvo que eso sea justo lo que se está probando."
 }

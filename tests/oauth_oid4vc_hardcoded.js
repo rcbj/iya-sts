@@ -25,11 +25,11 @@
 // reset, never by writing the old value back).
 //
 // The ENDPOINT half cannot be: the password grant, the ID Token and UserInfo
-// claims, `/dpop/nonce-mode`, `/oauth2/register`, the Transaction Code attempt
-// limit, `/issuer/offer`'s sign-in requirement and `/realm/<id>/did.json` are
-// all behaviour of ROUTES, and requiring the whole protocol stack into
-// `run.js`'s one process would register every route on the shared app ahead of
-// every later file — a test whose side effects land on somebody else's file,
+// claims, `/admin-api/config/set`'s DPoP nonce setting, `/oauth2/register`,
+// the Transaction Code attempt limit, the demonstration's routes being gone
+// (#594) and `/realm/<id>/did.json` are all behaviour of ROUTES, and requiring the
+// whole protocol stack into `run.js`'s one process would register every route
+// on the shared app ahead of every later file — a test whose side effects land on somebody else's file,
 // which tests/CLAUDE.md records happening twice. So a child loads
 // `common/protocol_stack.ts`, serves it on an ephemeral loopback port, drives
 // it over real HTTP, and hands back a list of findings this file asserts. That
@@ -227,32 +227,55 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
 
     // ======================================================================
-    // 3. POST /dpop/nonce-mode — PRODUCT REFUSES, DEVELOPMENT IS PER REALM
+    // 3. THE DPoP NONCE IS A PER-REALM SETTING, AND ONLY THAT (#597)
     // ======================================================================
+    // `/dpop/nonce-mode` was a test control (a demonstration since #585, so
+    // a product realm answered it as an unrouted path). #597 deleted it:
+    // `oauth2.dpopNonceRequired` is written through POST
+    // /admin-api/config/set, behind a credential, in either mode.
     r = await request(port, 'POST', '/dpop/nonce-mode',
                       { json: { required: true } });
-    note(r.status === 403 && /oauth2\.dpopNonceRequired/.test(r.text),
-         '3a. PRODUCT: POST /dpop/nonce-mode is refused and names the ' +
-         'setting to use instead',
-         r.status + ' ' + r.text.slice(0, 160));
+    const productRead = await request(port, 'GET', '/dpop/nonce-mode');
+    note(r.status === 404 && /Cannot POST \/dpop\/nonce-mode/.test(r.text) &&
+         productRead.status === 404 &&
+         /Cannot GET \/dpop\/nonce-mode/.test(productRead.text),
+         '3a. PRODUCT: /dpop/nonce-mode is not there, by either method',
+         r.status + ' ' + productRead.status + ' ' + r.text.slice(0, 160));
     config.clearOverride('global.mode');
-
     r = await request(port, 'POST', '/realm/hcrealm/dpop/nonce-mode',
                       { json: { required: true } });
-    const inRealm = await request(port, 'GET',
-                                  '/realm/hcrealm/dpop/nonce-mode');
-    const inDefault = await request(port, 'GET', '/dpop/nonce-mode');
-    note(r.status === 200 && inRealm.json &&
-         inRealm.json.nonces_required === true,
-         '3b. development: the switch turns nonces on in the realm it was ' +
-         'reached in',
-         inRealm.text.slice(0, 120));
-    note(inDefault.json && inDefault.json.nonces_required === false,
-         '3c. and NOT in the default realm — it was one switch for the whole ' +
-         'process',
-         inDefault.text.slice(0, 120));
-    await request(port, 'POST', '/realm/hcrealm/dpop/nonce-mode',
-                  { json: { required: false } });
+    note(r.status === 404 &&
+         /Cannot POST (\/realm\/hcrealm)?\/dpop\/nonce-mode/.test(r.text),
+         '3b. development: nor in a development realm — the endpoint is ' +
+         'deleted, not hidden',
+         r.status + ' ' + r.text.slice(0, 160));
+
+    // The setting, through the management API's own door. The open API
+    // (`adminApi.authRequired` off, development only) stands in for the
+    // access token the suite's jobs carry; what is asserted is where the
+    // write lands, not the gate.
+    const dpop = require(ROOT + '/oauth-oidc/dpop');
+    const inRealmNow = function () {
+      return realms.run(realms.get('hcrealm'), function () {
+        return dpop.state().nonces_required;
+      });
+    };
+    config.setOverride('adminApi.authRequired', false);
+    r = await request(port, 'POST', '/realm/hcrealm/admin-api/config/set',
+                      { json: { key: 'oauth2.dpopNonceRequired',
+                                value: 'true' } });
+    note(r.status === 200 && inRealmNow() === true,
+         '3c. POST /admin-api/config/set turns nonces on in the realm it ' +
+         'was reached in',
+         r.status + ' ' + r.text.slice(0, 160));
+    note(dpop.state().nonces_required === false,
+         '3d. and NOT in the default realm — it was one switch for the ' +
+         'whole process until 2026-09-12',
+         JSON.stringify(dpop.state().nonces_required));
+    realms.run(realms.get('hcrealm'), function () {
+      config.clearOverride('oauth2.dpopNonceRequired');
+    });
+    config.clearOverride('adminApi.authRequired');
 
     // ======================================================================
     // 4. RFC 7591 REGISTRATION
@@ -366,47 +389,39 @@ function childMain() {
     config.clearOverride('oid4vci.txCodeMaxAttempts');
 
     // ======================================================================
-    // 6. /issuer/offer
+    // 6. THE DEMONSTRATION ISSUER LEFT THE SERVICE (#594)
     // ======================================================================
-    r = await request(port, 'GET', '/issuer/offer?mode=cross-device');
-    note(r.status === 302 && /\/authn\//.test(String(r.headers.location || '')),
-         '6a. PRODUCT: a pre-authorized offer page with no session sends the ' +
-         'browser to sign in',
-         r.status + ' ' + r.headers.location);
-    r = await request(port, 'GET',
-                      '/issuer/offer?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
-    note(r.status === 400 && /oid4vci\.allowedWalletUrls/.test(r.text),
-         '6b. PRODUCT: an unregistered wallet URL is refused as an open ' +
-         'redirect', r.status + ' ' + r.text.slice(0, 160));
-    config.setOverride('oid4vci.allowedWalletUrls', 'https://evil.hc.example');
-    r = await request(port, 'GET',
-                      '/issuer/offer?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
-    config.clearOverride('oid4vci.allowedWalletUrls');
-    note(r.status === 302 &&
-         /^https:\/\/evil\.hc\.example\/vc-issuance-1\.html\?/.test(
-             String(r.headers.location)),
-         '6c. PRODUCT: a wallet URL listed in oid4vci.allowedWalletUrls is ' +
-         'accepted', r.headers.location);
-    r = await request(port, 'GET',
-                      '/oid4vp/start?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
-    note(r.status === 400 && /oid4vp\.allowedWalletUrls/.test(r.text),
-         '6d. PRODUCT: the Verifier refuses an unregistered wallet URL too',
-         r.status + ' ' + r.text.slice(0, 160));
+    // #589: a pre-authorized offer is the person's own, made on the user
+    // portal; #594 moved the demonstration issuer's pages to the development
+    // companion and deleted the issuer's non-spec readbacks and
+    // /did/generate, so none of them is a route in any mode.
+    const gone = [];
+    for (const where of ['/issuer', '/issuer/offer?mode=cross-device',
+                         '/vc-demo-api/offer', '/oid4vci/last_request',
+                         '/oid4vci/notification/x', '/did/generate',
+                         '/oid4vp/start', '/oid4vp/result/x']) {
+      r = await request(port, 'GET', where);
+      if (!(r.status === 404 && /Cannot GET/.test(r.text))) {
+        gone.push(where + ' ' + r.status);
+      }
+    }
+    note(gone.length === 0,
+         '6a. PRODUCT: the demonstration\'s pages and readbacks are not ' +
+         'routes (#594)', gone.join(', ') || 'all unrouted');
+    // THE WALLET ALLOWLIST is still product's, for the verification start
+    // (`/admin-api/verifications/start`), so it is asked of the function
+    // that door calls.
+    const evil = { query: { wallet: 'https://evil.hc.example' } };
+    const vpChosen = require(ROOT + '/oid4vc/vc_verifier').vpWalletFor(evil);
+    note(!!(vpChosen && vpChosen.error) &&
+         /oid4vp\.allowedWalletUrls/.test(vpChosen.error),
+         '6d. PRODUCT: the Verifier refuses an unregistered wallet URL',
+         JSON.stringify(vpChosen).slice(0, 160));
     config.clearOverride('global.mode');
-    r = await request(port, 'GET',
-                      '/issuer/offer?wallet=' +
-                      encodeURIComponent('https://evil.hc.example'));
-    note(r.status === 302 &&
-         /^https:\/\/evil\.hc\.example\//.test(String(r.headers.location)),
-         '6e. development: any wallet URL is still accepted', r.status + ' ' +
-             r.headers.location);
-    r = await request(port, 'GET', '/issuer/offer?mode=cross-device');
-    note(r.status === 200 && /tx_code/.test(r.text),
-         '6f. development: the cross-device offer page still needs no sign-in',
-         r.status);
+    r = await request(port, 'GET', '/issuer/offer');
+    note(r.status === 404 && /Cannot GET/.test(r.text),
+         '6e. development: nor is the offer page a route (#594)',
+         r.status + ' ' + r.text.slice(0, 120));
 
     // ======================================================================
     // 6g-6m. THE OpenID4VCI ENDPOINTS ACCEPT ONLY A TOKEN THIS REALM CAN

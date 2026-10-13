@@ -49,8 +49,8 @@ class ClaimsProvidersPage {
    * @returns the body as HTML
    */
   static render(view: Json, ctx?: Json): string {
-    const t = (ctx || kit.context()).t;
-    return ClaimsProvidersPage.body(view, t);
+    const c = ctx || kit.context();
+    return ClaimsProvidersPage.body(view, c.t, c.query || {});
   }
 
   // The page body for `json`, the view `GET /admin-api/claim-providers`
@@ -60,9 +60,21 @@ class ClaimsProvidersPage {
    *
    * @param json - the view `GET /admin-api/claim-providers` answers
    * @param t - the page's translator (#539)
+   * @param query - the page's own query, which the search and the paging
+   *   carry
    * @returns the HTML
    */
-  static body(json: Json, t: Json): string {
+  static body(json: Json, t: Json, query?: Json): string {
+    const q = query || {};
+    // ONE PAGE OF EACH LIST (#313's sweep): `providersPage` and `linksPage`,
+    // each moving only its own table.
+    const navOf = function (pg: Json): Json {
+      return pg ? kit.pageNavPair(PAGE, kit.pageParamsOf(q), pg, t)
+                : { head: '', foot: '' };
+    };
+    const paging = json.paging || {};
+    const providerNav = navOf(paging.providers);
+    const linkNav = navOf(paging.links);
     const form = function (action: string, fields: Json, label: string,
                            danger: boolean): string {
       return '<form method="post" action="' + PAGE + '" class="inline">' +
@@ -114,14 +126,19 @@ class ClaimsProvidersPage {
                t.html('consoleClaimsProviders.revoke'), true) + '</td></tr>';
       }).join('')
       : '<tr><td colspan="6" class="sub">' +
-        t.html('consoleClaimsProviders.noLinks') + '</td></tr>';
+        (json.filter && json.filter.links && json.counts &&
+         json.counts.links
+          ? t.html('consoleClaimsProviders.noLinkMatch',
+                   { wanted: json.filter.links })
+          : t.html('consoleClaimsProviders.noLinks')) + '</td></tr>';
     const field = function (name: string, label: string, hint: string,
                             type?: string): string {
       return '<label>' + label + ' <input type="' + (type || 'text') +
         '" name="' + name + '" autocomplete="off"></label>' +
         (hint ? ' <span class="sub">' + hint + '</span>' : '') + '<br>';
     };
-    const add = '<h3>' + t.html('consoleClaimsProviders.addHeading') +
+    const add = '<h3 data-tab="register">' +
+      t.html('consoleClaimsProviders.addHeading') +
       '</h3>' +
       '<form method="post" action="' + PAGE + '" id="claim-provider-add">' +
       '<input type="hidden" name="action" value="add-provider">' +
@@ -161,22 +178,36 @@ class ClaimsProvidersPage {
     return kit.note(t.html('consoleClaimsProviders.noteA') + '<code ' +
         'id="claim-provider-callback">' + esc(json.redirectUri) +
         '</code>' + t.html('consoleClaimsProviders.noteB')) +
+      // The register is the first tab (2026-10-12); the note is Metadata.
+      '<h3 data-tab="providers">' +
+      t.html('consoleClaimsProviders.providersHeading') + '</h3>' +
+      providerNav.head +
       '<table><thead><tr><th>' + t.html('consoleClaimsProviders.colProvider') +
       '</th><th>' + t.html('consoleClaimsProviders.colIssuer') + '</th><th>' +
       t.html('consoleClaimsProviders.colEndpoints') + '</th>' +
       '<th>' + t.html('consoleClaimsProviders.colClient') + '</th><th>' +
       t.html('consoleClaimsProviders.colClaims') + '</th><th>' +
       t.html('consoleClaimsProviders.colDelivery') + '</th><th></th></tr>' +
-      '</thead><tbody>' + providers + '</tbody></table>' + add +
-      '<h3>' + t.html('consoleClaimsProviders.linksHeading') +
-      '</h3><table><thead><tr><th>' +
+      '</thead><tbody>' + providers + '</tbody></table>' +
+      providerNav.foot + add +
+      '<h3 data-tab="links">' +
+      t.html('consoleClaimsProviders.linksHeading') + '</h3>' +
+      kit.sectionSearchForm({
+        path: PAGE, query: q, param: 'linkq', pageParam: 'linksPage',
+        label: t.text('consoleClaimsProviders.linkSearchLabel'),
+        placeholder: t.text('consoleClaimsProviders.linkSearchPlaceholder')
+      }, t) +
+      linkNav.head +
+      '<table><thead><tr><th>' +
       t.html('consoleClaimsProviders.colPerson') + '</th><th>' +
       t.html('consoleClaimsProviders.colProvider') + '</th>' +
       '<th>' + t.html('consoleClaimsProviders.colTheirSub') + '</th><th>' +
       t.html('consoleClaimsProviders.colLinked') + '</th><th>' +
       t.html('consoleClaimsProviders.colToken') + '</th><th></th></tr>' +
       '</thead><tbody>' + links + '</tbody></table>' +
-      '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
+      linkNav.foot +
+      '<p class="links" data-metadata><a href="' + PAGE +
+      '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/claim-providers</code></p>';
   }
 }

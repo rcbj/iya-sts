@@ -34,8 +34,8 @@
 //                         rows rather than as counters, filtered and paged
 //   GET  /admin/claims    the custom claims every new token will carry
 //   POST /admin/claims    add, remove, clear, or replace a whole set
-//   GET  /admin/saml-attributes   the same two halves for the two SAML sets
-//   POST /admin/saml-attributes   the same seven actions, on those two sets
+//   GET  /admin/saml2      SAML 2.0 and 1.1, their assertions and attributes
+//   POST /admin/saml2      the SAML profile and attribute actions
 //
 // Every GET also answers `?format=json`, and every POST answers JSON when it
 // was sent JSON. That is not decoration: this repository's own
@@ -438,6 +438,7 @@ import mode = require('../common/mode');
 // something that is fixed for the life of the process is work in the one place
 // this console does the most of it.
 import version = require('../common/version');
+import ShellDocument = require('../common/shell_document');
 const APP_VERSION = version.load();
 const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // What this service writes down, and whether it is working. A PLAIN REQUIRE in
@@ -527,9 +528,8 @@ import loginRealmChooser = require('../common/realm_chooser');
 // is ldap_server.js's, wired into that module through a slot for the
 // route-order reason rule 6 gives.
 import vcClaims = require('../oid4vc/vc_claims');
-// The other end of that: which of those claims the mock OID4VP Verifier — the
-// "bar door" at /oid4vp/verifier — ASKS a wallet for, and in which credential
-// format. A library like vc_claims.js and admin_stats.js, registering no route,
+// The other end of that: which of those claims the OID4VP Verifier ASKS a
+// wallet for, and in which credential format. A library like vc_claims.js and admin_stats.js, registering no route,
 // so requiring it here neither moves a route nor makes a cycle; vc_verifier.js
 // reads the same module from the other side of the require order.
 import vpConfig = require('../oid4vc/vc_verifier_config');
@@ -768,7 +768,7 @@ import credentialGraph = require('../common/credential_graph');
 //
 // A plain require in the ordinary direction, and both tests that would force a
 // slot pass: `krb5_principals.js` registers no route (the KDC's own `/KdcProxy`
-// and `/krb5/principals` are in `krb5_kdc.js`), and `common/protocol_stack.ts`
+// is in `krb5_kdc.js`), and `common/protocol_stack.ts`
 // requires the Kerberos modules BEFORE this one, so nothing here can be the
 // reason a route moved. It is the same argument the two SPIFFE libraries above
 // are required under.
@@ -797,6 +797,9 @@ import WebShell = require('./web_shell');
 import RealmsPage = require('./web_realms');
 import ClaimsPage = require('./web_claims');
 import DashboardPage = require('./web_dashboard');
+// The Protocols pages drawn as tabs (2026-10-12): the stylesheet marks the
+// tab being read, and only `web_pages.ts` knows every tab id.
+import WebPagesTable = require('./web_pages');
 
 // REQUIRED FOR THE ORDER THEY WERE ALWAYS REQUIRED IN, AND READ NOWHERE HERE
 // (#50). TypeScript drops an `import … = require()` whose name nothing reads,
@@ -931,19 +934,18 @@ void roles;
 //     does not. `trailBar()` is therefore untouched by this and must stay that
 //     way — the trail is still `Admin console › Registration entries › <id>`.
 //   * `NAV` IS STILL DERIVED, now through `sectionPages()`, which flattens a
-//     group's pages into the section that holds it. Everything downstream —
-//     `upTo()`, the trail, `consoleJson().pages` — reads NAV and so cannot tell
-//     a grouped page from an ungrouped one, which is the point: grouping is a
-//     fact about the SIDEBAR, not about the pages.
-//   * A GROUP MAY HOLD A GROUP, AND ONE DOES (2026-10-01, rcbj's ask):
-//     Cert issuance › SPIFFE, the four SPIFFE pages under a heading of their
-//     own inside the certificate group. It was "nesting stops here" until
-//     then, on the argument that a fourth level needs its own breadcrumb —
-//     and it does not, for the first rule's reason: a group is not a crumb,
-//     so the trail is the same at any depth. `groupPages()` is the one walk
-//     that flattens every depth; the sidebar, the guide and the realm
-//     administrator's filter each recurse. Keep it to that one case unless a
-//     heading passes the group test on its own.
+//     group's pages into the section that holds it. `hidden` keeps a direct
+//     destination in NAV for trails and settings ownership, but leaves it out
+//     of the sidebar and `consoleJson().pages`.
+//   * A GROUP MAY HOLD A GROUP (2026-10-01, rcbj's ask), and none does
+//     since 2026-10-12: the one case, Cert issuance › SPIFFE, became the
+//     SPIFFE tab of `/admin/cert-issuance`, its four pages sub-tabs. It was
+//     "nesting stops here" until then, on the argument that a fourth level
+//     needs its own breadcrumb — and it does not, for the first rule's
+//     reason: a group is not a crumb, so the trail is the same at any depth.
+//     `groupPages()` is the one walk that flattens every depth; the sidebar,
+//     the guide and the realm administrator's filter each recurse. The walk
+//     stays for the next heading that passes the group test on its own.
 //
 // ONE PLACEMENT IN HERE IS A JUDGEMENT RATHER THAN AN OBVIOUS FACT, and it is
 // worth knowing which. `Credential claims` (`/admin/vc`) is the OID4VCI
@@ -955,20 +957,12 @@ void roles;
 // what the issuer puts in and what the verifier asks for — answer each other
 // and are worth reading together.
 //
-// `SAML` IS A GROUP WITH ONE PAGE IN IT AND THAT IS AN EXCEPTION WORTH
-// ARGUING, because the rule right beside it says the opposite: `SCIM` is left
-// ungrouped for the smaller reason that a group of one is a heading buying
-// nothing, and it still is. What makes SAML different is that the heading names
-// a PROTOCOL FAMILY this service speaks in two versions and two profiles, and
-// the page under it — `Custom SAML attributes` (`/admin/saml-attributes`), the
-// two assertion claim sets, moved off `/admin/claims` on 2026-08-24 — is one
-// aspect of that family rather than the whole of it. A reader looking for what
-// a WS-Federation assertion will carry looks for the word SAML; ungrouped, that
-// page would sit among the protocol pages reading as something OAuth-adjacent,
-// which is exactly the confusion the grouping was introduced to end. SCIM's one
-// page IS the whole of SCIM here, so its heading would say the label twice.
-// The test for a second group of one is that question and not this precedent:
-// does the heading name more than the page under it does?
+// SAML IS A DIRECT PAGE UNDER PROTOCOLS, not a one-page group: its label names
+// the whole family, and one click goes straight to its tabs for metadata,
+// settings, both identity providers, assertions and custom attributes. A
+// nested "SAML → SAML settings" made the reader pass through two labels to reach
+// that one page, and the child label needlessly narrowed a family-wide page to
+// settings. SCIM is also a direct page, because its page is the whole of SCIM.
 // ONE ROW BELOW IS A PAGE THIS FILE DOES NOT DRAW. `Service metadata`
 // (`/admin/sts-metadata`) is built by `../sts_metadata.js`, which derives its
 // whole content from the live express router and therefore has to be the LAST
@@ -1005,245 +999,31 @@ const SECTIONS = [
     what: 'One page per family, each configuring or reporting what that ' +
           'protocol does here.',
     items: [
-      { title: 'OAuth2 / OIDC',
-        what: 'Which authorization server a flow runs against, how long what ' +
-              'it issues lasts, and what this service puts into it.',
-        items: [
-          // FIRST IN ITS GROUP, and the position is the argument for the page
-          // existing: the other four are about one aspect each — which server,
-          // how long, which claims — and this one is the family's own
-          // configuration, which is what a reader who has not decided what
-          // they are looking at yet wants first.
-          { path: '/admin/oauth2', label: 'OAuth 2.0 / OIDC settings',
-            blurb: 'The appconfig rows behind the authorization ' +
-                   'server: the issuer identifier, RFC 9700 mode and OAuth ' +
-                   '2.1 mode, the ' +
-                   'registered redirect URIs and how a loopback one is ' +
-                   'matched, Front-Channel Logout, the refresh token\'s idle ' +
-                   'timeout and whether a sign-out revokes it, the client ' +
-                   'assertion\'s clock skew — and the deliberate defect ' +
-                   '<code>oauth2.breakIdTokenNonce</code>, which makes this ' +
-                   'service return an ID Token whose <code>nonce</code> is ' +
-                   'wrong so that a client can find out whether it checks ' +
-                   '(development mode only). ' +
-                   'The five a CLIENT may answer for itself — the three ' +
-                   'lifetimes, the refresh idle timeout and whether a ' +
-                   'sign-out revokes refresh tokens — moved to ' +
-                   '<a href="/admin/token-lifetimes">Token lifetimes</a> ' +
-                   'on 2026-08-27, which is where their defaults live now.' },
-          { path: '/admin/authorization-servers',
-            label: 'Authorization servers',
-            blurb: 'Several authorization servers in ONE process, told apart ' +
-                   'by the path component the two discovery shapes already ' +
-                   'carry — RFC 8414 inserts it after the well-known segment ' +
-                   'and OpenID Connect Discovery appends the segment to it. ' +
-                   'Each has its own issuer, its own keys and its own idea ' +
-                   'of what it will accept, so a client can be pointed at a ' +
-                   'second one without a second process. A path nobody has ' +
-                   'configured publishes the document this service always ' +
-                   'published, which is what keeps a client that has never ' +
-                   'heard of this page unaffected by it.' },
-          { path: '/admin/token-lifetimes', label: 'Token lifetimes',
-            blurb: 'How long an access token, an ID Token and a refresh ' +
-                   'token issued here are good for, and how far out a clock ' +
-                   'may be before this service stops believing one of its ' +
-                   'own. Four configuration settings with a page of their ' +
-                   'own, written through the same function <a ' +
-                   'href="/admin/oauth2">the OAuth 2.0 / OIDC settings</a> ' +
-                   'write through — a change made on either page is one ' +
-                   'change.' },
-          { path: '/admin/claims', label: 'Custom claims',
-            blurb: 'What to add to every OAuth 2.0 access token and every ' +
-                   'OIDC ID Token this service issues FROM NOW ON. Two sets, ' +
-                   'because those two go to different readers and the ' +
-                   'interesting configuration is usually the one where they ' +
-                   'DIFFER. Additive only: a custom claim is never allowed ' +
-                   'to displace one the protocol defines, because an ' +
-                   '<code>exp</code> settable from a web form would produce ' +
-                   'tokens that fail to verify with nothing pointing back at ' +
-                   'the page. Nothing already issued changes — a token is a ' +
-                   'signed document and this page cannot reach inside one.' },
-          { path: '/admin/userinfo-claims', label: 'UserInfo claims',
-            blurb: 'The same two halves for the <strong>UserInfo ' +
-                   'response</strong>, and the one claims page here with no ' +
-                   '"nothing already issued changes" warning on it — which ' +
-                   'is the point of it being a page of its own. That ' +
-                   'response is built on EVERY call, so a claim added here ' +
-                   'reaches a client that signed in an hour ago and has done ' +
-                   'nothing since. It is also the one claim set a CLIENT can ' +
-                   'add to: OpenID Connect Core section 5.5\'s ' +
-                   '<code>claims</code> request parameter names individual ' +
-                   'claims, and they are answered off that person\'s entry ' +
-                   'under <code>ou=users</code>.' }
-        ] },
-      { title: 'SAML',
-        what: 'BOTH identity providers — SAML 2.0\'s Web Browser SSO profile ' +
-              'and SAML 1.1\'s two browser profiles, each with its relying ' +
-              'parties and the metadata each one is configured from — and ' +
-              'what this service puts into an assertion, 2.0 and 1.1 alike, ' +
-              'which is also what WS-Trust and WS-Federation carry. The two ' +
-              'profiles are separate pages because they are separate ' +
-              'implementations: SAML 1.1 has no request message and no ' +
-              'Single Logout, so half of what the 2.0 page reports has no ' +
-              'spelling over there.',
-        items: [
-          { path: '/admin/saml2', label: 'SAML 2.0 identity provider',
-            blurb: 'Every service provider this identity provider has been ' +
-                   'asked about, what each one was sent and over which ' +
-                   'binding, and what this service calls ITSELF to each of ' +
-                   'them. What goes INTO the next assertion moved to ' +
-                   '<a href="/admin/saml-assertions">SAML assertions</a> ' +
-                   'on 2026-08-27, because those five are per application ' +
-                   'now and this page configures the identity provider. ' +
-                   'Metadata is published PER service provider — the ' +
-                   'identity provider names itself differently to each one, ' +
-                   'the way Okta and Ping do — and it is minted for anything ' +
-                   'asked for, so nothing has to be registered here first: ' +
-                   'asking for a service provider\'s metadata is what ' +
-                   'creates it.' },
-          { path: '/admin/saml11', label: 'SAML 1.1 identity provider',
-            blurb: 'The same, for the older profiles, and it is a SEPARATE ' +
-                   'implementation rather than a version flag. SAML 1.1 has ' +
-                   'no request message, so a relying party cannot identify ' +
-                   'itself in the protocol at all — it is named by ' +
-                   'Shibboleth\'s <code>providerId</code>, by the path ' +
-                   'segment of a scoped endpoint, or GUESSED from the origin ' +
-                   'of the <code>TARGET</code> — and there is no Single ' +
-                   'Logout to configure and no request signature to record. ' +
-                   'What it has that 2.0 does not is a SOAP responder that ' +
-                   'is also an attribute authority.' },
-          { path: '/admin/saml-assertions', label: 'SAML assertions',
-            blurb: 'THE DEFAULTS EVERY SAML APPLICATION INHERITS: how long ' +
-                   'an assertion is valid, whether it and its response are ' +
-                   'signed, the NameID format and the artifact lifetime — ' +
-                   'five per profile — plus the clock skew written into ' +
-                   'both ends of the validity window. Ten of the eleven can ' +
-                   'be overridden PER APPLICATION on ' +
-                   '<a href="/admin/applications">an application entry</a>, ' +
-                   'and this page names the attribute that does it beside ' +
-                   'each row; the skew cannot, because it is a fact about ' +
-                   'the clocks in this estate rather than about one relying ' +
-                   'party. All eleven reach WS-Trust and WS-Federation too — ' +
-                   'their assertions come out of the same two builders.' },
-          { path: '/admin/saml-attributes', label: 'Custom SAML attributes',
-            blurb: 'The same two halves for the assertions: every SAML 2.0 ' +
-                   'and SAML 1.1 attribute added to what the two identity ' +
-                   'providers, WS-Trust and WS-Federation issue from now on. ' +
-                   'One store behind this page and ' +
-                   '<a href="/admin/claims">Custom claims</a>; two ' +
-                   'vocabularies, because 2.0 has <code>Name</code> and an ' +
-                   'optional <code>NameFormat</code> where 1.1 has ' +
-                   '<code>AttributeName</code> and a REQUIRED ' +
-                   '<code>AttributeNamespace</code>, and one list could not ' +
-                   'have served both.' }
-        ] },
-      { title: 'Verifiable Credentials',
-        what: 'Both halves: what the OID4VCI issuer puts in a credential, ' +
-              'and what the OID4VP verifier asks a wallet to present.',
-        items: [
-          // THE ORDER PAIRS EACH PROTOCOL WITH THE PAGE THAT SAYS WHAT GOES
-          // THROUGH IT — issuance, then what an issued credential carries;
-          // presentation, then what a wallet is asked for. Grouping the two
-          // settings pages together instead would put the OID4VP settings
-          // three rows from the request they configure.
-          { path: '/admin/oid4vci', label: 'OpenID4VCI',
-            blurb: 'The issuer\'s own settings: which wallet the offer pages ' +
-                   'send somebody to, which authorization server the ' +
-                   'credential endpoint trusts a token from, how many ' +
-                   'credentials one request may ask for, how long a deferred ' +
-                   'issuance pretends to take, whether a credential request ' +
-                   'must be encrypted, and whether the SD-JWT VC and ldp_vc ' +
-                   'issuers name themselves by DID or by URL — the one ' +
-                   'choice here that changes what a verifier has to resolve.' },
-          { path: '/admin/vc', label: 'Credential claims',
-            blurb: 'Which claims a Verifiable Credential issued from now on ' +
-                   'carries, chosen from a catalogue of LDAP attribute TYPES ' +
-                   'rather than of claim names: the value of a claim is the ' +
-                   'value on that person\'s directory entry. Saving a ' +
-                   'selection also populates the directory, so an LDAP ' +
-                   'client and a wallet describe one person. It applies to ' +
-                   'all five OID4VCI configurations at once.' },
-          { path: '/admin/vc-status', label: 'Credential status',
-            blurb: 'This realm\'s status lists — the Token Status List every ' +
-                   'JOSE credential names and the two Bitstring Status ' +
-                   'Lists the W3C ones name — where they are served, and ' +
-                   'every issued credential\'s index and status, with ' +
-                   'Suspend, Reinstate and Revoke. A revoked or suspended ' +
-                   'credential is refused by every verifier that reads the ' +
-                   'list, this one included, and signs nobody in.' },
-          { path: '/admin/oid4vp', label: 'OpenID4VP',
-            blurb: 'The verifier\'s own settings: the client identifier it ' +
-                   'presents as, where it sends a holder to present, how ' +
-                   'fresh a Key Binding JWT has to be, and the claims its ' +
-                   'request asks for by default. The DCQL query itself is on ' +
-                   '<a href="/admin/vc-verifier-config">Verifier request</a> ' +
-                   'next door — these four are the settings around it.' },
-          { path: '/admin/vc-verifier-config', label: 'Verifier request',
-            blurb: 'The other end of that lifecycle: what the mock Verifier ' +
-                   'at <code>/oid4vp/verifier</code> asks a wallet for, and ' +
-                   'in which credential format. It reaches the wire as the ' +
-                   '<code>dcql_query</code> of the next OID4VP ' +
-                   'Authorization Request, and it is what the presentation ' +
-                   'is then checked against — a claim asked for and not ' +
-                   'presented fails by name.' }
-        ] },
-      // A GROUP OF FIVE, and the heading names more than any one page does —
-      // which is the test the SAML group set and the one SCIM fails, so SCIM
-      // is ungrouped one row below and this is not. XACML here is a decision
-      // point, a repository, an editor, the enforcement points elsewhere that
-      // pull it, and a way to try the thing — five ways of saying what
-      // authorization is CONFIGURED to do.
-      //
-      // IT WAS A GROUP OF SIX UNTIL 2026-09-06 and the page that left is the
-      // one worth recording: `/admin/xacml/monitor` is about TRAFFIC rather
-      // than configuration, so it belongs in Monitoring with every other page
-      // that answers "what has this service done", and it is there now. It is
-      // still drawn by `xacml/xacml_admin.ts` and still lives under
-      // `/admin/xacml/` — a console page is a `path` and a `label` in this
-      // table whoever builds the body, which is the same arrangement the eight
-      // `/admin/ldap/*` pages have with the Directory section. The rule read
-      // off it: WHERE A PAGE IS FILED IS DECIDED BY THE QUESTION IT ANSWERS,
-      // not by the module that draws it or the path space it sits in.
-      { title: 'XACML',
-        what: 'Authorization: what this service DECIDES, the policies it ' +
-              'decides with, and how to write one.',
-        items: [
-          { path: '/admin/xacml', label: 'XACML settings',
-            blurb: 'What the Policy Decision Point is, whether it is on, and ' +
-                   'the one setting that belongs to the Policy ENFORCEMENT ' +
-                   'point rather than to the PDP — a deny-biased PEP refuses ' +
-                   'an Indeterminate and a permit-biased one allows it, and ' +
-                   'they agree on everything else.' },
-          { path: '/admin/xacml/policies', label: 'Policies',
-            blurb: 'The repository, which IS ou=policies in the embedded ' +
-                   'directory rather than a copy of it. Enable a policy, ' +
-                   'disable it without deleting it, choose which one is the ' +
-                   'ROOT the PDP starts from, and create one from an RBAC or ' +
-                   'ABAC template.' },
-          { path: '/admin/xacml/editor', label: 'Policy editor',
-            blurb: 'The guided editor. Every element offers exactly what ' +
-                   'XACML allows at that point — computed on the server by ' +
-                   'the same code that validates the result, so it cannot ' +
-                   'offer something that will then be refused. There is no ' +
-                   'draft state: the policy you are editing is the policy ' +
-                   'the PDP is using.' },
-          { path: '/admin/xacml/peps', label: 'Remote PEPs',
-            blurb: 'The Policy Enforcement Points in OTHER processes that ' +
-                   'pull this repository and enforce it there. They hold ' +
-                   'their own copy of the engine, so the question this page ' +
-                   'answers is not whether they are up but whether ' +
-                   'everybody is deciding with the SAME policy &mdash; ' +
-                   'which is the question a distributed authorization ' +
-                   'deployment actually has and the one nothing else here ' +
-                   'can answer. Nothing on it reaches into another process.' },
-          { path: '/admin/xacml/decide', label: 'Try a decision',
-            blurb: 'Ask the PDP about somebody and see the answer, which ' +
-                   'policies applied, what the PIP found on their directory ' +
-                   'entry, and — separately — what the embedded PEP would do ' +
-                   'with it. The last two are different answers, and when a ' +
-                   'policy "is not working" it is nearly always because only ' +
-                   'one of them was being looked at.' }
-        ] },
+      { path: '/admin/oauth2', label: 'OAuth 2.0 / OIDC',
+        blurb: 'One page for the authorization server settings, named ' +
+               'authorization servers, token lifetimes, custom claims and ' +
+               'UserInfo claims, each on its own tab.' },
+      // A TAB OF THE PAGE ABOVE, KEPT AS A HIDDEN ROW: SETTING_HOMES draws
+      // the `OAuth 2.0 / OIDC per-client` group by this path (the tab's
+      // renderer asks for it), and checkSettingHomes() refuses a path NAV
+      // does not know (STS-ADMIN-0015 at every start since the OAuth pages
+      // became tabs, d1b41a38). Hidden, so no sidebar link and no guide row.
+      { path: '/admin/token-lifetimes', label: 'Token lifetimes',
+        hidden: true },
+      { path: '/admin/saml2', label: 'SAML',
+        blurb: 'Metadata, shared and profile settings, assertion settings, ' +
+               'both identity providers and custom SAML attributes, each on ' +
+               'its own tab.' },
+      { path: '/admin/vc', label: 'Verifiable Credentials',
+        blurb: 'Metadata and endpoints, separate OpenID4VCI and OpenID4VP ' +
+               'settings, credential claims and status, and the verifier ' +
+               'request, each on its own tab.' },
+      // The decision and enforcement counts remain under Monitoring:
+      // `/admin/xacml/monitor` reports what happened, not configuration.
+      { path: '/admin/xacml', label: 'XACML',
+        blurb: 'Metadata and endpoints, the PDP settings, policy repository ' +
+               'and editor, remote PEPs, and a decision what-if, each on its ' +
+               'own tab.' },
       { path: '/admin/scim', label: 'SCIM',
         blurb: 'The provisioning endpoint at <code>/scim/v2</code>: what it ' +
                'requires of a caller, which of RFC 7644 section 2\'s six ' +
@@ -1254,78 +1034,9 @@ const SECTIONS = [
                '/scim/v2/Users</code> and an <code>ldapadd</code> create the ' +
                'same entry and somebody provisioned over SCIM appears on ' +
                '<a href="/admin/users">Users</a>.' },
-      // SHARED SIGNALS AND ITS TWO VOCABULARIES ARE ONE GROUP (rcbj,
-      // 2026-10-01): Protocols -> SSF holds the Shared Signals page and the
-      // CAEP and RISC pages. They were three rows side by side, argued apart
-      // because SSF is the PIPE and CAEP and RISC are VOCABULARIES over it —
-      // which is still true, and is now said by the heading: a reader looking
-      // for either vocabulary finds it under the pipe it is spoken over. The
-      // paths did not move; NAV is derived, so nothing else changed.
-      { title: 'SSF',
-        what: 'The Shared Signals Framework and the two event vocabularies ' +
-              'spoken over it: CAEP, about sessions, and RISC, about ' +
-              'accounts. The streams, their receivers and every setting ' +
-              'that decides what is sent are here; what was sent is under ' +
-              'Monitoring.',
-        items: [
-          { path: '/admin/ssf', label: 'Shared Signals',
-            blurb: 'The <strong>Shared Signals Framework</strong> (OpenID ' +
-                   'SSF 1.0): the streams this transmitter has agreed, who ' +
-                   'each one is about, what is queued for it and what a ' +
-                   'receiver refused. It is the one protocol family here ' +
-                   'that TALKS BACK &mdash; every other answers a request, ' +
-                   'and this one delivers a Security Event Token nobody ' +
-                   'asked for, at the moment something happens. <strong>SSF ' +
-                   'is the pipe and not the vocabulary</strong>: it defines ' +
-                   'two events of its own, both about the pipe, and the ' +
-                   'vocabularies are <a href="/admin/caep">CAEP</a> (what ' +
-                   'happened to a SESSION) and <a ' +
-                   'href="/admin/risc">RISC</a> (what happened to an ' +
-                   'ACCOUNT). TWO things here generate an event on their own ' +
-                   'now, and they watch different registers: CAEP, where a ' +
-                   'session starting, being presented or ending sends a ' +
-                   'Security Event Token with nobody having asked, and RISC, ' +
-                   'where a change to the DIRECTORY does.' },
-
-          { path: '/admin/caep', label: 'CAEP',
-            blurb: 'The <strong>Continuous Access Evaluation ' +
-                   'Profile</strong> (OpenID CAEP 1.0, final 2 September ' +
-                   '2025): the enterprise SESSION vocabulary spoken over <a ' +
-                   'href="/admin/ssf">Shared Signals</a>. Eight event types ' +
-                   '&mdash; session revoked, established and presented, ' +
-                   'token claims change, credential change, assurance level ' +
-                   'change, device compliance change, risk level change ' +
-                   '&mdash; each with the members the specification gives it ' +
-                   'and the four it gives them all. <strong>It is the one ' +
-                   'page here that configures this service to act without ' +
-                   'being asked</strong>: with <code>caep.autoEmit</code> ' +
-                   'on, a sign-in, a single sign-on and a sign-out each send ' +
-                   'an event to whoever agreed to be told. All eight fire on ' +
-                   'their own (device compliance since #164), and this page ' +
-                   'also carries the form that emits one by hand, on demand.' },
-
-          { path: '/admin/risc', label: 'RISC',
-            blurb: 'The <strong>Risk Incident Sharing and ' +
-                   'Coordination</strong> profile (OpenID RISC Profile ' +
-                   'Specification 1.0, published 29 August 2025 and final on ' +
-                   '2 September 2025): the ACCOUNT vocabulary spoken over <a ' +
-                   'href="/admin/ssf">Shared Signals</a>, and the second of ' +
-                   'the two. Fourteen event types &mdash; account disabled, ' +
-                   'enabled and purged, credential change required, ' +
-                   'credential compromise, identifier changed and recycled, ' +
-                   'the four opt-out events, recovery activated and recovery ' +
-                   'information changed, and one that RISC itself deprecates ' +
-                   'in favour of a CAEP event. <strong>Eleven of them carry ' +
-                   'no payload members at all</strong>, so the subject is ' +
-                   'the entire message, which is what makes ' +
-                   '<code>risc.subjectFormat</code> the most consequential ' +
-                   'setting on the page. With <code>risc.autoEmit</code> on, ' +
-                   'a person deleted from the directory, an account marked ' +
-                   'inactive and a changed mail address each send an event ' +
-                   '&mdash; a DIFFERENT observer from CAEP\'s, watching the ' +
-                   'directory rather than the sessions.' },
-        ]
-      },
+      { path: '/admin/ssf', label: 'SSF',
+        blurb: 'The Shared Signals Framework and its two event ' +
+               'vocabularies, CAEP and RISC, each on its own tab.' },
 
       // PROTOCOLS → DELEGATION (2026-10-01, rcbj): every control that was on
       // Monitoring → Delegation. Ungrouped for Federation's reason below —
@@ -1516,55 +1227,20 @@ const SECTIONS = [
                'every <code>devices.*</code> setting &mdash; how many ' +
                'devices a person or an application may own and how many ' +
                'keys one device may hold.' },
-      // A GROUP OF TWO SINCE 2026-09-13, asked for by rcbj. The two pages were
-      // flat siblings — `Kerberos` and `Kerberos principals` — on the argument
-      // that a `Kerberos` heading over a `Kerberos` page would say the label
-      // twice. That test is about the LABELS, and renaming the settings page
-      // `Kerberos settings` (the `XACML settings` and `OAuth 2.0 / OIDC
-      // settings` shape) answers it; the heading now names more than either
-      // page does, which is the test a group has to pass. The stored keys are
-      // under Protocols and not Directory because the question they answer is
-      // what the KDC holds a key for, which is configuration of that protocol
-      // — even though both halves of the store are directory entries.
-      { title: 'Kerberos',
-        what: 'The KDC: its settings, and the long-term keys it holds for ' +
-              'people and services.',
-        items: [
-          { path: '/admin/kerberos', label: 'Kerberos settings',
-            blurb: 'The KDC\'s own settings: the realm, the two raw ports, ' +
-                   'the clock skew and the deliberate clock OFFSET, the one ' +
-                   'password every user account shares, the names that stay ' +
-                   'unknown so a client can be shown a real KDC error, the ' +
-                   'long-term keys behind krbtgt and the inter-realm trust, ' +
-                   'and whether a ticket presented at ' +
-                   '<code>/authn/spnego</code> may start a browser session ' +
-                   'at all. Most of them are restart-only: the principal ' +
-                   'database is built from them when the process starts.' },
-          // #493: the sixth claim set, PAC_CLIENT_CLAIMS_INFO.
-          { path: '/admin/kerberos/claims', label: 'PAC claims',
-            blurb: 'The claims every ticket\'s PAC carries for a service ' +
-                   'doing claims-based access control ' +
-                   '(PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): typed rows, ' +
-                   'directory attributes and the ticked catalogue, each an ' +
-                   '<code>ad://ext/&lt;name&gt;:&lt;hex&gt;</code> claim id, ' +
-                   'with the person\'s roles under them. A service ticket ' +
-                   'adds the rows of the application that registered its ' +
-                   'SPN. Only while <code>krb5.pacClaims</code> is on.' },
-          { path: '/admin/kerberos/principals', label: 'Principals',
-            blurb: 'Who this KDC holds a stored long-term key for: the ' +
-                   'directory people whose keys were derived from their own ' +
-                   'password (product mode) with the kvno and enctypes and ' +
-                   'whether the keys still match the password, and the ' +
-                   'SERVICE principals an operator created here with a ' +
-                   'random key. A create or a rotate hands over an MIT ' +
-                   'keytab ONCE; no page ever shows a key. Delete and clear ' +
-                   'controls need Admin Write.' } ] },
+      // THE KDC'S CONFIGURATION, CLAIMS AND STORED KEYS ARE ONE PROTOCOL
+      // PAGE; its endpoints are metadata and the three subjects keep their
+      // own tabs, as OAuth, SAML, VC and XACML do.
+      { path: '/admin/kerberos', label: 'Kerberos',
+        blurb: 'The KDC on TCP and UDP 88 and over MS-KKDCP, its protected ' +
+               'service and SPNEGO sign-in. Metadata lists the HTTP ' +
+               'endpoints; separate tabs hold KDC settings, PAC claims and ' +
+               'the stored keys for principals.' },
       { path: '/admin/ldap', label: 'LDAP / LDAPS',
         blurb: 'The embedded directory\'s two raw sockets and the store ' +
                'behind them: the ports, the base DN every realm\'s subtree ' +
                'hangs under, whether a name seen for the first time gets an ' +
-               'entry, and the two ceilings that keep a mock from being ' +
-               'filled up. What is IN the directory is on ' +
+               'entry, and the two ceilings that keep it from being filled ' +
+               'up. What is IN the directory is on ' +
                '<a href="/admin/users">Users</a> and ' +
                '<a href="/admin/groups">Groups</a>; this page is the ' +
                'directory itself.' },
@@ -1575,9 +1251,8 @@ const SECTIONS = [
                'is the SAML pages next door, because the assertion is built ' +
                'by the same two functions the SAML profiles use.' },
       { path: '/admin/wsfed', label: 'WS-Federation',
-        blurb: 'The passive requestor profile at <code>/wsfed</code>, its ' +
-               'entity ID, and the mock relying party that checks a sign-in ' +
-               'response line by line. The assertion it carries is a SAML ' +
+        blurb: 'The passive requestor profile at <code>/wsfed</code> and ' +
+               'its entity ID. The assertion it carries is a SAML ' +
                '1.1 one, so its issuer and its attributes are configured on ' +
                'the SAML pages — this page says which setting is which and ' +
                'links to them rather than offering a third form onto the ' +
@@ -1620,86 +1295,29 @@ const SECTIONS = [
                'page are built by one encoder.' },
       // CERT ISSUANCE (2026-09-13 as *Certificate enrollment*; RENAMED AND
       // WIDENED 2026-09-22 at rcbj's ask): every protocol by which something
-      // asks the certificate authority above for a certificate. It was the
-      // three enrollment protocols, with SPIFFE a group of its own beneath
-      // them; SPIFFE is IN it now, because an X509-SVID is a certificate this
-      // realm's SPIFFE Issuing CA issues (`common/pki.js`) and a reader who
-      // has just read PKI is looking for every way this service hands one
-      // out, not for three of the four. Each page is still drawn by its own
-      // family module (acme/, est/, scep/, spiffe/); the three enrollment
-      // pages have a Monitoring twin, grouped there under the same heading.
-      { title: 'Cert issuance',
-        what: 'ACME, EST, SCEP and SPIFFE all issue from this realm\'s ' +
-              'certificate authority. The three enrollment protocols issue ' +
-              'to the person or application that authenticated — or, for a ' +
-              'holder of Admin Write, to any entry in the realm — and keep ' +
-              'every certificate on the entry it names; SPIFFE issues an ' +
-              'X509-SVID to a WORKLOAD, against a registration entry rather ' +
-              'than a directory identity.',
-        items: [
-          // ===== ACME section row (acme/acme_admin.ts) =====
-          { path: '/admin/acme', label: 'ACME',
-            blurb: 'Automatic Certificate Management Environment (RFC 8555): ' +
-                   'the directory, accounts bound by External Account ' +
-                   'Binding, orders, pre-validated authorizations and ' +
-                   'revocation, issuing from this realm\'s ACME Issuing CA.' },
-          // ===== EST section row (est/est_admin.ts) =====
-          { path: '/admin/est', label: 'EST',
-            blurb: 'Enrollment over Secure Transport (RFC 7030): cacerts, ' +
-                   'simpleenroll, simplereenroll, serverkeygen and csrattrs, ' +
-                   'authenticated by a password, a client secret or a ' +
-                   'certificate this realm issued.' },
-          // ===== SCEP section row (scep/scep_admin.ts) =====
-          { path: '/admin/scep', label: 'SCEP',
-            blurb: 'Simple Certificate Enrolment Protocol (RFC 8894): ' +
-                   'GetCACaps, GetCACert and PKIOperation over CMS, the RA ' +
-                   'certificate, and single-use challenge passwords issued ' +
-                   'for one entry and one profile.' },
-          // ===== SPIFFE's four pages (spiffe/spiffe_server.ts) =====
-          // A GROUP INSIDE THE GROUP (2026-10-01, rcbj's ask): moving SPIFFE
-          // into Cert issuance on 2026-09-22 dropped its own heading, and
-          // four pages — `Registration entries`, `Agents`, `Brokers` among
-          // them — then sat beside ACME, EST and SCEP reading as more
-          // enrollment protocols. The heading names a family the pages under
-          // it are aspects of, the test any group passes.
-          { title: 'SPIFFE',
-            what: 'Workload identity: the trust domain, the entries that ' +
-                  'decide what a workload gets, the agents that ask for it ' +
-                  'and the brokers that ask on a workload\'s behalf.',
-            items: [
-            { path: '/admin/spiffe', label: 'SPIFFE',
-              blurb: 'The trust domain, the signing authority behind every ' +
-                     'X509-SVID and JWT-SVID, the four sockets the Workload ' +
-                     'API and the SPIRE Server API answer on, and how a ' +
-                     'caller at the Workload API is identified — the ' +
-                     '<code>transport:</code>, <code>endpoint:</code> and ' +
-                     '<code>peer:</code> selectors, and whether an ASSERTED ' +
-                     'one is believed. A caller on the Unix socket is ' +
-                     'ATTESTED (unix, docker, k8s) and a caller over TCP is ' +
-                     'not; an agent is attested by its node attestor.' },
-            { path: '/admin/spiffe/entries', label: 'Registration entries',
-              blurb: 'Which workload gets which SPIFFE ID, and what an SVID ' +
-                     'issued against that entry carries. The store is the ' +
-                     'embedded directory under ' +
-                     '<code>ou=entries,ou=spiffe</code>, so a form here, an ' +
-                     '<code>ldapmodify</code> and the SPIRE Server API\'s ' +
-                     '<code>BatchUpdateEntry</code> are three doors onto one ' +
-                     'entry, and nothing caches it — a change takes effect ' +
-                     'on the next SVID.' },
-            { path: '/admin/spiffe/agents', label: 'Agents',
-              blurb: 'Every agent that has attested, with what it was given ' +
-                     'and when. These entries are a RECORD rather than ' +
-                     'configuration — this service wrote all of it when the ' +
-                     'agent attested — which is why nothing on an agent is ' +
-                     'editable and the ban is the only control.' },
-            { path: '/admin/spiffe/brokers', label: 'Brokers',
-              blurb: 'Who may call the SPIFFE Broker API — the node proxies ' +
-                     'and meshes that ask for a workload\'s SVIDs by ' +
-                     'referencing it — and which kinds of reference each may ' +
-                     'use. The list is <code>spiffe.brokers</code>, read on ' +
-                     'every call.' },
-            ] },
-        ] },
+      // asks the certificate authority above for a certificate — ACME, EST,
+      // SCEP and SPIFFE, because an X509-SVID is a certificate this realm's
+      // SPIFFE Issuing CA issues (`common/pki.js`) and a reader who has just
+      // read PKI is looking for every way this service hands one out.
+      //
+      // ONE PAGE OF TABS SINCE 2026-10-12 (rcbj's ask), as OAuth, SAML, VC,
+      // XACML, SSF and Kerberos became: it was a group of three pages and a
+      // nested SPIFFE group of four. Metadata is first and lists every
+      // endpoint of the four; ACME, EST and SCEP are a tab each; SPIFFE is
+      // one tab whose four former pages are sub-tabs. Each tab is still
+      // drawn by its own family's renderer from its own operation
+      // (`admin-ui/web_pages.ts` composes them), and the three enrollment
+      // protocols keep their Monitoring twins, grouped there under the same
+      // heading.
+      { path: '/admin/cert-issuance', label: 'Cert issuance',
+        blurb: 'ACME, EST, SCEP and SPIFFE all issue from this realm\'s ' +
+               'certificate authority. Metadata lists every endpoint; ACME ' +
+               '(RFC 8555), EST (RFC 7030) and SCEP (RFC 8894) have a tab ' +
+               'each, issuing to the person or application that ' +
+               'authenticated; the SPIFFE tab holds the trust domain, the ' +
+               'registration entries, the attested agents and the brokers ' +
+               'as sub-tabs, issuing an X509-SVID to a WORKLOAD against a ' +
+               'registration entry rather than a directory identity.' },
       { path: '/admin/tls', label: 'TLS / mutual TLS',
         blurb: 'The certificate the main port and LDAPS 636 present, ' +
                'regenerated on every start, and what this service makes of a ' +
@@ -2627,6 +2245,26 @@ const SECTIONS = [
                'one. A source that is not there says so. <strong>The ' +
                'figures are this node\'s</strong>, drawn by its front ' +
                'process; no control.' },
+      // TLS CONNECTION (#597, rcbj's decision 3 on #591), beside the node's
+      // own pages: what this service saw of a request — its TLS connection,
+      // the client certificate on it, and what a proxy in front told it.
+      // Under Monitoring because it REPORTS what arrived; the settings it
+      // reads are on TLS / mutual TLS and Configuration. Drawn by
+      // `tls/web_tls_connection.ts` from `GET /admin-api/tls-connection`.
+      // NOT under `/admin/tls`, whose prefix `admin_scope.ts` refuses to a
+      // realm's own administrator: a realm administrator may ask what their
+      // own connection carried.
+      { path: '/admin/tls-connection', label: 'TLS connection',
+        blurb: 'What this service saw of the console\'s own request: the ' +
+               'TLS version and cipher, the client certificate the ' +
+               'connection presented &mdash; whether it verified against ' +
+               'the truststore, what the identity gate makes of it and its ' +
+               'revocation status &mdash; and every forwarding header with ' +
+               'what was believed of it under <code>global.trustProxy</code> ' +
+               'and <code>global.trustedProxies</code>, including the base ' +
+               'URL every issuer is built from. It replaces the development ' +
+               'pages <code>/tls</code> and <code>/tls/forwarded</code>, and ' +
+               'answers in product mode. No control.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by
@@ -2898,6 +2536,21 @@ const SECTIONS = [
                'so an operation you may not perform is refused here by the ' +
                'same policy that would refuse it anywhere else. It is the ' +
                'only page in this console with a script on it.' },
+      // THE ACCOUNT API'S DOCUMENT (#568), beside the management API's
+      // explorer and for its reason: the other API this service publishes,
+      // the one the user portal draws every page from. It is a document to
+      // read and not a form to call — every operation acts on the SIGNED-IN
+      // PERSON's own account, so a console administrator's token is no
+      // credential there and a "try it" would only ever be refused.
+      { path: '/admin/account-api', label: 'Account API',
+        blurb: 'The OpenAPI document of <code>/account-api</code>, the ' +
+               'user portal\'s only door since the portal became a static ' +
+               'application (#568): every operation, the portal page or ' +
+               'form it is the door of, its parameters and request body, ' +
+               'and what it needs — a person\'s DPoP-bound token carrying ' +
+               '<code>account:manage</code>, or, for an activation or reset ' +
+               'link, nothing but the link. Built from the table that ' +
+               'registers the routes, as the management API\'s is.' },
       { path: '/admin/keys', label: 'Key pairs',
         blurb: 'Every key pair this process generated at start, what each ' +
                'one is used for, and <strong>a way to take it away</strong>. ' +
@@ -3112,19 +2765,45 @@ type RouteApp = typeof app;
 
 const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
   'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
-  'tab-permissions', 'tab-roles', 'tab-metadata', 'tab-entry',
+  'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
+  'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
 
 // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
 // seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
 // each with its own Save) and the Credentials tab one per kind of credential.
+// A group's page (#603): Group, then Owners.
+const GROUP_TAB_IDS = ['gtab-group', 'gtab-owners'];
+// A role's page (#604): Role, then Owners.
+const ROLE_TAB_IDS = ['rtab-role', 'rtab-owners'];
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
   'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
   'utab-signout'];
-const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
-  'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+// `ucred-service` (#221's Service account sub-tab) was missing until #602,
+// so that one sub-tab never showed as the one being read;
+// `tests/person_fields.js` now holds every sub-tab the page draws to this
+// list.
+const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
+  'ucred-keys', 'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
+
+// PROTOCOLS → CERT ISSUANCE AS TABS (rcbj, 2026-10-12): Metadata and one
+// tab per family, the SPIFFE tab one sub-tab per former SPIFFE page, and
+// the ACME, EST and SCEP tabs one sub-tab per section.
+// `admin-ui/web_pages.ts` draws them; the stylesheet needs the ids to mark
+// the tab being read.
+const CERT_TAB_IDS = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
+  'cert-tab-scep', 'cert-tab-spiffe'];
+const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
+  'cert-spiffe-agents', 'cert-spiffe-brokers', 'cert-acme-ca',
+  'cert-acme-profiles', 'cert-acme-eab', 'cert-acme-accounts',
+  'cert-acme-certificates', 'cert-acme-host-names', 'cert-acme-mode',
+  'cert-acme-settings', 'cert-est-ca', 'cert-est-profiles',
+  'cert-est-credentials', 'cert-est-issue', 'cert-est-host-names',
+  'cert-est-certificates', 'cert-est-settings', 'cert-scep-ca',
+  'cert-scep-profiles', 'cert-scep-challenges', 'cert-scep-host-names',
+  'cert-scep-certificates', 'cert-scep-exceptions', 'cert-scep-settings'];
 
 class AdminConsole {
   // What the Cluster page's `prepare` step last read from the other cells
@@ -3353,7 +3032,8 @@ class AdminConsole {
 
   // Every PAGE in one section, in sidebar order, with a group's pages spliced
   // in where the group sits — and a group inside a group spliced in the same
-  // way (Cert issuance › SPIFFE, 2026-10-01). See the note above SECTIONS.
+  // way (Cert issuance › SPIFFE was the case, 2026-10-01 to 2026-10-12).
+  // See the note above SECTIONS.
   /**
    * Lists every page in one section, in sidebar order, groups flattened.
    *
@@ -3644,13 +3324,17 @@ class AdminConsole {
                                                          : 'page ' +
                                                              item.path));
     if (!this.isNavGroup(item)) {
+      if (item.hidden) {
+        log.debug("Leaving AdminConsole.navItem(). A hidden page.");
+        return '';
+      }
       log.debug("Leaving AdminConsole.navItem(). A page.");
       return this.navLink(item, active, up);
     }
     const open = this.groupPages(item.items).filter(function (page) {
       return page.path === active;
     }).length > 0;
-    // A row of a group may itself be a group (Cert issuance › SPIFFE), so
+    // A row of a group may itself be a group (none is since 2026-10-12), so
     // each row is drawn by this method again rather than by navLink().
     const html = '<li class="navgrp' + (open ? ' open' : '') + '">' +
       '<p class="navsub" title="' + this.esc(item.what) + '">' +
@@ -4795,6 +4479,12 @@ class AdminConsole {
       'font-size:.85em}' +
       'button.fg-findbtn,button.fg-add,button.fg-prev,button.fg-next{' +
       'padding:2px 8px;line-height:1.2;min-width:0}' +
+      // A SERVICE ACCOUNT'S OWNER SEARCH (#600): the field search's pieces,
+      // always shown — it is a section of its own, not a cell in a grid.
+      '.sa-find{max-width:46rem;margin:.3em 0 .8em;padding:.4em .6em;' +
+      'border:1px solid #d5d5dd;border-radius:4px}' +
+      '.sa-find input[type=search]{flex:1 1 auto;min-width:0}' +
+      '.sa-owners td{vertical-align:middle}' +
       // ---------------------------------------------------------------------
       // /admin/applications/new's RFC 9728 IMPORT (2026-09-13): a checkbox that
       // shows the three ways to give a document, and a pane of three TABS over
@@ -4851,9 +4541,30 @@ class AdminConsole {
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
         return 'cfg-' + g.id;
-      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS).map(function (id) {
+      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS, GROUP_TAB_IDS, ROLE_TAB_IDS,
+      ['oauth-tab-metadata', 'oauth-tab-global-settings',
+       'oauth-tab-authorization-servers',
+       'oauth-tab-token-lifetimes', 'oauth-tab-claims',
+       'oauth-tab-userinfo-claims', 'saml-tab-metadata',
+       'saml-tab-global-settings', 'saml-tab-shared-settings',
+       'saml-tab-saml2', 'saml-tab-saml11', 'saml-tab-assertions',
+       'saml-tab-attributes', 'vc-tab-metadata', 'vc-tab-oid4vci',
+       'vc-tab-claims', 'vc-tab-status', 'vc-tab-oid4vp',
+       'vc-tab-verifier-request', 'xacml-tab-metadata',
+       'xacml-tab-settings', 'xacml-tab-policies', 'xacml-tab-editor',
+       'xacml-tab-peps', 'xacml-tab-decide', 'ssf-tab-metadata',
+       'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc',
+       'kerberos-tab-metadata', 'kerberos-tab-settings',
+       'kerberos-tab-claims', 'kerberos-tab-principals',
+       'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
+       'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
+       'tab-locale', 'tab-profiles', 'listeners-tab-metadata',
+       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
+      CERT_TAB_IDS, CERT_SUB_TAB_IDS,
+      WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
-          USER_SUB_TAB_IDS.indexOf(id) >= 0;
+          USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
+          CERT_SUB_TAB_IDS.indexOf(id) >= 0;
         const outer = sub ? '.subtabs' : '.tabs';
         const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
@@ -4895,29 +4606,30 @@ class AdminConsole {
     // `web_runtime.ts`, only where one is not this listener — so a service
     // with no custom listener draws the shell it always did.
     const there = elsewhere || {};
-    const data = (there.oauth ? ' data-sts-oauth="' + this.esc(there.oauth) +
-                                '"' : '') +
-                 (there.api ? ' data-sts-api="' + this.esc(there.api) + '"'
-                            : '') +
-                 (there.authn ? ' data-sts-authn="' + this.esc(there.authn) +
-                                '"' : '');
-    const html = '<!DOCTYPE html>\n<html lang="en"' + data + '><head><meta ' +
-      'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>IYA STS admin</title>' +
-      '<link rel="stylesheet" href="/admin/console.css">' +
-      (refused ? '' : '<script src="/admin/console.js" defer></script>') +
-      '</head><body><div class="shell"><div class="main"><div ' +
-      'class="card"><h1>IYA STS admin</h1>' +
-      (refused
+    // ONE WRITER FOR EVERY STATIC SURFACE'S SHELL (#570): the bytes are
+    // what this method drew by hand until then.
+    const html = ShellDocument.document({
+      title: 'IYA STS admin',
+      attributes: [['data-sts-oauth', there.oauth || ''],
+                   ['data-sts-api', there.api || ''],
+                   ['data-sts-authn', there.authn || '']],
+      stylesheets: ['/admin/console.css'],
+      script: '/admin/console.js',
+      open: '<div class="shell"><div class="main"><div class="card">' +
+            '<h1>IYA STS admin</h1>',
+      close: '</div></div></div>',
+      refusal: refused
         ? this.warn(this.esc(registered.why || 'This console cannot sign ' +
                              'in at this address.'),
                     'This console cannot sign in here')
-        : '<noscript>' + this.warn('This console is a script that runs ' +
-            'in your browser and draws every page from <code>/admin-api' +
-            '</code>; with scripts blocked there is nothing it can show.',
-            'Scripts are blocked') + '</noscript><p class="lede">' +
-          'Signing in&hellip;</p>') +
-      '</div></div></div></body></html>\n';
+        : null,
+      noscript: this.warn('This console is a script that runs ' +
+        'in your browser and draws every page from <code>/admin-api' +
+        '</code>; with scripts blocked there is nothing it can show.',
+        'Scripts are blocked'),
+      loading: '<p class="lede">Signing in&hellip;</p>',
+      esc: (value: unknown) => this.esc(value)
+    });
     log.debug("Leaving AdminConsole.shellDocument().");
     return html;
   }
@@ -4977,20 +4689,8 @@ class AdminConsole {
    * @returns `br`, `gzip` or '' for none
    */
   static acceptedEncoding(header: any): string {
-    const offered = {};
-    String(header || '').split(',').forEach(function (part) {
-      const bits = part.trim().split(';');
-      const name = bits[0].trim().toLowerCase();
-      const q = /q=([0-9.]+)/.exec(bits.slice(1).join(';'));
-      if (name) {
-        offered[name] = q ? Number(q[1]) : 1;
-      }
-    });
-    const takes = function (name) {
-      const q = name in offered ? offered[name] : offered['*'];
-      return q !== undefined && q > 0;
-    };
-    return takes('br') ? 'br' : (takes('gzip') ? 'gzip' : '');
+    // `ShellDocument`'s since #570, which every static surface sends through.
+    return ShellDocument.acceptedEncoding(header);
   }
 
   // ONE OF THE CONSOLE'S FILES, COMPRESSED WHERE THE REQUEST ACCEPTS IT:
@@ -5013,27 +4713,10 @@ class AdminConsole {
   sendConsoleFile(req, res, text: string, packed: any, finish: any): void {
     const { log } = this.deps;
     log.debug("Entering AdminConsole.sendConsoleFile().");
-    const zlib = require('zlib');
-    res.vary('Accept-Encoding');
-    const encoding = AdminConsole.acceptedEncoding(
-      req.headers && req.headers['accept-encoding']);
-    if (!encoding) {
-      res.send(text);
-      log.debug("Leaving AdminConsole.sendConsoleFile(). Uncompressed.");
-      return;
-    }
-    let bytes = packed && packed[encoding];
-    if (!bytes) {
-      const final = Buffer.from(finish ? finish(text) : text, 'utf8');
-      bytes = encoding === 'br'
-        ? zlib.brotliCompressSync(final, { params: {
-            [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
-            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: final.length } })
-        : zlib.gzipSync(final, { level: 6 });
-    }
-    res.set('Content-Encoding', encoding).send(bytes);
-    log.debug("Leaving AdminConsole.sendConsoleFile(). " + encoding + ", " +
-              bytes.length + " bytes.");
+    // `ShellDocument.sendCompressed()` since #570: one copy for every static
+    // surface's files.
+    ShellDocument.sendCompressed(req, res, text, packed, finish);
+    log.debug("Leaving AdminConsole.sendConsoleFile().");
   }
 
   /**
@@ -5724,7 +5407,8 @@ class AdminConsole {
       artifactsHeld: snap.artifacts.held, signOnSessions: sessions.size,
       usersKnown: snap.users.known,
       usersAuthenticatedHere: snap.users.authenticatedHere,
-      pages: NAV.map(function (n) { return n.path; })
+      pages: NAV.filter(function (n) { return !n.hidden; })
+        .map(function (n) { return n.path; })
     };
     log.debug("Leaving AdminConsole.consoleJson().");
     return json;
@@ -5749,6 +5433,10 @@ class AdminConsole {
       base: baseUrlOf(req),
       persistence: { enabled: !!stored.enabled,
                      mode: stored.enabled ? String(stored.mode || '') : '' },
+      // Which of the two sentences about the console's own door is true in
+      // this realm (#543 round 2): it said "It checks no password" in every
+      // mode.
+      verifiesCredentials: mode.verifiesCredentials(),
       sections: this.visibleSections(gateStateFor(req))
     });
     log.debug("Leaving AdminConsole.dashboardJson().");
@@ -7267,13 +6955,16 @@ class AdminConsole {
    * a change.
    *
    * @param path - the page's path
+   * @param only - optional group names to include
    * @returns the settings model
    */
-  configSettingsJson(path) {
+  configSettingsJson(path, only?) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.configSettingsJson(). path=" + path);
-    const groups = this.settingsGroupsFor(path);
+    const groups = this.settingsGroupsFor(path).filter(function (group) {
+      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
+    });
     const all = groups.reduce(function (rows, group) {
       return rows.concat(group.settings);
     }, []);
@@ -8497,7 +8188,10 @@ class AdminConsole {
       links: (row.links || []).map(function (link) {
         return { href: link[0], what: link[1] };
       }),
-      settings: this.configSettingsJson(row.path),
+      settings: this.configSettingsJson(
+        row.settingsPath || row.path,
+        row.settingsGroup ? ([] as string[]).concat(row.settingsGroup)
+                          : undefined),
       // THE SAME PROSE AS MARKUP (#446): `what` and `notes` are its plain
       // text for a reader of the JSON, and a page drawn from this answer
       // draws the lead and the warnings as this console wrote them.
@@ -8834,23 +8528,14 @@ class AdminConsole {
       // runtime is told their bases, and `connect-src` names their origins,
       // since the token request and every API call are `fetch()`es there.
       const elsewhere = self.consoleServersElsewhere(req);
-      const origins = [elsewhere.oauth, elsewhere.api].filter(Boolean)
-        .map(function (one: string): string {
-          return new URL(one).origin;
-        }).filter(function (one: string, at: number, all: string[]): boolean {
-          return all.indexOf(one) === at;
-        });
-      res.set('Content-Security-Policy', app.contentSecurityPolicy({
-        'script-src': "'self'",
-        'connect-src': ["'self'"].concat(origins).join(' '),
-        'style-src': "'self' 'unsafe-inline'"
-      }));
-      res.status(200).type('text/html').set('Cache-Control', 'no-store');
-      self.sendConsoleFile(req, res,
-                           self.shellDocument(registered, elsewhere), null,
-        function (html) {
-          return app.withRealmLinks(html, realms.currentPrefix());
-        });
+      // The policy through `app.contentSecurityPolicy()`, compressed, and the
+      // realm's links put on before compressing (`ShellDocument.serve()`).
+      ShellDocument.serve(app, req, res,
+                          self.shellDocument(registered, elsewhere), {
+        connect: ShellDocument.originsOf([elsewhere.oauth, elsewhere.api]),
+        compress: true,
+        prefix: realms.currentPrefix()
+      });
       log.debug("Leaving the static console shell.");
     };
     // GET (and with it HEAD) for the document, and the methods a form or a
@@ -8899,7 +8584,8 @@ const NAV = [];
 WIRE_STEPS.push(function (instance: AdminConsole): void {
   SECTIONS.forEach(function (section) {
     instance.sectionPages(section).forEach(function (item) {
-      NAV.push({ path: item.path, label: item.label, section: section.title });
+      NAV.push({ path: item.path, label: item.label, section: section.title,
+                 hidden: !!item.hidden });
     });
   });
 });
@@ -9005,10 +8691,9 @@ const SETTING_HOMES = [
   // built with is stored on the hierarchy — so the page that takes each of
   // them as a field is the only place they read as anything but trivia.
   { group: 'PKI', pages: ['/admin/pki'] },
-  // Two pages, deliberately. See the header above.
-  { group: 'SAML', pages: ['/admin/saml2', '/admin/saml11'] },
+  { group: 'SAML', pages: ['/admin/saml2'] },
   { group: 'SAML 2.0', pages: ['/admin/saml2'] },
-  { group: 'SAML 1.1', pages: ['/admin/saml11'] },
+  { group: 'SAML 1.1', pages: ['/admin/saml2'] },
   // THE TEN THAT BECAME PER-APPLICATION DEFAULTS ON 2026-08-27, and the two
   // groups exist to say exactly that. Every one of them was a `SAML 2.0` or
   // `SAML 1.1` row drawn on that profile's identity provider page, and every
@@ -9025,8 +8710,11 @@ const SETTING_HOMES = [
   // settings. Nothing about the KEYS or their environment variables changed,
   // which is what keeps every appconfig file and every `STS_SAML*` variable
   // working exactly as it did.
-  { group: 'SAML 2.0 assertions', pages: ['/admin/saml-assertions'] },
-  { group: 'SAML 1.1 assertions', pages: ['/admin/saml-assertions'] },
+  // These settings are tabs on the combined SAML page.
+  { group: 'SAML 2.0 assertions',
+    pages: ['/admin/saml2'] },
+  { group: 'SAML 1.1 assertions',
+    pages: ['/admin/saml2'] },
   // WS-FEDERATION'S ONE ASSERTION SETTING IS DRAWN WITH THE SAML ONES, and
   // that is not a filing error. A WS-Federation sign-in response CARRIES a
   // SAML 1.1 assertion, built by the same function the SAML 1.1 profiles use,
@@ -9034,7 +8722,8 @@ const SETTING_HOMES = [
   // it on /admin/wsfed would have put the only setting that decides how long a
   // WS-Federation token lives on a different page from every other assertion
   // lifetime in this service.
-  { group: 'WS-Federation assertions', pages: ['/admin/saml-assertions'] },
+  { group: 'WS-Federation assertions',
+    pages: ['/admin/saml2'] },
   // THE FIVE OAUTH SETTINGS A CLIENT MAY ANSWER FOR ITSELF, on the page that
   // already drew three of them. /admin/token-lifetimes was a bespoke page
   // naming its four keys and had no row here at all; it has one now because
@@ -9044,7 +8733,8 @@ const SETTING_HOMES = [
   // over there.
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
-  { group: 'WS-Federation', pages: ['/admin/wsfed'] },
+  // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
+  // went with it (#592); its assertions' row is homed above.
   // THE LISTENERS PAGE (#423, rcbj: "Put all the listener configuration,
   // including TLS on its own page under Server Settings->Listeners"): the
   // TLS group moved here from /admin/tls, which keeps the truststore and the
@@ -9067,8 +8757,12 @@ const SETTING_HOMES = [
   // which folded #99's realm listener in): on the Listeners page's
   // Applications tab, beside the forms that edit them.
   { group: 'Custom listeners', pages: ['/admin/listeners'] },
-  { group: 'OID4VCI', pages: ['/admin/oid4vci'] },
-  { group: 'OID4VP', pages: ['/admin/oid4vp'] },
+  { group: 'OID4VCI', pages: ['/admin/vc'] },
+  { group: 'OID4VP', pages: ['/admin/vc'] },
+  // THE W3C VC API (#598), on the OpenID4VCI tab of the same page: it is the
+  // realm's other way of issuing a credential, and it signs over the same
+  // status lists the Credential status tab beside it draws.
+  { group: 'W3C VC API', pages: ['/admin/vc'] },
   { group: 'Kerberos', pages: ['/admin/kerberos'] },
   { group: 'LDAP', pages: ['/admin/ldap'] },
   // A page of its own rather than a section of /admin/ldap, and the reason is
@@ -9100,24 +8794,17 @@ const SETTING_HOMES = [
   // arrives, beside the enrolment methods those bounds limit.
   { group: 'Devices', pages: ['/admin/device-registration'] },
   { group: 'SCIM', pages: ['/admin/scim'] },
-  // Shared Signals. A page of its own rather than a section of anything, for
-  // the reason /admin/federation is ungrouped: SSF is not a variant of another
-  // family here, it is the one that runs the other way round — this service
-  // delivering an event to somebody who agreed to be told. A group of one
-  // would be a heading that said the label twice.
+  // THE OUTBOUND SCIM CLIENT (#552): on the same page, whose Clients tab is
+  // where each client is configured.
+  { group: 'SCIM client', pages: ['/admin/scim'] },
+  // SSF, CAEP and RISC share one tabbed page; each settings group stays on its
+  // own tab there.
   { group: 'SSF', pages: ['/admin/ssf'] },
-  // CAEP. Its own group and its own page, for the reason the sidebar entry
-  // gives: a vocabulary over SSF is a second specification and not a corner
-  // of the first. The MONITORING page beneath it edits nothing, so it is not
-  // named here — this table is about where a setting is EDITED.
-  { group: 'CAEP', pages: ['/admin/caep'] },
+  { group: 'CAEP', pages: ['/admin/ssf'] },
+  { group: 'RISC', pages: ['/admin/ssf'] },
   // RISK SCORING (#62): its datasets and failure history, on the Monitoring
   // page that shows them, because there is no protocol for them to belong to.
   { group: 'Risk', pages: ['/admin/risk'] },
-  // RISC, on the CAEP group's terms: the second vocabulary over SSF is a
-  // second specification and not a corner of the first, and the MONITORING
-  // page beneath it edits nothing so it is not named here.
-  { group: 'RISC', pages: ['/admin/risc'] },
   // The claim itself is an OAuth2/OIDC and SAML concern, but what it NAMES is a
   // directory group and what decides whether somebody is in one is the Groups
   // page. Somebody asking "why is this group not in my token" is looking at
@@ -9144,9 +8831,9 @@ const SETTING_HOMES = [
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
   { group: 'GNAP', pages: ['/admin/gnap'] },
   // ===== certificate enrollment setting homes (2026-09-13) =====
-  { group: 'ACME', pages: ['/admin/acme'] },
-  { group: 'EST', pages: ['/admin/est'] },
-  { group: 'SCEP', pages: ['/admin/scep'] },
+  { group: 'ACME', pages: ['/admin/cert-issuance'] },
+  { group: 'EST', pages: ['/admin/cert-issuance'] },
+  { group: 'SCEP', pages: ['/admin/cert-issuance'] },
   { group: 'WebAuthn', pages: ['/admin/webauthn'] },
   // THE THIRD (2026-09-10), and it is a mechanism like the two above it rather
   // than a policy about them — which is why it gets a group and a page of its
@@ -9155,8 +8842,8 @@ const SETTING_HOMES = [
   // put them where half the readers would not look.
   { group: 'Backup codes', pages: ['/admin/backup-codes'] },
   // A POLICY ABOUT THE TWO MECHANISMS ABOVE (2026-09-13), and drawn on BOTH of
-  // their pages — the `SAML` group's arrangement — because either one satisfies
-  // it and a reader of either page must see that it is in force.
+  // their pages because either one satisfies it and a reader of either page
+  // must see that it is in force.
   // Since #101 (2026-09-22) the group also holds `authn.passwordAloneDoors`
   // and the two `appPasswords.*` settings: what the requirement does at the
   // five password-only doors, and what a person uses there instead.
@@ -9168,7 +8855,7 @@ const SETTING_HOMES = [
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },
   { group: 'Logout', pages: ['/admin/logout'] },
-  { group: 'SPIFFE', pages: ['/admin/spiffe'] }
+  { group: 'SPIFFE', pages: ['/admin/cert-issuance'] }
 ];
 
 // Kept, not just logged: /admin/config renders it. A line in a log that scrolls
@@ -9670,7 +9357,10 @@ let directoryWriter = null;
 // operations nobody asked for would be four more things for the two doors onto
 // it to disagree about.
 // ---------------------------------------------------------------------------
-const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember'];
+// AND SINCE #603 A GROUP'S OWNERS, added and taken off one at a time — the
+// group page's Owners tab writes each at once.
+const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember',
+                              'addGroupOwner', 'removeGroupOwner'];
 let groupWriter = null;
 
 // The rule cell, the caveat and the links both groups pages carry are
@@ -9997,8 +9687,9 @@ let signalsReporter = null;
 // passes rule 3e's test both ways round like the eighth above it.
 //
 //   * a require from THIS file to `../tls/tls_server.js` would MOVE ROUTES on
-//     the order this repository documents — `/tls`, `/tls/server-certificate`
-//     and `/tls/trust` belong at 20, after the management API — and would make
+//     the order this repository documents — `/tls/sign-in` and
+//     `/tls/server-certificate` belong at 20, after the management API — and
+//     would make
 //     the console the reason they are where they are.
 //   * a require the other way round, from `tls_server.js` to this file at its
 //     own top level, would CLOSE A CYCLE — and not a theoretical one: that
@@ -10367,10 +10058,14 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/token-lifetimes', 'how long what it issues lasts'],
             ['/admin/tokens', 'what has been issued']] },
 
-  { path: '/admin/oid4vci', title: 'OpenID4VCI',
-    lead: '<strong>The credential issuer at <code>/issuer</code>, and the ' +
-          'settings around it.</strong> What a credential CONTAINS is <a ' +
-          'href="/admin/vc">Credential claims</a> next door; these are the ' +
+  { path: '/admin/oid4vci', title: 'OpenID4VCI', settingsPath: '/admin/vc',
+    settingsPage: '/admin/oid4vci',
+    // The W3C VC API's rows are drawn on this tab too (#598).
+    settingsGroup: ['OID4VCI', 'W3C VC API'],
+    lead: '<strong>The OpenID4VCI credential issuer, and the settings ' +
+          'around it.</strong> What a credential CONTAINS is <a ' +
+          'href="/admin/vc#vc-tab-claims">Credential claims</a> on the ' +
+          'combined page; these are the ' +
           'ones about the exchange — where a holder is sent, which ' +
           'authorization server the credential endpoint will take a token ' +
           'from, how big a batch may be, and how long a deferred issuance ' +
@@ -10381,7 +10076,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'Status List entry, served at <code>/oid4vci/status-lists</code> ' +
            'and signed with the credential key — which may be post-quantum. ' +
            '<code>oid4vci.statusListTtlS</code> is how long a verifier may ' +
-           'keep a list; <a href="/admin/vc-status">Credential status</a> ' +
+           'keep a list; <a href="/admin/vc#vc-tab-status">Credential status</a> ' +
            'suspends and revokes.',
            '<strong>Key attestations.</strong> A wallet may say how its key ' +
            'is kept (OpenID4VCI Appendix D); one signed by a certificate in ' +
@@ -10401,20 +10096,23 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<strong>Nothing in an issued credential is verified.</strong> ' +
            'The values come off the holder\'s directory entry and the entry ' +
            'is created for anybody who asks; a diploma issued here says ' +
-           'whatever <a href="/admin/vc">Credential claims</a> selected. ' +
+           'whatever <a href="/admin/vc#vc-tab-claims">Credential claims</a> ' +
+           'selected. ' +
            'What is real is the signature, the proofs and the formats — ' +
            'which is the half a wallet has to get right.'],
-    links: [['/issuer', 'the issuer, for a person'],
-            ['/issuer/offer', 'a Credential Offer'],
-            ['/.well-known/openid-credential-issuer', 'the issuer metadata'],
-            ['/admin/vc', 'what a credential carries']] },
+    links: [['/.well-known/openid-credential-issuer', 'the issuer metadata'],
+            ['/admin/vc#vc-tab-claims', 'what a credential carries']] },
 
-  { path: '/admin/oid4vp', title: 'OpenID4VP',
-    lead: '<strong>The mock Verifier at <code>/oid4vp/verifier</code>, and ' +
-          'the settings around its request.</strong> The DCQL query — which ' +
+  { path: '/admin/oid4vp', title: 'OpenID4VP', settingsPath: '/admin/vc',
+    settingsPage: '/admin/oid4vp',
+    settingsGroup: 'OID4VP',
+    lead: '<strong>The OpenID4VP Verifier, whose verifications start at ' +
+          '<code>POST /admin-api/verifications/start</code>, and the ' +
+          'settings around its request.</strong> The DCQL query — which ' +
           'credential, which claims — is ' +
-          '<a href="/admin/vc-verifier-config">Verifier request</a> next ' +
-          'door; these settings are the client identifier it presents as, ' +
+          '<a href="/admin/vc#vc-tab-verifier-request">Verifier request</a> ' +
+          'on the combined page; these settings are the client identifier it ' +
+          'presents as, ' +
           'where it sends a holder to present, how fresh a Key Binding JWT ' +
           'has to be, the claims it asks for when nothing else has been ' +
           'chosen — the settings that govern signing in with a wallet, and ' +
@@ -10432,9 +10130,9 @@ const PROTOCOL_SETTINGS_PAGES = [
            'credential from a trusted foreign issuer, another realm or a ' +
            'foreign access token still verifies, is recorded on ' +
            '<a href="/admin/users">/admin/users</a> as a presentation, and ' +
-           'signs nobody in. The bar door at <code>/oid4vp/verifier</code> ' +
-           'signs nobody in whatever it is shown: nobody there asked to be ' +
-           'signed in.',
+           'signs nobody in. A verification an administrator or an ' +
+           'application starts signs nobody in whatever it is shown: nobody ' +
+           'there asked to be signed in.',
            '<strong>The Digital Credentials API is the default way in, and ' +
            'the plain QR code is off.</strong> A browser that has the API ' +
            'asks a wallet on this device or a nearby one, which the browser ' +
@@ -10444,7 +10142,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'wallet the browser cannot reach — the one path somebody can ' +
            'relay to a victim, which is why it is off.',
            '<strong>Every credential\'s status is consulted.</strong> One ' +
-           'this realm issued is read from <a href="/admin/vc-status">' +
+           'this realm issued is read from ' +
+           '<a href="/admin/vc#vc-tab-status">' +
            'Credential status</a>; one a trusted foreign issuer signed has ' +
            'its status list fetched, kept for its ttl and at most <code>' +
            'oid4vp.statusListMaxCacheS</code>, and a credential whose status ' +
@@ -10456,8 +10155,7 @@ const PROTOCOL_SETTINGS_PAGES = [
            'is exempted by its certificate\'s thumbprint in <code>' +
            'oid4vp.statusOptionalIssuers</code>. The result page names the ' +
            'rule that refused.'],
-    links: [['/oid4vp/verifier', 'the verifier, for a person'],
-            ['/admin/vc-verifier-config', 'what it asks for']] },
+    links: [['/admin/vc#vc-tab-verifier-request', 'what it asks for']] },
 
   { path: '/admin/kerberos', title: 'Kerberos settings',
     lead: '<strong>The KDC on raw TCP and UDP 88, the same exchange over ' +
@@ -10495,13 +10193,12 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>/wsfed</code>, <code>/saml2/sso</code> and this console ' +
            'read — which makes Kerberos an authentication mechanism for ' +
            'every application here. With it off that endpoint answers 403 ' +
-           'naming this setting, and <code>/spnego/protected</code> still ' +
-           'performs the whole handshake and gives no session.'],
+           'naming this setting.'],
     status: slot.forward('kerberosPreauthStatusBlock'),
-    links: [['/krb5/principals', 'the principal database'],
-            ['/krb5/service', 'the protected service'],
-            ['/spnego', 'what SPNEGO is, for a person'],
-            ['/authn/spnego', 'sign in with a ticket'],
+    // The principal database is the Principals tab (`GET
+    // /admin-api/kerberos/principals`); `/krb5/principals`, `/krb5/service`
+    // and `/spnego` were linked here until #595.
+    links: [['/authn/spnego', 'sign in with a ticket'],
             ['/admin/delegation', 'what S4U and a forwarded TGT did here']] },
 
   // -------------------------------------------------------------------------
@@ -10597,7 +10294,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'is lost by the failure: the next change recomputes the same ' +
            'difference and writes it. A database outage taking down ' +
            'seventeen protocol families that do not need a database is the ' +
-           'one failure mode a mock must not have. <strong>The same is true ' +
+           'one failure mode this service must not have. <strong>The same is ' +
+           'true ' +
            'of coordination</strong>: a process that cannot read the change ' +
            'log keeps answering out of its own copy, says so, and catches up ' +
            'when the database comes back — it does not refuse anything in ' +
@@ -10665,12 +10363,18 @@ const PROTOCOL_SETTINGS_PAGES = [
           'applications, federation relationships and the SPIFFE registry ' +
           'live, so what a SCIM POST writes and what an <code>ldapadd</code> ' +
           'writes are one entry.',
-    also: ['<strong>No bind is ever refused.</strong> Any DN, any password, ' +
-           'anonymous, on 389 and 636 alike — there is no setting below that ' +
-           'changes it, which is why none of them is called ' +
-           '<code>authRequired</code>. What the directory is for here is ' +
-           'being READ by a client that expects a directory, and a bind that ' +
-           'failed would only ever stop that.',
+    // TRUE IN BOTH MODES (#543 round 2): it read "No bind is ever refused"
+    // on a product realm's page too, where every bind is verified.
+    also: ['<strong>In development mode no bind is refused</strong> but the ' +
+           'reserved password <code>invalid</code>: any DN, any password, ' +
+           'anonymous, on 389 and 636 alike, because what the directory is ' +
+           'for there is being READ by a client that expects a directory, ' +
+           'and a bind that failed would only ever stop that. <strong>In ' +
+           'product mode the password is verified</strong>: only a person ' +
+           'binds, on 636, against the hashed <code>userPassword</code> on ' +
+           'their entry, and an anonymous bind or any bind on 389 is ' +
+           'refused. The mode decides it, not a setting below, which is why ' +
+           'none of them is called <code>authRequired</code>.',
            '<strong>The base DN is the DEFAULT realm\'s directory, and every ' +
            'other realm is a subtree beneath it.</strong> A search scoped to ' +
            '<code>dc=example,dc=com</code> answers from the default realm ' +
@@ -10739,7 +10443,6 @@ const PROTOCOL_SETTINGS_PAGES = [
            'only if that one attempt still does not produce it. And this ' +
            'service fetches nothing from a URL a request names.'],
     links: [['/wsfed', 'the profile, for a person'],
-            ['/wsfed/rp', 'the mock relying party'],
             ['/FederationMetadata/2007-06/FederationMetadata.xml', 'its ' +
                 'metadata'],
             ['/admin/saml-attributes', 'what goes into the assertion']] },
@@ -10767,7 +10470,8 @@ const PROTOCOL_SETTINGS_PAGES = [
            'one and requires none — and the route signs in whoever presented ' +
            'a verified one, for its common name, with the response carrying ' +
            'the cookie. What verification proved is unchanged: a chain to an ' +
-           'anchor somebody POSTed to <code>/tls/trust</code>. No token is ' +
+           'anchor in the <a href="/admin/tls/trust">client-certificate ' +
+           'truststore</a>. No token is ' +
            'issued. The session is on <a ' +
            'href="/admin/sessions">Sessions</a> and ends like any other.',
            '<strong>The handshake refusal 9443 performed has no successor, ' +
@@ -10791,11 +10495,11 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>oauth2.rfc9700</code> is — RFC 9700 section 2.1 says an ' +
            'authorization response must not travel over an unencrypted ' +
            'connection, and the authorization endpoint is on that port.'],
-    links: [['/tls', 'the certificate, the truststore and the main port\'s ' +
-                'posture'],
-            ['/tls/trust', 'the certificate, to trust it'],
-            ['/tls/forwarded', 'what a proxy said about the connection'],
-            ['/admin/spiffe', 'the one place a certificate authenticates']] }
+    links: [['/tls/server-certificate', 'the certificate, to trust it'],
+            ['/admin/tls-connection', 'what this service saw of your ' +
+             'connection, and what a proxy said about it'],
+            ['/admin/cert-issuance#cert-spiffe-overview',
+             'the one place a certificate authenticates']] }
 ];
 
 
@@ -10914,6 +10618,9 @@ const consoleExports = {
   // being the longest page in the service. See the block above note().
   note: slot.forward('note'),
   warn: slot.forward('warn'),
+  // The static console's shell (#570: `tests/web_foundation.js` holds its
+  // bytes to the document drawn by hand before `ShellDocument`).
+  shellDocument: slot.forward('shellDocument'),
   bullet: slot.forward('bullet'),
   tip: slot.forward('tip'),
   // Filled by ldap_server.js at its require time; see the note above it.

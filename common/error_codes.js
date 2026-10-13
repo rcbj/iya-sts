@@ -266,7 +266,7 @@ const SUBSYSTEMS = [
     what: 'The security token service, WS-Trust 1.0 through 1.4.' },
   { id: 'WSFED', label: 'WS-Federation',
     where: 'ws-federation/',
-    what: 'The passive requestor profile and the mock relying party.' },
+    what: 'The passive requestor profile.' },
   { id: 'FED', label: 'Federation',
     where: 'federation/',
     what: 'Relationships with foreign identity providers and service ' +
@@ -303,6 +303,14 @@ const SUBSYSTEMS = [
           'Manager, Google Cloud Secret Manager, Azure Key Vault, a Vault ' +
           'or OpenBao KV version 2 engine, and (development mode only) a ' +
           'file. No code here is a password or a credential.' },
+  { id: 'SCIMC', label: 'Outbound SCIM client',
+    where: 'scim/scim_client.ts, scim/scim_client_rules.ts, ' +
+           'mgmt-api/scim_clients_api.ts',
+    what: 'The outbound SCIM 2.0 client (#552): pushing this realm\'s people ' +
+          'and groups to a remote service provider, its authentication ' +
+          '(Basic, an OAuth 2.0 token, a TLS client certificate), each ' +
+          'client\'s retry queue and dead letters, and reconciliation. No ' +
+          'code here is a credential.' },
   { id: 'SCIM', label: 'SCIM 2.0',
     where: 'scim/',
     what: 'Provisioning at /scim/v2 and its six authentication schemes.' },
@@ -407,6 +415,15 @@ const SUBSYSTEMS = [
     where: 'portal/',
     what: 'The pages that belong to the person looking at them, and account ' +
           'activation.' },
+  // THE ACCOUNT API (#568): the portal's only door since it became a static
+  // application. Its gate and its route wrapper; a refusal an operation
+  // makes keeps the PORTAL code it had as a page.
+  { id: 'ACCOUNT', label: 'Account API',
+    where: 'account-api/',
+    what: 'The user portal\'s API, /account-api: the access token it takes ' +
+          '(this realm\'s, DPoP-bound, account:manage, a live sign-on ' +
+          'session), the access policy, and the checks on every request ' +
+          'before an operation runs.' },
   { id: 'LOGOUT', label: 'Sign-out',
     where: 'logout/',
     what: 'The protocol-independent sign-out and the session inventory.' },
@@ -1649,6 +1666,12 @@ const CODES = [
       'would or might connect in the clear. Every connection is TLS (#273). ' +
       'Fatal at persistence.start().',
     spec: '' },
+  { code: 'STS-STORE-0079',
+    summary: 'persistence.databaseTlsCaFile names a file that could not be ' +
+      'read, or that holds no PEM certificate, so the database connection ' +
+      'has no trust anchor anybody chose. Fatal at persistence.start(); ' +
+      'the out-of-process tools that dial the database refuse the same way.',
+    spec: 'none — fatal at start' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -4004,13 +4027,15 @@ const CODES = [
     summary: 'The OpenID4VP Verifier\'s certificate was refused its name or ' +
       'its key: a DNS name a certificate cannot carry, a wildcard (the ' +
       'certificate names one host), or no signing key (#230).',
-    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
+    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at POST ' +
+      '/admin-api/verifications/start' },
   { code: 'STS-PKI-0205',
     summary: 'A realm already holds the most OpenID4VP Verifier ' +
       'certificates it keeps (one per DNS name, sixteen), so none was ' +
       'issued for another name — set oid4vp.x509DnsName or pin ' +
       'global.publicBaseUrl (#230).',
-    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at /oid4vp/start' },
+    spec: 'the Verifier\'s refusal: STS-VC-0112, HTTP 500 at POST ' +
+      '/admin-api/verifications/start' },
   { code: 'STS-PKI-0206',
     summary: 'A key pair was not pinned in a slot that certifies a key the ' +
       'realm signs with: a pinned key does not sign, and the pin would have ' +
@@ -4737,8 +4762,9 @@ const CODES = [
       'carried a pending sign-in id that failed input validation.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0002',
-    summary: 'The sign-in form POST failed input validation (an unknown ' +
-      'action, an oversized field, a malformed id).',
+    summary: 'An act on the sign-in API (/authn-api, the sign-in form ' +
+      'until #571) failed input validation: a field the operation does not ' +
+      'take, an oversized field, a malformed value.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0003',
     summary: 'No sign-in is pending under the id the sign-in screen, the ' +
@@ -4754,23 +4780,28 @@ const CODES = [
     summary: 'The issuance policy refused an unauthenticated (\'continue ' +
       'without signing in\') session for the application at the ' +
       'sign-in screen.',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0006',
     summary: 'The sign-in form was submitted with no username.',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0007',
     summary: 'A passwordless security-key sign-in was asked for where the ' +
       'calling protocol demanded a second factor.',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0008',
     summary: 'Too many sign-in attempts for this identity or address; the ' +
       'password check was not attempted (rate limiter lockout).',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 429, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0009',
     summary: 'The issuance policy refused a session for the application to ' +
       'the person who just authenticated at the sign-in screen (a ' +
       'required role is not held).',
-    spec: 'HTTP 200 sign-in page, redrawn with the reason' },
+    spec: 'the sign-in API\'s refusal (HTTP 400, `next: refused`), the ' +
+      'screen drawn again with the reason (#571)' },
   { code: 'STS-AUTHN-0010',
     summary: 'The issuance policy refused to start a sign-on session at the ' +
       'session funnel, for a door other than the sign-in screen ' +
@@ -4821,22 +4852,26 @@ const CODES = [
       'does not exist.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0020',
-    summary: 'The WebAuthn ceremony POST failed input validation.',
-    spec: 'invalid_request (HTTP 400)' },
+    summary: 'The WebAuthn ceremony POST (the passkey step\'s act on ' +
+      '/authn-api since #572) failed input validation.',
+    spec: 'HTTP 400 { ok: false, errors } from /authn-api (#572)' },
   { code: 'STS-AUTHN-0021',
     summary: 'The WebAuthn ceremony result posted by the browser was not ' +
       'JSON.',
-    spec: 'HTTP 200 security-key page, redrawn with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0022',
     summary: 'The browser reported that the WebAuthn ceremony failed ' +
       '(declined, timed out, no authenticator), or sent no credential ' +
       'at all.',
-    spec: 'HTTP 200 security-key page, redrawn with the reason; on the ' +
-      'portal, its own refusal' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it; on the portal, its own ' +
+      'refusal' },
   { code: 'STS-AUTHN-0023',
     summary: 'In product mode the configured webauthn.rpId does not fit the ' +
       'host the request arrived on, so the ceremony is refused.',
-    spec: 'HTTP 200 security-key page with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0024',
     summary: 'Product mode refused to enrol a credential (security key or ' +
       'authenticator app) for a person who has no directory entry, ' +
@@ -4850,13 +4885,15 @@ const CODES = [
   { code: 'STS-AUTHN-0026',
     summary: 'A WebAuthn assertion named a credential that is not one of the ' +
       'security keys enrolled for this person in this role.',
-    spec: 'HTTP 200 security-key page with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0027',
     summary: 'The WebAuthn registration or assertion could not be parsed or ' +
       'checked (malformed CBOR, authenticator data or ' +
       'clientDataJSON).',
-    spec: 'HTTP 200 security-key page with the reason; on the portal, its ' +
-      'own refusal' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it; on the portal, its own ' +
+      'refusal' },
   { code: 'STS-AUTHN-0028',
     summary: 'WebAuthn verification failed: clientDataJSON\'s type is not ' +
       'the ceremony\'s (webauthn.create / webauthn.get).',
@@ -4908,22 +4945,25 @@ const CODES = [
     spec: '' },
   { code: 'STS-AUTHN-0039',
     summary: 'The one-time code form POST failed input validation.',
-    spec: 'invalid_request (HTTP 400)' },
+    spec: 'HTTP 400 { ok: false, errors } from /authn-api (#572)' },
   { code: 'STS-AUTHN-0040',
     summary: 'Too many one-time code attempts for this identity or address; ' +
       'the code was not checked (rate limiter lockout).',
-    spec: 'HTTP 200 one-time code page, redrawn with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0041',
     summary: 'The recovery code form POST failed input validation.',
-    spec: 'invalid_request (HTTP 400)' },
+    spec: 'HTTP 400 { ok: false, errors } from /authn-api (#572)' },
   { code: 'STS-AUTHN-0042',
     summary: 'Too many recovery code attempts for this identity or address; ' +
       'the code was not checked (rate limiter lockout).',
-    spec: 'HTTP 200 recovery code page, redrawn with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0043',
     summary: 'Checking a recovery code threw (the worker pool or the store ' +
       'failed part way).',
-    spec: 'HTTP 200 recovery code page asking to try again' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0044',
     summary: 'Security keys are switched off in this realm ' +
       '(webauthn.enabled), so no new key may be enrolled.',
@@ -5125,7 +5165,8 @@ const CODES = [
     spec: 'HTTP 200 recovery code page with the reason' },
   { code: 'STS-AUTHN-0092',
     summary: 'A presented recovery code is not one of the person\'s codes.',
-    spec: 'HTTP 200 recovery code page with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0093',
     summary: 'A recovery code verified but could not be marked spent, so it ' +
       'was refused: a code that cannot be spent works for ever.',
@@ -5177,7 +5218,8 @@ const CODES = [
   { code: 'STS-AUTHN-0105',
     summary: 'A presented one-time code matched no time step in the allowed ' +
       'window: wrong, or expired.',
-    spec: 'HTTP 200 one-time code page with the reason; action result at ' +
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it; action result at ' +
       'enrolment' },
   { code: 'STS-AUTHN-0106',
     summary: 'A presented one-time code was already used (RFC 6238 section ' +
@@ -5415,19 +5457,23 @@ const CODES = [
   { code: 'STS-AUTHN-0174',
     summary: 'A request to the second-factor set-up step was malformed, or ' +
       'asked to confirm a code before an authenticator app was chosen.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0175',
     summary: 'A second-factor set-up choice was refused: the mechanism is ' +
       'switched off in the realm, or the person holds a second factor ' +
       'already.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0176',
     summary: 'An authenticator app enrolment at sign-in could not be started.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0177',
     summary: 'The code confirming an authenticator app enrolled at sign-in ' +
       'was refused; the same secret is drawn again.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0180',
     summary: 'A signed-in session was refused because the directory holds ' +
       'no entry for the person, so there is no subject to give it ' +
@@ -5498,7 +5544,8 @@ const CODES = [
   { code: 'STS-AUTHN-0196',
     summary: 'A password presented as the second factor after a wallet ' +
       'sign-in was refused.',
-    spec: 'HTTP 200 page at /authn/password-factor, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0200',
     summary: 'A password was presented for an account that is disabled ' +
       '(pwdAccountLockedTime on its entry), and it was refused before it ' +
@@ -5796,15 +5843,18 @@ const CODES = [
   { code: 'STS-AUTHN-0257',
     summary: 'No more emailed codes or links may be sent for one sign-in ' +
       'step (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0258',
     summary: 'Another emailed code or link was asked for sooner than the ' +
       'policy\'s resend interval (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0259',
     summary: 'An emailed code or link could not be queued by the mail ' +
       'channel; the line names the channel\'s refusal (#64).',
-    spec: 'the page offers the other factors' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0260',
     summary: 'An emailed code or link was asked for as a first factor where ' +
       'this realm does not offer one, or where a key or a password is ' +
@@ -5818,25 +5868,30 @@ const CODES = [
   { code: 'STS-AUTHN-0262',
     summary: 'An emailed code or link was presented after it had already ' +
       'been used (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0263',
     summary: 'Whether an emailed code or link had been used could not be ' +
       'asked of the store, so it was not accepted (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0264',
     summary: 'A wrong emailed code or link was presented (#64).',
-    spec: 'the page, with the attempts left' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0265',
     summary: 'An emailed code or link was presented after it expired (#64).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0266',
     summary: 'An emailed sign-in link was opened in a browser other than the ' +
       'one that started the sign-in (#64, D3).',
-    spec: 'the page, with the reason' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0267',
     summary: 'The emailed code or link door failed unexpectedly; the line ' +
       'carries the stack (#64).',
-    spec: 'an error page' },
+    spec: 'HTTP 500 { ok: false, errors } from /authn-api (#573)' },
   { code: 'STS-AUTHN-0268',
     summary: 'A session was refused: this realm\'s authentication policy ' +
              'does ' +
@@ -5855,7 +5910,8 @@ const CODES = [
     summary: 'Ignore was posted on a second-factor set-up step that was ' +
       'REQUIRED rather than offered (#246): only an administrator the ' +
       'authentication policy OFFERS a second factor may decline it.',
-    spec: 'HTTP 400, the set-up page again' },
+    spec: 'HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api ' +
+      '(#572, #573); the step\'s page draws it' },
   { code: 'STS-AUTHN-0290',
     summary: 'A session was ended by a caller that did not say who ' +
       'initiated it (#242): CAEP session-revoked says `system`, and the ' +
@@ -6061,6 +6117,48 @@ const CODES = [
       'policy a passkey question (#536); the passkey rules read from the ' +
       'facts decided instead.',
     spec: 'none: the passkey is decided by the same rules' },
+  { code: 'STS-AUTHN-0325',
+    summary: 'An act on the sign-in API (/authn-api, #571) did not carry a ' +
+      'JSON body (Content-Type: application/json), which a cross-site form ' +
+      'cannot send.',
+    spec: 'HTTP 415, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0326',
+    summary: 'An act on the sign-in API (/authn-api, #571) carried no Origin ' +
+      'header, or one this service does not answer on: it was not sent by ' +
+      'a page of this service.',
+    spec: 'HTTP 403, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0327',
+    summary: 'An act on the sign-in API (/authn-api, #571) carried no ' +
+      'X-CSRF-Token, or one that is not the token of the session its ' +
+      'sts_session cookie names, or the browser holds no session at all.',
+    spec: 'HTTP 403, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0328',
+    summary: 'An operation of the sign-in API (/authn-api, #571) threw; the ' +
+      'browser is told the sign-in could not continue.',
+    spec: 'HTTP 500, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0329',
+    summary: 'The passkey step\'s ceremony was asked to be armed (POST ' +
+      '/authn-api/mfa/{id}/webauthn/options, #572) while the person had ' +
+      'still to choose one of several passkeys (the passkey policy offers ' +
+      'them one by one, #534).',
+    spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0330',
+    summary: 'An act on a second-factor or emailed-factor step of the ' +
+      'sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the ' +
+      'operation does not take, or a page that is not one.',
+    spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0331',
+    summary: 'A Start over at a sign-in step (/authn-api/mfa/{id}/start-over ' +
+      'or /authn-api/password-change/{id}/start-over) named a step that ' +
+      'has already ended: spent, expired or never minted. Nothing is put ' +
+      'back.',
+    spec: 'HTTP 400, { ok: false, errors }' },
+  { code: 'STS-AUTHN-0332',
+    summary: 'Too many usernameless passkey ceremonies were armed from this ' +
+      'address (POST /authn-api/pending/{id}/passkey/options): its own ' +
+      'per-address budget, security.rateLimitPerAddress in ' +
+      'security.rateLimitWindowS. No challenge was minted.',
+    spec: 'HTTP 429 with Retry-After, { ok: false, next: refused, errors }' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -6798,15 +6896,19 @@ const CODES = [
     spec: 'server_error (HTTP 500)' },
   { code: 'STS-OAUTH-0178',
     summary: 'POST /dpop/nonce-mode was refused because the realm is in ' +
-      'product mode, where test controls are closed.',
-    spec: 'access_denied (HTTP 403)' },
+      'product mode, where test controls are closed. Retired by #585: ' +
+      'a product realm has no /dpop/nonce-mode, and answers as for a path ' +
+      'nothing is registered on.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0179',
     summary: 'POST /dpop/nonce-mode carried something other than ' +
-      'required=true or required=false.',
-    spec: 'invalid_request (HTTP 400)' },
+      'required=true or required=false. Retired by #597: the endpoint is ' +
+      'gone, and oauth2.dpopNonceRequired is set like any other setting.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0180',
-    summary: 'The DPoP nonce setting could not be written.',
-    spec: 'server_error (HTTP 500)' },
+    summary: 'The DPoP nonce setting could not be written through POST ' +
+      '/dpop/nonce-mode. Retired by #597, with the endpoint.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0181',
     summary: 'The directory threw while a person\'s profile claims were ' +
       'being read; the claims were omitted from what was issued.',
@@ -7701,8 +7803,8 @@ const CODES = [
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
   // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
-  // decides; the authorization endpoint, `dpop.presentedAccessToken()` and the
-  // stand-in resource answer. Block reserved at 0500..0529.
+  // decides; the authorization endpoint and `dpop.presentedAccessToken()`
+  // answer. Block reserved at 0500..0529.
   { code: 'STS-OAUTH-0500',
     summary: 'An authorization request\'s acr_values were not met by the ' +
       'authentication performed after the person was sent to sign in again ' +
@@ -7732,18 +7834,18 @@ const CODES = [
       'challenge with max_age)' },
   { code: 'STS-OAUTH-0505',
     summary: 'The step-up stand-in resource was asked for an application ' +
-      'this realm has no entry for.',
-    spec: 'invalid_request (HTTP 404)' },
+      'this realm has no entry for. Retired 2026-10-12 (#593): the stand-in ' +
+      'resource was deleted; the test peer plays that resource server',
+    spec: 'invalid_request (HTTP 404)', retired: true },
   { code: 'STS-OAUTH-0506',
-    summary: 'An access token presented at the step-up stand-in resource ' +
-      'does not name that application in its aud (RFC 9068 section 4 step ' +
-      '4).',
+    summary: 'An access token presented to a resource answering for a ' +
+      'registered application does not name that application in its aud ' +
+      '(RFC 9068 section 4 step 4).',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0507',
     summary: 'An access token presented where only a token this realm can ' +
-      'verify is accepted — the step-up stand-in resource, or an ' +
-      'OpenID4VCI endpoint in product mode — did not verify against this ' +
-      'realm\'s signing key.',
+      'verify is accepted — an OpenID4VCI endpoint in product mode, or the ' +
+      'VC-API — did not verify against this realm\'s signing key.',
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0508',
     summary: 'A configured step-up requirement (oauth2.stepUpAcrValues, or ' +
@@ -9078,10 +9180,12 @@ const CODES = [
       '(#151).',
     spec: 'none (a log line)' },
   { code: 'STS-OAUTH-0782',
-    summary: 'The mock relying party\'s command endpoint refused a ' +
+    summary: 'The demonstration relying party\'s command endpoint refused a ' +
       'command — the development test control answering as a relying party ' +
-      'would (#151).',
-    spec: 'HTTP 400, 401, 409 or 404 {error}' },
+      'would (#151). ' +
+      'Retired 2026-10-12 (#596): the demonstration relying party was deleted; the ' +
+      'test peer plays a Provider Commands relying party',
+    spec: 'HTTP 400, 401 or 409 {error}', retired: true },
   { code: 'STS-OAUTH-0783',
     summary: 'Under FAPI 1.0 Advanced, an authorization request asked for ' +
       'response_type code with a response mode that is not JARM (Part 2 ' +
@@ -9381,7 +9485,8 @@ const CODES = [
     summary: 'In product mode, a SAML 2.0 AuthnRequest\'s ' +
       'AssertionConsumerServiceURL is not a ' +
       'samlAssertionConsumerService registered on the service ' +
-      'provider\'s entry, or none is registered.',
+      'provider\'s entry, or none is registered; in either mode, the ' +
+      'request names none and none is registered (#592).',
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0006',
     summary: 'The SAML 2.0 assertion consumer service URL is not an absolute ' +
@@ -9448,13 +9553,17 @@ const CODES = [
       'service could not decrypt, so the session was not ended.',
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0021',
-    summary: 'The mock SAML 2.0 service provider was handed an artifact that ' +
-      'does not resolve (already resolved, expired or never issued).',
-    spec: 'HTTP 200 error page' },
+    summary: 'The demonstration SAML 2.0 service provider was handed an ' +
+             'artifact that ' +
+      'does not resolve (already resolved, expired or never issued).' +
+      ' Retired by #592: the demonstration relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0022',
-    summary: 'A response delivered to the mock SAML 2.0 service provider ' +
-      'failed at least one of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+    summary: 'A response delivered to the demonstration SAML 2.0 service ' +
+             'provider ' +
+      'failed at least one of its verification checks.' +
+      ' Retired by #592: the demonstration relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0023',
     summary: 'A SAML 2.0 assertion could not be signed and was returned ' +
       'unsigned.',
@@ -9482,7 +9591,8 @@ const CODES = [
   { code: 'STS-SAML-0028',
     summary: 'In product mode, a SAML 1.1 flow\'s shire is not a ' +
       'samlAssertionConsumerService registered on the relying party\'s ' +
-      'entry, or none is registered.',
+      'entry, or none is registered; in either mode, the flow names no ' +
+      'shire and none is registered (#592).',
     spec: 'HTTP 400 page' },
   { code: 'STS-SAML-0029',
     summary: 'The SAML 1.1 assertion consumer URL is not an absolute http(s) ' +
@@ -9542,13 +9652,17 @@ const CODES = [
       'included).',
     spec: 'SOAP samlp:Response with status samlp:Requester (HTTP 200)' },
   { code: 'STS-SAML-0042',
-    summary: 'The mock SAML 1.1 relying party was handed an artifact that ' +
-      'does not resolve (already resolved, expired or never issued).',
-    spec: 'HTTP 400 page' },
+    summary: 'The demonstration SAML 1.1 relying party was handed an ' +
+             'artifact that ' +
+      'does not resolve (already resolved, expired or never issued).' +
+      ' Retired by #592: the demonstration relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0043',
-    summary: 'A response delivered to the mock SAML 1.1 relying party failed ' +
-      'at least one of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+    summary: 'A response delivered to the demonstration SAML 1.1 relying ' +
+             'party failed ' +
+      'at least one of its verification checks.' +
+      ' Retired by #592: the demonstration relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-SAML-0044',
     summary: 'A service provider metadata refresh named an application that ' +
       'is not in the registry.',
@@ -10101,7 +10215,8 @@ const CODES = [
   { code: 'STS-WSFED-0003',
     summary: 'Product mode: the wreply is not one of the wsfedReplyUrl ' +
       'values registered on the wtrealm\'s application entry (or none ' +
-      'is registered).',
+      'is registered); either mode: the request names no wreply and none ' +
+      'is registered (#592).',
     spec: 'HTTP 400 error page (the profile defines no error response)' },
   { code: 'STS-WSFED-0004',
     summary: 'The resolved wreply is not an absolute http(s) URL, so the ' +
@@ -10156,9 +10271,11 @@ const CODES = [
       'metadata document, and STS-SAML-0014 names its failure.',
     spec: '', retired: true },
   { code: 'STS-WSFED-0016',
-    summary: 'The mock relying party at /wsfed/rp received a sign-in ' +
-      'response that failed one or more of its verification checks.',
-    spec: 'HTTP 200 page listing the failed checks' },
+    summary: 'The demonstration relying party at /wsfed/rp received a ' +
+             'sign-in ' +
+      'response that failed one or more of its verification checks.' +
+      ' Retired by #592: the demonstration relying parties were deleted.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0017',
     summary: 'A WS-Federation sign-in reached a session whose sign-in ' +
       'mechanism the relying party does not allow (appAuthnMechanism, ' +
@@ -11478,21 +11595,26 @@ const CODES = [
     spec: 'KRB_AP_ERR_INAPP_CKSUM (50)' },
   { code: 'STS-KRB-0078',
     summary: 'A request to the Kerberos service\'s TCP listener exceeded ' +
-      'krb5.serviceMaxTokenBytes and the connection was closed.',
-    spec: 'connection closed' },
+      'krb5.serviceMaxTokenBytes and the connection was closed. Retired ' +
+      'by #595: the demonstration that raised it moved to the ' +
+      'development companion.',
+    spec: 'connection closed', retired: true },
   { code: 'STS-KRB-0079',
     summary: 'A request to the Kerberos service\'s TCP listener carried a ' +
       'length prefix with the reserved top bit set and the connection ' +
-      'was closed.',
-    spec: 'connection closed' },
+      'was closed. Retired by #595: the demonstration that raised it ' +
+      'moved to the development companion.',
+    spec: 'connection closed', retired: true },
   { code: 'STS-KRB-0080',
     summary: 'The Kerberos service failed to build a reply and closed the ' +
-      'connection.',
-    spec: 'connection closed' },
+      'connection. Retired by #595: the demonstration that raised it ' +
+      'moved to the development companion.',
+    spec: 'connection closed', retired: true },
   { code: 'STS-KRB-0081',
     summary: 'The Kerberos service\'s TCP listener failed, usually because ' +
-      'its port could not be bound.',
-    spec: '' },
+      'its port could not be bound. Retired by #595: the demonstration ' +
+      'that raised it moved to the development companion.',
+    spec: '', retired: true },
   { code: 'STS-KRB-0082',
     summary: 'A SPNEGO request carried no Authorization header and was ' +
       'answered with the bare Negotiate challenge.',
@@ -11547,8 +11669,10 @@ const CODES = [
     summary: 'A SPNEGO continuation carried no mechListMIC.',
     spec: 'HTTP 401, NegTokenResp negState reject' },
   { code: 'STS-KRB-0096',
-    summary: 'An unhandled failure on /spnego/protected.',
-    spec: 'HTTP 500 page' },
+    summary: 'An unhandled failure on /spnego/protected. Retired by #595: ' +
+      'the demonstration that raised it moved to the development ' +
+      'companion.',
+    spec: 'HTTP 500 page', retired: true },
   { code: 'STS-KRB-0097',
     summary: 'A SPNEGO sign-in at /authn/spnego was refused because ' +
       'krb5.spnegoAuthentication is off.',
@@ -12092,6 +12216,44 @@ const CODES = [
       '88 with no reply bytes; the client is told the KDC is unavailable ' +
       '(2026-10-07).',
     spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0206',
+    summary: 'The message router a service deployed as cells installs on ' +
+      'TCP and UDP 88 failed on a message; it is answered by this cell\'s ' +
+      'KDC as it was before the router (#588, 2026-10-12).',
+    spec: 'none — #98, RFC 4120 7.2' },
+  { code: 'STS-KRB-0207',
+    summary: 'A Kerberos message on TCP or UDP 88 whose client is homed in ' +
+      'another cell could not be answered there (the cell unreachable, or ' +
+      'no reply); the client is told the KDC is unavailable, fail-closed ' +
+      '(#588, 2026-10-12).',
+    spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6' },
+  { code: 'STS-KRB-0208',
+    summary: 'Another cell relayed a Kerberos message here with no message ' +
+      'in it; the inter-cell operation kdc-message failed (#588, ' +
+      '2026-10-12).',
+    spec: 'none — #98' },
+  { code: 'STS-KRB-0209',
+    summary: 'kerberos/spnego_pages.ts is present and did not load, so ' +
+      'GET /spnego or /spnego/protected drew its page on the server, as a ' +
+      'copy without that module does (#583). The negotiation itself is ' +
+      'unaffected. Retired by #595: the demonstration that raised it ' +
+      'moved to the development companion.',
+    spec: 'logged; the page is drawn server-side', retired: true },
+  // 2026-10-12: the acceptor's random key in product.
+  { code: 'STS-KRB-0210',
+    summary: 'No random key could be made for the Kerberos acceptor\'s SPN, ' +
+      'whose configured krb5.servicePassword product refused (empty or the ' +
+      'published default), so the acceptor accepts no ticket.',
+    spec: '' },
+  { code: 'STS-KRB-0211',
+    summary: 'A node lost the race to make the Kerberos acceptor\'s random ' +
+      'key and, re-reading the directory, did not find the winner\'s key ' +
+      'yet; its acceptor refuses until it arrives.',
+    spec: '' },
+  { code: 'STS-KRB-0212',
+    summary: 'The Kerberos acceptor\'s random key was not made: this node ' +
+      'could not ask the shared store whether another node was making it.',
+    spec: '' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -12502,6 +12664,25 @@ const CODES = [
       'several cells (a person\'s entry may be in another cell\'s ' +
       'database). The service does not start.',
     spec: 'none — fatal at startup' },
+  { code: 'STS-LDAP-0134',
+    summary: 'A group owner add named nobody: no `owner` was sent (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0135',
+    summary: 'A group owner add named no person and no group of this realm ' +
+      '(#603). An owner answers for the group, so unlike a member it may ' +
+      'not dangle.',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0136',
+    summary: 'A group owner add named the group itself (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0137',
+    summary: 'A group owner add was refused: the group already names the ' +
+      'most owners a group may (MAX_GROUP_OWNERS, 25) (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0138',
+    summary: 'A group owner remove named a value the group does not list as ' +
+      'an owner (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -12645,6 +12826,88 @@ const CODES = [
       'needs) (#221).',
     spec: 'none (a push answers ok: false; HTTP 400 on the console and API)' },
   // ===== SCIM ==============================================================
+  // ===== SCIMC =============================================================
+  { code: 'STS-SCIMC-0001',
+    summary: 'A queued change for an outbound SCIM client whose application entry is gone, is no longer declared for scim-client, or is disabled was dead-lettered (#552).',
+    spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0002',
+    summary: 'An outbound SCIM client\'s base URI or token endpoint is not usable: not an absolute URL, carries a user name, password, query or fragment (RFC 7644 sections 1.3, 7.1).',
+    spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0003',
+    summary: 'An outbound SCIM client\'s base URI or token endpoint is plain http, refused: product mode always, development with scimClient.allowHttp off (RFC 7644 section 7.2).',
+    spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0004',
+    summary: 'An outbound SCIM client\'s TLS material is unusable: its CA certificates, scimClient.caFile, or its client certificate and private key would not load.',
+    spec: 'none — nothing is sent' },
+  { code: 'STS-SCIMC-0005',
+    summary: 'A request to a SCIM service provider or its token endpoint timed out (scimClient.timeoutMs); retried.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0006',
+    summary: 'A request to a SCIM service provider or its token endpoint failed at the network: refused, reset, unresolved, or the TLS handshake or certificate check failed; retried.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0007',
+    summary: 'A SCIM service provider answered 400 or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidVers, invalidFilter, tooMany); dead-lettered with its scimType.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0008',
+    summary: 'A SCIM service provider answered an error status: 408, 429, 500, 502, 503 or 504 are retried, anything else is dead-lettered.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0009',
+    summary: 'A SCIM service provider answered 401 or 403 to an authenticated request: its credential, token or certificate is not accepted, or it is not authorized for the operation (RFC 7644 section 2). A 401 with an OAuth token is retried once with a fresh token first.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0010',
+    summary: 'An outbound SCIM client\'s OAuth 2.0 token request failed: the token endpoint refused the client_credentials grant, answered no access_token, or could not be reached.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0011',
+    summary: 'A SCIM delivery was not attempted because the claim store could not be asked; the next sweep tries again.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0012',
+    summary: 'A SCIM delivery still unsent scimClient.retentionS after it was queued was dead-lettered.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0013',
+    summary: 'The outbound SCIM client\'s periodic summary: deliveries were dead-lettered or deferred in a realm since the last summary.',
+    spec: 'none (a log line)' },
+  { code: 'STS-SCIMC-0014',
+    summary: 'The scim-client.deliver sweep failed in a realm.',
+    spec: 'none (a log line)' },
+  { code: 'STS-SCIMC-0015',
+    summary: 'An operator\'s retry or purge was refused: the delivery is not a dead letter, or it is unknown in this realm.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SCIMC-0016',
+    summary: 'A SCIM client action named an unknown action, or a client this realm does not have.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SCIMC-0017',
+    summary: 'A SCIM client definition was refused: an unknown choice, an unusable URL, a missing credential its method needs, an unreadable LDAP filter or certificate, or a write the application registry refused.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SCIMC-0018',
+    summary: 'A SCIM client action failed unexpectedly.',
+    spec: 'HTTP 500 (console and API)' },
+  { code: 'STS-SCIMC-0019',
+    summary: 'A SCIM service provider\'s /ServiceProviderConfig or /ResourceTypes could not be read or was not a SCIM document (RFC 7644 section 4); the client assumes /Users and /Groups and no PATCH, filter or ETag support.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0020',
+    summary: 'A create answered 409 uniqueness (RFC 7644 section 3.3) and no resource could be found by externalId, userName or displayName to adopt; dead-lettered for an operator.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0021',
+    summary: 'A write answered 412 Precondition Failed (RFC 7644 section 3.14) more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0022',
+    summary: 'An outbound SCIM client\'s scope filter is not an LDAP filter this service can evaluate (RFC 4515); nobody is in its scope until it is fixed.',
+    spec: 'HTTP 400 (console and API) at the write' },
+  { code: 'STS-SCIMC-0023',
+    summary: 'An outbound SCIM client\'s reconciliation failed part way: listing the service provider\'s resources, or reading the realm.',
+    spec: 'none (a log line and the action\'s answer)' },
+  { code: 'STS-SCIMC-0024',
+    summary: 'An outbound SCIM client\'s TLS client certificate could not be issued from the realm\'s tls-client Issuing CA.',
+    spec: 'HTTP 400 (console and API)' },
+  { code: 'STS-SCIMC-0025',
+    summary: 'A SCIM service provider answered a create or a read with a body that is not a SCIM resource carrying an id (RFC 7643 section 3.1).',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0026',
+    summary: 'A SCIM service provider holds more than one resource with this realm\'s externalId for one entry (RFC 7643 section 3.1: the client owns externalId); dead-lettered for an operator to resolve.',
+    spec: 'none' },
+  { code: 'STS-SCIMC-0027',
+    summary: 'scimClient.skipTlsVerification is on in a product-mode realm and is ignored: the service provider\'s certificate is verified (logged once per process).',
+    spec: 'none (a log line)' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',
@@ -13682,7 +13945,7 @@ const CODES = [
     spec: '' },
   { code: 'STS-TLS-0012',
     summary: 'A truststore add found no PEM certificate in what it was sent.',
-    spec: 'HTTP 400 (POST /tls/trust)' },
+    spec: 'HTTP 400 (POST /admin-api/tls/trust/add)' },
   { code: 'STS-TLS-0013',
     summary: 'A strict truststore add was refused whole because a ' +
       'certificate in it could not be read by OpenSSL.',
@@ -13690,7 +13953,8 @@ const CODES = [
   { code: 'STS-TLS-0014',
     summary: 'A truststore add stopped because the truststore holds its ' +
       'maximum number of anchors.',
-    spec: 'HTTP 400 (POST /tls/trust) when nothing was added' },
+    spec: 'HTTP 400 (POST /admin-api/tls/trust/add) when nothing ' +
+      'was added' },
   { code: 'STS-TLS-0015',
     summary: 'A truststore remove named something that is not a SHA-256 ' +
       'fingerprint.',
@@ -13730,13 +13994,15 @@ const CODES = [
     spec: 'TLS handshake failure', retired: true },
   { code: 'STS-TLS-0023',
     summary: 'A /tls or /tls/forwarded request carried a format parameter ' +
-      'other than json or html.',
-    spec: 'HTTP 400' },
+      'other than json or html. Retired by #597: both pages are gone, and ' +
+      'Monitoring → TLS connection takes no parameter.',
+    spec: '', retired: true },
   { code: 'STS-TLS-0024',
     summary: 'POST /tls/trust or /tls/trust/clear was refused because ' +
       'product mode does not open the truststore to anybody who can ' +
-      'reach the port.',
-    spec: 'HTTP 403' },
+      'reach the port. Retired by #585: a product process has neither ' +
+      'route, and answers as for a path nothing is registered on.',
+    spec: '', retired: true },
   { code: 'STS-TLS-0025',
     summary: 'A TLS listener could not bind its port. Retired 2026-09-16: ' +
       'this module owns no listener to bind',
@@ -13880,6 +14146,23 @@ const CODES = [
       'parse. The key made at this start replaces it.',
     spec: 'logged; a new certificate is issued over the new key, and the ' +
       'restart is announced (tls-certificate-changed, restarted)' },
+  { code: 'STS-TLS-0049',
+    summary: 'A browser\'s POST /tls/trust or /tls/trust/clear (one carrying ' +
+      'an Origin) was not JSON: the /tls page sends its two acts as JSON ' +
+      '(#583). A request with no Origin is a script\'s and is not asked. ' +
+      'Retired by #597, with both routes.',
+    spec: '', retired: true },
+  { code: 'STS-TLS-0050',
+    summary: 'A browser\'s POST /tls/trust or /tls/trust/clear carried an ' +
+      'Origin this service does not answer on: it was not sent by the /tls ' +
+      'page (#583). Retired by #597, with both routes.',
+    spec: '', retired: true },
+  { code: 'STS-TLS-0051',
+    summary: 'A browser\'s POST /tls/trust or /tls/trust/clear carried no ' +
+      'X-CSRF-Token, or not the token of the /tls page\'s own cookie ' +
+      '(sts_tls_page), which the page\'s shell carries (#583). Retired by ' +
+      '#597, with both routes.',
+    spec: '', retired: true },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -13981,27 +14264,36 @@ const CODES = [
       'credential_accepted, credential_failure or credential_deleted.',
     spec: 'invalid_notification_request (HTTP 400)' },
   { code: 'STS-VC-0024',
-    summary: 'The non-spec notification inspection endpoint was asked for a ' +
-      'notification_id that does not exist.',
-    spec: 'invalid_notification_id (HTTP 404)' },
+    summary: 'GET /admin-api/oid4vci/notifications was asked for a ' +
+      'notification_id this issuer did not issue, or one expired (#594; ' +
+      'until then the non-spec notification inspection endpoint).',
+    spec: 'HTTP 404 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0025',
-    summary: 'The Credential Offer page\'s query parameters failed input ' +
-      'validation.',
-    spec: 'HTTP 400 plain text' },
+    summary: 'The demonstration Credential Offer\'s query parameters (or, ' +
+      'since #582, the body of POST /vc-demo-api/offer) failed input ' +
+      'validation. ' +
+      'Retired by #594: the demonstration issuer\'s pages left for ' +
+      'the development companion.',
+    spec: '', retired: true },
   { code: 'STS-VC-0026',
     summary: 'Where only registered addresses are accepted, the Credential ' +
       'Offer\'s wallet parameter named a URL that is neither ' +
-      'oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls.',
-    spec: 'HTTP 400 plain text' },
+      'oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. ' +
+      'Retired by #594, with the demonstration\'s offer page and ' +
+      'oid4vci.allowedWalletUrls.',
+    spec: '', retired: true },
   { code: 'STS-VC-0027',
     summary: 'A pre-authorized (cross-device or deferred) Credential Offer ' +
       'was requested from a session that continued without signing ' +
-      'in, where test controls are closed.',
-    spec: 'HTTP 403 plain text' },
+      'in, where test controls are closed. Retired by #589: where the ' +
+      'test controls are closed /issuer/offer makes no pre-authorized ' +
+      'offer and sends the browser to /portal/wallet.',
+    spec: '', retired: true },
   { code: 'STS-VC-0028',
     summary: 'The QR code for a cross-device Credential Offer could not be ' +
-      'rendered.',
-    spec: 'HTTP 500 plain text' },
+      'rendered. Retired by #582: the browser draws the code from the ' +
+      'offer URI (common/web_qr.ts), and the server renders none.',
+    spec: '', retired: true },
   { code: 'STS-VC-0029',
     summary: 'A Credential Offer fetched by reference (credential_offer_uri) ' +
       'does not exist or has expired.',
@@ -14015,18 +14307,21 @@ const CODES = [
       'read and is ignored by the Verifier.',
     spec: '' },
   { code: 'STS-VC-0032',
-    summary: 'The OID4VP Verifier page\'s or presentation start endpoint\'s ' +
-      'query parameters failed input validation.',
-    spec: 'HTTP 400 plain text' },
+    summary: 'The body of POST /admin-api/verifications/start (#587) — or, ' +
+      'until #594, the demonstration Verifier\'s pages\' query — failed ' +
+      'input validation.',
+    spec: 'HTTP 400 JSON { ok: false, errors } at /admin-api' },
   { code: 'STS-VC-0033',
-    summary: 'Where only registered addresses are accepted, the presentation ' +
-      'start\'s wallet parameter named a URL that is neither ' +
-      'oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls.',
-    spec: 'HTTP 400 plain text' },
+    summary: 'Where only registered addresses are accepted, POST ' +
+      '/admin-api/verifications/start\'s `wallet` named a URL that is ' +
+      'neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls.',
+    spec: 'HTTP 400 JSON { ok: false, errors } at /admin-api' },
   { code: 'STS-VC-0034',
     summary: 'The QR code for a cross-device OID4VP Authorization Request ' +
-      'could not be rendered.',
-    spec: 'HTTP 500 plain text' },
+      'could not be rendered. Retired by #582: the browser draws the code ' +
+      'from the request URI (common/web_qr.ts), and the server renders ' +
+      'none.',
+    spec: '', retired: true },
   { code: 'STS-VC-0035',
     summary: 'An OID4VP Request Object fetched by request_uri does not ' +
       'exist.',
@@ -14058,9 +14353,10 @@ const CODES = [
       'audience, validity or requested claims).',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-VC-0042',
-    summary: 'The non-spec presentation result endpoint was asked for a ' +
-      'state it has no record of.',
-    spec: 'invalid_request (HTTP 404)' },
+    summary: 'GET /admin-api/verifications?state= (#587) — or, until #594, ' +
+      'the non-spec presentation result endpoint — was asked for a state ' +
+      'it has no record of.',
+    spec: 'HTTP 404 JSON `errors` at /admin-api' },
   { code: 'STS-VC-0043',
     summary: 'The key credentials are signed with is not in this realm\'s ' +
       'key set, so the DID document cannot publish it.',
@@ -14074,8 +14370,10 @@ const CODES = [
     spec: 'not_found (HTTP 404)' },
   { code: 'STS-VC-0046',
     summary: 'The DID generator was asked for a method other than jwk or ' +
-      'web.',
-    spec: 'invalid_request (HTTP 400)' },
+      'web. ' +
+      'Retired by #594: /did/generate was deleted; test tooling makes ' +
+      'its own keys.',
+    spec: '', retired: true },
   { code: 'STS-VC-0047',
     summary: 'The embedded directory threw while being read for a person\'s ' +
       'credential claims; the credential is built without directory ' +
@@ -14103,28 +14401,28 @@ const CODES = [
   // --- signing in with a wallet, /authn/wallet (2026-09-17, #38) -----------
   { code: 'STS-VC-0052',
     summary: 'A wallet sign-in was refused because oid4vp.signIn is off.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0053',
     summary: 'A wallet sign-in named no pending authentication — never ' +
       'started, expired, or already used — so there was nothing to sign in ' +
       'to.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   // Retired 2026-09-17 (#38's follow-ups): a wallet sign-in under a demand
   // for two factors is now followed by a second factor rather than refused.
   // Kept, because a code is never reused.
   { code: 'STS-VC-0054',
     summary: 'A wallet sign-in was refused for a request that demanded two ' +
       'factors (retired: it is now followed by a second factor).',
-    spec: 'HTTP 403 page', retired: true },
+    spec: 'HTTP 403 refusal at /authn-api/wallet', retired: true },
   { code: 'STS-VC-0055',
     summary: 'A wallet sign-in was asked about by a browser that did not ' +
       'start it (no binding cookie, or the wrong one), so it was not ' +
       'finished there.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0056',
     summary: 'A wallet sign-in\'s transaction is unknown, has expired, or ' +
       'belongs to a different pending authentication.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0057',
     summary: 'A second OpenID4VP response arrived for a sign-in\'s ' +
       'transaction, which is answered once.',
@@ -14133,63 +14431,63 @@ const CODES = [
     summary: 'A presentation verified and signed nobody in: the credential ' +
       'was signed by a certificate in oid4vp.trustedIssuerCertificates, not ' +
       'by this realm\'s issuer.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0059',
     summary: 'A presentation verified and signed nobody in: this realm has ' +
       'no record of issuing the credential for a person on an access token ' +
       'it verified (another realm\'s, a foreign token\'s, or unknown).',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0060',
     summary: 'A presentation verified and signed nobody in: the directory ' +
       'entry the credential was issued for no longer exists.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0061',
     summary: 'A presentation made to sign in did not verify (or was not a ' +
       'presentation at all), so nobody was signed in.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0062',
     summary: 'A wallet sign-in was already finished — here or on another ' +
       'node — and was not finished again.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0063',
     summary: 'The cluster claim store could not be asked whether a wallet ' +
       'sign-in was already finished, so it was refused rather than finished ' +
       'unproven.',
-    spec: 'HTTP 503 page' },
+    spec: 'HTTP 503 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0064',
     summary: 'A presentation verified and mapped to a person, and the ' +
       'issuance policy refused them a session.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0065',
     summary: 'A wallet sign-in was returned to with a response_code that is ' +
       'not the one given to the wallet.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0066',
     summary: 'A presentation verified and signed nobody in: its subject or ' +
       'holder key disagrees with what this realm recorded when it issued ' +
       'the credential.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0067',
     summary: 'An unexpected failure inside the wallet sign-in door.',
-    spec: 'HTTP 500 page' },
+    spec: 'HTTP 500 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0068',
     summary: 'An issued credential could not be recorded as one that may ' +
       'sign its subject in; the credential was issued anyway.',
     spec: '' },
   { code: 'STS-VC-0069',
     summary: 'A wallet sign-in request carried a malformed query parameter.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0070',
     summary: 'A wallet sign-in was withdrawn by a sign-out after the wallet ' +
       'had presented and before the browser collected the session.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   // --- #38's follow-ups: disowning, status lists, the Digital Credentials
   // API, every format, key attestations -------------------------------------
   { code: 'STS-VC-0071',
     summary: 'A presentation verified and signed nobody in: the credential ' +
       'was disowned — by a global sign-out, an administrator\'s revocation, ' +
       'or its status-list entry.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0072',
     summary: 'A presented credential\'s status list says it is revoked or ' +
       'suspended, or no statement about its status could be made (the list ' +
@@ -14200,11 +14498,11 @@ const CODES = [
       'openid4vp-v1-signed DigitalCredential, was not in the response mode ' +
       'the request asked for, or its encrypted response could not be ' +
       'opened.',
-    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0074',
     summary: 'A Digital Credentials API answer was posted from a page on an ' +
       'origin other than the one the request named in expected_origins.',
-    spec: 'HTTP 403 page at /authn/wallet/dc-api' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0075',
     summary: 'No status-list index could be allocated for a credential: the ' +
       'claim store could not be asked, or the list is full.',
@@ -14231,10 +14529,10 @@ const CODES = [
       'composite).',
     spec: 'invalid_proof (HTTP 400)' },
   { code: 'STS-VC-0081',
-    summary: 'The Digital Credentials API form was submitted with no answer ' +
-      '— the page\'s script did not run — and the same-device link was ' +
-      'offered instead.',
-    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+    summary: 'A Digital Credentials API answer was sent with nothing in it — ' +
+      'nothing came back from the browser\'s API — and the same-device ' +
+      'link was offered instead.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0082',
     summary: 'A status-list entry could not be changed from the console or ' +
       'the management API: no such index, an unknown status, or an ' +
@@ -14243,13 +14541,13 @@ const CODES = [
   { code: 'STS-VC-0083',
     summary: 'A Digital Credentials API answer arrived for a sign-in that ' +
       'was not offered through the Digital Credentials API.',
-    spec: 'HTTP 400 page at /authn/wallet/dc-api' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet/{state}/dc-api' },
   { code: 'STS-VC-0084',
     summary: 'A wallet could not be the second factor: the step had ' +
       'expired, its first factor was already a wallet, or the credential ' +
       'was issued to somebody other than the person whose password was ' +
       'entered.',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0085',
     summary: 'A certificate in oid4vci.keyAttestationTrustedCertificates ' +
       'could not be read and was ignored.',
@@ -14289,24 +14587,24 @@ const CODES = [
     summary: 'A self-issued ID Token verified and its subject is enrolled ' +
       'for nobody in the realm, so it signed nobody in — in both modes ' +
       '(#129).',
-    spec: 'HTTP 403 page at /authn/wallet/wait' },
+    spec: 'HTTP 403 refusal at /authn-api/wallet/{state}/status' },
   { code: 'STS-VC-0092',
     summary: 'oid4vp.verifierAttestation cannot be used — unreadable, not ' +
       'typ verifier-attestation+jwt, no sub, expired, or its cnf is not ' +
       'this realm\'s request-signing key — so no signed request with the ' +
       'verifier_attestation prefix was built (#129).',
-    spec: 'HTTP 500' },
+    spec: 'HTTP 500 (JSON `errors` at POST /admin-api/verifications/start)' },
   { code: 'STS-VC-0093',
     summary: 'A SIOPv2 enrolment was started or collected by a browser ' +
       'holding no sign-on session, or for a person other than the one now ' +
       'signed in; or a self-issued ID was asked for as a second factor, ' +
       'which it is not offered as (#129).',
-    spec: 'HTTP 403 / 400 page' },
+    spec: 'HTTP 403 / 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0094',
     summary: 'A key proved by a SIOPv2 enrolment was not enrolled: it is ' +
       'already enrolled for somebody, or the person holds the most they may ' +
       '(#129).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-VC-0095',
     summary: 'A credential issuer\'s well-known document was asked for at ' +
       'an inserted path no issuer here has (OpenID4VCI 1.0 section ' +
@@ -14322,10 +14620,13 @@ const CODES = [
     summary: 'A VC-API test endpoint (/vc-api/*, the Bitstring Status ' +
       'List publish hook) was called in a realm whose test controls are ' +
       'closed — a product realm — and answered as though it did not exist ' +
-      '(#194).',
-    spec: 'HTTP 404' },
+      '(#194). Retired by #585: a product realm\'s request is passed on ' +
+      'past the route to Express\'s own 404, which records no code. Since ' +
+      '#598 the VC API is a product surface, off by default ' +
+      '(STS-VC-0120).',
+    spec: '', retired: true },
   { code: 'STS-VC-0101',
-    summary: 'A VC-API test endpoint was presented an access token it ' +
+    summary: 'A W3C VC API endpoint was presented an access token it ' +
       'refused: not issued by this realm, not an access token, revoked, ' +
       'without the vc-api:issue / vc-api:verify scope it needs, or issued ' +
       'to a client that no longer declares that scope (#194).',
@@ -14379,7 +14680,8 @@ const CODES = [
       'Host a request arrived with is not certified there — whoever sent ' +
       'it would choose the host a signed, trusted request sends ' +
       'presentations to (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; the sign-in door\'s 500 ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
+      '/admin-api/verifications/start; the sign-in door\'s 500 ' +
       'page; 409 JSON at /oid4vp/verifier-certificate' },
   { code: 'STS-VC-0111',
     summary: 'The x509_san_dns name is not the host of the Response URI, or ' +
@@ -14387,20 +14689,23 @@ const CODES = [
       'wallet that does not otherwise trust the Client Identifier require ' +
       'the response_uri\'s FQDN to be it, so such a request would be ' +
       'refused by every such wallet (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
+      '/admin-api/verifications/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0112',
     summary: 'The OpenID4VP Verifier\'s certificate could not be issued, or ' +
       'was not in place over the key the Request Object is signed with ' +
       'when it was built, so no x509_san_dns or x509_hash request was ' +
       'made (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
+      '/admin-api/verifications/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0113',
     summary: 'oid4vp.x509SigningAlgorithm names an algorithm this realm ' +
       'holds no signing key for, so no x509_san_dns or x509_hash request ' +
       'can be signed (#230).',
-    spec: 'HTTP 500 text/plain at /oid4vp/start; 409 JSON at ' +
+    spec: 'HTTP 500 JSON `errors` at POST ' +
+      '/admin-api/verifications/start; 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0114',
     summary: 'An application DID document was asked for and none is ' +
@@ -14413,6 +14718,55 @@ const CODES = [
       'LinkedDomains services, or none of its published keys has a private ' +
       'half this service kept.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-VC-0116',
+    summary: 'An act on the OpenID4VC demonstration\'s API (POST ' +
+      '/vc-demo-api/offer or /vc-demo-api/start, #582) did not carry a ' +
+      'JSON body (Content-Type: application/json), which a cross-site ' +
+      'form cannot send. ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
+  { code: 'STS-VC-0117',
+    summary: 'An act on the OpenID4VC demonstration\'s API (#582) carried ' +
+      'no Origin, or an origin this service does not answer on. ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
+  { code: 'STS-VC-0118',
+    summary: 'An act on the OpenID4VC demonstration\'s API (#582) carried ' +
+      'no X-CSRF-Token, or one not bound to the browser\'s sts_session ' +
+      'cookie (or the browser holds no session). ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
+  { code: 'STS-VC-0119',
+    summary: 'An operation of the OpenID4VC demonstration\'s API ' +
+      '(/vc-demo-api, #582) failed with an unexpected error. ' +
+      'Retired by #594: /vc-demo-api left with the demonstration, for ' +
+      'the development companion.',
+    spec: '', retired: true },
+  { code: 'STS-VC-0120',
+    summary: 'A W3C VC API endpoint (/vc-api/*) was called in a realm that ' +
+      'does not serve it: vcApi.enabled is off, which is the default ' +
+      '(#598).',
+    spec: 'HTTP 501 {errors}' },
+  { code: 'STS-VC-0121',
+    summary: 'A W3C VC API client, or an address, made more calls than ' +
+      'vcApi.maxPerWindow allows in one security.rateLimitWindowS window ' +
+      '(#598).',
+    spec: 'HTTP 429 {errors} with Retry-After' },
+  { code: 'STS-VC-0122',
+    summary: 'A W3C VC API request carried an option the endpoint does not ' +
+      'understand, or an option value of the wrong shape — refused as VCALM ' +
+      'requires (#598).',
+    spec: 'HTTP 400 {errors}' },
+  { code: 'STS-VC-0123',
+    summary: 'A verification start named a redirect_uri (#594) that is not ' +
+      'an absolute http(s) URL without a fragment, or — where only ' +
+      'registered addresses are accepted — not one of the calling ' +
+      'client\'s registered redirect URIs.',
+    spec: 'HTTP 400 JSON { ok: false, errors } at ' +
+      '/admin-api/verifications/start' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -14509,19 +14863,24 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0022',
     summary: 'A Security Event Token was pushed at /ssf/receive while this ' +
-      'service is not accepting pushed events (ssf.receiveEnabled).',
-    spec: 'HTTP 501 {err: invalid_request}' },
+      'service is not accepting pushed events (ssf.receiveEnabled). ' +
+      'Retired 2026-10-12 (#593): POST /ssf/receive was deleted; the test ' +
+      'peer is that push receiver',
+    spec: 'HTTP 501 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0023',
-    summary: 'A push at /ssf/receive carried an empty body.',
-    spec: 'HTTP 400 {err: invalid_request}' },
+    summary: 'A push at /ssf/receive carried an empty body. Retired ' +
+      '2026-10-12 (#593): POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0024',
     summary: 'A Security Event Token pushed at /ssf/receive did not verify, ' +
-      'in product mode or while ssf.receiveRequireSignature is on (#117).',
-    spec: 'HTTP 400 {err: invalid_key}' },
+      'in product mode or while ssf.receiveRequireSignature is on (#117). ' +
+      'Retired 2026-10-12 (#593): POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_key}', retired: true },
   { code: 'STS-SSF-0025',
     summary: 'A Security Event Token pushed at /ssf/receive could not be ' +
-      'read as a SET; it was recorded anyway.',
-    spec: 'HTTP 400 {err: invalid_request}' },
+      'read as a SET; it was recorded anyway. Retired 2026-10-12 (#593): ' +
+      'POST /ssf/receive was deleted',
+    spec: 'HTTP 400 {err: invalid_request}', retired: true },
   { code: 'STS-SSF-0026',
     summary: 'An event was not transmitted on a stream because the stream ' +
       'does not deliver that event type.',
@@ -14847,16 +15206,15 @@ const CODES = [
     spec: 'HTTP 400 {err: invalid_request}' },
   { code: 'STS-SSF-0105',
     summary: 'A Security Event Token delivered to one of this service\'s ' +
-      'receivers carries an iss other than its stream\'s, or one ' +
-      'ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was ' +
-      'recorded and refused.',
+      'receivers carries an iss other than its stream\'s (SSF 1.0 section ' +
+      '4.1.6); it was recorded and refused.',
     spec: 'HTTP 400 {err: invalid_issuer}' },
   { code: 'STS-SSF-0106',
     summary: 'A Security Event Token pushed at POST /ssf/receive is ' +
       'addressed to no audience ssf.receiveAudiences lists; it was recorded ' +
-      'and ' +
-      'refused.',
-    spec: 'HTTP 400 {err: invalid_audience}' },
+      'and refused. Retired 2026-10-12 (#593): POST /ssf/receive was ' +
+      'deleted',
+    spec: 'HTTP 400 {err: invalid_audience}', retired: true },
   { code: 'STS-SSF-0107',
     summary: 'An access token (OAuth or GNAP) carried the Shared Signals ' +
       'scope an operation needs, and the client it was issued to no longer ' +
@@ -15458,6 +15816,18 @@ const CODES = [
       'is not a person — an application\'s token — which has no ' +
       'preferredLanguage of its own to set (#539 phase 5).',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0011',
+    summary: 'A prose catalog under common/prose_locales — the translations ' +
+      'of the sentences the server writes into a console view, such as a ' +
+      'setting\'s description — could not be read or parsed; that prose ' +
+      'falls back along its chain to English (#543).',
+    spec: 'none — an error in the log' },
+  { code: 'STS-I18N-0012',
+    summary: 'GET /web/locales/<namespace>/<catalog>.json named a namespace ' +
+      'or a catalog this service does not have, or a file name that is not ' +
+      '<catalog>.json; nothing is read from disk by a requested name ' +
+      '(#570).',
+    spec: 'HTTP 404' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -16366,42 +16736,42 @@ const CODES = [
   { code: 'STS-GNAP-0300',
     summary: 'A GNAP token model\'s access is not a non-empty array of ' +
       'access rights.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0301',
     summary: 'A GNAP token model\'s access element is an empty reference, ' +
       'or neither a reference string nor a typed object.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0302',
     summary: 'A GNAP token model\'s access element has an array dimension ' +
       'or an identifier of the wrong type.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0303',
     summary: 'A GNAP token model is not valid under RFC 9767 section 2.1 ' +
       '(a missing or malformed member, or a bearer flag and cnf that ' +
       'disagree), when minted or read back.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0304',
     summary: 'A presented GNAP access token has expired.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0305',
     summary: 'A presented GNAP access token is not yet valid (nbf).',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0306',
     summary: 'A presented GNAP access token is not intended for the ' +
       'audience it was presented to.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0307',
     summary: 'A key-bound GNAP access token was presented without that ' +
       'key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0308',
     summary: 'A presented GNAP access token does not grant the access the ' +
       'request needs, possibly because an attenuation narrowed it.',
@@ -16415,34 +16785,34 @@ const CODES = [
   { code: 'STS-GNAP-0311',
     summary: 'A presented macaroon is not unpadded base64url, or not a ' +
       'libmacaroons v2 binary macaroon.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0312',
     summary: 'A presented macaroon\'s identifier is not this service\'s ' +
       'GNAP prefix and a jti, so this service did not mint it.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0313',
     summary: 'A presented macaroon carries a third-party caveat, which ' +
       'needs a discharge macaroon this format does not carry.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0314',
     summary: 'A presented macaroon\'s HMAC chain does not verify under the ' +
       'resource server\'s root key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0315',
     summary: 'A presented macaroon carries a caveat outside this ' +
       'service\'s caveat grammar.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0316',
     summary: 'A presented macaroon\'s authority section is malformed: a ' +
       'caveat out of place or repeated, a required one missing, or not a ' +
       'valid token model.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0317',
     summary: 'A macaroon attenuation was refused: empty, outside the ' +
       'exp/nbf/aud/access grammar, or refused by the library.',
@@ -16460,24 +16830,24 @@ const CODES = [
     summary: 'A presented biscuit is not URL-safe base64, does not parse, ' +
       'or its signature chain does not verify under this authorization ' +
       'server\'s public key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0323',
     summary: 'A presented biscuit\'s authority block is not a GNAP token ' +
       'model (misnumbered or non-JSON access facts, a singular fact ' +
       'repeated, or not exactly one key binding).',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0324',
     summary: 'A biscuit authorization check failed, or the authorizer ' +
       'could not be built for the presentation.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0325',
     summary: 'Biscuit authorization exceeded its run limits (facts, ' +
       'iterations or time), which is a refusal and never a pass.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0326',
     summary: 'A biscuit attenuation block was refused: empty, a parameter ' +
       'of an unsupported type, or rejected by the library.',
@@ -16495,18 +16865,18 @@ const CODES = [
   { code: 'STS-GNAP-0332',
     summary: 'A presented ZCAP is not base64url JSON with exactly the ' +
       'members and @context this format writes.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0333',
     summary: 'A presented ZCAP\'s delegation proof does not verify under ' +
       'this authorization server\'s key.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0334',
     summary: 'A presented ZCAP\'s GNAP terms are inconsistent, or it names ' +
       'no invocationTarget.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0335',
     summary: 'The ZCAP libraries refused to sign a capability.',
     spec: '' },
@@ -16514,34 +16884,34 @@ const CODES = [
     summary: 'A presented ZCAP carries a proof of a suite other than the ' +
       'one this realm\'s gnap.zcapCryptosuite names, or not exactly one ' +
       'proof.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0340',
     summary: 'A presented jwt-encrypted GNAP access token is encrypted to ' +
       'a resource server\'s key, which this authorization server does not ' +
       'hold.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0341',
     summary: 'A presented jwt-encrypted GNAP access token does not ' +
       'decrypt.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0342',
     summary: 'A presented JWT GNAP access token\'s signature does not ' +
       'verify.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0343',
     summary: 'A presented JWT is not a GNAP access token: its header typ ' +
       'is not gnap-at+jwt, or its payload typ is not GNAP.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0344',
     summary: 'A GNAP token names an access token format that does not ' +
       'exist.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0400',
     summary: 'A GNAP interaction start link (redirect or app) names no ' +
       'request still waiting for approval.',
@@ -16550,32 +16920,49 @@ const CODES = [
     summary: 'A GNAP interaction start link had already been used.',
     spec: 'HTTP 400 page' },
   { code: 'STS-GNAP-0402',
-    summary: 'The GNAP user code page was opened while GNAP is turned off ' +
-      '(gnap.enabled).',
-    spec: 'HTTP 400 page' },
+    summary: 'The GNAP user code page, or the GNAP interaction API ' +
+      '(/gnap-api), was reached while GNAP is turned off (gnap.enabled).',
+    spec: 'HTTP 400 page, or { ok: false, errors } on /gnap-api' },
   { code: 'STS-GNAP-0403',
-    summary: 'A GNAP user code form post was malformed.',
-    spec: 'HTTP 400 page' },
+    summary: 'A GNAP user code sent to POST /gnap-api/code was malformed.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-GNAP-0404',
     summary: 'Too many GNAP user codes were tried from one address.',
-    spec: 'HTTP 429 page' },
+    spec: 'HTTP 429, { ok: false, errors }' },
   { code: 'STS-GNAP-0405',
     summary: 'A GNAP user code is not recognised, or has expired.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-GNAP-0406',
     summary: 'A GNAP approval page or answer names no request waiting for ' +
       'the person, or one whose interaction was never started.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page, or { ok: false, errors, view } on /gnap-api' },
   { code: 'STS-GNAP-0407',
-    summary: 'A GNAP approval answer failed its anti-forgery check.',
-    spec: 'HTTP 400 page' },
+    summary: 'A GNAP approval answer failed its anti-forgery check. ' +
+      'Retired by #578: the approval is an act on /gnap-api, refused ' +
+      'STS-GNAP-0410, 0411 or 0412.',
+    spec: '', retired: true },
   { code: 'STS-GNAP-0408',
-    summary: 'A GNAP approval answer was malformed.',
-    spec: 'HTTP 400 page' },
+    summary: 'A GNAP approval answer sent to /gnap-api was malformed, or ' +
+      'carried a limit control this page does not draw.',
+    spec: 'HTTP 400, { ok: false, errors }' },
   { code: 'STS-GNAP-0409',
     summary: 'A GNAP approval could not be completed because of an ' +
       'unexpected error.',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page, or { ok: false, errors, view } on /gnap-api' },
+  { code: 'STS-GNAP-0410',
+    summary: 'An act on the GNAP interaction API (/gnap-api, #578) did not ' +
+      'carry a JSON body (Content-Type: application/json), which a ' +
+      'cross-site form cannot send.',
+    spec: 'HTTP 415, { ok: false, errors }' },
+  { code: 'STS-GNAP-0411',
+    summary: 'An act on the GNAP interaction API (/gnap-api, #578) carried ' +
+      'no Origin, or an origin this service does not answer on.',
+    spec: 'HTTP 403, { ok: false, errors }' },
+  { code: 'STS-GNAP-0412',
+    summary: 'An act on the GNAP interaction API (/gnap-api, #578) carried ' +
+      'no X-CSRF-Token, or one not bound to the browser\'s sts_session ' +
+      'cookie (or the browser holds no session).',
+    spec: 'HTTP 403, { ok: false, errors }' },
   { code: 'STS-GNAP-0500',
     summary: 'A GNAP RS-facing request\'s "resource_server" member is ' +
       'absent, or has neither a key nor an instance identifier.',
@@ -16662,27 +17049,37 @@ const CODES = [
   { code: 'STS-GNAP-0546',
     summary: 'A presented GNAP access token failed its format\'s ' +
       'verification and the format named no more specific code.',
-    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at the ' +
-      'demonstration resource server (WWW-Authenticate: GNAP)' },
+    spec: 'HTTP 401 invalid_token or 403 insufficient_scope at a ' +
+      'resource server (WWW-Authenticate: GNAP)' },
   { code: 'STS-GNAP-0550',
     summary: 'The GNAP demonstration resource server was reached while it ' +
-      'is turned off (gnap.demoResourceServer).',
-    spec: 'HTTP 404 GNAP invalid_request' },
+      'is turned off (gnap.demoResourceServer). ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 404 GNAP invalid_request', retired: true },
   { code: 'STS-GNAP-0551',
     summary: 'The GNAP demonstration resource server was called with no ' +
       'access token; it answered with the RS-first challenge of RFC 9635 ' +
-      'section 9.1.',
+      'section 9.1. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
     spec: 'HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, ' +
-      'access, referrer' },
+      'access, referrer', retired: true },
   { code: 'STS-GNAP-0552',
     summary: 'The GNAP demonstration resource server refused a presented ' +
-      'token whose refusal carried no more specific code.',
-    spec: 'HTTP 401 invalid_token (WWW-Authenticate: GNAP)' },
+      'token whose refusal carried no more specific code. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 401 invalid_token (WWW-Authenticate: GNAP)',
+    retired: true },
   { code: 'STS-GNAP-0553',
     summary: 'A GNAP access token presented at the demonstration resource ' +
       'server does not grant the action (read or write) on its resource ' +
-      'type.',
-    spec: 'HTTP 403 insufficient_scope (WWW-Authenticate: GNAP)' },
+      'type. ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 403 insufficient_scope (WWW-Authenticate: GNAP)',
+    retired: true },
   { code: 'STS-GNAP-0600',
     summary: 'A GNAP push interaction finish was not sent because ' +
       'gnap.pushFinish is off; the client learns the outcome when it ' +
@@ -16853,9 +17250,8 @@ const CODES = [
       '(#432).',
     spec: 'RFC 9767 section 4 (invalid_request)' },
   { code: 'STS-GNAP-0734',
-    summary: 'A GNAP access token was presented (the demonstration resource ' +
-      'server, a Shared Signals endpoint) whose resource owner\'s account ' +
-      'is disabled (#432).',
+    summary: 'A GNAP access token was presented (at a Shared Signals ' +
+      'endpoint) whose resource owner\'s account is disabled (#432).',
     spec: 'RFC 9635 section 7.2 (invalid_token)' },
   { code: 'STS-GNAP-0735',
     summary: 'A GNAP access token was presented whose client\'s ' +
@@ -17086,36 +17482,38 @@ const CODES = [
       '{"owner": "<DN>"} (#432 phase 5).',
     spec: '' },
   { code: 'STS-GNAP-0870',
-    summary: 'A demonstration spend would pass the limits of the token\'s ' +
+    summary: 'A spend would pass the limits of the token\'s ' +
       'right for its grant and period (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0871',
-    summary: 'A demonstration spend is outside the window or the repeating ' +
+    summary: 'A spend is outside the window or the repeating ' +
       'interval the token\'s limits allow (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0872',
-    summary: 'A demonstration spend names a receiver the token\'s limits do ' +
+    summary: 'A spend names a receiver the token\'s limits do ' +
       'not (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0873',
-    summary: 'A demonstration spend states no amount, or one in another ' +
+    summary: 'A spend states no amount, or one in another ' +
       'currency, where the token\'s limits count an amount (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (insufficient_scope, HTTP 403)' },
   { code: 'STS-GNAP-0874',
-    summary: 'A demonstration spend\'s body is not readable (#432 phase 5).',
+    summary: 'A spend\'s body is not readable (#432 phase 5).',
     spec: 'RFC 6750 section 3.1 (invalid_request, HTTP 400)' },
   { code: 'STS-GNAP-0875',
     summary: 'The running totals of a token\'s limits could not be read from ' +
-      'the store every node shares; the demonstration spend was refused ' +
+      'the store every node shares; the spend was refused ' +
       '(#432 phase 5).',
     spec: 'HTTP 503' },
   { code: 'STS-GNAP-0876',
     summary: 'The demonstration operation failed after its spend was ' +
       'counted (asked to, with simulateFailure); the spend was refunded ' +
-      '(#432 phase 5).',
-    spec: 'HTTP 502' },
+      '(#432 phase 5). ' +
+      'Retired 2026-10-12 (#593): the demonstration resource server ' +
+      'was deleted; the test peer plays a GNAP resource server',
+    spec: 'HTTP 502', retired: true },
   { code: 'STS-GNAP-0877',
-    summary: 'A demonstration spend could not be refunded: a new period ' +
+    summary: 'A spend could not be refunded: a new period ' +
       'had begun, or the store could not be asked (#432 phase 5).',
     spec: '' },
   // ===== DEVICE ============================================================
@@ -17194,6 +17592,16 @@ const CODES = [
       'or identifier, and not at or under a registered GNAP resource ' +
       'server\'s gnapResourceServerUri — so the request was refused ' +
       'rather than the right dropped (#505).',
+    spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
+  { code: 'STS-GNAP-0904',
+    summary: 'A GNAP access token request\'s access named no resource ' +
+      'server — no registered reference, no location at or under a ' +
+      'registered resource server\'s gnapResourceServerUri, no type a ' +
+      'registered resource server declares, and not this service\'s own ' +
+      'Shared Signals transmitter — so the token would have been for nobody ' +
+      'in particular and the request was refused, in every mode. The ' +
+      'default audience (the demonstration resource server) went with it ' +
+      '(#593).',
     spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
@@ -17365,8 +17773,10 @@ const CODES = [
   { code: 'STS-DEVICE-0035',
     summary: 'The compliance test control, POST /devices/test/compliance, ' +
       'was refused because the realm is in product mode, where test ' +
-      'controls are closed (#164 phase 3).',
-    spec: 'HTTP 403' },
+      'controls are closed (#164 phase 3). Retired by #585: a product ' +
+      'realm has no such route, and answers as for a path nothing is ' +
+      'registered on.',
+    spec: '', retired: true },
   { code: 'STS-DEVICE-0036',
     summary: 'Risk scoring could not set the risk level of the registered ' +
       'device that proved a sign-in: the device register refused or did ' +
@@ -17554,6 +17964,18 @@ const CODES = [
       'maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); ' +
       'refused in product mode as pwdHistory is.',
     spec: 'constraintViolation (19)' },
+  { code: 'STS-SVCACCT-0031',
+    summary: 'A service account was given more owners than it may name ' +
+      '(MAX_OWNERS, #600); a group stands for many.',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0032',
+    summary: 'An owner was asked to be taken off a service account that ' +
+      'does not list it (#602).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0033',
+    summary: 'An owner or a push destination was changed on an entry that ' +
+      'is not a service account in this realm (#602).',
+    spec: 'HTTP 400 (management API)' },
   { code: 'STS-SVCACCT-0040',
     summary: 'A rotation was asked of an entry that is not a service account ' +
       'in this realm.',
@@ -17598,9 +18020,8 @@ const CODES = [
       '(xacml.remotePeps).',
     spec: 'HTTP 501 not_implemented' },
   { code: 'STS-XACML-0003',
-    summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies, ' +
-      '/xacml/protected) was refused to a caller that presented no ' +
-      'client certificate.',
+    summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) ' +
+      'was refused to a caller that presented no client certificate.',
     spec: 'HTTP 403 access_denied' },
   { code: 'STS-XACML-0004',
     summary: 'The XACML surface was refused to a caller whose client ' +
@@ -17642,23 +18063,27 @@ const CODES = [
     summary: 'A decision could not be made because the repository\'s root ' +
       'policy does not load; the PDP answered Indeterminate.',
     spec: 'HTTP 200 with decision Indeterminate (XACML status ' +
-      'syntax-error); GET /xacml/protected may then refuse with 403' },
+      'syntax-error); a PEP asking it may then refuse with 403' },
   { code: 'STS-XACML-0013',
     summary: 'The engine reached Indeterminate through a processing or ' +
       'syntax error while evaluating a policy (not a missing ' +
       'attribute).',
     spec: 'HTTP 200 with decision Indeterminate (XACML status ' +
-      'processing-error or syntax-error); GET /xacml/protected may ' +
-      'then refuse with 403' },
+      'processing-error or syntax-error); a PEP asking it may then ' +
+      'refuse with 403' },
   { code: 'STS-XACML-0014',
     summary: 'The embedded demonstration PEP at GET /xacml/protected refused ' +
-      'the subject because the decision was not one its bias allows.',
-    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer' },
+      'the subject because the decision was not one its bias allows. ' +
+      'Retired 2026-10-12 (#596): the demonstration PEP was deleted; the ' +
+      'remote PEP container\'s GET /protected is the demonstration',
+    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer', retired: true },
   { code: 'STS-XACML-0015',
     summary: 'The embedded demonstration PEP refused a Permit because the ' +
       'decision carried an obligation it cannot discharge (XACML 3.0 ' +
-      'section 7.2).',
-    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer' },
+      'section 7.2). ' +
+      'Retired 2026-10-12 (#596): the demonstration PEP was deleted; the ' +
+      'remote PEP container\'s GET /protected is the demonstration',
+    spec: 'HTTP 403 with the PEP\'s JSON enforcement answer', retired: true },
   { code: 'STS-XACML-0016',
     summary: 'GET /xacml was asked with a format or bias query parameter ' +
       'outside its allowed values.',
@@ -18028,6 +18453,22 @@ const CODES = [
       'factors an application allows (appMfaMechanism, #475), so the ' +
       'issuance gate required none for that issuance.',
     spec: '' },
+  { code: 'STS-XACML-0173',
+    summary: 'Adding an owner to a role was refused: no owner was named ' +
+      '(#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0174',
+    summary: 'Adding an owner to a role was refused: the value names no ' +
+      'person and no group in this realm (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0175',
+    summary: 'Adding an owner to a role was refused: the role already ' +
+      'names the most owners a role may (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0176',
+    summary: 'Taking an owner off a role was refused: the value is not one ' +
+      'of the role\'s owners (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -19176,6 +19617,46 @@ const CODES = [
     summary: 'An operator\'s rename of a person\'s passkey was refused: the ' +
       'name was not one, or no such key is registered for them (#470).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0851',
+    summary: 'Registering a SAML 1.1 relying party was refused because no ' +
+      'assertion consumer service URL was supplied.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0852',
+    summary: 'Adding an owner to a group, on the group page or through ' +
+      'POST /admin-api/groups/add-owner, was refused with no code of the ' +
+      'directory\'s own; where the directory gives one, that code is ' +
+      'recorded instead (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-ADMIN-0853',
+    summary: 'Taking an owner off a group, on the group page or through ' +
+      'POST /admin-api/groups/remove-owner, was refused with no code of ' +
+      'the directory\'s own; where the directory gives one, that code is ' +
+      'recorded instead (#603).',
+    spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-ADMIN-0854',
+    summary: 'Adding an owner to a role, on the role page or through ' +
+      'POST /admin-api/roles/add-owner, was refused with no code of the ' +
+      'register\'s own; where the register gives one, that code is ' +
+      'recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-ADMIN-0855',
+    summary: 'Taking an owner off a role, on the role page or through ' +
+      'POST /admin-api/roles/remove-owner, was refused with no code of the ' +
+      'register\'s own; where the register gives one, that code is ' +
+      'recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-ADMIN-0856',
+    summary: 'Adding an owner to an application, on the application page or ' +
+      'through POST /admin-api/applications/add-owner, was refused with no ' +
+      'code of the registry\'s own; where the registry gives one, that code ' +
+      'is recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-ADMIN-0857',
+    summary: 'Taking an owner off an application, on the application page ' +
+      'or through POST /admin-api/applications/remove-owner, was refused ' +
+      'with no code of the registry\'s own; where the registry gives one, ' +
+      'that code is recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -19605,20 +20086,20 @@ const CODES = [
   { code: 'STS-PORTAL-0010',
     summary: 'The access policy refused a signed-in person a portal page or ' +
       'action.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-PORTAL-0011',
     summary: 'The portal could not start its OpenID Connect sign-in: the ' +
       'sts-user-portal client entry is missing or has no secret, or ' +
       'in product mode the portal was reached at an address not ' +
       'registered as a redirect URI.',
-    spec: 'HTTP 503 page' },
+    spec: 'HTTP 503 page', retired: true },
   { code: 'STS-PORTAL-0012',
     summary: 'The portal\'s OpenID Connect callback could not complete a ' +
       'sign-in (a state, code, token or ID Token step failed).',
-    spec: 'HTTP 400 page' },
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-PORTAL-0013',
     summary: 'The portal\'s OpenID Connect callback threw unexpectedly.',
-    spec: 'HTTP 500 page' },
+    spec: 'HTTP 500 page', retired: true },
   { code: 'STS-PORTAL-0014',
     summary: 'The portal\'s directory slot was offered a filler without ' +
       'personEntry() and was not installed; the Overview falls back ' +
@@ -19636,7 +20117,7 @@ const CODES = [
   { code: 'STS-PORTAL-0017',
     summary: 'A portal form post was refused because its CSRF token was ' +
       'missing or did not match the session.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-PORTAL-0018',
     summary: 'Confirming an authenticator app code was tried too often and ' +
       'the rate limiter refused the attempt.',
@@ -19820,7 +20301,7 @@ const CODES = [
   { code: 'STS-PORTAL-0083',
     summary: 'A POST to /portal/sign-ins was refused: its CSRF token did not ' +
       'match the session.',
-    spec: 'HTTP 403 page' },
+    spec: 'HTTP 403 page', retired: true },
   { code: 'STS-PORTAL-0084',
     summary: 'A POST to /portal/sign-ins named a sign-in that is not the ' +
       'person\'s own, is too old, or has already been answered (#62 P6).',
@@ -19880,18 +20361,18 @@ const CODES = [
   { code: 'STS-PORTAL-0097',
     summary: 'Answering a device sign-in on /portal/device failed ' +
       'unexpectedly (#150).',
-    spec: 'none (a portal page, HTTP 500)' },
+    spec: 'none (a portal page, HTTP 500)', retired: true },
   { code: 'STS-PORTAL-0098',
     summary: 'A live admin console session in the same browser was not ' +
       'adopted by /portal — it names nobody, the realm it was signed in ' +
       'through is no longer defined, its tokens ran out beyond renewal, or ' +
       'its person is homed in another cell — so the portal signs in the ' +
       'ordinary way.',
-    spec: 'none (the portal runs its own sign-in)' },
+    spec: 'none (the portal runs its own sign-in)', retired: true },
   { code: 'STS-PORTAL-0099',
     summary: 'Adopting a live admin console session on /portal threw; the ' +
       'portal signs in the ordinary way.',
-    spec: 'none (the portal runs its own sign-in)' },
+    spec: 'none (the portal runs its own sign-in)', retired: true },
   { code: 'STS-PORTAL-0100',
     summary: 'A security key was chosen during an activation beside a ' +
       'password and its enrolment could not be started; the activation ' +
@@ -19930,20 +20411,134 @@ const CODES = [
       'was refused: the name was not one, or the id is not one of theirs ' +
       '(#470).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-PORTAL-0246',
+    summary: 'A method other than GET was sent to a /portal path: the portal ' +
+      'is a static application since #568 and nothing is posted to it.',
+    spec: 'HTTP 404' },
+  { code: 'STS-PORTAL-0300',
+    summary: 'A Claims Provider\'s callback arrived in a browser that does ' +
+      'not hold the binding cookie the link was started with, so it was ' +
+      'refused (#568: the account-linking CSRF the portal session closed).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0301',
+    summary: 'A claim-source link was not started: the account API token is ' +
+      'placed on no sign-on session the registry still holds, so the ' +
+      'callback could never be bound to it.',
+    spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0302',
+    summary: 'The access policy refused a Claims Provider\'s callback ' +
+      '(user-portal, manage-own).',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0303',
+    summary: 'A Claims Provider\'s callback was refused because the sign-on ' +
+      'session the link was started from has ended, or is no longer the ' +
+      'person\'s.',
+    spec: 'HTTP 303 to /portal/claim-sources?problem=' },
+  { code: 'STS-PORTAL-0310',
+    summary: 'A device challenge or link could not be bound: the account ' +
+      'API token\'s sign-on session is not known (the token registry ' +
+      'dropped it), so the person is asked to sign in again.',
+    spec: 'HTTP 400' },
+  { code: 'STS-PORTAL-0589',
+    summary: 'A Credential Offer asked for on /portal/wallet (POST ' +
+      '/account-api/credentials/offers) named a credential configuration ' +
+      'this realm\'s OpenID4VCI issuer does not offer (#589).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0590',
+    summary: 'A Credential Offer asked for on /portal/wallet was refused ' +
+      'because the sign-on session the portal\'s token was issued on is ' +
+      'no longer known, or continued without signing in: a pre-authorized ' +
+      'offer is made on that session\'s authority (#589, #240).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-ACCOUNT-0001',
+    summary: 'A request to /account-api presented no access token.',
+    spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
+  { code: 'STS-ACCOUNT-0002',
+    summary: 'An /account-api access token was not issued by this realm\'s ' +
+      'authorization server, or its signature does not verify.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0003',
+    summary: 'An /account-api access token had expired.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0004',
+    summary: 'An /account-api access token\'s typ header was not at+jwt (an ' +
+      'ID Token or a refresh token presented as one).',
+    spec: 'RFC 9068 section 4' },
+  { code: 'STS-ACCOUNT-0005',
+    summary: 'An /account-api access token named an issuer this realm does ' +
+      'not publish at the address it was presented at.',
+    spec: 'RFC 9068 section 4' },
+  { code: 'STS-ACCOUNT-0006',
+    summary: 'An /account-api access token was audienced to another ' +
+      'resource.',
+    spec: 'RFC 9068 section 4; RFC 8707' },
+  { code: 'STS-ACCOUNT-0007',
+    summary: 'An /account-api access token has been revoked or disowned, or ' +
+      'the account it was issued to is disabled.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0008',
+    summary: 'An /account-api access token was issued on a sign-on session ' +
+      'that has since ended.',
+    spec: 'RFC 6750 section 3.1 invalid_token' },
+  { code: 'STS-ACCOUNT-0009',
+    summary: 'A certificate-bound /account-api access token was presented on ' +
+      'a connection without its certificate.',
+    spec: 'RFC 8705 section 3.1' },
+  { code: 'STS-ACCOUNT-0010',
+    summary: 'A DPoP-bound /account-api access token was presented as a ' +
+      'Bearer token.',
+    spec: 'RFC 9449 section 7.1' },
+  { code: 'STS-ACCOUNT-0011',
+    summary: 'The DPoP proof sent with an /account-api request was refused, ' +
+      'or a nonce was wanted.',
+    spec: 'RFC 9449 sections 4.3 and 8' },
+  { code: 'STS-ACCOUNT-0012',
+    summary: 'An /account-api access token names no person (a client\'s own ' +
+      'token).',
+    spec: 'HTTP 403' },
+  { code: 'STS-ACCOUNT-0013',
+    summary: 'An /account-api access token does not carry account:manage.',
+    spec: 'RFC 6750 section 3.1 insufficient_scope' },
+  { code: 'STS-ACCOUNT-0014',
+    summary: 'The client an /account-api access token was issued to no ' +
+      'longer declares account:manage.',
+    spec: 'HTTP 403' },
+  { code: 'STS-ACCOUNT-0015',
+    summary: 'The access policy refused an /account-api request ' +
+      '(user-portal, read or manage-own).',
+    spec: 'HTTP 403' },
+  { code: 'STS-ACCOUNT-0016',
+    summary: 'An /account-api request\'s query did not validate against its ' +
+      'operation\'s schema.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ACCOUNT-0017',
+    summary: 'An /account-api request body was not JSON.',
+    spec: 'HTTP 415' },
+  { code: 'STS-ACCOUNT-0018',
+    summary: 'An /account-api request body did not validate against its ' +
+      'operation\'s schema.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ACCOUNT-0019',
+    summary: 'An /account-api operation threw; answered 500.',
+    spec: 'HTTP 500' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
       'mode).',
-    spec: 'HTTP 403 {error: forbidden} or a 403 page' },
+    spec: 'HTTP 403 {error: forbidden}, or { ok: false, errors } from ' +
+      '/authn-api/logout' },
   { code: 'STS-LOGOUT-0002',
     summary: 'A sign-out request carried no session cookie and named nobody, ' +
       'so there is nobody to act on. (A browser GET is sent to sign ' +
       'in instead, which is not a failure.)',
-    spec: 'HTTP 401 {error: no_subject} or a 401 page' },
+    spec: 'HTTP 401 {error: no_subject}, or { ok: false, errors } from ' +
+      '/authn-api/logout' },
   { code: 'STS-LOGOUT-0003',
-    summary: 'A sign-out form failed validation (an unrecognised scope ' +
-      'value, or an over-long selection).',
-    spec: 'HTTP 400 page' },
+    summary: 'A sign-out\'s body failed validation (an unrecognised scope ' +
+      'value, an over-long selection, or a field the page\'s act does not ' +
+      'take).',
+    spec: 'HTTP 400 {error: invalid_request}, or { ok: false, errors } ' +
+      'from /authn-api/logout' },
   { code: 'STS-LOGOUT-0004',
     summary: 'One family\'s live items could not be read for a sign-out ' +
       'inventory; the page reports that family as unreadable.',
@@ -19960,6 +20555,21 @@ const CODES = [
     summary: 'A sign-out ended nothing: nothing live was found for the ' +
       'identity, or nothing that was selected could be ended.',
     spec: '' },
+  { code: 'STS-LOGOUT-0008',
+    summary: 'The signed-out document (POST /logout/signed-out, #577) was ' +
+      'posted no sign-out result, or one this service did not MAC, made ' +
+      'in another trust realm, or expired.',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-LOGOUT-0009',
+    summary: 'The signed-out document (POST /logout/signed-out, #577) was ' +
+      'posted with an origin this service does not answer on, or with ' +
+      'none (or null) and no Sec-Fetch-Site: same-origin.',
+    spec: 'HTTP 403 page' },
+  { code: 'STS-LOGOUT-0010',
+    summary: 'A form was posted to /logout, which is no longer an act ' +
+      '(#577): the page\'s act is POST /authn-api/logout. The browser is ' +
+      'sent to the page, which ends nothing.',
+    spec: 'HTTP 303 to /logout' },
   // ===== REG ===============================================================
   { code: 'STS-REG-0001',
     summary: 'An application identifier was empty, longer than 512 ' +
@@ -20772,6 +21382,30 @@ const CODES = [
       'its client secrets (they would not seal, or the directory refused ' +
       'the write). The application is there without them.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0353',
+    summary: 'An owner could not be added to or taken off an application: ' +
+      'there is no application by that identifier (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0354',
+    summary: 'Adding an owner to an application was refused: no owner was ' +
+      'named (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0355',
+    summary: 'Adding an owner to an application was refused: the value ' +
+      'names no person and no group in this realm (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0356',
+    summary: 'Adding an owner to an application was refused: it already ' +
+      'names the most owners an application may (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0357',
+    summary: 'Taking an owner off an application was refused: the value is ' +
+      'not one of its owners (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
+  { code: 'STS-REG-0358',
+    summary: 'An application\'s owners could not be written to the ' +
+      'directory (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the application page' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

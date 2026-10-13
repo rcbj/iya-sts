@@ -23,7 +23,8 @@
 // would be on for every job loading that screen meanwhile. A realm's own
 // policy is its own. The realm is left behind afterwards, as every job's is.
 //
-// It is off at first (G), then on for the rest:
+// It is on by default (G), turned off in its realm to check the refusal,
+// then on again for the rest:
 //
 //   A. the page created the credential under a minted 64-byte handle, never
 //      the username's bytes, and the person's key list says it signs in with
@@ -35,15 +36,21 @@
 //   D. one without user verification is refused;
 //   E. one under a handle nobody holds is refused;
 //   F. the real button with the script blocked is told it needs JavaScript;
-//   G. with the setting at its default, off, nothing is drawn and the door
-//      refuses — asserted first;
+//   G. at its default (on since 2026-10-10) the button is drawn; turned off
+//      in the realm, nothing is drawn and the door refuses — asserted first;
 //   H. SYNCED PASSKEYS (#528): a key whose authenticator data sets BE
 //      registers while the passkey policy's `backupEligibility` is `allow`;
 //      under `disallow` it signs nobody in (STS-AUTHN-0313, on an audit row)
 //      and a new one is not registered (STS-AUTHN-0312), each page saying
 //      why, while the device-bound key from A still signs in.
+//
+// THE ACTIVATION LINK'S PAGE is the static portal's since #568: drawn for
+// nobody from `/account-api/activation`'s answer, its steps that
+// operation's answers (`portalPages()`).
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -268,6 +275,142 @@ function absolute(location) {
     : (/^\/realm\//.test(text) ? ORIGIN + text : base + text);
 }
 
+// ---------------------------------------------------------------------------
+// THE PORTAL'S PAGES SINCE #568, BEHIND THE VERB THIS JOB ALWAYS USED.
+//
+// The portal is a static application since #568: `/portal/*` answers one
+// shell document, every page is drawn in the browser from an `/account-api`
+// operation and every form is sent there as JSON, with a DPoP-bound token
+// and no CSRF field. `portalPages()` keeps this job's `go(method, path,
+// body)` and does what the portal's runtime does instead of what the server
+// used to: a GET asks the operation that MIRRORS the page and draws its
+// answer with the portal's own renderers (`portal/portal.bundle.js`); a POST
+// sends the form's fields to the operation that mirrors the form. What comes
+// back is the page as the browser would show it — `text` the drawn markup
+// with any refusal or message above it, `location` an answer's `go`, `csp`
+// the shell's policy — so an assertion about what the page SAYS still reads
+// the page. A signed-in page takes `client`, the portal's client
+// (`portal_signin.js`); a page drawn for nobody (an activation link) takes
+// none.
+// ---------------------------------------------------------------------------
+const portalSignin = require("./portal_signin.js");
+
+// The forms that post to a path with no page of its own, and the page whose
+// view their answer carries.
+const DRAWN_ON = { "/portal/remove-key": "/portal/keys",
+                   "/portal/rename-key": "/portal/keys" };
+
+function portalPages(root, client) {
+  log.debug("Entering portalPages().");
+  const rootPath = new URL(root + "/").pathname.replace(/\/+$/, "");
+  let translator = null;
+  const translate = async function () {
+    log.debug("Entering translate().");
+    if (!translator) {
+      const table = portalSignin.portalBundle();
+      let locale = null;
+      if (client) {
+        const me = await client.api("GET", "/account-api/me");
+        locale = me.json && me.json.locale;
+      } else {
+        const said = await portalSignin.nobody(root, "GET",
+                                               "/account-api/locale");
+        locale = said.json && said.json.locale;
+      }
+      translator = table.messages.WebTranslator.fromData(locale);
+    }
+    log.debug("Leaving translate().");
+    return translator;
+  };
+  const operation = async function (method, page) {
+    log.debug("Entering operation().");
+    const ops = await portalSignin.operationsOf(root);
+    log.debug("Leaving operation().");
+    return ops.filter(function (op) {
+      return op.mirrors === method + " " + page;
+    })[0] || null;
+  };
+  const call = async function (op, method, target, body) {
+    log.debug("Entering call().");
+    log.debug("Leaving call().");
+    return op.access === "person" ? client.api(method, target, body)
+                                  : portalSignin.nobody(root, method, target,
+                                                        body);
+  };
+  const draw = async function (page, view, query) {
+    log.debug("Entering draw().");
+    const row = portalSignin.portalBundle().PAGES.filter(function (one) {
+      return one.path === page;
+    })[0];
+    if (!row || !view) {
+      log.debug("Leaving draw(). Nothing to draw.");
+      return "";
+    }
+    const t = await translate();
+    log.debug("Leaving draw().");
+    return row.render(view, { t: t, query: query || {}, prefix: "",
+                              origin: new URL(root).origin, me: null,
+                              locale: null, version: null, here: page });
+  };
+  const said = function (json) {
+    log.debug("Entering said().");
+    log.debug("Leaving said().");
+    return (json && Array.isArray(json.errors) ? json.errors.join(" ") + " "
+                                               : "") +
+           (json && json.message ? String(json.message) + " " : "");
+  };
+  log.debug("Leaving portalPages().");
+  return {
+    client: client,
+    go: async function (method, path, body) {
+      log.debug("Entering go().");
+      // A root-relative path is under `root`, the realm's prefix added
+      // where the caller left it off, as this job's browser read one.
+      const raw = String(path);
+      const url = /^https?:\/\//i.test(raw) ? new URL(raw)
+        : new URL(new URL(root).origin +
+                  (rootPath && raw.indexOf(rootPath + "/") === 0 ? raw
+                                                                 : rootPath +
+                                                                   raw));
+      const page = url.pathname.slice(rootPath.length) || "/portal";
+      const query = {};
+      url.searchParams.forEach(function (value, name) {
+        if (name !== "realm") {
+          query[name] = value;
+        }
+      });
+      const op = await operation(method, page);
+      assert.ok(op, "no /account-api operation mirrors " + method + " " +
+                page);
+      if (method === "GET") {
+        const qs = new URLSearchParams(query).toString();
+        const r = await call(op, "GET", op.path + (qs ? "?" + qs : ""));
+        const view = r.json && r.json.view ? r.json.view : r.json;
+        const shell = await fetch(root + page + url.search);
+        log.debug("Leaving go(). GET " + page);
+        return { status: r.status, json: r.json,
+                 text: said(r.json) + await draw(page, view, query),
+                 location: "",
+                 csp: shell.headers.get("content-security-policy") || "" };
+      }
+      const fields = {};
+      new URLSearchParams(String(body || "")).forEach(function (value, name) {
+        if (name === "csrf_token") {
+          return;
+        }
+        fields[name] = Object.prototype.hasOwnProperty.call(fields, name)
+          ? [].concat(fields[name], value) : value;
+      });
+      const r = await call(op, "POST", op.path, fields);
+      log.debug("Leaving go(). POST " + page);
+      return { status: r.status, json: r.json,
+               text: said(r.json) + await draw(DRAWN_ON[page] || page,
+                                               r.json && r.json.view, {}),
+               location: (r.json && r.json.go) || "", csp: "" };
+    }
+  };
+}
+
 function browser() {
   log.debug("Entering browser().");
   const self = {
@@ -349,17 +492,41 @@ async function theSignInScreen() {
   assert.ok(/\/authn\/login\?authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + started.location);
+  // THE SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571: the shell
+  // (its policy and its script), the view (what it offers), and — where it
+  // offers a passkey — the ceremony armed as its page arms it, by
+  // `POST …/passkey/options` (`armed`: the challenge, the RP ID, the
+  // options).
   const screen = await b.go("GET", started.location);
+  const opened = await authnSignin.screen(base, started.location,
+                                          { cookie: b.cookie });
+  b.cookie = opened.cookie;
+  let armed = null;
+  if (opened.view && opened.view.passkey) {
+    const options = await authnSignin.passkeyOptions(base, opened);
+    armed = options.json && options.json.ok ? options.json : null;
+  }
   log.debug("Leaving theSignInScreen().");
-  return { b: b, screen: screen };
+  return { b: b, screen: screen, opened: opened, view: opened.view || {},
+           armed: armed, challenge: armed ? armed.challenge : "" };
 }
 
 // The screen's usernameless door, posted with an assertion (or none).
 async function withoutAUsername(s, credential) {
   log.debug("Entering withoutAUsername().");
-  const r = await s.b.go("POST", "/authn/login", form({
-    authn_id: hidden(s.screen.text, "authn_id"), action: "passkey",
-    passkey_credential: credential ? JSON.stringify(credential) : "" }));
+  // The ceremony's result to `POST …/passkey` (#571), or nothing — what the
+  // page's button sends where the browser ran no ceremony — read as the
+  // form's POST was: a 303 back to the request, or the refusal, its
+  // sentence the text.
+  const answer = await authnSignin.act(base, "/authn-api/pending/" +
+    encodeURIComponent(s.opened.id) + "/passkey",
+    { credential: credential ? JSON.stringify(credential) : "" },
+    { cookie: s.b.cookie, csrf: s.opened.csrf });
+  s.b.cookie = answer.cookie;
+  const r = { status: answer.next === "redirect" ? 303 : answer.status,
+              location: answer.location, answer: answer,
+              text: answer.errors.join(" ") ||
+                    JSON.stringify(answer.json) };
   log.debug("Leaving withoutAUsername().");
   return r;
 }
@@ -400,7 +567,9 @@ async function registerThePasskey(authenticator) {
   assert.ok(issued.status === 200 && url,
     "issuing an activation link answered " + issued.status + " " +
     String(issued.raw).slice(0, 300));
-  const b = browser();
+  // THE ACTIVATION PAGE IS THE STATIC PORTAL'S since #568: drawn for
+  // nobody from its `/account-api` operation (`portalPages()`).
+  const b = portalPages(base, null);
   const setup = await b.go("GET", url);
   const token = hidden(setup.text, "token");
   const armed = await b.go("POST", "/portal/activate",
@@ -442,26 +611,26 @@ async function signingInWithNoUsername(authenticator) {
   log.debug("Entering signingInWithNoUsername().");
   log.info("=== signing in with a passkey and no username ===");
   let s = await theSignInScreen();
-  check("THE SCREEN DRAWS A REAL SUBMIT BUTTON, THE AUTOFILL TOKEN AND THE " +
-        "CEREMONY SCRIPT, under script-src 'self' with frame-ancestors kept, " +
-        "and asks for user verification", function () {
-    assert.ok(/id="wa-passkey-go"[^>]*value="passkey"/.test(s.screen.text),
-      "no passkey button: " + String(s.screen.text).slice(0, 400));
-    assert.ok(/autocomplete="username webauthn"/.test(s.screen.text),
-      "the username field offers no passkeys.");
+  check("THE SCREEN OFFERS THE PASSKEY — its view says so, which the page " +
+        "draws as the button and the username field's autofill — its shell " +
+        "loads the surface's script under script-src 'self' with " +
+        "frame-ancestors kept, and the armed ceremony asks for user " +
+        "verification", function () {
+    assert.strictEqual(s.view.passkey, true,
+      "the view offers no passkey: " + JSON.stringify(s.view).slice(0, 400));
+    assert.ok(s.armed && s.challenge, "no ceremony could be armed.");
     // Under the realm's prefix: the service rewrites every root-relative
     // src on a realm's page as it is sent (`app.js`'s withRealmLinks()).
-    assert.ok(/<script src="(\/realm\/[^/"]+)?\/authn\/webauthn\.js">/
-      .test(s.screen.text), "the ceremony script is not loaded.");
+    assert.ok(/<script src="(\/realm\/[^/"]+)?\/authn\/signin\.js"/
+      .test(s.screen.text), "the surface's script is not loaded.");
     assert.ok(/script-src 'self'/.test(s.screen.csp) &&
               /frame-ancestors/.test(s.screen.csp), s.screen.csp);
-    assert.strictEqual(JSON.parse(attr(s.screen.text, "options",
-                                       "wa-passkey") || "{}")
-      .userVerification, "required");
+    assert.strictEqual((s.armed.options || {}).userVerification,
+                       "required");
   });
 
   let r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge", "wa-passkey")));
+    s.challenge));
   const session = await sessionOf(PERSON);
   check("A USERNAMELESS ASSERTION SIGNS ITS OWNER IN — the user handle named " +
         "the account — and the session records amr [\"hwk\",\"user\"] and " +
@@ -479,49 +648,56 @@ async function signingInWithNoUsername(authenticator) {
 
   s = await theSignInScreen();
   r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge", "wa-passkey"), { uv: false }));
+    s.challenge, { uv: false }));
   check("AN ASSERTION WITHOUT USER VERIFICATION IS REFUSED, whatever " +
         "webauthn.userVerification says", function () {
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/could not sign you in/.test(r.text),
       String(r.text).slice(0, 300));
   });
 
   s = await theSignInScreen();
   r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge", "wa-passkey"),
+    s.challenge,
     { handle: nodeCrypto.randomBytes(64).toString("base64url") }));
   check("a user handle nobody holds signs nobody in", function () {
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/could not sign you in/.test(r.text),
       String(r.text).slice(0, 300));
   });
 
   s = await theSignInScreen();
   r = await withoutAUsername(s, null);
-  check("THE REAL BUTTON WITH THE SCRIPT BLOCKED is told the ceremony needs " +
-        "JavaScript, rather than the page doing nothing", function () {
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+  check("THE PASSKEY OPERATION WITH NO CEREMONY'S RESULT is told the " +
+        "ceremony needs JavaScript, rather than being answered nothing",
+        function () {
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/needs JavaScript/.test(r.text), String(r.text).slice(0, 300));
   });
   log.debug("Leaving signingInWithNoUsername().");
 }
 
 // ---------------------------------------------------------------------------
-// G. OFF, which is the default.
+// G. ON BY DEFAULT (since 2026-10-10), then OFF in this realm.
 // ---------------------------------------------------------------------------
-async function offByDefault(authenticator) {
+async function offByDefault(authenticator, savePolicy) {
   log.debug("Entering offByDefault().");
-  log.info("=== the passkey policy's allowUsernameless off, its default " +
-           "===");
+  log.info("=== the passkey policy's allowUsernameless: on by default, " +
+           "then off ===");
+  const first = await theSignInScreen();
+  check("AT ITS DEFAULT THE SCREEN OFFERS THE PASSKEY", function () {
+    assert.strictEqual(first.view.passkey, true,
+      "the passkey is not offered at the default.");
+  });
+  await savePolicy(false);
   const s = await theSignInScreen();
   const r = await withoutAUsername(s, authenticator.assert(
-    attr(s.screen.text, "challenge") || "none"));
+    s.challenge || "none"));
   check("OFF, THE SCREEN DRAWS NO PASSKEY BUTTON AND THE DOOR REFUSES, " +
         "naming the setting", function () {
-    assert.ok(!/id="wa-passkey"/.test(s.screen.text),
-      "the passkey button is drawn with the setting off.");
-    assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual(s.view.passkey, false,
+      "the passkey is offered with the setting off.");
+    assert.strictEqual(r.answer.next, "refused", "it answered " + r.status);
     assert.ok(/allowUsernameless/.test(r.text),
       String(r.text).slice(0, 300));
   });
@@ -546,7 +722,9 @@ async function activatedWith(person, authenticator) {
               "";
   assert.ok(issued.status === 200 && url, "issuing " + person + "'s " +
     "activation link answered " + issued.status);
-  const b = browser();
+  // THE ACTIVATION PAGE IS THE STATIC PORTAL'S since #568: drawn for
+  // nobody from its `/account-api` operation (`portalPages()`).
+  const b = portalPages(base, null);
   const setup = await b.go("GET", url);
   const token = hidden(setup.text, "token");
   const armed = await b.go("POST", "/portal/activate",
@@ -602,13 +780,13 @@ async function syncedPasskeys(deviceBound) {
   const before = await codeCount("STS-AUTHN-0313");
   let s = await theSignInScreen();
   let r = await withoutAUsername(s, syncedKey.assert(
-    attr(s.screen.text, "challenge", "wa-passkey")));
+    s.challenge));
   const after = await codeCount("STS-AUTHN-0313");
   check("UNDER disallow THE SYNCED KEY REGISTERED BEFORE SIGNS NOBODY IN: " +
         "the screen says why, and an audit row carries STS-AUTHN-0313",
     function () {
-      assert.strictEqual(r.status, 200, "it answered " + r.status + " " +
-                         r.location);
+      assert.strictEqual(r.answer.next, "refused", "it answered " +
+                         r.status + " " + r.location);
       assert.ok(/device-bound passkeys/.test(r.text),
         String(r.text).slice(0, 400));
       assert.ok(after > before, "no new STS-AUTHN-0313 row (" + before +
@@ -616,7 +794,7 @@ async function syncedPasskeys(deviceBound) {
     });
   s = await theSignInScreen();
   r = await withoutAUsername(s, deviceBound.assert(
-    attr(s.screen.text, "challenge", "wa-passkey")));
+    s.challenge));
   check("while the device-bound key from A still signs in", function () {
     assert.ok(r.status === 302 || r.status === 303,
       "it answered " + r.status + " " + String(r.text).slice(0, 300));
@@ -644,11 +822,10 @@ async function test() {
   await fixtures.publicClient(api, CLIENT, [REDIRECT]);
   const authenticator = makeAuthenticator();
   await registerThePasskey(authenticator);
-  // OFF FIRST, which is the default; then on, in this realm alone.
-  await offByDefault(authenticator);
   // #527: the realm's own passkey policy, saved whole.
+  const savePolicy = async function (allow) {
   const set = await call("POST", "/policies/save-passkey-policy",
-                         { allowUsernameless: true,
+                         { allowUsernameless: allow,
                            securityKeyResidentKey: "required",
                            backupEligibility: "allow",
                            enforcePinLength: false, minPinLength: 4,
@@ -661,8 +838,13 @@ async function test() {
                            userDisplayName: "", rpNameExtras: "none",
                            credentialLabel: "", aggregateDevices: true });
   assert.ok(set.status === 200 && set.body && set.body.ok !== false,
-    "allowing usernameless sign-in in " + REALM + "'s passkey policy " +
-    "answered " + set.status + " " + String(set.raw).slice(0, 300));
+    "setting usernameless sign-in to " + allow + " in " + REALM + "'s " +
+    "passkey policy answered " + set.status + " " +
+    String(set.raw).slice(0, 300));
+  };
+  // ON BY DEFAULT, then OFF in this realm alone, then on again.
+  await offByDefault(authenticator, savePolicy);
+  await savePolicy(true);
   await signingInWithNoUsername(authenticator);
   await syncedPasskeys(authenticator);
   assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +

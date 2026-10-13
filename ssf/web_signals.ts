@@ -218,8 +218,10 @@ class SignalsPage {
       '<h2>' + t.html('consoleSignals.stream.heading') + '</h2>' +
       streamBlock +
 
-      '<h2 id="find-sigq">' + t.html('consoleSignals.events.heading') +
-      '</h2>' +
+      // A TAB PER SECTION (2026-10-12): the lead and this console's own
+      // stream, which is status, are Metadata (`WebPages.protocolTabs()`).
+      '<h2 id="find-sigq" data-tab="events">' +
+      t.html('consoleSignals.events.heading') + '</h2>' +
       search +
       nav.head +
       '<table><tr><th>' + t.html('consoleSignals.th.when') + '</th><th>' +
@@ -237,7 +239,8 @@ class SignalsPage {
       // `withCsrf()` on the way out, like every other form on this console —
       // rule 8's arrangement, so a page author does neither half.
       (json.total
-        ? '<h2>' + t.html('consoleSignals.clear.heading') + '</h2>' +
+        ? '<h2 data-tab="clear">' + t.html('consoleSignals.clear.heading') +
+          '</h2>' +
           kit.note(t.html('consoleSignals.clear.before') + '<a ' +
           'href="/admin/audit">' + t.html('consoleSignals.link.audit') +
           '</a>' + t.html('consoleSignals.clear.after')) +
@@ -256,6 +259,7 @@ class SignalsPage {
           '</button></div></form>'
         : '') +
 
+      '<div data-metadata>' +
       kit.note('<a href="/admin/signals?format=json">' +
       t.html('consoleSignals.foot.json') + '</a> &middot; ' +
       '<a href="/admin-api/signals">' + t.html('consoleSignals.foot.api') +
@@ -263,7 +267,7 @@ class SignalsPage {
       t.html('consoleSignals.foot.streams') + '</a> &middot; ' +
       '<a href="/portal/signals">' + t.html('consoleSignals.foot.portal') +
       '</a> &middot; <a href="/admin/audit">' +
-      t.html('consoleSignals.foot.audit') + '</a>');
+      t.html('consoleSignals.foot.audit') + '</a>') + '</div>';
 
     return inner;
   }

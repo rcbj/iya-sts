@@ -1,0 +1,12 @@
+{
+  "noRa": "尚無 RA 證書；第一次 GetCACert 或 PKIOperation 會簽發一個（{alg}）。",
+  "hRa": "RA 證書",
+  "raNote": "客戶端用來加密要求並驗證 CertRep 的證書。無論簽發 CA 是什麼都使用 RSA，因為 SCEP 的金鑰傳輸是 RSA；它是 SCEP 簽發 CA 的葉證書，在缺少、三十天內到期或不是 <code>scep.raKeyAlgorithm</code> 指定的大小時重新簽發。",
+  "reissueRa": "重新簽發 RA 證書",
+  "challengesNote": "一個挑戰只授權為一個項目、一個設定檔進行一次註冊，兌換它的人將以該項目的身分取得證書。它只在建立時顯示一次，並且只以摘要形式保存。",
+  "identifierPlaceholder": "用戶名稱或應用程式",
+  "hostNamesNote": "只有註冊在證書所屬項目上的 dNSName 或 iPAddress 才會被簽發。本服務從不透過連線名稱來證明對其的控制。",
+  "hEnrolled": "已註冊的證書",
+  "intro": "<strong>此信任領域的 SCEP（RFC 8894）。</strong>裝置透過 GetCACert 取得 RA 與 CA 證書，並傳送以 CMS 簽章與加密的 PKCS#10 要求，其中攜帶在下方或用戶入口網站上建立的挑戰密碼。",
+  "tileCertificates": "持有的證書"
+}

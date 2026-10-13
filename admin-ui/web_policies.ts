@@ -108,7 +108,10 @@ class PoliciesPage {
 
     // The links are markup a message cannot carry (#539): the words around
     // them are messages, spaces and punctuation included.
-    const inner = tiles +
+    // METADATA FIRST (2026-10-12): the tiles and the lead are a tab of their
+    // own ahead of the kinds, as on every Protocols and Directory page drawn
+    // as tabs.
+    const metadata = tiles +
 
       kit.note(t.html('consolePolicies.lead') +
       view.kinds.map(function (kind) {
@@ -118,11 +121,13 @@ class PoliciesPage {
       }).join(', ') + t.html('consolePolicies.notXacml') +
       '<a href="/admin/xacml/policies">' +
       t.html('consolePolicies.notXacmlLink') + '</a>' +
-      t.html('consolePolicies.notXacmlEnd')) +
+      t.html('consolePolicies.notXacmlEnd'));
 
-      kit.tabbedPanels('policytabs', panels);
-
-    return inner;
+    return kit.tabbedPanels('policytabs', [
+      { id: 'policies-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: metadata }
+    ].concat(panels));
   }
 
   /**

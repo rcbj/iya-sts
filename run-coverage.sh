@@ -481,6 +481,14 @@ else
     # catcher: the sections that read a delivered message are SKIPPED and
     # say so, and the rest still run.
     -e MAILPIT_API_URL=
+    # AND THE TEST PEER'S, THE FIFTH (#586): the compose file defaults
+    # `STS_TEST_PEER_URL=http://test-peer:9600` for a hand run beside the
+    # container, and `--no-deps` starts none. Emptied, run-report.js starts
+    # a peer of its own beside the service it starts (startTestPeer()): a
+    # child of the runner on a loopback port, its CA certificate in this
+    # run's directory where the service reads it — so the jobs that need a
+    # peer RUN here rather than being skipped.
+    -e STS_TEST_PEER_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.
@@ -520,6 +528,13 @@ else
     # sts_credential_signals' EAB key was refused "could not be sealed". The
     # `memory` mode sets this for the same service (tests/tools/modes.sh).
     -e STS_KEYS_SOURCE=generated
+    # THE UID OF PID 1 (2026-10-12): sts_spiffe_broker attests "pid 1, the
+    # service" and selects it by uid, 10001 by default — the service image's
+    # `sts` since #254. Here the service is a child of THIS container, which
+    # runs as root, so pid 1 is root's and the job's default named a uid it
+    # does not have: "the referenced pid 1 is not entitled to an SVID" in the
+    # 2026-10-11 coverage run.
+    -e STS_SPIFFE_BROKER_PID_UID=0
     # The bulk loads' sizes, set above; the compose file's own are 5000.
     -e "BULK_USERS=${BULK_USERS}"
     -e "BULK_GROUPS=${BULK_GROUPS}"

@@ -11,5 +11,7 @@
   "emailFactor.link": "M’envoyer un lien de connexion par courriel",
   "emailFactor.weakest": "<strong>Le courriel est le deuxième facteur le plus faible que propose ce service.</strong> Quiconque peut lire votre boîte de réception — souvent avec votre seul mot de passe de messagerie — peut terminer une connexion à votre place, et c’est pourquoi la NIST SP 800-63B-4 ne compte pas le courriel comme un authentificateur. Une application d’authentification ou une clé d’accès est préférable si vous en avez une ; elles vous sont demandées en premier.",
   "done.emailOn": "Le courriel est désormais votre deuxième facteur, après votre mot de passe.",
-  "done.emailOff": "Le courriel n’est plus un deuxième facteur pour vous."
+  "done.emailOff": "Le courriel n’est plus un deuxième facteur pour vous.",
+  "totp.scanHeading": "Balayez ceci avec votre application d’authentification",
+  "mfa.byHand": "Si vous ne pouvez pas balayer le code — le téléphone affiche cette page, l’application n’a pas de caméra, ou ce service est sur <code>localhost</code> et votre téléphone ne peut pas l’atteindre — ajoutez le compte à la main avec ces informations :"
 }

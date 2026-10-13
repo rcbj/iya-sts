@@ -56,8 +56,18 @@ an `ldapmodify`.
 | `GET /federation/frontchannel-logout/{id}` | the OpenID Connect `frontchannel_logout_uri` to register at the partner, with `frontchannel_logout_session_required` |
 | `POST /federation/signals/{id}` | where the partner pushes its Shared Signals (RFC 8935) when the relationship's stream is a push stream; given to the partner when the stream is created (#373) |
 | `GET /authn/select-idp` | the chooser drawn when an application names several usable partners |
+| `GET /federation/pages.js` | the script that draws `/federation` and what the login and linking paths say when they refuse (#580) |
 
-In a trust realm every path is under `/realm/{id}`. One path receives all five
+In a trust realm every path is under `/realm/{id}`.
+
+**`/federation`, and what `/federation/login/{id}` and
+`/federation/link/{handle}` say when they will not go on, run as a script in
+the browser** (since #580): each answers a small document, with the status it
+always had, that loads `/federation/pages.js`, which draws the page in the
+browser's language — a refusal's reason in English. **A browser with scripts
+blocked is told it needs them, and nothing else is drawn.** The assertion
+consumer service's answers, and the form that sends a person to a SAML
+partner, are unchanged. One path receives all five
 protocols, so there is exactly one URL to configure at the partner.
 
 ### This service as service provider
@@ -686,7 +696,7 @@ relationship refuses until it is filled.
   person leaving this service for a foreign identity provider is the moment a
   deliberate click is worth having, so federation adds no script to any page.
 * **Federated identities share the local namespace unless told otherwise.**
-  `federation.usernamePrefix` is empty so a mock pointed at a partner returns
+  `federation.usernamePrefix` is empty so a development service pointed at a partner returns
   familiar names; set it when the question is whether the two namespaces
   should meet.
 

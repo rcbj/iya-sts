@@ -1,0 +1,250 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "資料加密金鑰本身（#391）：每個領域、下列每種資料類別各一把，每把都在金鑰加密金鑰下包裝與解除包裝"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "信封加密：每個值都以資料加密金鑰加密，只有資料加密金鑰以金鑰加密金鑰加密。在此，一次包裝算作一次加密，一次解除包裝算作一次解密；程序對每把金鑰只解除包裝一次並持有它，因此無論密封了多少內容，這些數字都很小。"
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "本服務自己的簽署金鑰，每個信任領域一列——而且自 2026-09-12 起，同一列中也包含該領域的 OpenID4VCI 憑證請求加密金鑰"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "壽命比程序更長的私密金鑰。在產品模式下，這些金鑰只產生「一次」並在每次啟動時讀回，這正是讓昨天簽發的權杖今天仍能驗證的原因——也正是這一列不能以明文存放的原因。常駐於此程序中的是「密文」：`keys.plaintextRetention` 決定解密後的金鑰在使用後保留多久。"
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "憑證授權單位：服務 Root、每個 Intermediate，以及每個 Issuing CA"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "CA 私密金鑰，完全不會離開此程序。它們刻意放在「相同」的列系列中並使用相同的金鑰：`pki.js` 自己的存放區會成為*本服務把私密金鑰放在哪裡*的第二個答案，而第二個答案正是沒人記得要輪替的那一個。"
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "`/admin/pki` 簽發給應用程式的斷言簽署金鑰組——`oauthAssertionPrivateKey` 與 `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "直到 2026-09-10 之前，這是本服務中「最後」以明文儲存的私密金鑰資料。它在「靜態」時被密封，並為透過 `applications.js` 而來的讀取者開啟——因此 `/admin/applications` 仍會把營運者要取的 PEM 交給他，而 TCP 389 上的 `ldapsearch`、LDIF 檔案、資料庫列以及兩者的備份則只持有 `$aesgcm$…`。"
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "應用程式的 OAuth 用戶端秘密——`oauthClientSecret`，每個秘密一筆密封記錄（秘密、其 ID、到期時間與描述）"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "持有它的人即可以該用戶端身分通過驗證，它也是 `client_secret_jwt` 與 HS256 ID Token 的 HMAC 金鑰。自 2026-10-01 起以持久的金鑰加密金鑰進行靜態密封，為透過 `applications.js` 而來的讀取者開啟，並在產品模式下對 LDAP 讀取者隱藏。在此之前寫入的值會保持明文，直到該秘密下次被寫入。"
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "應用程式的 RFC 7592 註冊存取權杖——`appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "持有它的人可以讀取、變更或刪除該用戶端的註冊，而讀取會交回用戶端秘密。自 2026-10-01 起以持久的金鑰加密金鑰進行靜態密封，為 RFC 7592 端點以及透過 `applications.js` 而來的讀取者開啟。"
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "聯盟關係的用戶端秘密——`fedClientSecret`，本服務在夥伴權杖端點上的自有憑證"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "它會被「傳送」到別人的服務，因此必須可還原——密封而非雜湊。自 2026-10-01 起以持久的金鑰加密金鑰進行靜態密封；沒有任何頁面或 API 回覆會傳回它。"
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "每個目錄項目的完整屬性——人員、群組、應用程式、裝置、聯盟關係"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "rcbj 對 #391 的決定（phase 6）：目錄資料表的副本不是一份人員名單。DN 保持可讀，屬性「名稱」也是；查詢所比對的值則以帶金鑰的摘要保存在 blob 旁邊。本身已單獨密封的值（TOTP 秘密、Kerberos 金鑰）會在其中再次密封。檔案（ldif）存放區保存項目的方式，取決於檔案系統對它們的保護。"
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "產生的列被歸檔所用的「名稱」——通常就是憑證本身：工作階段 ID、SAML 成品、權杖 ID"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "工作階段 ID 就是 Cookie，而成品只要出示就能兌換，因此以明文存放的名稱在傾印中就是可用的憑證。自 #222 起，列以名稱的帶金鑰摘要尋找，名稱本身則被密封，只在還原或變更的讀取者需要時才開啟。"
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "已使用斷言記錄中的簽發者、斷言 ID、用戶端與主體——誰出示了哪份關於誰的 RFC 7523 或 RFC 7522 文件"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "它們在每個節點共用的資料表中指名人員與關係。自 #222 起密封；列仍以其摘要鍵尋找，主控台的文字搜尋則在記憶體中對最新的列進行。檔案（ldif）存放區保存它們的方式取決於檔案系統的保護：它會在金鑰存放區啟動之前將它們讀回。"
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "服務執行期間變更的秘密設定——目前為 `scim.digestPassword`，即每個 SCIM 使用者名稱共用的 HTTP Digest 密碼"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "標記為秘密的設定就是憑證，而已儲存的設定在其他方面是純 JSON。自 #222 起在寫下之處密封（`persistence/sealed_settings.js`）；執行中的組態、主控台與 API 看到它的方式與以往相同。"
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "某人的身分驗證查核——`stsIdaVerification`（OpenID Connect for Identity Assurance），其證據帶有證件號碼"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "不是憑證，而是任何備份都不應以可讀形式攜帶的個人資料。自 2026-10-01 起以持久的金鑰加密金鑰進行靜態密封——若有主單元則使用主單元的金鑰——並對每次 LDAP 讀取隱藏。"
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "GNAP 用戶端執行個體針對金鑰參照的共用秘密——`gnapSymmetricKey`（RFC 9635 section 7.1.1）"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "持有它的人可以「以」該用戶端執行個體的身分簽署 GNAP 請求：HMAC 金鑰同時是憑證的兩半。金鑰持久保存時以程序的金鑰加密金鑰進行靜態密封，為透過 `applications.js` 而來的讀取者開啟，並在產品模式下對 LDAP 讀取者隱藏。"
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "GNAP 資源伺服器的 macaroon 根金鑰——`gnapMacaroonKey`（RFC 9767 section 2.2）"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "macaroon 以其「根」金鑰驗證，而同一把金鑰也能產生 macaroon：持有它的人可以簽發該資源伺服器會接受的權杖。此金鑰依每個資源伺服器從領域秘密衍生，之所以寫入項目——經過密封——只是為了讓資源伺服器的營運者有地方取得它。"
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "秘密推送目的地的寫入憑證——`secretDestCredential`（#221）：本服務用來將服務帳戶輪替後的密碼寫入秘密管理員的金鑰、權杖或服務帳戶"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "持有它的人可以寫入其他系統讀取的密碼。金鑰持久保存時進行靜態密封，而且——不同於應用程式的簽署金鑰——也對每個讀取者「隱藏」：它只為使用它的推送而開啟，絕不會被 `/admin-api` 繪製、顯示或傳回。"
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "外送 SCIM 用戶端的憑證（#552）——`scimClientPassword`、`scimClientOAuthClientSecret` 與 `scimClientTlsPrivateKey`：本服務向遠端 SCIM 服務提供者或其權杖端點驗證身分所用的內容"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "持有它們的人可以在遠端身分提供者建立、變更與刪除帳戶。金鑰持久保存時進行靜態密封，並如同秘密目的地的憑證一樣對每個讀取者「隱藏」：只為使用它的請求而開啟。"
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "`/admin/pki` 簽發給「人員」的斷言簽署金鑰組——`stsAssertionPrivateKey`（2026-09-11），以及用於 RFC 7522 的 `stsSamlAssertionPrivateKey`（2026-09-13）"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "與上方應用程式的機制相同，刻意不另創新機制，唯一的差異是關於兩種持有者的事實：應用程式的私密金鑰會為透過 `applications.js` 而來的讀取者「開啟」，而沒有任何東西會透過會開啟人員金鑰的模組來繪製人員的項目——因此這把金鑰只由建立它的動作交出「一次」，之後在任何地方都是密文。另一個選擇是每次造訪都印出某人私密金鑰的主控台頁面。"
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "聯盟關係的加密私密金鑰（#168）——用來解密夥伴所加密之斷言或 ID Token 的金鑰，在 `fedEncryptionKey` 中每把金鑰一列"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "持有它的人可以讀取該夥伴加密給本服務的每個斷言——人員的識別碼與屬性，正是加密要讓瀏覽器看不到的東西。只要金鑰持久保存就進行靜態密封，並對每次 LDAP 搜尋、頁面與 `/admin-api` 回覆隱藏（包括密文），它們只攜帶憑證與公開金鑰。"
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "已儲存的 Kerberos 長期金鑰——目錄人員由其自身密碼衍生的金鑰（`stsKrb5Keys`），以及服務主體的隨機金鑰（`krb5ServiceKeys`）（2026-09-12）"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "「等同密碼」：Kerberos 長期金鑰就是密碼轉換後的結果，持有它的人無需知道密碼就能以該主體身分取得票證。因此只要金鑰加密金鑰比程序存活更久就會密封它，名稱與密碼雜湊的戳記會「一同」密封，使值無法移到另一個項目或在密碼變更後繼續保留，並且它會對每個頁面、每次 LDAP 搜尋與每個 `/admin-api` 回覆「隱藏」（包括密文）。服務主體的金鑰只會離開本服務一次，即其建立或輪替所交出的 keytab。"
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "每位註冊了驗證器應用程式之人的 RFC 6238 共用秘密——`stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "這是此目錄中唯一可被讀回的憑證。驗證代碼意味著要「計算」它，因此無法像 `userPassword` 那樣雜湊——而 `/admin/ldap/directory` 依設計會印出每個項目的每個屬性，因此若沒有密封，目錄傾印就會印出可用的第二因素。"
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "註冊第二因素時簽發的一組單次使用復原碼"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "以加密「而非雜湊」保存，原因是產品決策而非密碼學考量：人員可以在 `/portal/mfa` 讀回剩餘的代碼。**這在 2026-09-11 已被推翻，此列是為了在此之前寫入的代碼組而保留**——新的代碼組以 scrypt「雜湊」，完全不密封，因為雜湊不是秘密。「計數」位於密封的 blob 之外，因此每個回報*10 個中有 7 個未使用*的頁面都不必開啟它就能回報——即使是此程序無法解密的代碼組也一樣。"
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "此程序「產生」的一切——工作階段、權杖、授權碼、成品、Kerberos 主體、重放快取、計數器與稽核記錄"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "最新且數量最大的一類。它只適用於產品模式加 postgres，因為那是其中任何內容會持久保存的唯一組態：開發模式在每次啟動時重新產生簽署金鑰，因此還原的權杖無從驗證，而 `ldif` 存放區每次排清都寫入完整檔案，在兩種模式下都不保存其中任何內容。"
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "密碼——`userPassword`，以及其旁的啟用權杖"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "以「雜湊」而非加密保存，這是更強而不是更弱。scrypt 的 N 為 2^15，本服務中沒有任何東西能把它讀回——這就是規則：本服務「驗證」的秘密要雜湊，必須「出示」的秘密要加密。上方的兩種機制屬於第二類，並且說明了這一點。"
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "在「沒有」持久金鑰加密金鑰時的用戶端秘密、RFC 7592 註冊存取權杖與聯盟用戶端秘密"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "只在程序沒有持久金鑰加密金鑰時才以明文保存——開發模式，或開發容器上的產品模式領域——因為以短暫金鑰密封會留下重新啟動後無法開啟的憑證。有持久金鑰時三者都會密封：請參閱上方各自的列。"
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "每個領域的十一把後量子金鑰、TLS 伺服器憑證，以及 SPIFFE 授權單位"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "在任何模式下都「完全不持久保存」，因此沒有靜態內容需要密封。三者都在 `common/mode.js` 的 `NOT_YET` 中指名，而不是留待被人發現，因為*未儲存*與*未受保護*從外部看起來一樣，卻不是同一件事。"
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "本服務對哪些內容進行「靜態」加密、使用哪把金鑰、哪種演算法，以及在此程序中已發生了多少次。"
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "金鑰加密金鑰在啟動時、接聽程式繫結之前，從上方的提供者讀取。本服務從不產生它，也從不寫下它，而無法讀取它的服務「不會」啟動——它不會產生替代金鑰然後繼續運作，因為那會讓它曾簽發的每個權杖在別人的依賴方那裡悄悄地無法驗證。"
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "本服務處於開發模式，因此它持有的任何東西都不會比程序存活更久，金鑰加密金鑰是「短暫的」：每次執行時產生、從不寫下，只用於讓請求工作者集區在同一次執行中共用產生的列。以它密封目錄屬性會比明文「更糟」——項目在 `ldif` 與 `postgres` 存放區中會在重新啟動後存續，而金鑰不會，因此該值會變成永久的垃圾資料。這就是為什麼每個寫入點的檢查是 `keystore.persists()` 而不是 `keystore.sealed()`。"
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "AES-256-GCM，並刻意不用 CBC：GCM 是「經過驗證的」，因此被人竄改的密文會解密失敗，而不是產生一把略有不同的金鑰。解密成錯誤位元組的簽署金鑰會產生無人能驗證的簽章，而失敗會在依賴方以「簽章無效」的形式出現——與原因相距之遠無以復加。金鑰加密金鑰「從不加密任何值」（#391）：每個值都以資料加密金鑰加密——256 個隨機位元，每個領域每種資料類別一把——而金鑰加密金鑰包裝的是這些資料加密金鑰。程序對每把金鑰只解除包裝一次並持有它，因此存放在金鑰管理服務中的金鑰是按資料金鑰被詢問，而不是按值，輪替金鑰加密金鑰只需重新包裝少數幾把金鑰，而不必重新加密整個存放區。"
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "本服務只有一把金鑰加密金鑰，而不是每個信任領域一把；資料加密金鑰則是每個領域每種資料類別各一把（#391）。沒有任何資料加密金鑰在領域之間共用，因此一個領域的值絕不會以另一個領域的值所用的金鑰密封。但每把資料加密金鑰都以同一把金鑰加密金鑰包裝，因此在靜態時領域「不是」獨立的邊界：能讀取該金鑰的人就能解除包裝每個領域的資料金鑰，而輪替它會一次重新包裝所有領域的金鑰。"
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "不在上表中的一切在存放區中都是明文——目錄項目、群組、應用程式、領域與設定，而在開發模式下幾乎是全部。本服務只密封憑證與私密金鑰，別無其他，這是刻意的：欄位層級加密會讓明文留在預寫日誌中、排序溢出時的暫存檔中、pg_dump 中、複本上以及查詢記錄中，因此涵蓋整個存放區的那一層應位於資料庫「之下」，而不是之內。那一層屬於營運者——PGDATA 下的 LUKS 或加密的 ZFS 資料集、使用客戶管理金鑰的雲端磁碟，或具有 TDE 的 PostgreSQL 分支之一，因為社群版本沒有此功能。docs/encryption-at-rest.md 是本儲存庫對這些選項的說明。"
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "而且金鑰絕不能存放在它所保護的磁碟上。與存放區位於同一未加密磁碟區上的金鑰檔案，會把兩半都交給取走該磁碟區的人；這對開發堆疊來說沒問題，也是 `file` 提供者為預設值的原因，但這不是部署。keys.kekProvider 可改為選擇秘密存放區。"
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "在兩種作業都會通過的「單一」匯集點計數——`crypto.js` 的 `encryptWithDek()` 與 `decryptWithDek()`，資料加密金鑰自身的包裝與解除包裝則計在 `data-keys` 下——而不是在呼叫點計數，因為由呼叫點彙總的總數在有人新增另一個呼叫點時就會出錯，而且是「悄悄地」出錯。下方的細分依每個呼叫點傳入的「標籤」區分；未傳入標籤的呼叫者仍會被計數，歸在 `(unlabelled)` 下。這些是整個程序的數字，而不是每個領域的——金鑰加密金鑰屬於程序，因此依領域分割計數只是在計算請求恰好所在的領域——而且它們存放在記憶體中，因此重新啟動就會歸零。"
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "失敗幾乎總是因為金鑰加密金鑰錯誤——秘密被輪替了，或存放區在部署之間被搬移——它是獨立的數字，而不是併入解密次數中，因為九百次解密與九百次解密中有四百次失敗是截然不同的報告。接下來會發生什麼取決於正在讀取的內容：無法開啟的簽署金鑰在啟動時是「致命的」，工作階段列會被捨棄，而無法開啟的第二因素會讓該人無法登入，直到營運者清除該註冊——絕不會悄悄地消失，因為那會移除一項安全控制。"
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "此頁面或此文件中的任何地方都不會出現密封的值或開啟後的值。密封的值是私密金鑰、共用秘密或某人的復原碼，印出其中任一半都會交出密封所要保護的東西。/admin/ldap/directory 是可以看到 `$aesgcm$…` 信封的地方，其標題會說明那是目錄所看到的存放區。"
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "密封保護的是「寫下來的」內容，因此存放區保存了什麼，決定了上表中有多少內容是任何人能接觸到的。`memory` 存放區不寫入任何東西，因此其中沒有任何內容會在此程序結束後留存而被讀取。"
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "每個領域與資料類別各有一把資料加密金鑰，密封該類別的每個值；金鑰加密金鑰只包裝資料金鑰。「已輪替」的資料金鑰會被取代：它仍可開啟它所密封的內容，不再以它密封新內容，重新加密工作會重新密封它所密封的內容，然後將其銷毀。「衍生」金鑰在沒有任何東西會比程序存活更久時，每次執行由金鑰加密金鑰產生，從不儲存也不輪替。"
+  }
+}

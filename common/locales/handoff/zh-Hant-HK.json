@@ -1,0 +1,11 @@
+{
+  "common.autopost": "此表單由 <code>{script}</code> 自動提交。它是獨立的資源，因為本服務在每個回應上都設定 <code>script-src 'none'</code>，而本頁將其放寬為 <code>'self'</code>——內嵌腳本不會執行，只有按鈕能發揮作用。停用腳本時，按鈕就是唯一的機制。",
+  "saml2.slo.nowhere": "無處傳送 <code>{element}</code>：<code>{sp}</code> 的應用程式項目上沒有 <code>samlSingleLogoutService</code>，<code>saml2.defaultSingleLogoutService</code> 為空，尚未為其匯入元數據，本服務也從未見過它的判斷提示取用者服務 URL。LogoutRequest 本身不攜帶傳回地址——只有服務提供者的元數據才有。",
+  "saml2.slo.fixBefore": "請匯入其元數據，或在以下位置設定地址：",
+  "federation.continueTo.note": "本頁沒有任何腳本，也不會自動提交。本服務中有五個頁面確實會自動提交，且各有其理由；本頁不會，因為您正要離開本服務前往外部身分提供者，而這正是值得您刻意點按一下的時刻。",
+  "federation.signedIn.usernameHere": "此處的用戶名稱",
+  "federation.signedIn.noAttributes": "合作夥伴沒有傳送任何屬性，因此該項目只包含用戶名稱。",
+  "federation.slo.noScript": "本頁沒有任何腳本。LogoutResponse 應由合作夥伴接收，本服務會依該關係指定的繫結（<code>fedSloBinding</code>）傳送它。",
+  "federation.slo.confirm.note": "依照其規格，WS-Federation 的登出要求並不簽章，因此任何頁面都能發出。正因如此，本服務會先詢問而不是直接執行：在此瀏覽器中按下此按鈕之前，什麼都不會結束。本頁沒有任何腳本。",
+  "federation.partners.note": "您是透過這些身分提供者登入此處的，您在那裡的工作階段仍然有效。每一項都是連結或表單，而不是自動重新導向：本頁不執行任何腳本，前往合作夥伴需要您刻意點按。"
+}

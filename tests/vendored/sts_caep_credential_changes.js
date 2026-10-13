@@ -29,6 +29,8 @@
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -141,6 +143,8 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -223,14 +227,13 @@ function atClient(r, redirect) {
 
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, with this
+  // browser's jar: the answer is read as the form's 303 was.
+  const posted = await authnSignin.signInWithJar(base + R, location,
+    { action: "login", username: who, password: PASSWORD }, b.jar,
+    { headers: { "User-Agent": AGENT } });
+  assert.ok(posted.answer.view, "the sign-in screen: " +
+            posted.answer.status + " " + JSON.stringify(posted.answer.json));
   log.debug("Leaving signIn().");
   return posted;
 }
@@ -416,12 +419,11 @@ async function test() {
     code_challenge: nodeCrypto.createHash("sha256").update("v".repeat(43))
       .digest("base64url"), code_challenge_method: "S256" };
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
-  const page = await b.go("GET", r.location);
-  const fields = hiddenFields(page.text);
-  fields.username = ALICE;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), with this browser's User-Agent
+  // on every request: the session's fp_ua is the act's.
+  const posted = await authnSignin.signInWithJar(base + R, r.location,
+    { action: "login", username: ALICE, password: PASSWORD }, b.jar,
+    { headers: { "User-Agent": AGENT } });
   r = await b.go("GET", posted.location);
   const code = r.location ? new URL(r.location).searchParams.get("code") : "";
   check("the sign-in reaches the client with a code", function () {

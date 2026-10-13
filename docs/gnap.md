@@ -27,7 +27,7 @@ be continued, be modified onto different access, and be revoked.
        │  POST /gnap/continue/{grant} ───▶│                                  │
        │  ◀── access_token                │                                  │
        │                                  │                                  │
-       │  GET /gnap/rs/resource  Authorization: GNAP <token>  (signed)       │
+       │  GET <resource server>  Authorization: GNAP <token>  (signed)       │
 ```
 
 ## Endpoints
@@ -41,8 +41,11 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/token/{handle}` | POST · DELETE | rotate, including client key rotation · revoke (section 6) |
 | `/gnap/interact/{id}` | GET | the redirect interaction start (4.1.1) |
 | `/gnap/app/{id}` | GET | the app interaction start (4.1.4) |
-| `/gnap/code` | GET · POST | user code entry, and `user_code_uri` (4.1.2, 4.1.3) |
-| `/gnap/approve/{id}` | GET · POST | the resource owner's approval page |
+| `/gnap/code` | GET | user code entry, and `user_code_uri` (4.1.2, 4.1.3) |
+| `/gnap/approve/{id}` | GET | the resource owner's approval page |
+| `/gnap-api/code` | GET · POST | the user code page's API: the code is sent here |
+| `/gnap-api/approve/{id}` | GET · POST | the approval page's API: what it asks, and the answer |
+| `/gnap/interaction.js`, `/gnap-api` | GET | the interaction pages' script, and the index of their API |
 | `/.well-known/gnap-as-rs` | GET | resource server discovery (RFC 9767 section 3.1) |
 | `/gnap/introspect` | POST | token introspection (RFC 9767 section 3.3) |
 | `/gnap/resource` | POST | resource set registration (RFC 9767 section 3.4) |
@@ -50,10 +53,21 @@ be continued, be modified onto different access, and be revoked.
 | `/gnap/zcap/controller` | GET | the controller document a zcap token's root capability names |
 | `/gnap/biscuit/revocations` | GET | the revocation identifiers of revoked biscuit tokens (this service's own; see [revocation](#seeing-a-revocation-without-introspection)) |
 | `/status-lists/access-tokens` | GET | the realm's access-token status list, shared with OAuth (see [revocation](#seeing-a-revocation-without-introspection)) |
-| `/gnap/rs/resource` | GET · POST | a demonstration resource server |
-| `/gnap/rs/spend` | POST | the demonstration resource server's operation that spends against a right's [limits](#limits) |
 
 In a trust realm every path is under `/realm/{id}`.
+
+**The pages a person reads — the user code page, the approval page, and what
+is said after a decision or a refusal — run as a script in the browser**
+(since #578): `/gnap/code` and `/gnap/approve/{id}` answer a small document
+that loads `/gnap/interaction.js`, which draws the page in the browser's
+language from `/gnap-api` and sends the person's answer there. **A browser
+with scripts blocked is told it needs them, and nothing else is drawn.** What
+a client instance sees is unchanged: a start link's redirect to the approval
+page, the redirect back to its finish URI with `hash` and `interact_ref` —
+the browser goes to the same address — or the push. `/gnap-api` takes JSON
+from a page of this service only (its `Origin`, and an `X-CSRF-Token` bound
+to the browser's `sts_session` cookie); it is not an API for a client
+instance.
 
 ## What is supported
 
@@ -245,13 +259,24 @@ created that way: an entry made on first sight is not a registration (#496,
 **A right's locations must name a registered resource server in product
 mode** (#505). Each location of each access right must be at or under the
 `gnapResourceServerUri` of a registered resource server, be one of this
-service's own resource servers (the demonstration resource server at
-`/gnap/rs/resource`, the default resource indicator, `/admin-api`), or name
+service's own resource servers (the default resource indicator,
+`/admin-api`, `/account-api`), or name
 a registered application by its audience, permission base URI, `client_id`
 or identifier. Otherwise the request is refused `invalid_request` (400,
 `STS-GNAP-0903`) at creation, modification and derivation alike — the right
 is not quietly left out of the token's audience, as it is in development
 mode.
+
+**An access token must be for a resource server, in every mode** (#593).
+The rights in a token request must name at least one: a reference a resource
+server registered, a location at or under a resource server's
+`gnapResourceServerUri`, or a type a resource server declares — or this
+service's own Shared Signals transmitter, by `ssf:read`, `ssf:write` or a
+right of type `ssf`. A request whose rights name none is refused
+`invalid_request` (400, `STS-GNAP-0904`) before anybody is asked to approve.
+There is no default audience: until #593 such a token was audienced to a
+demonstration resource server at `/gnap/rs/resource`, which has been
+removed.
 
 The two sealed attributes are encrypted under the process key-encryption key
 whenever keys persist — see [encryption at rest](encryption-at-rest.md).
@@ -265,7 +290,7 @@ for one and requires none. How that certificate is trusted is
 
 | Model | What is required | Default in |
 |---|---|---|
-| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
+| `pki` (section 11.4) | the certificate chains to the client truststore (this realm's TLS client authority, or an anchor installed at `/admin/tls/trust`) **and** is bound to the client's application entry: issued to it by this realm, or carrying the one RFC 8705 subject parameter the entry registers (`oauthTlsClientAuthSubjectDn` or an `oauthTlsClientAuthSan*` attribute) | product (`auto`) |
 | `pinned` (section 7.3.2) | the certificate is the one the key names, by thumbprint or public key; self-signed is allowed and no chain is built | development (`auto`) |
 
 **A revoked certificate is refused in both models**, under
@@ -554,15 +579,12 @@ depend on this one for every operation. A resource server should:
 5. reset the totals at each interval boundary;
 6. give a spend back when the operation then fails.
 
-`POST /gnap/rs/spend` is the reference. It needs a token granting the action
-`spend` on `urn:iya-sts:gnap:demo` and takes
-`{ "amount": "12.50", "currency": "EUR", "receiver": "bob" }` (each
-optional; `"simulateFailure": true` makes the operation fail after the spend
-so you can see it refunded). It answers the totals and what remains for the
-period, `403` past a limit (`STS-GNAP-0870`), outside the window or interval
-(`0871`), for another receiver (`0872`) or currency (`0873`), and keeps the
-totals in one store every node shares (`sts_cluster_budgets` on postgres),
-so a cluster spends one budget. A right with no limits is spent unaccounted.
+`gnap/gnap_spend.ts` in this repository is the reference: it refuses past a
+limit (`STS-GNAP-0870`), outside the window or interval (`0871`), for another
+receiver (`0872`) or currency (`0873`), and keeps the totals in one store
+every node shares (`sts_cluster_budgets` on postgres), so a cluster spends one
+budget. A right with no limits is spent unaccounted. The demonstration
+operation that exposed it, `POST /gnap/rs/spend`, was removed in #593.
 
 ## The resource owner
 
@@ -840,7 +862,6 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.pushTimeoutMs` | `STS_GNAP_PUSH_TIMEOUT_MS` | `5000` | yes | How long a push finish may take. |
 | `gnap.jweEnc` | `STS_GNAP_JWE_ENC` | `A256GCM` | yes | The `enc` of a `jwt-encrypted` token encrypted to a resource server's own key; one encrypted to this server is always `dir` with `A256GCM`. |
 | `gnap.accessTokenCertificateHeader` | `STS_GNAP_ACCESS_TOKEN_CERTIFICATE_HEADER` | `x5u` | yes | Whether a `jwt-signed` or `jwt-encrypted` token's JWS names its signing certificate chain (`x5u`, `x5c`, `both`, `none`); see [PKI](pki.md#a-signed-token-names-its-certificate-chain). |
-| `gnap.demoResourceServer` | `STS_GNAP_DEMO_RESOURCE_SERVER` | `true` | yes | Runs `/gnap/rs/resource`, which judges a token in any of the five formats and answers the RS-first challenge. |
 | `gnap.ownerLookupCacheS` | `STS_GNAP_OWNER_LOOKUP_CACHE_S` | `60` | yes | How long the owner a resource server's gnapOwnerLookupUri named for an identifier is held before it is asked again (#432 phase 5): a grant asks at its request, on its approval page and at issue. A failed lookup is never held. 0 asks every time; a longer one keeps a former owner able to approve for that long after the resource server says otherwise. |
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |

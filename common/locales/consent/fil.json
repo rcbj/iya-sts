@@ -1,5 +1,5 @@
 {
-  "title": "Payagan ang access? — mock na authorization server",
+  "title": "Payagan ang access? — authorization server",
   "heading": "Payagan ang access?",
   "signedInAs": "Naka-sign in bilang <code>{username}</code> sa <code>{base}</code>",
   "asking": "Humihingi ang <strong>{client}</strong> ng access para sa iyo.",

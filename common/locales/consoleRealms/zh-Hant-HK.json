@@ -1,0 +1,8 @@
+{
+  "switchedOnNone": "<strong>信任領域已開啟但尚未定義任何領域，這是本服務的正常狀態，無須修正。</strong><code>realms.enabled</code> 為 <code>true</code>；在領域存在之前此功能不起任何作用，因為內建的 <code>default</code> 領域前置詞為空，它就是本服務。這是一種特性而非巧合——未定義領域的服務與領域出現之前的行為完全相同，因此所有早於領域的客戶端、容器和測試都能無須變更地繼續運作。<strong>在下方定義一個</strong>，它的前置詞會立即開始回應：本主控台的每個頁面上都會出現切換器，<code>GET /realms</code> 也會開始回報 <code>active: true</code>。",
+  "domainNote": "<strong>網域</strong>——<code>iyasec.io</code>、<code>dev.iyasec.io</code>——是該領域所產生之每個名稱的根：它的目錄是位於該網域 RFC 2247 對應處的獨立樹狀結構（<code>iyasec.io</code> 即 <code>dc=iyasec,dc=io</code>），它的 Kerberos 領域是大寫的網域，它的 SPIFFE 信任網域就是該網域，它的身分識別提供者自稱 <code>urn:&lt;domain&gt;:idp</code>。它不是存取該領域的地址——簽發者和每個 URL 仍然來自請求抵達的主機。兩個領域不能共用一個網域；一個位於另一個之內是允許的，且是獨立的樹狀結構。<strong>領域建立後網域即固定。</strong>留空時為 <code>&lt;id&gt;.{defaultDomain}</code>。",
+  "separatedLead": "領域分隔的是本服務簽發的內容，以及簽發過程中持有的一切——金鑰、工作階段、授權碼、權杖、憑證要約、成品、統計數據和稽核記錄——而且由於每個領域都有自己的目錄，其中的人員、群組、應用程式和原則也是分隔的。路徑中沒有前置詞之通訊端上的協定家族以其他方式區分，少數東西屬於處理程序並為共用。此表是完整清單，<code>GET /realms</code> 也會向無法讀取主控台的客戶端提供相同的答案。",
+  "notPersistedHead": "<strong>此處理程序中的任何內容都不會持久保存。</strong>領域保存在記憶體中，隨處理程序一起消失，它們簽章所用的金鑰也一樣。如果希望它們恢復，請在啟動您堆疊的腳本中透過 <code>POST /admin-api/realms</code> 定義它們——或者開啟",
+  "domainDetail": "<code>{domain}</code>{builtin, select, yes {，來自 <code>global.domain</code>，在以其他值重新啟動之前保持固定} other {，自領域建立以來保持固定}}。它的目錄是位於 <code>{baseDn}</code> 的樹狀結構，是共用 LDAP 通訊端上的獨立命名內容；它產生的名稱——Kerberos 領域、SPIFFE 信任網域、實體 ID、開發模式下指派給人員的地址——都由此建構；建立時預先產生的那些列在下方的設定中。",
+  "removeNote": "<strong>它持有的一切都會隨之移除</strong>——工作階段、授權碼、權杖、憑證要約、服務提供者、統計數據、稽核記錄和簽章金鑰。這是刻意的，而不是追求徹底：如果以相同 ID 重新建立的領域繼承了上一個領域的工作階段，那將是重新建立的領域可能做出最令人意外的事。共用目錄中不會移除任何內容，因為其中沒有任何內容屬於某個領域。"
+}

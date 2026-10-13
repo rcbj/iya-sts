@@ -38,7 +38,7 @@
   "specs.heading": "Spécifications implémentées",
   "specs.thSpec": "Spécification",
   "specs.thWhere": "Publiée par",
-  "specs.thCoverage": "Couverture dans ce simulacre",
+  "specs.thCoverage": "Couverture dans ce service",
   "machineReadable": "Lisible par machine : <code>{base}/admin/sts-metadata?format=json</code>, ce que le bouton en haut vous remet sous forme de fichier. Il est derrière la barrière de la console comme la page ; un programme qui le récupère se connecte donc d’abord à <code>/authn/login</code>, ou lit le même service via <code>/admin-api</code>, qui n’est pas protégé par la barrière. Ce document n’est pas un document de découverte défini par une spécification &mdash; pour ceux-là, voir <code>/.well-known/openid-configuration</code>, <code>/.well-known/oauth-authorization-server</code>, <code>/.well-known/openid-credential-issuer</code>, <code>/.well-known/jwt-vc-issuer</code>, <code>/.well-known/did.json</code> et <code>/.well-known/did-configuration.json</code>.",
   "reason.only": "{method} uniquement",
   "reason.noGet": "pas de GET ({methods})",

@@ -1014,6 +1014,14 @@ const affinities = {};
 affinities[PROTOCOL_POOL] = new Map();
 affinities[SURFACE_POOL] = new Map();
 
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const AFFINITY_SENTENCES = Object.freeze({
+  lifetime: 'No expiry: forgotten when its worker exits; the oldest goes ' +
+    'first when a pool holds {{max}}. Front process only.'
+});
+
 // Described to `/admin/caches` (#74, rule 3ap), one row per pin across both
 // pools. Only the FRONT process fills these, so a request worker drawing the
 // page lists none. Keys are session ids and flow values, shown digested.
@@ -1031,9 +1039,13 @@ const affinityCount = cacheRegistry.register({
   },
   bound: 'Enforced: 5000 per pool, the oldest dropped; a dropped pin is ' +
     'simply routed afresh.',
+  sentences: AFFINITY_SENTENCES,
   lifetime: function () {
-    return 'No expiry: forgotten when its worker exits; the oldest goes ' +
-      'first when a pool holds ' + AFFINITY_MAX + '. Front process only.';
+    // Lazily: this module is loaded long before what server_prose.ts
+    // requires.
+    const serverProse = require('./server_prose');
+    return serverProse.fill(AFFINITY_SENTENCES.lifetime,
+                            { max: AFFINITY_MAX });
   },
   entries: function () {
     const out = [];
@@ -1798,8 +1810,15 @@ function poolFor(url) {
 // **AND NODE HEALTH'S (#329, 2026-09-28)**, for the same reason: it lists
 // every process of the node, and only the front process knows the workers and
 // can ask them. A worker drawing it would list itself alone.
+//
+// **AND MONITORING → TLS CONNECTION'S (#597, 2026-10-12)**, `/tls`'s own
+// argument moved with the view `GET /tls` and `GET /tls/forwarded` drew:
+// what the SERVER saw of the connection the request arrived on. Answered
+// by a worker it would describe the unix socket from the front process.
 // ---------------------------------------------------------------------------
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
+                          '/admin/tls-connection',
+                          '/admin-api/tls-connection',
                           '/admin/debugger', '/admin-api/debugger',
                           '/admin/spiffe/brokers',
                           '/admin-api/spiffe/brokers',
@@ -5555,8 +5574,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
 // Everything above this line is about the express app, and it would be a
 // mistake to read the pool as being about HTTP. **The front process owns
 // every listener family and only the main port's HTTP is dispatched as
-// requests**: the Kerberos KDC on TCP and UDP 88, the Kerberos service on
-// 8888, the LDAP directory on 389 and 636, and SPIFFE's gRPC surfaces are the
+// requests**: the Kerberos KDC on TCP and UDP 88 (and the Kerberos service
+// on 8888, until #595 moved it to the development companion), the LDAP
+// directory on 389 and 636, and SPIFFE's gRPC surfaces are the
 // others that carry protocol work (the debugger listener and the plain-HTTP
 // PKI listener are HTTP too, and are not dispatched). The work those do has
 // exactly the same reason to leave the front process as a `/scim/v2` POST

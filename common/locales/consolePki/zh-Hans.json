@@ -37,7 +37,7 @@
   "ianTip": "颁发者的备用名称。语法与 subjectAltName 相同。",
   "ianCriticalTip": "通常不应为关键扩展。",
   "ianSyntax": "与上面的 subjectAltName 语法相同。",
-  "cdpTip": "获取可吊销此证书的 CRL 的位置。请注意，本服务不发布任何 CRL：此扩展是你声明的一个 URL，而不是此模拟服务会兑现的承诺。",
+  "cdpTip": "获取可吊销此证书的 CRL 的位置。请注意，本服务不发布任何 CRL：此扩展是你声明的一个 URL，而不是本服务会兑现的承诺。",
   "rarelyCritical": "很少设为关键扩展。",
   "urlsPerLine": "URL，每行一个",
   "cdpUrlsTip": "可吊销此证书的 CRL 的发布位置。",

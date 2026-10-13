@@ -113,7 +113,11 @@ class StsMetadataPage {
              { rows: rows.length, protocols: json.protocols.length,
                specs: json.specifications.length }) + '</span></p>';
 
-    html += '<h2 id="protocols">' +
+    // AS TABS (2026-10-12): the protocols, the named authorization servers,
+    // every endpoint (its groups as headings inside the one tab) and the
+    // specifications; the lead, the download and the drift report are
+    // Metadata.
+    html += '<h2 id="protocols" data-tab="protocols">' +
       t.html('consoleStsMetadata.protocols.heading') + '</h2>' +
       '<p class="lead">' + t.html('consoleStsMetadata.protocols.lead') +
       '</p>' +
@@ -138,8 +142,13 @@ class StsMetadataPage {
           ' &middot; ' + specs + '</div></div>';
       }).join('') + '</div>';
 
-    html += '<p class="lead">' + t.html('consoleStsMetadata.testDouble') +
-      '</p>';
+    // Only where the document says so: `testDouble` follows the mode
+    // (`mode.describesItselfAsTestDouble()`), and a product service, which
+    // checks passwords and validates tokens, is not one.
+    if (json.testDouble) {
+      html += '<p class="lead">' + t.html('consoleStsMetadata.testDouble') +
+        '</p>';
+    }
 
     // -----------------------------------------------------------------------
     // THE NAMED AUTHORIZATION SERVERS, which this page cannot read off the
@@ -159,7 +168,8 @@ class StsMetadataPage {
     // -----------------------------------------------------------------------
     const namedServers = json.namedServers;
     if (namedServers.length) {
-      html += '<h2>' + t.html('consoleStsMetadata.as.heading') + '</h2>' +
+      html += '<h2 data-tab="servers">' +
+        t.html('consoleStsMetadata.as.heading') + '</h2>' +
         '<p class="lead">' + t.html('consoleStsMetadata.as.lead',
           { n: namedServers.length + 1 }) +
         '</p><table><thead><tr><th class="p">' +
@@ -218,7 +228,8 @@ class StsMetadataPage {
       // clicked open to be read is a report somebody can close and forget. It
       // is also built across several statements rather than as one
       // expression, so it could not go through kit.warn() as it stands.
-      html += '<div class="warn"><strong>This page is out of step with the ' +
+      html += '<div class="warn" data-metadata><strong>This page is out of ' +
+        'step with the ' +
               'router.</strong><ul>';
       if (json.undocumentedPaths.length) {
         html += '<li>Registered but not described here: ' +
@@ -267,14 +278,18 @@ class StsMetadataPage {
       }
       html += '</ul></div>';
     } else {
-      html += '<div class="ok">' + t.html('consoleStsMetadata.inStep',
+      html += '<div class="ok" data-metadata>' +
+        t.html('consoleStsMetadata.inStep',
         { rows: rows.length, protocols: json.protocols.length }) + '</div>';
     }
 
+    // One tab for every group, each group a heading inside it.
+    html += '<h2 data-tab="endpoints">' + t.html('consolePages.endpoints') +
+      '</h2>';
     StsMetadataPage.groupsOf(rows, json.groupOrder).forEach(function (group) {
-      html += '<h2 id="' + esc(StsMetadataPage.groupAnchor(group)) + '">' +
+      html += '<h3 id="' + esc(StsMetadataPage.groupAnchor(group)) + '">' +
         esc(group) +
-        '</h2><table><thead><tr><th class="p">' +
+        '</h3><table><thead><tr><th class="p">' +
         t.html('consoleStsMetadata.th.path') + '</th><th>' +
         t.html('consoleStsMetadata.th.methods') + '</th><th ' +
         'class="n">' + t.html('consoleStsMetadata.th.name') + '</th><th>' +
@@ -310,7 +325,7 @@ class StsMetadataPage {
       html += '</tbody></table>';
     });
 
-    html += '<h2 id="specifications">' +
+    html += '<h2 id="specifications" data-tab="specifications">' +
       t.html('consoleStsMetadata.specs.heading') + '</h2>' +
       '<table><thead><tr><th class="n">' +
       t.html('consoleStsMetadata.specs.thSpec') + '</th>' +
@@ -327,8 +342,9 @@ class StsMetadataPage {
     });
     html += '</tbody></table>';
 
-    html += kit.note(t.html('consoleStsMetadata.machineReadable',
-                            { base: base }));
+    html += '<div data-metadata>' +
+      kit.note(t.html('consoleStsMetadata.machineReadable',
+                      { base: base })) + '</div>';
     return html;
   }
 

@@ -55,6 +55,8 @@ function childMain() {
   const ROOT = process.env.WSI_ROOT;
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
+  // The sign-in screen over `/authn-api` since #571.
+  const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
   walletKit.boot().then(async function (w) {
     try {
@@ -231,42 +233,52 @@ function childMain() {
     };
     const passwordStep = async function (who, username, application) {
       const id = w.pendingSignIn({ begin: { application: application } });
-      return w.request('POST', '/authn/login', {
-        browser: who,
-        form: { authn_id: id, username: username, password: 'anything',
-                action: 'login' } });
+      // Over `/authn-api` since #571, and the page the answer names.
+      return authnScreen.follow({ port: w.port, jar: who.cookies,
+        at: '/authn/login?authn=' + id,
+        fields: { action: 'login', username: username,
+                  password: 'anything' } });
+    };
+    // An act on a step a page opened (#572), in `who`'s jar.
+    const stepAct = function (who, page, op, body) {
+      return authnScreen.stepAct({ port: w.port, jar: who.cookies,
+                                   opened: page, op: op, body: body || {} });
+    };
+    // The step an act's answer names, opened as the sign-in surface does.
+    const openStep = function (who, answer) {
+      return authnScreen.openStep({ port: w.port, jar: who.cookies,
+                                    at: answer.location });
     };
     const dana = await withApp('mfa-dana');
     await make('mfa-keys-only');
     await add('mfa-keys-only', 'securityKey');
     const danaWho = w.browser();
     const asked = await passwordStep(danaWho, 'mfa-dana', 'mfa-keys-only');
-    const danaStep = /name="mfa_id" value="([^"]+)"/.exec(asked.text);
-    note(!!dana && asked.status === 200 &&
-         /id="totp-submit"/.test(asked.text) && !!danaStep &&
+    note(!!dana && asked.status === 200 && asked.view &&
+         asked.view.page === 'totp' && !!asked.id &&
          !w.sessionOf(danaWho),
          'D. somebody who holds only an authenticator app is asked for ITS ' +
          'code first, though the application does not allow it — the proof ' +
          'before any enrolment', asked.status);
-    const proved = await w.request('POST', '/authn/totp', {
-      browser: danaWho,
-      form: { mfa_id: danaStep ? danaStep[1] : '',
-              code: await nextCode(dana) } });
-    const setupId = /name="mfa_id" value="([^"]+)"/.exec(proved.text);
-    note(proved.status === 200 && /id="mfa-setup-webauthn"/.test(proved.text) &&
-         !/id="mfa-setup-totp"/.test(proved.text) &&
-         /does not accept the second factor you just gave/.test(proved.text) &&
-         !w.sessionOf(danaWho),
+    const provedAnswer = await stepAct(danaWho, asked, 'totp',
+                                       { code: await nextCode(dana) });
+    const proved = provedAnswer.next === 'mfa'
+      ? await openStep(danaWho, provedAnswer) : provedAnswer;
+    const setup = (proved.view && proved.view.setup) || {};
+    note(provedAnswer.step === 'enrol' && proved.status === 200 &&
+         setup.offered && setup.offered.webauthn && !setup.offered.totp &&
+         setup.proved === true && !w.sessionOf(danaWho),
          'D. and then offered a passkey to set up — only what the ' +
          'application allows, and still no session', proved.status);
-    const chosen = await w.request('POST', '/authn/mfa-setup', {
-      browser: danaWho,
-      form: { mfa_id: setupId ? setupId[1] : '', action: 'webauthn' } });
-    note(chosen.status === 200 && chosen.code !== 'STS-AUTHN-0175' &&
-         /Create a passkey/.test(chosen.text),
+    const chosenAnswer = await stepAct(danaWho, proved, 'setup/webauthn');
+    const chosen = chosenAnswer.next === 'mfa'
+      ? await openStep(danaWho, chosenAnswer) : chosenAnswer;
+    note(chosenAnswer.step === 'webauthn' && chosen.status === 200 &&
+         chosen.view && chosen.view.webauthn &&
+         chosen.view.webauthn.mode === 'create',
          'D. the set-up screen lets the proved person through to the ' +
          'passkey registration, though they hold a factor',
-         chosen.status + ' ' + chosen.code);
+         chosenAnswer.apiStatus + ' ' + String(chosen.text).slice(0, 200));
 
     // --- E. Enrolment narrowed --------------------------------------------
     await w.inRealm(function () {
@@ -278,8 +290,10 @@ function childMain() {
     await add('mfa-apps-only', 'totp');
     const erinWho = w.browser();
     const enrol = await passwordStep(erinWho, 'mfa-erin', 'mfa-apps-only');
-    note(enrol.status === 200 && /id="mfa-setup-totp"/.test(enrol.text) &&
-         !/id="mfa-setup-webauthn"/.test(enrol.text),
+    const offeredE = (enrol.view && enrol.view.setup &&
+                      enrol.view.setup.offered) || {};
+    note(enrol.status === 200 && offeredE.totp === true &&
+         offeredE.webauthn === false,
          'E. a second factor required of somebody who holds none offers ' +
          'only what the application allows: an authenticator app, no ' +
          'passkey', enrol.status);
@@ -293,10 +307,7 @@ function childMain() {
     const fay = await withApp('mfa-fay');
     const fayWho = w.browser();
     const fayAsked = await passwordStep(fayWho, 'mfa-fay', '');
-    const fayStep = /name="mfa_id" value="([^"]+)"/.exec(fayAsked.text);
-    await w.request('POST', '/authn/totp', {
-      browser: fayWho,
-      form: { mfa_id: fayStep ? fayStep[1] : '', code: await nextCode(fay) } });
+    await stepAct(fayWho, fayAsked, 'totp', { code: await nextCode(fay) });
     const faySession = w.sessionOf(fayWho);
     note(!!faySession && faySession.acr === 'mfa',
          'F0. mfa-fay signs in with a password and an authenticator app',

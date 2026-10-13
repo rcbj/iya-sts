@@ -220,9 +220,11 @@ it receives are:
 The built-in rules are the strict default. A realm's own XACML policy can
 decide differently; see [XACML](xacml.md).
 
-## What is not placed yet
+## Kerberos
 
-A Kerberos AS-REQ over TCP or UDP port 88, sent to a cell other than the
-principal's home, is answered there. The KDC's socket code belongs to the
-parent project, and a hook it would need is recorded in
-`kerberos/CLAUDE.md`. Over HTTPS (`/KdcProxy`) the request is placed at home.
+A Kerberos request is answered in the client's home cell, over HTTPS
+(`/KdcProxy`) and over TCP and UDP port 88 alike (#588): a client's
+`krb5.conf` may name any cell's KDC. A home cell that cannot be reached
+answers `KDC_ERR_SVC_UNAVAILABLE`, so list more than one KDC. A reply relayed
+from home is held to the UDP size limit like any other, so a large one sends
+the client to TCP.

@@ -1,6 +1,6 @@
 {
   "logoAlt": "IYA STS — Security Token Service",
-  "sub": "Isang maluwag na mock na serbisyo ng pagkakakilanlan na nagsasalita ng labing-anim na pamilya ng protocol. Umiiral ito para subukin ang mga CLIENT.",
+  "sub": "Isang serbisyo ng pagkakakilanlan na nagsasalita ng labing-anim na pamilya ng protocol. Umiiral ito para subukin ang mga CLIENT.",
   "version": "bersyon {version}",
   "warn": "Hindi ito nagsusuri ng password, hindi nagva-validate ng access token, at hindi nagpapatunay ng workload. Huwag ilagay ang port na ito sa pampublikong address.",
   "repoLabel": "Ang proyekto sa GitHub",

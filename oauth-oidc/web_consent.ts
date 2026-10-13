@@ -67,8 +67,11 @@ class ConsentPage {
         '<a href="/admin/oauth2">OAuth 2.0 / OIDC</a>.')) +
       (register.storable ? '' : kit.warn(t.html('consoleConsent.notStored'))) +
 
-      '<h3 id="globals">' + t.html('consoleConsent.globalsHeading') +
-      '</h3>' +
+      // A TAB PER HALF (2026-10-12): the heading, the intro and the
+      // warnings above are Metadata, and so is the closing note
+      // (`WebPages.protocolTabs()`).
+      '<h3 id="globals" data-tab="globals">' +
+      t.html('consoleConsent.globalsHeading') + '</h3>' +
       kit.note(t.html('consoleConsent.globalsNote',
                       { attribute: register.globalAttribute })) +
       globalsNav.head +
@@ -98,7 +101,8 @@ class ConsentPage {
         'name="scope" size="30" placeholder="openid"><button ' +
         'type="submit">' + t.html('consoleConsent.grantButton') +
         '</button></div></form><h3 ' +
-        'id="recorded">' + t.html('consoleConsent.recordedHeading') +
+        'id="recorded" data-tab="recorded">' +
+        t.html('consoleConsent.recordedHeading') +
         '</h3>' +
       kit.note(t.html('consoleConsent.recordedNote',
                       { attribute: json.withdrawnAttribute })) +
@@ -159,9 +163,10 @@ class ConsentPage {
         t.html('consoleConsent.forget') + '</button>' +
       '</div></form>' +
 
+      '<div data-metadata>' +
       kit.note(t.html('consoleConsent.bothHalves',
                       { globalAttribute: register.globalAttribute,
-                        attribute: register.attribute }));
+                        attribute: register.attribute })) + '</div>';
 
     return inner;
   }

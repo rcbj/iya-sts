@@ -952,9 +952,8 @@ const state = realms.obj(function () {
            format: 'dc+sd-jwt' };
 }, { persist: 'vc_verifier_config.state' });
 
-// The default credential format: what /oid4vp/start asks for when the link it
-// was reached by does not name one. The bar door's three format buttons DO name
-// one, so they are unaffected by this — which is deliberate, since a page
+// The default credential format: what a verification asks for when its start
+// does not name one. A start that names one is unaffected by this — which is deliberate, since a page
 // offering "present an SD-JWT VC" that asked for something else would be lying
 // in the one place a reader is most likely to trust it.
 

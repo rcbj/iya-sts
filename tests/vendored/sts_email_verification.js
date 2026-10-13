@@ -35,11 +35,20 @@
 // wrong code is neither.
 //
 // WHERE THERE IS NO CATCHER the job SKIPS: every section needs a transport.
+//
+// SINCE #568 THE PORTAL IS A STATIC APPLICATION over `/account-api`: a
+// person signs in as it does (`portal_signin.js`: PKCE, a DPoP-bound token),
+// the email and authenticator pages' forms are their operations, and the
+// links a person is mailed — still naming `/portal/verify-email` and
+// `/portal/reset-password` — are spent through the operations those pages
+// are drawn from and post to, which take no token: the link's secret is the
+// credential. What a page shows is read from its view.
 // ===========================================================================
 
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -185,78 +194,36 @@ function form(o) {
   return new URLSearchParams(o).toString();
 }
 
-function absolute(location) {
-  log.debug("Entering absolute().");
-  log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
+// The `user` and `token` a mailed link carries in its query.
+function linkParams(link) {
+  log.debug("Entering linkParams().");
+  let out = { user: "", token: "" };
+  try {
+    const u = new URL(link);
+    out = { user: u.searchParams.get("user") || "",
+            token: u.searchParams.get("token") || "" };
+  } catch (e) {
+    log.debug("Caught in linkParams(): " + ((e && e.message) || e));
+    // Not a URL: nothing to spend, which the assertion reading it says.
+    out = { user: "", token: "" };
+  }
+  log.debug("Leaving linkParams().");
+  return out;
 }
 
-// A BROWSER'S USER-AGENT, for `sts_caep_credential_changes.js`'s reason:
-// isbot reads a bare script name as an automated client, and product mode
-// refuses a first sign-in from one on risk (#62).
-const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 sts_email_verification/1.0";
-
-// ONE BROWSER: manual redirects and a cookie jar keyed by name, because
-// every assertion here is about which screen came back and which cookies
-// the browser holds — the binding cookie a link depends on among them.
-function browser(name) {
-  log.debug("Entering browser().");
-  const self = {
-    name: name,
-    jar: {},
-    cookieHeader: function () {
-      log.debug("Entering cookieHeader().");
-      log.debug("Leaving cookieHeader().");
-      return Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-    },
-    async go(method, path, body) {
-      log.debug("Entering go().");
-      const headers = { "User-Agent": AGENT };
-      const cookie = self.cookieHeader();
-      if (cookie) {
-        headers.cookie = cookie;
-      }
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const r = await fetch(absolute(path), { method: method,
-        redirect: "manual", headers: headers, body: body });
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const key = pair.split("=")[0];
-        const value = pair.slice(key.length + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete self.jar[key];
-        } else {
-          self.jar[key] = value;
-        }
-      });
-      log.debug("Leaving go().");
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text() };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-function hiddenValue(html, name) {
-  log.debug("Entering hiddenValue().");
-  const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(html);
-  log.debug("Leaving hiddenValue().");
-  return m ? m[1].replace(/&amp;/g, "&") : "";
+// A PAGE DRAWN FOR NOBODY — the forgot-password form — as the portal draws
+// it: its own renderer, the language data for nobody.
+async function drawnForNobody(path, view) {
+  log.debug("Entering drawnForNobody().");
+  const table = portal.portalBundle();
+  const data = (await call("GET", realmBase() + "/account-api/locale")).json ||
+               {};
+  const t = table.messages.WebTranslator.fromData(data.locale);
+  const html = table.render(path, view, { t: t, query: {}, prefix: "",
+    origin: base, me: null, locale: data.locale, version: data.version,
+    here: path });
+  log.debug("Leaving drawnForNobody().");
+  return html;
 }
 
 async function person(who, withAddress) {
@@ -278,25 +245,14 @@ async function person(who, withAddress) {
   return who + "@" + DOMAIN;
 }
 
+// SIGNED IN AS THE STATIC PORTAL SIGNS IN (#568), in the realm.
 async function signIn(who, password) {
   log.debug("Entering signIn().");
-  const b = browser(who);
-  let r = await b.go("GET", realmBase() + "/portal");
-  for (let hop = 0; hop < 4 && r.location &&
-       !/\/authn\/login\?authn=/.test(r.location); hop++) {
-    r = await b.go("GET", r.location);
-  }
-  r = await b.go("GET", r.location);
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           password: password || PASSWORD, action: "login" }));
-  for (let hop = 0; hop < 6 && (r.status === 302 || r.status === 303); hop++) {
-    r = await b.go("GET", r.location);
-  }
-  assert.ok(b.jar.sts_session, "no session for " + who + ": " + r.status +
-            " " + r.text.slice(0, 200));
+  const c = await portal.signInToThePortal(realmBase(), who, null,
+                                           { password: password || PASSWORD });
+  assert.ok(c.token, "no token for " + who);
   log.debug("Leaving signIn().");
-  return b;
+  return c;
 }
 
 async function ids(address) {
@@ -476,20 +432,17 @@ async function aPersonsOwnChange() {
   const who = usernameFor("emvb").replace(/[^a-z0-9]/g, "").slice(0, 20);
   const address = await person(who);
   const next = who + ".new@" + DOMAIN;
-  const b = await signIn(who);
-  let r = await b.go("GET", realmBase() + "/portal/email");
+  const c = await signIn(who);
   const seenOld = await ids(address);
-  r = await b.go("POST", realmBase() + "/portal/email",
-    form({ action: "change", address: next, csrf_token: csrfOf(r.text) }));
+  let r = await c.act("/portal/email", { action: "change", address: next });
   check("2. the change is asked for", function () {
-    assert.strictEqual(r.status, 303, r.text.slice(0, 300));
+    assert.ok(r.status === 200 && r.json && r.json.ok, r.text.slice(0, 300));
   });
-  r = await b.go("GET", realmBase() + "/portal/email");
+  r = await c.page("/portal/email");
   check("2. and is PENDING: the address is still the old one, and the page " +
         "says what it is changing to", function () {
-    assert.ok(r.text.indexOf("<code>" + address + "</code>") >= 0,
-              r.text.slice(0, 400));
-    assert.ok(/Changing to/.test(r.text) && r.text.indexOf(next) >= 0);
+    assert.strictEqual(r.json.address, address, r.text.slice(0, 400));
+    assert.strictEqual(r.json.changing, next, r.text.slice(0, 400));
   });
   await settle();
   const asked = stream.seen.length;
@@ -506,26 +459,23 @@ async function aPersonsOwnChange() {
     assert.ok(link.indexOf(base + "/realm/" + REALM +
                            "/portal/verify-email?") === 0, link);
   });
-  r = await call("GET", link);
+  const fields = linkParams(link);
+  r = await call("GET", realmBase() + "/account-api/verify-email?" +
+                 form(fields));
   check("2. opening it spends nothing: it draws a button", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/Verify this address/.test(r.text));
+    assert.ok(r.json && r.json.address === next && r.json.token,
+              r.text.slice(0, 300));
   });
-  const fields = { user: hiddenValue(r.text, "user"),
-                   token: hiddenValue(r.text, "token") };
-  const post = await fetch(realmBase() + "/portal/verify-email", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form(fields) });
-  const posted = await post.text();
+  const post = await call("POST", realmBase() + "/account-api/verify-email",
+                          fields);
   check("2. the form makes it the account's address", function () {
-    assert.strictEqual(post.status, 200, posted.slice(0, 300));
-    assert.ok(/Address verified/.test(posted), posted.slice(0, 300));
+    assert.strictEqual(post.status, 200, post.text.slice(0, 300));
+    assert.ok(post.json && post.json.view && post.json.view.verified,
+              post.text.slice(0, 300));
   });
-  const again = await fetch(realmBase() + "/portal/verify-email", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form(fields) });
+  const again = await call("POST", realmBase() + "/account-api/verify-email",
+                           fields);
   check("2. once", function () {
     assert.strictEqual(again.status, 400);
   });
@@ -553,40 +503,36 @@ async function theRecoveryCodeReset() {
   log.info("=== 3. the recovery-code reset ===");
   const who = usernameFor("emvc").replace(/[^a-z0-9]/g, "").slice(0, 20);
   const address = await person(who);
-  const b = await signIn(who);
-  let r = await b.go("GET", realmBase() + "/portal/mfa");
-  r = await b.go("POST", realmBase() + "/portal/mfa",
-    form({ action: "generate-codes", csrf_token: csrfOf(r.text) }));
-  const list = String(r.text).match(/<ul class="codes">([\s\S]*?)<\/ul>/);
-  const codes = [];
-  const re = /<code(?: class="[^"]*")?>([^<]+)<\/code>/g;
-  let m;
-  while (list && (m = re.exec(list[1])) !== null) {
-    codes.push(m[1]);
-  }
-  r = await b.go("POST", realmBase() + "/portal/mfa",
-    form({ action: "confirm-codes", handle: hiddenValue(r.text, "handle"),
-           csrf_token: csrfOf(r.text) }));
+  const c = await signIn(who);
+  let r = await c.act("/portal/mfa", { action: "generate-codes" });
+  // The set is shown once, in the answer's `view.fresh` (#568).
+  const fresh = (r.json && r.json.view && r.json.view.fresh) || {};
+  const codes = (fresh.codes || []).slice(0);
+  r = await c.act("/portal/mfa", { action: "confirm-codes",
+                                   handle: fresh.handle });
   check("3. the person holds a set of recovery codes", function () {
     assert.ok(codes.length >= 8, "only " + codes.length + " codes");
+    assert.ok(r.status === 200 && r.json && r.json.ok, r.text.slice(0, 300));
   });
   await ok(realmBase() + "/admin-api/config/set",
            { key: "global.mode", value: "product" },
            "switched the realm to product, where a reset is offered");
-  r = await call("GET", realmBase() + "/portal/forgot-password");
+  r = await call("GET", realmBase() + "/account-api/forgot-password");
+  const forgotForm = r.status === 200
+    ? await drawnForNobody("/portal/forgot-password", r.json) : "";
   check("3. the forgot-password form asks for the username, the address " +
         "and a recovery code", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/name="account"/.test(r.text) && /name="address"/.test(r.text) &&
-              /name="code"/.test(r.text), r.text.slice(0, 400));
+    assert.ok(r.json.threeFields === true, r.text.slice(0, 300));
+    assert.ok(/name="account"/.test(forgotForm) &&
+              /name="address"/.test(forgotForm) &&
+              /name="code"/.test(forgotForm), forgotForm.slice(0, 400));
   });
+  // The form's answer: the one sentence, `view.note`, whatever was asked.
   const ask = async function (fields) {
-    const res = await fetch(realmBase() + "/portal/forgot-password", {
-      method: "POST", redirect: "manual",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form(fields) });
-    const text = await res.text();
-    return (/<div class="ok">([^<]*)<\/div>/.exec(text) || [])[1] || text;
+    const res = await call("POST", realmBase() +
+                           "/account-api/forgot-password", fields);
+    return (res.json && res.json.view && res.json.view.note) || res.text;
   };
   const seen = await ids(address);
   await settle();
@@ -635,15 +581,16 @@ async function theRecoveryCodeReset() {
   const replay = await ask({ account: who, address: address,
                             code: codes[0] });
   void replay;
-  r = await call("GET", resetLink);
-  const done = await fetch(realmBase() + "/portal/reset-password", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ user: hiddenValue(r.text, "user"),
-                 token: hiddenValue(r.text, "token"),
-                 password: NEW_PASSWORD, confirm: NEW_PASSWORD }) });
+  const resetFields = linkParams(resetLink);
+  r = await call("GET", realmBase() + "/account-api/reset-password?" +
+                 form(resetFields));
+  const done = await call("POST", realmBase() + "/account-api/reset-password",
+    { user: resetFields.user, token: resetFields.token,
+      password: NEW_PASSWORD, confirm: NEW_PASSWORD });
   check("3. and the link sets a new password", function () {
-    assert.ok(done.status === 200 || done.status === 303, done.status);
+    assert.ok(r.status === 200 && done.status === 200 && done.json &&
+              done.json.view && done.json.view.done,
+              r.status + " " + done.status + " " + done.text.slice(0, 300));
   });
   const resets = (await inbox(address)).filter(function (x) {
     return /Reset your/.test(x.Subject);

@@ -267,9 +267,21 @@ function checkTheRoleNameAgrees(t) {
     t.check(new RegExp('://' + APP_ROLE + '[:@]').test(url[1]),
             'and it dials as ' + APP_ROLE + ' rather than as the schema owner',
             url[1]);
-    t.check(url[1].indexOf('sslmode=require') > 0,
-            'and still asks for TLS, which the database still requires',
+    // verify-full since 2026-10-12: TLS, which the database still
+    // requires, and the server authenticated against the certificate the
+    // stack shares (persistence.databaseTlsCaFile).
+    t.check(url[1].indexOf('sslmode=verify-full') > 0,
+            'and asks for TLS with the server verified, chain and host name',
             url[1]);
+    t.check(/STS_DATABASE_TLS_CA_FILE=\$\{STS_DATABASE_TLS_CA_FILE:-\/run\/secrets\/database-ca\/postgres\.crt\}/
+              .test(compose) &&
+            /- sts-db-ca:\/run\/secrets\/database-ca:ro/.test(compose),
+            'and names the certificate the postgres service shares, mounted ' +
+            'read-only, as its trust anchor');
+    t.check(/POSTGRES_TLS_PUBLIC_DIR=\/run\/sts-db-ca/.test(compose) &&
+            !/sts-db:\/run\/secrets/.test(compose),
+            'which the postgres service writes without its key: the data ' +
+            'volume, where the key is, never reaches sts');
   }
   log.debug("Leaving checkTheRoleNameAgrees().");
 }

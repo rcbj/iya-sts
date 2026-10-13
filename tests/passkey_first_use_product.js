@@ -165,24 +165,17 @@ function childMain() {
                  origin: origin, crossOrigin: false }), 'utf8')
                  .toString('base64url') } };
   };
-  const dataAttribute = function (html, name) {
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(html);
-    return found ? found[1].replace(/&amp;/g, '&') : '';
-  };
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
+  // The passkey step's ceremony mode, off its page's view (#572), or ''
+  // where no step's page was opened.
+  const modeOf = function (page) {
+    const w = page && page.view && page.view.webauthn;
+    return w ? String(w.mode || '') : '';
   };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const config = require(ROOT + '/common/config');
     const applications = require(ROOT + '/common/applications');
@@ -233,23 +226,28 @@ function childMain() {
           code_challenge: nodeCrypto.createHash('sha256').update(verifier)
             .digest('base64url'),
           code_challenge_method: 'S256' }).toString());
-      const screen = await b.go('GET', String(start.headers.location || ''));
-      const form = hiddenFields(screen.text);
-      form.username = username;
-      form.password = '';
-      form.webauthn_only = '1';
-      form.action = 'login';
-      const posted = await b.go('POST', '/authn/login', { form: form });
-      return { b: b, screen: screen, posted: posted };
+      // A STATIC PAGE SINCE #571: its view, and the act, whose step's page
+      // — the ceremony — is opened as the screen's page opens it.
+      const opened = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(start.headers.location || '') });
+      const posted = await authnScreen.follow({ port: port, jar: b.jar,
+        opened: opened, fields: { action: 'login', username: username,
+                                  password: '', webauthn_only: '1' } });
+      return { b: b, screen: opened.shell, view: opened.view || {},
+               posted: posted };
     };
-    const finish = function (b, step) {
-      const mfaId = (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1];
-      const credential = register(dataAttribute(step.text, 'rpid'), ORIGIN,
-                                  dataAttribute(step.text, 'challenge'));
-      return b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: mfaId, mode: 'create',
-        credential: JSON.stringify(credential) } });
+    // The passkey step's ceremony over `/authn-api` (#572): armed, made
+    // by the test's authenticator, sent; read as the form's answer was —
+    // `redirect` as its 303, a refusal at its status with its sentence.
+    const finish = async function (b, step) {
+      const done = await authnScreen.passkeyStep({ port: port, jar: b.jar,
+        opened: step }, function (c) {
+        return register(c.rpId, ORIGIN, c.challenge);
+      });
+      const a = done.answer;
+      return { status: a.next === 'redirect' ? 303 : a.apiStatus,
+               text: (a.errors || []).length ? a.errors.join(' ')
+                                             : String(a.text || '') };
     };
     const primaryKeys = function (name) {
       return credentials.keysOf(name).filter(function (k) {
@@ -259,8 +257,7 @@ function childMain() {
 
     // 1. Development, the control.
     let s = await passwordless('pfu-dev');
-    note(s.posted.status === 200 &&
-         dataAttribute(s.posted.text, 'mode') === 'create',
+    note(s.posted.status === 200 && modeOf(s.posted) === 'create',
          '1a. DEVELOPMENT: a passwordless sign-in for a keyless person is the ' +
          'ENROL ceremony', s.posted.status + ' ' + s.posted.text.slice(0, 160));
     let done = await finish(s.b, s.posted);
@@ -278,9 +275,9 @@ function childMain() {
     try {
       // 2. The attack.
       s = await passwordless('pfu-victim');
-      note(s.posted.status === 200 && s.posted.text.indexOf(REFUSAL) >= 0 &&
-           !dataAttribute(s.posted.text, 'mode') &&
-           !/name="mfa_id"/.test(s.posted.text),
+      note(s.posted.apiStatus === 400 &&
+           s.posted.text.indexOf(REFUSAL) >= 0 &&
+           !modeOf(s.posted) && !s.posted.id,
            '2a. PRODUCT: a passwordless sign-in for somebody who exists and ' +
            'holds no key is REFUSED before any ceremony — it was the enrol ' +
            'ceremony, which gave the account to whoever asked',
@@ -291,21 +288,21 @@ function childMain() {
 
       // 3. No enumeration.
       s = await passwordless('pfu-nobody-' + Date.now().toString(36));
-      note(s.posted.status === 200 && s.posted.text.indexOf(REFUSAL) >= 0,
+      note(s.posted.apiStatus === 400 &&
+           s.posted.text.indexOf(REFUSAL) >= 0,
            '3. PRODUCT: a name that does not exist gets the SAME sentence',
            s.posted.status + ' ' + s.posted.text.slice(0, 200));
 
       // 4. A key holder is not refused.
       s = await passwordless('pfu-holder');
-      note(s.posted.status === 200 &&
-           dataAttribute(s.posted.text, 'mode') === 'get' &&
+      note(s.posted.status === 200 && modeOf(s.posted) === 'get' &&
            s.posted.text.indexOf(REFUSAL) < 0,
            '4. PRODUCT: a person who HOLDS a primary key still gets the ' +
            'ceremony, as an assertion — the refusal is about enrolling',
            s.posted.status + ' ' + s.posted.text.slice(0, 200));
 
       // 5. A development step completed in product.
-      note(dataAttribute(late.posted.text, 'mode') === 'create',
+      note(modeOf(late.posted) === 'create',
            '5a. (precondition: the step minted in development was an ' +
            'enrolment)', late.posted.text.slice(0, 160));
       done = await finish(late.b, late.posted);
@@ -317,10 +314,13 @@ function childMain() {
            primaryKeys('pfu-late') + ' ' + done.text.slice(0, 200));
 
       // 6. The screen says what it checks.
-      note(!/No password is checked/.test(s.screen.text) &&
-           !/first person to claim a name/.test(s.screen.text),
+      // The screen's sentences are its page's (#571), chosen from this
+      // fact of the view: the checked ones, never "no password is checked"
+      // or "a key is enrolled on first use".
+      note(s.view.verifiesCredentials === true,
            '6. PRODUCT: the sign-in screen no longer says no password is ' +
-           'checked, or that a key is enrolled on first use');
+           'checked, or that a key is enrolled on first use',
+           JSON.stringify(s.view.verifiesCredentials));
     } finally {
       config.clearOverride('global.mode');
     }

@@ -284,15 +284,27 @@ class DatabasePage {
       t.html('consoleDatabase.singleConnection') + '</p>',
       t.html('consoleDatabase.whatTitle'));
 
+    // AN UNAUTHENTICATED DATABASE IS A WARNING BOX, not a clause at the end
+    // of a note (2026-10-12): verification is on by default, so a server
+    // whose certificate is not checked is an operator's choice, and it is
+    // the one that leaves every row readable and writable by whatever
+    // answers at the address. The sentence is the server's (`tls`).
+    const unauthenticated = !!target.encrypted && !target.verifyCertificate;
+    const authWarning = unauthenticated
+      ? kit.warn('<p><strong>' + kit.esc(String(target.tls || '')) +
+                 '</strong></p>')
+      : '';
+
     // The connection's coordinates and its TLS sentence are the view's.
-    const connection = kit.note(
+    const connection = authWarning + kit.note(
       '<p>' + t.html('consoleDatabase.connectedTo',
                      { where: String(target.host || '?') + ':' +
                          String(target.port || '?') + '/' +
                          String(target.database || '?'),
                        user: String(target.user || '?'),
-                       schema: String(json.schema || '?') }) + ' ' +
-      kit.esc(String(target.tls || '')) + '</p>' +
+                       schema: String(json.schema || '?') }) +
+      (unauthenticated ? '' : ' ' + kit.esc(String(target.tls || ''))) +
+      '</p>' +
       '<p>' + t.html('consoleDatabase.poolFigures') + '</p>',
       t.html('consoleDatabase.connectionTitle'));
 
@@ -416,7 +428,12 @@ class DatabasePage {
     }
     const words = SECTION_WORDS(t)[section.group] ||
       { heading: kit.esc(section.heading), blurb: section.blurb };
-    return '<h3>' + words.heading + '</h3>' +
+    // ONE TAB PER GROUP OF PROBES (2026-10-12, `WebPages.protocolTabs()`):
+    // `server`, `activity`, `background`, `schema`, `configuration`. The
+    // tiles, the notes, the computed ratios, the drift check and what could
+    // not be collected are Metadata.
+    return '<h3 data-tab="' + kit.esc(section.group.toLowerCase()) + '">' +
+      words.heading + '</h3>' +
       kit.note(words.blurb) +
       ids.map(function (id) {
         const probe = json.probes[id];

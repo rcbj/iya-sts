@@ -1,0 +1,17 @@
+{
+  "name": "sts-test-peer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The far party of the protocol jobs (#586); tests/CLAUDE.md, THE TEST PEER.",
+  "main": "peer.js",
+  "license": "BUSL-1.1",
+  "scripts": {
+    "start": "node peer.js"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "0.9.12",
+    "bunyan": "1.8.15",
+    "node-forge": "1.4.0",
+    "xml-crypto": "6.1.2"
+  }
+}

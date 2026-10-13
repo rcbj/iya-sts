@@ -84,19 +84,11 @@ const MONITOR = '/admin/devices/monitor';
 const ACTIONS = ['create', 'update', 'remove', 'add-key', 'remove-key',
                  'set-compliance', 'set-status'];
 
-// DEVELOPMENT'S COMPLIANCE TEST CONTROL (#164 decision 9, phase 3): a public
-// path, not under /admin, that sets a device's compliance with no credential
-// at all — what a client under test drives to see its session and tokens
-// react — refused in product by `mode.opensTestControls()`.
-/**
- * Development's compliance test control: a public path that sets a device's
- * compliance with no credential, refused in product mode.
- */
-const TEST_CONTROL = '/devices/test/compliance';
-
 // The compliance states a DOOR may set. `unknown` is what a device starts
-// as; an administrator may put it back (withdrawing a vouch), and a feed or
-// the test control reports one of the two CAEP knows.
+// as; an administrator may put it back (withdrawing a vouch), and a feed
+// reports one of the two CAEP knows. (Development's compliance test control,
+// `POST /devices/test/compliance`, was deleted by #597: the MDM feed under
+// `device:compliance` is the door, in both modes.)
 const FEED_STATES = ['compliant', 'not-compliant'];
 
 // The filters a list takes, each a query parameter of the same name.
@@ -158,6 +150,34 @@ const RECOGNITION = [
           'issued for is live.' }
 ];
 
+// WHAT THE REGISTRATION PAGE SAYS BESIDE ITS TABLES (#543 phase 2b), the
+// sentences of `registrationView()` that are prose. Its event names
+// (`device-compliance-change`, `credential-compromise`), its credential
+// types, paths, predicates and policy identifiers are not, and stay where
+// they are; `decisions.policy` and `decisions.claim` are identifiers with a
+// clause after them and are left in English too.
+const REGISTRATION_NOTES = Object.freeze({
+  caepSessions: 'the device member on session-established, ' +
+    'session-presented and session-revoked',
+  riscSessionsRevoked: 'sessions-revoked (where risc.autoEmitTypes names ' +
+    'it; not by default)',
+  subject: 'complex: device (iss_sub — this realm\'s issuer and the device ' +
+    'id) and user (the owner, where a person)',
+  recordedAtSignIn: 'the authentication event\'s registeredDevice ' +
+    '(authn.registeredDeviceOf(session) reads the latest)',
+  recordedAtTokenEndpoint: 'the issuance request\'s registered_device, ' +
+    'before the issuance gate',
+  adminKeys: 'an administrator\'s by-value key is accepted in both modes, ' +
+    'recorded proof admin and self-asserted',
+  scepFreshness: 'SCEP has no nonce operation, so a TPM statement over it ' +
+    'is never shown fresh'
+});
+
+// THE DEVICES NAMESPACE (#543 phase 2b): how a device arrives and is
+// recognised, and the notes above, on the one route that answers them.
+/** The routes whose answers carry this module's prose. */
+const PROSE_ROUTES = ['/admin-api/device-registration'];
+
 interface DevicesAdminDeps {
   log: typeof helpers.log;
   admin: typeof admin;
@@ -177,6 +197,32 @@ class DevicesAdmin {
    * See the module's `LIST`.
    */
   static readonly LIST = LIST;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the devices namespace (#543): how a device arrives and how it
+   * is recognised, and the registration page's notes.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering DevicesAdmin.prose().");
+    // LAZILY, as every module of a namespace requires it: needed only to
+    // extract.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('devices.enrolment', ENROLMENT, ['what']),
+      harvest('devices.recognition', RECOGNITION, ['what']));
+    Object.keys(REGISTRATION_NOTES).forEach(function (name) {
+      out['devices.notes.' + name] = REGISTRATION_NOTES[name];
+    });
+    helpers.log.debug("Leaving DevicesAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
   /**
    * See the module's `REGISTRATION`.
    */
@@ -379,7 +425,7 @@ class DevicesAdmin {
   // -------------------------------------------------------------------------
   /**
    * Applies an MDM or posture feed's compliance reports, each on its own and in
-   * order: `POST /admin-api/device-compliance`, and the test control.
+   * order: `POST /admin-api/device-compliance`.
    *
    * Each report names its device by `id`, a key `thumbprint` or a
    * `certificate`, and sets compliance only. A report that names no device or
@@ -387,14 +433,13 @@ class DevicesAdmin {
    * `devices.complianceFeedMaxReports` is refused whole.
    * @param body - one report, or `{ reports: [...] }`
    * @param clientId - the feed's client, recorded as the actor
-   * @param source - `test-control` for the test control; otherwise `mdm`
    * @returns how many were applied and refused, and each report's result
    */
-  mdmFeed(body: Json, clientId: string, source?: string): Json {
+  mdmFeed(body: Json, clientId: string): Json {
     const { log } = this.deps;
     log.debug("Entering DevicesAdmin.mdmFeed().");
     const b = body || {};
-    const from = source === 'test-control' ? 'test-control' : 'mdm';
+    const from = 'mdm';
     const reports: Json[] = Array.isArray(b.reports) ? b.reports : [b];
     const max = Number(config.value('devices.complianceFeedMaxReports'));
     if (!reports.length || reports.length > max) {
@@ -686,12 +731,6 @@ class DevicesAdmin {
         identifiedBy: ['id', 'thumbprint (with keyKind)', 'certificate'],
         source: 'mdm'
       },
-      testControl: {
-        path: 'POST ' + TEST_CONTROL,
-        open: mode.opensTestControls(),
-        predicate: 'opensTestControls',
-        source: 'test-control'
-      },
       // A federation partner's device-compliance-change, through
       // setCompliance() as the signal-response policy permits (#153, #373,
       // #374 — an MDM being an `ssf` relationship).
@@ -707,19 +746,15 @@ class DevicesAdmin {
                'DEVICE)', 'credential-change (x509, fido2-platform, ' +
                'fido2-roaming, ' + devices.DEVICE_KEY_CREDENTIAL_TYPE + ', ' +
                devices.DEVICE_SECRET_CREDENTIAL_TYPE + ')',
-               'the device member on session-established, session-presented ' +
-               'and session-revoked'],
-        risc: ['credential-compromise', 'sessions-revoked (where ' +
-               'risc.autoEmitTypes names it; not by default)'],
-        subject: 'complex: device (iss_sub — this realm\'s issuer and the ' +
-                 'device id) and user (the owner, where a person)'
+               REGISTRATION_NOTES.caepSessions],
+        risc: ['credential-compromise',
+               REGISTRATION_NOTES.riscSessionsRevoked],
+        subject: REGISTRATION_NOTES.subject
       },
       // Where the recognised device is recorded (#164 phase 2).
       recordedAt: {
-        signIn: 'the authentication event\'s registeredDevice ' +
-                '(authn.registeredDeviceOf(session) reads the latest)',
-        tokenEndpoint: 'the issuance request\'s registered_device, ' +
-                       'before the issuance gate'
+        signIn: REGISTRATION_NOTES.recordedAtSignIn,
+        tokenEndpoint: REGISTRATION_NOTES.recordedAtTokenEndpoint
       },
       // WHAT DECIDES ON A DEVICE (#164 phases 5 and 6): risk scoring's
       // signals, the issuance policy's two rules and this realm's switches
@@ -750,8 +785,7 @@ class DevicesAdmin {
       unattestedKeys: {
         accepted: mode.acceptsUnattestedDeviceKeys(),
         predicate: 'acceptsUnattestedDeviceKeys',
-        adminKeys: 'an administrator\'s by-value key is accepted in both ' +
-                   'modes, recorded proof admin and self-asserted'
+        adminKeys: REGISTRATION_NOTES.adminKeys
       },
       // #257: whether a TPM key attestation must carry a nonce from EST
       // /nonce (draft-ietf-lamps-attestation-freshness).
@@ -759,8 +793,7 @@ class DevicesAdmin {
         required: mode.requiresFreshKeyAttestation(),
         predicate: 'requiresFreshKeyAttestation',
         nonce: '/.well-known/est[/<label>]/nonce',
-        scep: 'SCEP has no nonce operation, so a TPM statement over it is ' +
-              'never shown fresh'
+        scep: REGISTRATION_NOTES.scepFreshness
       },
       trustAnchors: this.trustAnchors(),
       challenges: deviceEnrolment.describeChallenges(),
@@ -812,46 +845,6 @@ class DevicesAdmin {
     return id && !(result.ok && action === 'remove')
       ? LIST + '?device=' + encodeURIComponent(id) : LIST;
   }
-
-  /**
-   * Registers the three pages, the list page's actions and the compliance test
-   * control.
-   *
-   * @param app - the shared express app
-   */
-  registerRoutes(app: { get: Function; post: Function }): void {
-    const { log, admin, errorCodes, parseBody } = this.deps;
-    const self = this;
-    log.debug("Entering DevicesAdmin.registerRoutes().");
-    // THE COMPLIANCE TEST CONTROL (#164 decision 9): development answers
-    // anybody, as every test control there does; product refuses it, and
-    // the MDM feed under `device:compliance` is the door that remains.
-    app.post(TEST_CONTROL, function (req: Req, res: Res): void {
-      log.debug('Entering POST ' + TEST_CONTROL + '.');
-      res.set('Cache-Control', 'no-store');
-      if (!mode.opensTestControls()) {
-        log.warn('devices: POST ' + TEST_CONTROL + ' was refused — product ' +
-                 'mode does not open test controls.');
-        errorCodes.mark(res, 'STS-DEVICE-0035');
-        res.status(403).json({ ok: false, errors: [
-          'POST ' + TEST_CONTROL + ' is a test control and this realm is ' +
-          'in product mode, where test controls are closed. Report ' +
-          'compliance through POST /admin-api/device-compliance with an ' +
-          'access token carrying device:compliance (its client in the ' +
-          'DEVICE_COMPLIANCE role), or set it on the ' +
-          'device\'s page under /admin/devices.'] });
-        log.debug('Leaving POST ' + TEST_CONTROL + '. Product.');
-        return;
-      }
-      const result = self.mdmFeed(parseBody(req), '', 'test-control');
-      if (!result.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-DEVICE-0007');
-      }
-      res.status(result.ok ? 200 : 400).json(result);
-      log.debug('Leaving POST ' + TEST_CONTROL + '.');
-    });
-    log.debug("Leaving DevicesAdmin.registerRoutes().");
-  }
 }
 
 const slot = new InstanceSlot<DevicesAdmin>(
@@ -869,7 +862,6 @@ slot.buildNowUnlessDeferred();
  * @namespace
  */
 export = {
-  registerRoutes: slot.forward('registerRoutes'),
   DevicesAdmin: DevicesAdmin,
   /**
    * Installs the instance the composition root built and runs its
@@ -885,7 +877,9 @@ export = {
   REGISTRATION: REGISTRATION,
   MONITOR: MONITOR,
   ACTIONS: ACTIONS,
-  TEST_CONTROL: TEST_CONTROL,
+  // #543: the devices namespace's routes and English.
+  PROSE_ROUTES: DevicesAdmin.PROSE_ROUTES,
+  prose: DevicesAdmin.prose,
   // For `mgmt-api/admin_api.ts` (rule 7).
   actorOf: slot.forward('actorOf'),
   listView: slot.forward('listView'),

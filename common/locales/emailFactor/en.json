@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — mock authentication service",
+  "shell.title": "{title} — authentication service",
   "checkEmail": "Check your email",
   "signingInAs": "Signing in as <code>{name}</code>",
   "secondFactorFor": "Second factor for <code>{name}</code>",

@@ -496,10 +496,12 @@ class JwtAccessTokens {
   // 3.1's code for a token that is "expired, revoked, malformed, or invalid
   // for other reasons", which is what section 4's last step says to use.
   //
-  // **`options.audience` REPLACES STEP 4 AND NOTHING ELSE** (2026-09-13): RFC
-  // 9470's stand-in resource answers for a REGISTERED application rather than
-  // for this service, so the identifier it "expects for itself" is that
-  // application's — `{ names(audiences) -> boolean, label }`. Steps 1 and 3
+  // **`options.audience` REPLACES STEP 4 AND NOTHING ELSE** (2026-09-13): a
+  // resource server answering for a REGISTERED application rather than for
+  // this service — RFC 9470's stand-in resource until #593 deleted it, and a
+  // caller of `dpop.presentedAccessToken()`'s `audience` option since — so
+  // the identifier it "expects for itself" is that application's —
+  // `{ names(audiences) -> boolean, label }`. Steps 1 and 3
   // are the same for every resource server here, because the authorization
   // servers it trusts are the same.
   // -------------------------------------------------------------------------

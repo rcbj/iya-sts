@@ -4,7 +4,7 @@
   "tileRequirements": "exigences qu’il modifie",
   "tileDevOnly": "paramètres réservés au développement",
   "tileIgnored": "enregistrés et ignorés ici",
-  "about1": "<code>global.mode</code> indique ce qu’EST ce domaine : <strong>development</strong>, une simulation qui met un client à l’épreuve en disant oui, ou <strong>product</strong>, les mêmes implémentations de protocoles sans la permissivité.",
+  "about1": "<code>global.mode</code> indique ce qu’EST ce domaine : <strong>development</strong>, qui met un client à l’épreuve en disant oui, ou <strong>product</strong>, les mêmes implémentations de protocoles sans la permissivité.",
   "about2": "Il se règle par domaine de confiance dans ",
   "aboutConfigLink": "Configuration",
   "about3": " (le groupe Global) ; cette page ne modifie rien.",

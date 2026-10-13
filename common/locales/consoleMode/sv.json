@@ -4,7 +4,7 @@
   "tileRequirements": "krav som det ändrar",
   "tileDevOnly": "inställningar endast för utveckling",
   "tileIgnored": "lagrade och ignorerade här",
-  "about1": "<code>global.mode</code> anger vad den här sfären ÄR: <strong>development</strong>, en attrapp som provar en klient genom att svara ja, eller <strong>product</strong>, samma protokollimplementationer utan eftergivenheten.",
+  "about1": "<code>global.mode</code> anger vad den här sfären ÄR: <strong>development</strong>, som provar en klient genom att svara ja, eller <strong>product</strong>, samma protokollimplementationer utan eftergivenheten.",
   "about2": "Det ställs in per förtroendesfär under ",
   "aboutConfigLink": "Konfiguration",
   "about3": " (gruppen Global); den här sidan ändrar ingenting.",

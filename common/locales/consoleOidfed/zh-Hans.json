@@ -48,6 +48,7 @@
   "registerSubordinate": "注册下级实体",
   "information": "信息",
   "historyCount": "历史记录（{n}）",
+  "historyLatest": "最近的 {shown} 条；完整历史发布在 /oidfed/subordinate-events。",
   "realmDeleted": "领域 <code>{realm}</code>，已删除",
   "revoked": "已撤销",
   "formerHeading": "以前的下级实体",

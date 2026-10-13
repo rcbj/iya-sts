@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "Ce nœud ne s’exécute pas sous Linux ({{platform}}), il n’y a donc aucun fichier cgroup à lire."
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "Il n’y a pas de cgroup à {{root}} : pas de cgroup v2 ({{why}}) et pas de contrôleur memory ou cpuacct cgroup v1."
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "Pas de cgroup."
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "Le temps CPU du conteneur ne peut pas être lu : {{source}} — {{why}}."
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "Le temps CPU du conteneur a pu être lu une fois mais pas une seconde : {{why}}."
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "Le conteneur peut utiliser {{vcpus}} vCPU ({{version}}, {{file}}), et le pourcentage s’entend par rapport à cette valeur."
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "Ce cgroup ({{version}}) n’a pas de {{file}}, il n’a donc pas de quota CPU propre ; le pourcentage s’entend par rapport aux {{cpus}} CPU que node signale comme disponibles (os.availableParallelism())."
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "Aucun quota CPU ({{version}}, {{file}} indique aucun) : le conteneur peut utiliser tous les CPU que l’hôte lui donne, et le pourcentage s’entend par rapport aux {{cpus}} CPU que node signale comme disponibles (os.availableParallelism())."
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "Le cgroup n’a pas de compteurs de bridage : sans quota, il n’y a rien par rapport à quoi brider."
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "Cet hôte cgroup v1 n’a pas de contrôleur de mémoire pour ce processus."
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "La mémoire du conteneur ne peut pas être lue : {{source}} — {{why}}."
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "Le conteneur peut utiliser {{mib}} Mio ({{version}}, {{file}})."
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "Ce cgroup ({{version}}) n’a pas de {{file}}, il n’a donc pas de limite de mémoire propre et il n’y a aucun pourcentage à indiquer."
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "Aucune limite de mémoire ({{version}}, {{file}} indique aucune), il n’y a donc aucun pourcentage à indiquer."
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} est la mémoire propre des processus ; {{file}} est le cache de pages que le noyau récupère sous pression avant de tuer quoi que ce soit."
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "memory.stat ne peut pas être lu, la composition de la mémoire n’est donc pas connue."
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "Depuis l’agent ECS (/task/stats), car le cgroup ne peut pas être lu ici. La limite est celle du conteneur, telle que l’agent la signale."
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "Depuis l’agent ECS (/task/stats), car le cgroup ne peut pas être lu ici. Le conteneur n’a pas de limite propre, la limite est donc celle de la TÂCHE ECS, {{mib}} Mio."
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "Depuis l’agent ECS (/task/stats), car le cgroup ne peut pas être lu ici. Il n’y a aucune limite par rapport à laquelle mesurer."
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "L’agent ECS ne signale que le total."
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "Le conteneur n’a pas de limite de mémoire propre (cgroup v{{version}}), la limite est donc celle de la TÂCHE ECS, {{mib}} Mio (/task Limits.Memory), et le pourcentage s’entend par rapport à cette valeur."
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "Depuis l’agent ECS (/task/stats), entre ses deux derniers échantillons, car le cgroup ne peut pas être lu ici ; le pourcentage s’entend par rapport aux {{vcpus}} vCPU de la TÂCHE ECS."
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "Depuis l’agent ECS (/task/stats), entre ses deux derniers échantillons, car le cgroup ne peut pas être lu ici ; la tâche n’indique aucune limite CPU, il n’y a donc pas de pourcentage."
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "L’agent ECS ne signale pas le bridage."
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "Le conteneur n’a pas de quota CPU propre (cgroup v{{version}}), le pourcentage s’entend donc par rapport aux {{vcpus}} vCPU de la TÂCHE ECS (/task Limits.CPU)."
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "{{file}} n’a pas pu être lu ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "son fichier status n’a pas de VmRSS"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "la taille résidente et le temps CPU d’un thread sont ceux du processus entier ; ils figurent donc sur la ligne du processus frontal (pid {{pid}}) et ne sont pas répétés ici"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "sa taille résidente et son temps CPU sont ceux du processus entier, y compris ceux de chaque thread worker ; ses chiffres de tas sont ceux de son thread principal"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "processus frontal"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "api du débogueur de protocoles"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "thread worker des surfaces hébergées {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "thread worker de protocoles {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "il a répondu sans sa mémoire, seule sa taille résidente est donc affichée, d’après /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}, seule sa taille résidente est donc affichée, d’après /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "il n’a pas répondu dans les {{ms}} ms (son préchargement de mémoire, debugger_api_status.js, répond lorsqu’il est installé)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "il n’a pas répondu dans les {{ms}} ms"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}} ; un thread n’a pas d’entrée /proc propre, son tas ne peut donc pas être lu depuis l’extérieur"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "Le processus api du débogueur de protocoles n’a pas pu être interrogé sur son pid : {{error}}."
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "Les workers de requêtes et de surfaces hébergées sont des THREADS du processus frontal (#364) ; leur taille résidente et leur temps CPU sont donc les chiffres propres du processus frontal et sont comptés une seule fois, sur sa ligne. Le total résident est la somme sur le ou les {{rss}} processus dont la taille a pu être lue — le processus frontal et le processus enfant api du débogueur — de sorte que les pages que les deux partagent (dont le code propre de node) sont comptées une fois pour chacun et que le total peut dépasser le memory.current du conteneur. Les chiffres de tas sont ceux du ou des {{heap}} isolats V8 qui ont eux-mêmes signalé process.memoryUsage() : le thread principal du processus frontal, chaque thread worker et le processus enfant ; un processus enfant qui n’a pas répondu à temps est affiché avec sa taille résidente d’après /proc et sans tas, et un thread worker qui n’a pas répondu est indiqué comme sans réponse, puisqu’un thread n’a pas d’entrée /proc propre. La signature post-quantique et scrypt n’ont plus de processus propres depuis #363 : ils s’exécutent sur le pool de threads de libuv, et leur mémoire est comptée dans le processus qui les a sollicités."
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 n’est pas défini : ce nœud n’est pas une tâche Amazon ECS (il n’est ni sur Fargate ni sur une instance de conteneur ECS), il n’y a donc aucun point de terminaison de métadonnées de tâche avec lequel recouper le cgroup."
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 est défini, mais le point de terminaison de métadonnées de tâche n’a pas répondu dans les {{ms}} ms : {{why}}."
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "Une partie du point de terminaison n’a pas répondu : {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "Une partie du point de terminaison n’a pas répondu : {{whys}}. Il n’y a aucune statistique pour ce conteneur dans /task/stats."
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "Une partie du point de terminaison n’a pas répondu : {{whys}}. Il n’y a aucune statistique pour ce conteneur dans /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "Il n’y a aucune statistique pour ce conteneur dans /task/stats."
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "Il n’y a aucune statistique pour ce conteneur dans /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "Les chiffres propres de l’agent ECS pour ce conteneur, à titre de recoupement du cgroup : l’agent échantillonne selon son propre calendrier, ils ne concorderont donc pas à l’octet ou au pourcentage près."
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "Ce sont les chiffres du nœud {{node}} — son conteneur — établis par son processus frontal, pid {{pid}}. Chaque nœud d’un cluster est un conteneur à part, avec ses propres chiffres."
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "La machine sur laquelle s’exécute ce conteneur — sur Fargate, la micro-VM ; sur un poste de travail, le poste entier. PAS le conteneur : sa mémoire libre et sa charge ne disent rien de la limite du conteneur."
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "Sur le ou les {{count}} nœuds qui ne sont pas partis et qui ont un instantané, y compris les instantanés obsolètes, signalés comme tels. Les limites ne sont additionnées que lorsque chaque nœud en a une."
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "il n’est pas présent"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "ce n’est pas un nombre"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "il n’a pas de usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "il n’y a pas de contrôleur cpuacct cgroup v1"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "il a répondu sans sa mémoire"
+  }
+}

@@ -25,6 +25,7 @@ type Json = any;
 interface TransmittersApiDeps {
   log: typeof helpers.log;
   loadTransmitters(): Json;
+  loadViews(): Json;
 }
 
 const BASE = '/admin-api';
@@ -60,6 +61,12 @@ class SsfTransmittersApi {
       log: helpers.log,
       loadTransmitters: function (): Json {
         return require('./ssf_transmitters');
+      },
+      // The console's paging (`pagedRows()`), reached when a request
+      // arrives: admin_views requires most of the service, and this module
+      // is built with the other API modules, before it is wanted.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -93,6 +100,61 @@ class SsfTransmittersApi {
     log.debug("Leaving SsfTransmittersApi.sendJson().");
   }
 
+  // -------------------------------------------------------------------------
+  // THE THREE LISTS THAT GROW, PAGED (#313's sweep, 2026-10-12).
+  //
+  // The blocks and the account locks are persisted, one row per (person,
+  // relationship), so they grow with the people partners name; what arrived
+  // was CUT at 200 rows newest first, so a row past the two hundredth could
+  // not be reached at all. Each is now a page of the whole list on a
+  // parameter of its own — `blocksPage`, `locksPage`, `receivedPage`, `per`
+  // shared — and `relationship` narrows what arrived BEFORE it is paged.
+  // The relationship cards are not paged: there is one per federation
+  // relationship whose signals are on, and `federation.max` caps those.
+  // `counts` carries each list's whole length, for a reader that wants the
+  // number without walking the pages.
+  // -------------------------------------------------------------------------
+  /**
+   * Builds the report the page and the API answer with: the transmitters'
+   * report with its three growing lists paged.
+   *
+   * @param query - the request's query
+   * @returns the report
+   */
+  pagedReport(query: Json): Json {
+    const { log, loadTransmitters, loadViews } = this.deps;
+    log.debug("Entering SsfTransmittersApi.pagedReport().");
+    const q = query || {};
+    const relationship = Array.isArray(q.relationship) ? q.relationship[0]
+      : q.relationship;
+    // Every row that arrived: the inbox is bounded by ssf.foreignInboxMax,
+    // and the page is what bounds the answer.
+    const report = loadTransmitters().report({
+      relationship: relationship, limit: Infinity });
+    const views = loadViews();
+    const received = views.pagedRows(q, report.received || [],
+      { name: 'received', noun: 'signals' });
+    const blocks = views.pagedRows(q, report.blocks || [],
+      { name: 'blocks', noun: 'blocks' });
+    const locks = views.pagedRows(q, report.locks || [],
+      { name: 'locks', noun: 'locks' });
+    const out = Object.assign({}, report, {
+      received: received.shown,
+      blocks: blocks.shown,
+      locks: locks.shown,
+      counts: { received: received.paging.total,
+                blocks: blocks.paging.total,
+                locks: locks.paging.total },
+      paging: { received: views.pagingJson(received.paging),
+                blocks: views.pagingJson(blocks.paging),
+                locks: views.pagingJson(locks.paging) }
+    });
+    log.debug("Leaving SsfTransmittersApi.pagedReport(). " +
+              out.received.length + " of " + out.counts.received +
+              " arrival(s).");
+    return out;
+  }
+
   /**
    * Builds the route table: `GET /admin-api/ssf/transmitters`, the
    * monitoring report.
@@ -100,7 +162,7 @@ class SsfTransmittersApi {
    * @returns the routes
    */
   buildRoutes(): Json[] {
-    const { log, loadTransmitters } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmittersApi.buildRoutes().");
     const ROUTES = [
@@ -116,18 +178,42 @@ class SsfTransmittersApi {
           'person it named and what it led to, the sign-ins partners have ' +
           'blocked and the account locks a signals-only partner put on ' +
           'people here. Never a secret. `relationship` narrows what ' +
-          'arrived. A partner\'s stream is configured on its relationship ' +
-          'and acted on with `POST /admin-api/federation/signals-*`.',
+          'arrived. What arrived, the blocks and the locks are each one ' +
+          'page, moved by `receivedPage`, `blocksPage` and `locksPage` ' +
+          'with `per` shared, and described by `paging`. A partner\'s ' +
+          'stream is configured on its relationship and acted on with ' +
+          '`POST /admin-api/federation/signals-*`.',
         mirrors: 'GET /admin/ssf/transmitters',
+        parameters: [
+          { name: 'relationship', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only what arrived from this relationship. ' +
+                         'Applied before what arrived is paged.' },
+          { name: 'receivedPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of what arrived, newest first. ' +
+                         'Clamped, like every page parameter here.' },
+          { name: 'blocksPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the sign-ins partners blocked.' },
+          { name: 'locksPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the account locks partners put ' +
+                         'on people here.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, shared by the three lists.' }
+        ],
         responseDescription: 'The report.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: '`relationships`, `received`, ' +
-                                       '`blocks`, `locks`, `observeOnly`.' },
+                                       '`blocks`, `locks` (each one page), ' +
+                                       '`counts` (each list\'s whole ' +
+                                       'length), `paging`, `observeOnly`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API partners' signals " +
                     "endpoint.");
-          self.sendJson(res, 200, loadTransmitters().report({
-            relationship: req.query.relationship }));
+          self.sendJson(res, 200, self.pagedReport(req.query));
           log.debug("Leaving the management API partners' signals " +
                     "endpoint.");
         } }

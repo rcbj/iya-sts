@@ -6,11 +6,11 @@ nav_order: 15
 # The remote Policy Enforcement Point
 
 `xacml-pep/` is a **second container**. It holds its own copy of this service's
-XACML engine, **pulls** the policy repository from the mock's Policy Decision
-Point, and decides in its own process. The mock never sees the requests it
+XACML engine, **pulls** the policy repository from this service's Policy Decision
+Point, and decides in its own process. The service never sees the requests it
 decides.
 
-It is the one directory in this repository that is not part of the mock, and it
+It is the one directory in this repository that is not part of the service, and it
 is opt-in: a plain `docker compose up` does not start it.
 
 ```
@@ -29,16 +29,21 @@ is opt-in: a plain `docker compose up` does not start it.
                                POST /notify  ◀────────────────────── the nudge (optional)
 ```
 
-## Why not just use `/xacml/protected`
+## The demonstration PEP is this one
 
-The mock already has a Policy Enforcement Point at `GET /xacml/protected`, and
-for learning what a PEP *is* it is the better one to read. What it cannot
-demonstrate is anything that makes a **distributed** deployment hard, because it
-shares a process with the PDP: it can never be stale, can never hold a policy the
-PDP no longer has, and can never go on enforcing while the PDP is down.
+Until #596 the service had a Policy Enforcement Point of its own at
+`GET /xacml/protected`, with its bias in the `xacml.pepBias` setting. Both are
+gone: the service ships no demonstration code, and this container's
+`GET /protected` is the same thing — the same request built from `subject`,
+`resource` and `action`, the same section 7.2 rule (an obligation it cannot
+discharge turns a Permit into a 403), and the bias as this PEP's own option,
+`PEP_BIAS` (`deny-biased` by default, or `permit-biased`).
 
-Every one of those is a state a real deployment lives in, and this container
-makes all of them reachable — and reports them rather than hiding them.
+It is also the more honest demonstration. A PEP sharing a process with the PDP
+can never be stale, can never hold a policy the PDP no longer has, and can
+never go on enforcing while the PDP is down. Every one of those is a state a
+real deployment lives in, and this container makes all of them reachable — and
+reports them rather than hiding them.
 
 ## Its four endpoints
 
@@ -85,8 +90,7 @@ name is refused while being fully authenticated, because **the certificate says
 who and the group says whether**:
 
 1. **A client certificate this service verifies.** The issuing CA goes into the
-   truststore with `POST /tls/trust`, which starts empty — in development mode.
-   In product mode that endpoint is refused; add the CA at runtime on the admin
+   truststore, which starts empty: add it at runtime on the admin
    console's `/admin/tls/trust` page (Admin Write) or with
    `POST /admin-api/tls/trust/add` (a token carrying `admin:write`), or put it
    in a PEM file named by `tls.trustAnchorsFile`, read at startup. Only the file
@@ -108,7 +112,7 @@ inherit — so every enforcement point needs its entry and its membership.
 
 `tests/tools/pep-credential.js` builds a Root CA, an Issuing CA and a client leaf
 on this repository's own PKI code, writes them out, and POSTs the **root alone**
-to the mock's truststore — so the mock has to build a path from what arrives to
+to the service's truststore — so the service has to build a path from what arrives to
 an anchor it holds, which is the commonest thing to get wrong in mutual TLS.
 
 ```bash
@@ -198,7 +202,7 @@ PEP_RESOURCE=https://expenses.example.test \
 cargo run --manifest-path rust/Cargo.toml --release -p xacml-pep
 ```
 
-`PEP_TLS_INSECURE=true` is the ordinary setting against this mock: in
+`PEP_TLS_INSECURE=true` is the ordinary setting against this service in development: in
 development mode its listener certificate is issued by a service Root that is
 regenerated on every start, so there is no fixed anchor to verify against
 (point `PEP_TLS_CA` at the current Root to verify anyway). It is logged on every
@@ -275,7 +279,7 @@ on every answer.
 
 Every query parameter other than `subject`, `resource` and `action` becomes a
 **subject attribute the caller asserted**, under both the bare name and the
-`urn:sts:xacml:attribute:` form the mock's own PIP answers to.
+`urn:sts:xacml:attribute:` form the service's own PIP answers to.
 
 ```bash
 curl -s ".../protected?subject=carol&resource=https://expenses.example.test&action=GET&employeeType=staff"
@@ -285,7 +289,7 @@ curl -s ".../protected?subject=carol&resource=https://expenses.example.test&acti
 That is not a bug and it is not a hole the PIP closes. **A PIP removes the
 disagreements that come from missing information; it does not remove the ones
 that come from a caller asserting something about itself**, which no real
-deployment would believe and which is exactly the sort of thing a mock exists to
+deployment would believe and which is exactly the sort of thing a test service exists to
 let you try. Set `PEP_PIP=false` to watch the behaviour this container had before
 the PIP existed, where *every* attribute has to arrive this way.
 
@@ -311,14 +315,14 @@ By default the compose service's nudge is **refused**, because its notify URL is
 plain `http` and `xacml.pepNotifyAllowHttp` is off. That is the design
 demonstrating itself: no nudge is delivered, the PDP says why on the PEP's row,
 and the PEP converges on its poll anyway. Set
-`STS_XACML_PEP_NOTIFY_ALLOW_HTTP=true` on a mock in development mode to watch
+`STS_XACML_PEP_NOTIFY_ALLOW_HTTP=true` on a service in development mode to watch
 the other half; product mode refuses a plain-http nudge whatever it says
 (#171), and a PEP it nudges must serve https with a certificate that verifies,
 against node's store or `xacml.pepNotifyCaFile`.
 
 ## When the PDP goes away
 
-**The last good policy set is kept and enforcement continues.** Stop the mock and
+**The last good policy set is kept and enforcement continues.** Stop the service and
 the PEP goes on deciding correctly in both directions — still permitting what the
 last pulled policy permits, still refusing what it refuses — while `GET /`
 reports `lastPullOk: false` and says it is keeping what it has.
@@ -418,16 +422,16 @@ by default, so a freshly started PEP reads as zeroes for up to a minute.
 ## Configuration
 
 All of it from the environment — there is no appconfig file and no settings
-table here, because the mock's five-layer configuration exists to serve a console
+table here, because the service's five-layer configuration exists to serve a console
 and a PEP has none.
 
 | Variable | Default | |
 |---|---|---|
-| `PEP_PDP_URL` | `https://localhost:8081` | the mock. Append `/realm/<id>` for a trust realm |
+| `PEP_PDP_URL` | `https://localhost:8081` | the service. Append `/realm/<id>` for a trust realm |
 | `PEP_NAME` | `pep-1` | **ignored when a client certificate is presented** — the PDP names the row from the certificate |
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | the client certificate. The leaf followed by the issuing CA |
 | `PEP_TLS_CA` | — | an anchor for the PDP's certificate |
-| `PEP_TLS_INSECURE` | `false` | do not verify the PDP. The ordinary setting against this mock |
+| `PEP_TLS_INSECURE` | `false` | do not verify the PDP. The ordinary setting against this service in development |
 | `PEP_NOTIFY_URL` | — | where the PDP should nudge |
 | `PEP_BIAS` | `deny-biased` | this PEP's own. `permit-biased` is the other |
 | `PEP_PIP` | `true` | resolve designators the request did not carry against the PDP's directory |
@@ -466,10 +470,10 @@ change anything here:
   the *shape*: the engine against the OASIS conformance suite, the PIP's walk,
   the listener's reload rules, and the enforcement rule against
   `xacml-pep/enforcement_cases.json` — the table **`tests/xacml_pep.js`** holds
-  the mock's own enforcement rule to as well, so the two agree over seven
+  the service's own enforcement rule to as well, so the two agree over seven
   decisions under both biases. None of it makes an HTTP request.
 - **`tests/vendored/sts_xacml_remote_pep.js`** holds the *deployment*: this
-  container on the mock's own docker network, registering, pulling, converging,
+  container on the service's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
   taken away — and being issued its listener certificate,
   picking it up without a restart, and answering a client that trusts only the
@@ -484,4 +488,4 @@ change anything here:
 
 - [What is not checked](what-is-not-checked.md) — the permissive posture, and where this family is the exception
 - [Trust realms](trust-realms.md) — what a realm separates
-- [Configuration](configuration.md) — how the mock's own settings resolve, `xacml.*` among them
+- [Configuration](configuration.md) — how the service's own settings resolve, `xacml.*` among them

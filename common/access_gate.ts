@@ -158,7 +158,8 @@ const RESOURCE = {
   // `xacml/xacml.ts`'s pepAccess() where it is asked.
   XACML_PEP_API: 'xacml-pep-api',
   // THE XACML SURFACE PROPER: GET /xacml, POST /xacml/pdp, GET
-  // /xacml/policies, GET /xacml/protected. The seventh resource and the second
+  // /xacml/policies (and GET /xacml/protected until #596 moved it to the
+  // remote PEP). The seventh resource and the second
   // that is restricted from the start — it requires `XACML_USER`, which
   // `xacml/xacml.ts` puts in the request.
   //
@@ -166,7 +167,7 @@ const RESOURCE = {
   // the two ids are what make the separation writable: an operator adding a
   // second Permit rule for a helpdesk role, or narrowing one surface and not
   // the other, needs two names to target. One id covering all eight endpoints
-  // would mean every policy anybody wrote about the demonstration surface also
+  // would mean every policy anybody wrote about the XACML surface proper also
   // decided who may pull the documents this service enforces its own access
   // with, which is the collapse `roles.js` keeps the two roles apart to
   // prevent — and a policy layer that cannot express the distinction its own

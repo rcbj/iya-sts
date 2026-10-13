@@ -9,33 +9,35 @@
 // AN OPENID4VCI PRE-AUTHORIZED CODE IS REDEEMED FOR A TOKEN ABOUT THE PERSON
 // THE OFFER NAMED (#158, 2026-10-05), over the wire.
 //
-// A cross-device Credential Offer from `/issuer/offer?mode=cross-device`,
-// redeemed at the token endpoint by a wallet that names no client (OID4VCI
-// section 6.1's anonymous access), returned an access token with
+// A cross-device Credential Offer (the user portal's since #589; the demo
+// issuer's `/issuer/offer` until #594), redeemed at the token endpoint by a wallet
+// that names no client (OID4VCI section 6.1's anonymous access), returned
+// an access token with
 // `"sub": ""` and `"client_id": ""` — both REQUIRED by RFC 9068 section 2.2,
 // and the empty subject an anonymous token about a named person. The offer
 // recorded whom it was for when it was MINTED, and in development that is
 // `oid4vci.offerUsername`, who may have no entry yet.
 //
-// In a throwaway realm it leaves behind:
-//
-//   * development: `oid4vci.offerUsername` is a person with NO entry when the
-//     offer is minted — the case that produced the empty `sub`; the entry
-//     appears at redemption, and the token must carry its subject;
-//   * product: the offer page requires a sign-on session and mints the offer
-//     for the person signed in;
-//
-// and in both, the access token's `sub` is the `urn:uuid:` subject the same
+// In a throwaway realm it leaves behind, in either mode, the person signs
+// in to the user portal and makes the offer for their own wallet on
+// /portal/wallet (`POST /account-api/credentials/offers`, #589). The
+// development case this job also held — an offer minted by the demo issuer
+// for `oid4vci.offerUsername` before that person had an entry — went with
+// the demo issuer on #594: no door left mints an offer for a person the
+// directory does not hold. In both, the access token's `sub` is the `urn:uuid:` subject the same
 // person's ID Token carries, and its `client_id` is the defined value for an
 // anonymous wallet, never an empty string.
 //
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -143,6 +145,8 @@ function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -184,21 +188,6 @@ function browser() {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 // Follows redirects from `path`, signing in as HOLDER where the sign-in
 // screen appears, until a page answers 200 or a redirect leaves for `stopAt`.
 async function follow(b, path, stopAt) {
@@ -208,12 +197,14 @@ async function follow(b, path, stopAt) {
     if (stopAt && r.location.indexOf(stopAt) === 0) {
       break;
     }
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = HOLDER;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+    // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+    // signed in through the one helper, with this browser's jar, where the
+    // flow is sent to it; the answer is read as the form's 303 was.
+    if ((r.status === 302 || r.status === 303) &&
+        /\/authn\/login\?authn=/.test(r.location)) {
+      r = await authnSignin.signInWithJar(base, r.location,
+        { action: "login", username: HOLDER, password: PASSWORD }, b.jar,
+        { headers: { "User-Agent": AGENT } });
       continue;
     }
     if (r.status !== 302 && r.status !== 303) {
@@ -257,27 +248,26 @@ async function idTokenOf(b) {
   return decode(redeemed.body.id_token);
 }
 
-// A cross-device offer from the realm's offer page in browser `b`: its
-// pre-authorized code, and the Transaction Code the page shows the person
-// (`oid4vc/vc_offers.ts`, renderOfferQrPage()).
-async function crossDeviceOffer(b) {
-  log.debug("Entering crossDeviceOffer().");
-  const page = await follow(b, R + "/issuer/offer?mode=cross-device");
-  assert.strictEqual(page.status, 200, "the offer page: " + page.status +
-                     " " + page.location + " " + page.text.slice(0, 300));
-  const decoded = page.text.replace(/&amp;/g, "&");
-  const link = (decoded.match(/id="open_in_wallet" href="([^"]+)"/) ||
-                [])[1] || "";
-  const txCode = (decoded.match(/id="tx_code">([^<]*)</) || [])[1] || "";
-  const carried = /[?&]credential_offer=([^&]+)/.exec(link);
-  assert.ok(carried, "the offer page links the offer by value: " +
-            link.slice(0, 300));
-  const offer = JSON.parse(decodeURIComponent(carried[1]));
-  const grant = (offer.grants || {})[PRE_AUTH] || {};
-  assert.ok(grant["pre-authorized_code"], "the offer carries a " +
-            "pre-authorized code: " + JSON.stringify(offer).slice(0, 400));
-  log.debug("Leaving crossDeviceOffer().");
-  return { code: grant["pre-authorized_code"], txCode: txCode };
+// A cross-device offer the person makes for their own wallet on the user
+// portal (#589): signed in as the static portal, `POST
+// /account-api/credentials/offers` answers the offer and the Transaction
+// Code the page shows (`portal/portal_wallet.ts`).
+async function portalOffer() {
+  log.debug("Entering portalOffer().");
+  const client = await portal.signInToThePortal(base, HOLDER, null,
+                                                { password: PASSWORD });
+  const made = await client.act("/portal/wallet",
+    { configuration: "IdentityCredential", mode: "cross-device" });
+  assert.ok(made.status === 200 && made.json && made.json.offer,
+            "the portal's offer: " + made.status + " " +
+            made.text.slice(0, 300));
+  const offer = made.json.offer;
+  const grant = ((offer.credentialOffer || {}).grants || {})[PRE_AUTH] || {};
+  assert.ok(grant["pre-authorized_code"] && offer.txCode, "the offer " +
+            "carries a pre-authorized code and a Transaction Code: " +
+            JSON.stringify(offer).slice(0, 400));
+  log.debug("Leaving portalOffer().");
+  return { code: grant["pre-authorized_code"], txCode: offer.txCode };
 }
 
 async function test() {
@@ -299,25 +289,15 @@ async function test() {
     "created the relying party");
   await ok(api + "/consent/grant-global-consent",
            { client: CLIENT, scope: "openid" }, "consented openid");
-  await ok(api + "/config/set", { key: "oid4vci.offerUsername",
-                                  value: HOLDER },
-           "made " + HOLDER + " the realm's offer username");
-
   const b = browser();
-  let idToken = null;
-  if (product) {
-    log.info("=== 1. product: " + HOLDER + " signs in, then asks for the " +
-             "offer ===");
-    await ok(api + "/users/create", { username: HOLDER, invent: false,
-      credential: "password", password: PASSWORD,
-      attributes: { cn: "VCI " + HOLDER, givenName: "VCI", sn: "Holder",
-                    mail: HOLDER + "@vci158.test" } }, "created " + HOLDER);
-    idToken = await idTokenOf(b);
-  } else {
-    log.info("=== 1. development: the offer is minted for " + HOLDER +
-             ", who has no entry yet ===");
-  }
-  const offer = await crossDeviceOffer(b);
+  log.info("=== 1. " + HOLDER + " signs in, then makes the offer on " +
+           "/portal/wallet ===");
+  await ok(api + "/users/create", { username: HOLDER, invent: false,
+    credential: "password", password: PASSWORD,
+    attributes: { cn: "VCI " + HOLDER, givenName: "VCI", sn: "Holder",
+                  mail: HOLDER + "@vci158.test" } }, "created " + HOLDER);
+  let idToken = await idTokenOf(b);
+  const offer = await portalOffer();
 
   log.info("=== 2. an anonymous wallet redeems it ===");
   const redeemed = await postForm(base + "/oauth2/token", {

@@ -1,0 +1,326 @@
+{
+  "listeners.builtin.main.name": {
+    "en": "9dc3805bbb46619d",
+    "text": "Huvudport"
+  },
+  "listeners.builtin.main.what": {
+    "en": "431d7c6fda5c0cfb",
+    "text": "Varje HTTP-protokoll, konsolen och portalen."
+  },
+  "listeners.builtin.ldap.name": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "listeners.builtin.ldap.what": {
+    "en": "177408f6a3cbe157",
+    "text": "Den inbäddade katalogen, i klartext."
+  },
+  "listeners.builtin.ldaps.name": {
+    "en": "9618bbe69ddd3eb5",
+    "text": "LDAPS"
+  },
+  "listeners.builtin.ldaps.what": {
+    "en": "f40218d728835152",
+    "text": "Den inbäddade katalogen över TLS."
+  },
+  "listeners.builtin.debugger.name": {
+    "en": "2bdecd403c36b3de",
+    "text": "Protokolldebugger"
+  },
+  "listeners.builtin.debugger.what": {
+    "en": "5e758f21cab3cbd0",
+    "text": "Den inbäddade protokolldebuggern, där en sådan är inbäddad."
+  },
+  "listeners.builtin.kdc.name": {
+    "en": "50337c0a4e94b039",
+    "text": "Kerberos KDC"
+  },
+  "listeners.builtin.kdc.what": {
+    "en": "3f7729c5149376d6",
+    "text": "TCP och UDP 88; Kerberos-meddelanden, inte TLS."
+  },
+  "listeners.builtin.revocation.name": {
+    "en": "384cb54062bffd4b",
+    "text": "Återkallelse (vanlig HTTP)"
+  },
+  "listeners.builtin.revocation.what": {
+    "en": "55a30857a7345fe6",
+    "text": "CRL:er och OCSP över vanlig HTTP, som RFC 5280 avsnitt 8 begär."
+  },
+  "listeners.builtin.spiffe-workload.name": {
+    "en": "8c6c635f7d593551",
+    "text": "SPIFFE Workload API (TCP)"
+  },
+  "listeners.builtin.spiffe-workload.what": {
+    "en": "42f169eed1663fe6",
+    "text": "Inte TLS: specifikationens transport är anroparens nätverk, som produktläget bara betjänar där det är deklarerat som autentiserat."
+  },
+  "listeners.builtin.spiffe-server.name": {
+    "en": "5373db72c7e9bae7",
+    "text": "SPIRE Server API"
+  },
+  "listeners.builtin.spiffe-server.what": {
+    "en": "e4a22cf64fca967f",
+    "text": "Ömsesidig TLS under varje sfärs förtroendedomän."
+  },
+  "listeners.builtin.spiffe-server.clientAuth": {
+    "en": "6ff4a4e99a607b89",
+    "text": "begärs, krävs inte: en agent som ännu saknar SVID måste nå AttestAgent (protokollets)"
+  },
+  "listeners.builtin.spiffe-broker.name": {
+    "en": "4eeddd04a30a0491",
+    "text": "SPIFFE Broker API"
+  },
+  "listeners.builtin.spiffe-broker.what": {
+    "en": "560d5e79517fa839",
+    "text": "Ömsesidig TLS för mäklarna i spiffe.brokers."
+  },
+  "listeners.builtin.spiffe-broker.clientAuth": {
+    "en": "588e0284f9d55b20",
+    "text": "krävs: en mäklares X509-SVID (protokollets)"
+  },
+  "listeners.builtin.cell.name": {
+    "en": "178e409afed3c530",
+    "text": "Kanal mellan celler"
+  },
+  "listeners.builtin.cell.what": {
+    "en": "da35fbcaf99404a1",
+    "text": "Ömsesidig TLS mellan cellerna i en tjänst; alltid TLS 1.3."
+  },
+  "listeners.builtin.cell.clientAuth": {
+    "en": "11980b13bc20d54a",
+    "text": "krävs: en annan cells certifikat (protokollets)"
+  },
+  "listeners.policy.nodeDefault": {
+    "en": "2a77fdd39a1fe033",
+    "text": "(nodes standard)"
+  },
+  "listeners.policy.opensslDefault": {
+    "en": "bcdb3bd6dae8bd33",
+    "text": "(OpenSSL-standard)"
+  },
+  "listeners.policy.notBound": {
+    "en": "58c8d4b93b0f0599",
+    "text": "inte bunden på den här noden"
+  },
+  "listeners.policy.protocolTrust": {
+    "en": "4a4ba3c3bbf2a9fd",
+    "text": "(protokollets eget förtroendepaket)"
+  },
+  "listeners.policy.ownFile": {
+    "en": "d50b3852e4f7f274",
+    "text": "sin egen fil {{file}}"
+  },
+  "listeners.policy.ownFileAndRoot": {
+    "en": "002be94bf76acfc0",
+    "text": "sin egen fil {{file}} och tjänstens rot"
+  },
+  "listeners.policy.anchors": {
+    "en": "6788dbdb070b901c",
+    "text": "tjänstens förtroendeankare"
+  },
+  "listeners.policy.anchorsAndRoot": {
+    "en": "e8f30dd045f13fd7",
+    "text": "tjänstens förtroendeankare och tjänstens rot"
+  },
+  "listeners.applications.home.label": {
+    "en": "91b2dbada3ab1fa1",
+    "text": "Startsida"
+  },
+  "listeners.applications.home.what": {
+    "en": "45245b5eb4a5b2c5",
+    "text": "GET /, dess bild, dokumentationen, sidorna med villkor och policyer samt sfärlistan."
+  },
+  "listeners.applications.authn.label": {
+    "en": "72f0c79fe76b583e",
+    "text": "Autentiseringstjänst"
+  },
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "Inloggningstjänsten och dess andra faktorer, plånboken, SPNEGO- och certifikatinloggningar, samt utloggningen."
+  },
+  "listeners.applications.portal.label": {
+    "en": "00cf214ba77e7497",
+    "text": "Användarportal"
+  },
+  "listeners.applications.portal.what": {
+    "en": "ae78f5077c808641",
+    "text": "De sidor som tillhör den person som tittar på dem, och det konto-API som de ritas från."
+  },
+  "listeners.applications.admin-console.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Administratörskonsol"
+  },
+  "listeners.applications.admin-console.what": {
+    "en": "01585f76e46f24d9",
+    "text": "Konsolen vid /admin, dess skript och dess sidor."
+  },
+  "listeners.applications.management-api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "Hanterings-API"
+  },
+  "listeners.applications.management-api.what": {
+    "en": "f87960a0be10dbb1",
+    "text": "/admin-api, varje konsolkontroll nåbar av en maskin."
+  },
+  "listeners.applications.oauth-oidc.label": {
+    "en": "ca2ce1b840c94ea6",
+    "text": "OAuth 2.0 / OpenID Connect"
+  },
+  "listeners.applications.oauth-oidc.what": {
+    "en": "2186eb305111cd6a",
+    "text": "Auktoriseringsservern och OpenID-leverantören, deras discovery-dokument och statuslistan för åtkomsttoken."
+  },
+  "listeners.applications.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "listeners.applications.saml2.what": {
+    "en": "e31f5a124e3105ff",
+    "text": "SAML 2.0-identitetsleverantören."
+  },
+  "listeners.applications.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "listeners.applications.saml11.what": {
+    "en": "3f8a5e529e26ea47",
+    "text": "SAML 1.1-identitetsleverantören."
+  },
+  "listeners.applications.ws-trust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "listeners.applications.ws-trust.what": {
+    "en": "6a7c8cd71b884bfd",
+    "text": "WS-Trust-tjänsten för säkerhetstoken."
+  },
+  "listeners.applications.ws-federation.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "listeners.applications.ws-federation.what": {
+    "en": "d46418b8851b7875",
+    "text": "Profilen för passiva begärare och dess metadata."
+  },
+  "listeners.applications.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federation"
+  },
+  "listeners.applications.federation.what": {
+    "en": "9dd9fae01faa7bb2",
+    "text": "Federationsrelationer med främmande identitetstjänster."
+  },
+  "listeners.applications.oidfed.label": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "listeners.applications.oidfed.what": {
+    "en": "3ad47704e5adf5bf",
+    "text": "Entity Configuration och federationsslutpunkterna."
+  },
+  "listeners.applications.oid4vc.label": {
+    "en": "3ed217bd349c451a",
+    "text": "Verifierbara intyg"
+  },
+  "listeners.applications.oid4vc.what": {
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, DID:er och statuslistorna."
+  },
+  "listeners.applications.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "listeners.applications.scim.what": {
+    "en": "753bc4eccff231fc",
+    "text": "Provisionering till katalogen."
+  },
+  "listeners.applications.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "listeners.applications.ssf.what": {
+    "en": "0755a2e473f064ed",
+    "text": "Shared Signals-sändaren."
+  },
+  "listeners.applications.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "listeners.applications.gnap.what": {
+    "en": "f787462ada9a2720",
+    "text": "GNAP-auktoriseringsservern och dess interaktionssidor."
+  },
+  "listeners.applications.xacml.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "listeners.applications.xacml.what": {
+    "en": "fbd4d4a27b747323",
+    "text": "Policybeslutspunkten, dess policyer och de fjärranslutna PEP:arnas dörrar."
+  },
+  "listeners.applications.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "listeners.applications.acme.what": {
+    "en": "2398dbe02edc11de",
+    "text": "Certifikatregistrering via ACME."
+  },
+  "listeners.applications.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "listeners.applications.est.what": {
+    "en": "0792aaa5bdd515bb",
+    "text": "Certifikatregistrering via EST."
+  },
+  "listeners.applications.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "listeners.applications.scep.what": {
+    "en": "2b96ead3c4a041ba",
+    "text": "Certifikatregistrering via SCEP."
+  },
+  "listeners.applications.pki.label": {
+    "en": "b34129880663423f",
+    "text": "Certifikatutfärdare"
+  },
+  "listeners.applications.pki.what": {
+    "en": "8b280b2baedbdfe6",
+    "text": "CRL:er, OCSP, CA-certifikaten och kedjorna, samt de kryptografiska metadatadokumenten."
+  },
+  "listeners.applications.kerberos.label": {
+    "en": "43c19a093b34b581",
+    "text": "Kerberos"
+  },
+  "listeners.applications.kerberos.what": {
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP, Kerberos-KDC:n över HTTPS."
+  },
+  "listeners.applications.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "listeners.applications.spiffe.what": {
+    "en": "76b7e20cfb090f52",
+    "text": "SPIFFE-slutpunkten för bundles."
+  },
+  "listeners.applications.tls.label": {
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
+  },
+  "listeners.applications.tls.what": {
+    "en": "22e07124e7ed4aca",
+    "text": "Servercertifikatet som den här tjänsten presenterar."
+  },
+  "listeners.map.sentences.rpIdNotCommon": {
+    "en": "629aac67a80b3ff9",
+    "text": "De applikationer som läser inloggningssessionen finns på värdnamnen {{hosts}}, och webauthn.rpId ({{rpId}}) är inte en domän som alla ligger under: en passkey som registrerats på en är inte användbar på en annan. Sätt webauthn.rpId till den domän som authn.cookieDomain anger."
+  },
+  "listeners.map.sentences.rpIdEmpty": {
+    "en": "d82c2e645f3ef21a",
+    "text": "De applikationer som läser inloggningssessionen finns på värdnamnen {{hosts}}, och webauthn.rpId är tomt, så var och en är sin egen förlitande part: en passkey som registrerats på en är inte användbar på en annan. Sätt webauthn.rpId till den domän som authn.cookieDomain anger."
+  }
+}

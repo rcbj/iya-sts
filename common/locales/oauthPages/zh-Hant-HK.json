@@ -1,0 +1,6 @@
+{
+  "formPost.title": "正在返回客戶端",
+  "formPost.heading": "正在返回客戶端",
+  "formPost.continue": "繼續前往客戶端",
+  "formPost.scriptNote": "表單由 <code>/oauth2/autopost.js</code> 自動提交。它是一個獨立的資源，因為本服務對每個回應都設定 <code>script-src 'none'</code>，而本頁將其放寬為 <code>'self'</code>；腳本關閉時，按鈕就是提交方式。"
+}

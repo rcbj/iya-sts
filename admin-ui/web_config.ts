@@ -112,7 +112,10 @@ class ConfigPage {
 
       kit.note(t.html('consoleConfig.resetAllHere')) +
 
-      '<h2>' + t.html('consoleConfig.whereEdited') + '</h2>' +
+      // THE INDEX AND THE GLOBAL SETTINGS ARE TABS (2026-10-12); what is
+      // overridden, and where a value survives, are Metadata.
+      '<h2 data-tab="index">' + t.html('consoleConfig.whereEdited') +
+      '</h2>' +
       kit.note(t.html('consoleConfig.wholeTable')) +
       '<table><thead><tr><th>' + t.html('consoleConfig.thGroup') +
       '</th><th class="num">' + t.html('consoleConfig.thSettings') +
@@ -129,7 +132,8 @@ class ConfigPage {
       SettingsForms.forms(json.settings, '/admin/config', undefined,
                           t) +
 
-      kit.note(t.html('consoleConfig.overJson'));
+      '<div data-metadata>' + kit.note(t.html('consoleConfig.overJson')) +
+      '</div>';
 
     return inner;
   }

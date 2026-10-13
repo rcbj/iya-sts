@@ -56,8 +56,6 @@
   "intro": "<strong>ACME（RFC 8555），每个信任领域一个服务器。</strong>客户端使用为某个人或应用签发的 External Account Binding 注册账户，为该条目拥有的标识符订购证书，并以 CSR 完成订单。目录为",
   "turnedOff": "<strong>此领域已关闭 ACME。</strong>",
   "noDialOut": "<strong>没有任何质询会向外连接。</strong>对于绑定条目所拥有的标识符（已注册的主机名、个人的邮箱、条目本身），授权在创建时即为有效，带有一个 <code>{challenge}</code> 质询；条目不拥有的标识符会在 newOrder 时以 rejectedIdentifier 被拒绝。EAB MAC 在所有模式下都会验证。",
-  "hDirectory": "目录",
-  "hEndpoints": "端点",
   "hIssuingCa": "ACME 颁发 CA",
   "hProfiles": "配置文件",
   "hEab": "External Account Binding 密钥",

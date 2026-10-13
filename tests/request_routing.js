@@ -263,7 +263,7 @@ function checkDispatchEverything(t) {
   withSettings('*', '/scim,/xacml,/admin-api', function () {
     ['/oauth2/authorize', '/saml2/sso', '/saml11/sso', '/wsfed', '/wstrust',
      '/scim/v2/Users', '/admin', '/admin-api/config', '/portal', '/xacml/pdp',
-     '/krb5/principals', '/spiffe/bundle', '/ssf/streams', '/federation/acs/x',
+     '/KdcProxy', '/spiffe/bundle', '/ssf/streams', '/federation/acs/x',
      '/logout', '/'].forEach(function (url) {
       t.check(pool.dispatched(url) === true,
               '"*" dispatches ' + url, String(pool.dispatched(url)));
@@ -275,8 +275,8 @@ function checkDispatchEverything(t) {
             'proxied it would describe the unix socket between the front ' +
             'process and a worker — which is not a fact about the caller',
             String(pool.dispatched('/tls')));
-    t.check(pool.dispatched('/tls/trust') === false,
-            'nor anything under it', String(pool.dispatched('/tls/trust')));
+    t.check(pool.dispatched('/tls/sign-in') === false,
+            'nor anything under it', String(pool.dispatched('/tls/sign-in')));
 
     // ---------------------------------------------------------------------
     // AND SPIFFE **IS** DISPATCHED, which is an assertion about a fix rather

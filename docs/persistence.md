@@ -154,7 +154,10 @@ That plain container speaks TLS only if you configure it to, and this service
 `sslmode` is dialled as `sslmode=require`, and `sslmode=disable` or `allow`, or
 a string that is not a `postgres://` URL, stops the service starting
 (`STS-STORE-0078`). So give that container a certificate (the compose stack
-below does it for you, and requires TLS at the database end too).
+below does it for you, and requires TLS at the database end too) — and,
+because the service verifies the server's certificate by default, name its
+CA in `persistence.databaseTlsCaFile` unless it chains to something the
+process already trusts.
 
 Point it somewhere else with `STS_DATABASE_URL`, or by editing
 `persistence.databaseUrl` in your appconfig file — all four of them carry the
@@ -225,19 +228,46 @@ docker compose down          # stop, keeping the volumes
 docker compose down -v       # stop and throw the data away
 ```
 
-### The compose database is TLS, and requires it
+### The compose database is TLS, and the service verifies it
 
 The Postgres container generates a server key pair on its first
 start and every `host` rule in its `pg_hba.conf` is `hostssl`, so a plaintext
 client is refused by the database with `no pg_hba.conf entry for host …, no
-encryption`. The connection string carries `?sslmode=require` to match.
+encryption`.
 
 The certificate is **self-signed**, because it is generated in the container by
-something that has no CA to sign it. So the connection is *encrypted* and the
-server is not *authenticated*, and `/admin/persistence` says exactly that in its
-**Transport** row rather than showing one tick for two different facts. Turn
-`persistence.databaseTlsRejectUnauthorized` on when you point this at a real
-database whose certificate chains to something `NODE_EXTRA_CA_CERTS` names.
+something that has no CA to sign it. The container copies the certificate (never
+the key) into the `sts-db-ca` volume, which the service mounts read-only, and the
+service trusts that one file for its database connections:
+`STS_DATABASE_TLS_CA_FILE` is `/run/secrets/database-ca/postgres.crt` and the
+connection string carries `?sslmode=verify-full`. So the connection is both
+*encrypted* and *authenticated* — the chain and the host name `postgres` are
+checked — and `/admin/persistence` shows both facts in its **Transport** row.
+
+**The server's certificate is verified by default, in every mode.**
+`persistence.databaseTlsRejectUnauthorized` is `true` unless you turn it off.
+The trust anchors are the file `persistence.databaseTlsCaFile` names when it is
+set — trusted for the database connections only, and nothing else the service
+dials — and the process's default trust store, with `NODE_EXTRA_CA_CERTS`,
+otherwise. A managed database whose certificate chains to a public root, or to
+a bundle you name in either place, needs nothing more. A CA file that is named
+and cannot be read, or holds no certificate, stops the service starting
+(`STS-STORE-0079`). The setting may also name a directory, and then every `.crt`
+and `.pem` file in it is read.
+
+> **Warning:** turning `persistence.databaseTlsRejectUnauthorized` off leaves
+> the database server **unauthenticated**. The connection is still encrypted,
+> but anything that can answer at the database's address can impersonate it and
+> read and write every row the service keeps — the sealed keys and the directory
+> included. Monitoring → Database and `/admin/persistence` say so in red, and the
+> service logs a warning at start. Turn it off only for a throwaway database.
+
+`sslmode=verify-ca` and `sslmode=verify-full` in the connection string verify
+the certificate whatever that setting says, as libpq does: `verify-full`
+checks the chain and the host name, and `verify-ca` checks the chain only. A
+certificate that does not verify stops the service starting
+(`STS-STORE-0006`, with the TLS error). The setting decides only for a string
+whose `sslmode` is unset, `require` or `prefer`, and checks the host name too.
 
 **Upgrading from an older stack needs `docker compose down -v`.** The image is
 `postgres:18` now, and a major version will not read a data directory written by
@@ -253,6 +283,8 @@ and in product mode the sealed signing keys and everything minted under them.
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` |
 | `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` |
 | `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` |
+| `persistence.databaseTlsRejectUnauthorized` | `STS_DATABASE_TLS_REJECT_UNAUTHORIZED` | `true` |
+| `persistence.databaseTlsCaFile` | `STS_DATABASE_TLS_CA_FILE` | *(empty)* |
 | `persistence.writeDelay` | `STS_PERSISTENCE_WRITE_DELAY` | `1500` |
 | `persistence.realms` | `STS_PERSISTENCE_REALMS` | `true` |
 | `persistence.appconfig` | `STS_PERSISTENCE_APPCONFIG` | `true` |

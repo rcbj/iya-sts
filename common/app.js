@@ -1058,7 +1058,8 @@ app.use(function (err, req, res, next) {
   }
   audit.failure(code, {
     protocol: 'HTTP', channel: 'http',
-    target: String(req.originalUrl || req.url || '').split('?')[0],
+    target: audit.redactedPath(String(req.originalUrl || req.url || '')
+      .split('?')[0]),
     summary: 'The request body of ' + req.method + ' was refused before any ' +
              'endpoint saw it (' + (type || 'unclassified') + ', HTTP ' +
              ((err && (err.status || err.statusCode)) || 500) + ').',
@@ -1083,15 +1084,18 @@ app.use(function (err, req, res, next) {
 app.use(function (req, res, next) {
   log.debug("Entering the call-log middleware.");
   const started = Date.now();
+  // A capability in the path (#571's `/authn-api` ids) is not logged.
   const request = {
-    path: req.originalUrl,
+    path: audit.redactedPath(String(req.originalUrl || '')),
     method: req.method,
-    query: req.query,
+    // And the capabilities in its query (#574): the pending sign-in, the
+    // step, the wallet's transaction.
+    query: audit.redactedQuery(req.query),
     headers: headersOf(req.headers),
     body: bodyOf(req.body)
   };
   log.debug({ request: request },
-            'Request: ' + req.method + ' ' + req.originalUrl);
+            'Request: ' + req.method + ' ' + request.path);
 
   let responseBody = '';
   const send = res.send;
@@ -1148,7 +1152,8 @@ app.use(function (req, res, next) {
     const matchedPath = (req.route && req.route.path) || '';
     stats.recordCall({
       method: req.method,
-      path: matchedPath || String(req.originalUrl || '/').split('?')[0],
+      path: matchedPath ||
+            audit.redactedPath(String(req.originalUrl || '/').split('?')[0]),
       matched: !!matchedPath,
       status: res.statusCode,
       durationMs: Date.now() - started
@@ -1211,14 +1216,14 @@ app.use(function (req, res, next) {
   // ---------------------------------------------------------------------
   res.on('finish', realms.bind(req.realm, function () {
     recordTheCall();
-    log.debug({ response: { path: req.originalUrl,
+    log.debug({ response: { path: request.path,
                             method: req.method,
                             status: res.statusCode,
                             durationMs: Date.now() - started,
                             headers: headersOf(res.getHeaders()),
                             body: responseBody } },
               'Response: ' + res.statusCode + ' ' + req.method + ' ' +
-              req.originalUrl +
+              request.path +
               ' in ' + (Date.now() - started) + 'ms');
   }));
   log.debug("Leaving the call-log middleware. The call will be recorded " +

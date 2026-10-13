@@ -687,7 +687,7 @@
   "a3.declaredNoteA": "Ang <strong>Idineklara</strong> ay <code>appAllowedProtocol</code> — kung PARA SAAN sinabi ng isang tao ang application na ito, sa ",
   "a3.linkNewApplication": "Bagong application",
   "a3.declaredNoteB": " o sa pamamagitan ng mga Add at Remove form sa ibaba. Binabasa ang <strong>Naitala</strong> mula sa mga KIND sa talahanayan sa itaas, at hindi mula sa mga protocol label sa tabi nito, dahil itinatala ang federation partner sa ilalim ng protocol na sinasalita ng relationship nito at, ayon sa label, hindi ito maihihiwalay sa karaniwang client.",
-  "a3.recordedNote": "<strong>Ang Naitala ay hindi katulad ng “nag-authenticate na”.</strong> Karaniwang isinusulat ang kind kapag nakilala ng protocol ang identifier — pero kumukuha rin ng isa ang create, kaya ang entry na mano-manong ginawa ay maaaring maitala sa family na hindi pa ito nakakonekta kailanman. Ang bilang na <em>Authentications</em> sa itaas ang numerong sumasagot kung may talagang nangyari. <strong>At walang ibinibigay ang alinmang column:</strong> ang family na idineklara at hindi naitala ay kadalasang application na hindi pa nakakonekta, ang naitala at hindi kailanman idineklara ay ang karaniwang kaso, at walang humihingi sa protocol na suriin ang alinman — ang mock na tatanggi sa protocol ay mag-aalis ng test case sa halip na magdagdag.",
+  "a3.recordedNote": "<strong>Ang Naitala ay hindi katulad ng “nag-authenticate na”.</strong> Karaniwang isinusulat ang kind kapag nakilala ng protocol ang identifier — pero kumukuha rin ng isa ang create, kaya ang entry na mano-manong ginawa ay maaaring maitala sa family na hindi pa ito nakakonekta kailanman. Ang bilang na <em>Authentications</em> sa itaas ang numerong sumasagot kung may talagang nangyari. <strong>At walang ibinibigay ang alinmang column:</strong> ang family na idineklara at hindi naitala ay kadalasang application na hindi pa nakakonekta, ang naitala at hindi kailanman idineklara ay ang karaniwang kaso, at walang humihingi sa protocol na suriin ang alinman — ang serbisyong tatanggi sa protocol ay mag-aalis ng test case sa halip na magdagdag.",
   "a3.colFamily": "Family",
   "a3.colDeclared": "Idineklara",
   "a3.colRecorded": "Naitala",
@@ -785,5 +785,8 @@
   "ldif.importIntro": "Gumagawa ng application sa realm na ito mula sa LDIF file na may isang application record, gaya ng isinusulat ng export. Hindi dapat umiiral na rito ang application na pinangalanan sa file: hindi kailanman nag-o-overwrite ang import, kaya hindi nito mababago ang application sa pahinang ito.",
   "ldif.file": "LDIF file",
   "ldif.paste": "o i-paste ang LDIF",
-  "ldif.import": "I-import ang LDIF"
+  "ldif.import": "I-import ang LDIF",
+  "owners.tab": "Mga may-ari",
+  "owners.lead": "Ang mga tao at grupong nananagot para sa application na ito. Maghanap ng isa sa ibaba at pindutin ang <strong>Idagdag</strong>, o alisin ang isa gamit ang <strong>Alisin</strong>: nase-save ang bawat isa sa sandaling pindutin mo. Walang ibinibigay ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya.",
+  "owners.leadRead": "Ang mga tao at grupong nananagot para sa application na ito, mula sa mga value nitong <code>appOwner</code>. Walang ibinibigay ang may-ari."
 }

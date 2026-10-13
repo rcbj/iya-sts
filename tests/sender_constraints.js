@@ -261,19 +261,22 @@ function checkTheExemption(t) {
   t.equal(sc.mtlsExemptClient(''), false,
           '2e. and an unnamed client is not');
 
-  // THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446): DPoP-bound by a rule about
-  // that client, with every setting off.
-  t.equal(sc.DPOP_BOUND_PUBLIC_CLIENTS.join(','), 'sts-admin-console',
+  // THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446), AND THE PORTAL (#568):
+  // DPoP-bound by a rule about those two clients, with every setting off.
+  t.equal(sc.DPOP_BOUND_PUBLIC_CLIENTS.join(','),
+          'sts-admin-console,sts-user-portal',
           '2e-i. the clients DPoP-bound as public clients are the admin ' +
-          'console, nothing else');
+          'console and the user portal, nothing else');
   t.check(hosted.indexOf(sc.DPOP_BOUND_PUBLIC_CLIENTS[0]) >= 0,
           '2e-ii. and it is one of this service\'s own surfaces');
   t.equal(sc.dpopBoundPublicClient('sts-admin-console', 'none'), true,
           '2e-iii. the console declared as a public client is bound');
   t.equal(sc.dpopBoundPublicClient('sts-admin-console', 'private_key_jwt'),
           false, '2e-iv. the console as seeded, confidential, is not');
-  t.equal(sc.dpopBoundPublicClient('sts-user-portal', 'none'), false,
-          '2e-v. the portal is not: it keeps its backend-for-frontend');
+  t.equal(sc.dpopBoundPublicClient('sts-user-portal', 'none'), true,
+          '2e-v. the portal declared as a public client is bound too (#568)');
+  t.equal(sc.dpopBoundPublicClient('some-other-client', 'none'), false,
+          '2e-vi. and no other public client is');
   t.equal(sc.dpopBoundPublicClient('any-other-client', 'none'), false,
           '2e-vi. nor is any other public client');
   const consoleNoProof = sc.publicClientIssuanceRefusal({

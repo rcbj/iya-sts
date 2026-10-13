@@ -303,7 +303,7 @@ Three things follow:
   SPIFFE's four shared sockets — those answer in the default realm, and what a
   realm's own Issuing CA adds is a line in the chain saying who issued the SVID.
 * **A realm with no certificate authority still works.** It falls back to the
-  self-signed authority this service always had, and `/admin/spiffe` and `GET
+  self-signed authority this service always had, and `/admin/cert-issuance#cert-spiffe-overview` and `GET
   /spiffe` both say which one is in use. `pki.autoBuild: false` reaches that
   state deliberately.
 
@@ -421,7 +421,7 @@ is ephemeral — it exists so the request-worker pool can share minted rows — 
 sealing an entry that survives a restart under a key that does not would leave
 the certificate readable and the private half permanent garbage. That is the
 same rule an authenticator's shared secret follows, and in that mode the
-decision `oauthClientSecret` and `GET /krb5/principals` make still applies:
+decision `oauthClientSecret` and the development Kerberos password settings make still applies:
 a debugger whose credentials are unusable without reading the source is worse
 than one that says what they are.
 
@@ -765,8 +765,8 @@ dialled only when allowed, and a relative distribution point needs
 `pki.revocationLdapDirectory` and single-valued RDNs — refused under hard-fail
 when nothing else answers; a certificate naming nothing is accepted in
 development; LDAPS 636 asks for no client certificate. The verdict for a
-certificate you present is in `GET /tls/sign-in`'s answer; the policy is on `GET /tls` and
-`/admin/crypto-metadata`.
+certificate you present is in `GET /tls/sign-in`'s answer and on Monitoring →
+TLS connection; the policy is on `/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is **not** revocation:
@@ -898,8 +898,7 @@ It does not apply to:
 * **an HMAC signature**, which carries no `kid` at all;
 * **the SPIFFE JWT-SVID**, whose authority is a separate key published in
   the SPIFFE bundle;
-* **the DIF Domain Linkage Credential and the credential `/did/generate`
-  returns**, whose `kid` names a DID verification method (`did:…#sts-…`), and
+* **the DIF Domain Linkage Credential**, whose `kid` names a DID verification method (`did:…#sts-…`), and
   the DID document's verification methods themselves.
 
 **While it is on, `/oauth2/jwks` lists every signing key twice**: once under its
@@ -1088,7 +1087,7 @@ rather than describing the mode they wish they were in.
 
 | Mode | What happens |
 |---|---|
-| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a mock is disposable and its credentials are meant to die with it. |
+| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a development service is disposable and its credentials are meant to die with it. |
 | **product** | Written to `sts_keys`, sealed AES-256-GCM under the same key-encryption key as the signing keys, in the same row family. |
 
 A store of the PKI module's own would have been a **second answer to "where does

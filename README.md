@@ -15,7 +15,7 @@ It started as IYA STS inside the [OAuth2/OIDC Debugger](https://idptools.com)
 project's test suite, and it runs in one of two modes, per trust realm
 (`global.mode`):
 
-* **`development`** (the default) is that mock: any username signs in, anything
+* **`development`** (the default) is the permissive test mode: any username signs in, anything
   named is created, signing keys are regenerated on every start and test
   controls are open. Use it to exercise clients. **Never use it to protect
   anything.**
@@ -152,7 +152,7 @@ through a first sign-in.
 
 ### The ports
 
-Eleven bindings across ten numbers — 88 is listed twice because TCP and UDP are
+Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are
 two sockets. Every one is settable.
 
 | Port | | Setting / env var | What is on it |
@@ -161,7 +161,6 @@ two sockets. Every one is settable.
 | **8082** | tcp | `pki.httpPort` / `PKI_HTTP_PORT` | Plain HTTP `/pki/` only: CRLs, OCSP and CA certificates. `0` turns it off. |
 | **88** | **tcp** | `krb5.kdcPort` / `KRB5_KDC_PORT` | The KDC. |
 | **88** | **udp** | *(the same setting)* | The KDC over UDP. |
-| **8888** | tcp | `krb5.servicePort` / `KRB5_SERVICE_PORT` | The Kerberized test service. |
 | **389** | tcp | `ldap.port` / `LDAP_PORT` | The embedded directory, plain LDAP. |
 | **636** | tcp | `ldap.tlsPort` / `LDAPS_PORT` | The same directory over TLS. |
 | **8092** | tcp | `spiffe.workloadPort` / `STS_SPIFFE_WORKLOAD_PORT` | The SPIFFE Workload API over gRPC. |
@@ -178,9 +177,12 @@ And two Unix domain sockets (mount the directory as a volume to reach them):
 | `/tmp/spire-server/private/api.sock` | `spiffe.serverSocket` / `STS_SPIFFE_SERVER_SOCKET` | off — the SPIRE Server API's private socket |
 
 A socket that fails to bind is reported and is not fatal. `docker-compose.yml`
-publishes 8081 and 8082 only; a raw Kerberos client needs
-`-p 88:88/tcp -p 88:88/udp -p 8888:8888`, while a browser reaches the KDC
-through `POST /KdcProxy` on 8081.
+publishes 8081, 8082 and the KDC on 88 (TCP and UDP), with the acceptor
+holding `HTTP/localhost`, so `kinit` and a browser's SPNEGO sign-in work from
+the host ([the recipe](docs/kerberos.md#signing-in-from-a-browser-on-the-base-installation));
+a `docker run` needs `-p 88:88/tcp -p 88:88/udp`, and a client that can reach
+only 8081 uses `POST /KdcProxy`. The Kerberos-protected test service that was on
+8888 is the development companion's ([docker-compose](docs/docker-compose.md)).
 
 ### Configuration
 

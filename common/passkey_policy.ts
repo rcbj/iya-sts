@@ -20,7 +20,9 @@
 // ---------------------------------------------------------------------------
 // rcbj's ANSWERS ON #527 (2026-10-08), and so the defaults:
 //
-//   allowUsernameless        false. Off, the sign-in screen offers no
+//   allowUsernameless        TRUE since 2026-10-10 (rcbj: "Enable webauthn
+//                            usernameless logins by default"; it was false
+//                            on #527's answer). Off, the sign-in screen offers no
 //                            *Sign in with a passkey* button and no
 //                            conditional-mediation autofill, and asks for no
 //                            discoverable credential (`allowCredentials` is
@@ -194,6 +196,9 @@ import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The sentences `describe()` makes are filled from SENTENCES below, so the
+// server can translate them into a console reader's language (#543).
+import serverProse = require('./server_prose');
 // The attachment setting a hint is held to (#531). `config` is below every
 // module here; `helpers` already requires it.
 import config = require('./config');
@@ -283,6 +288,54 @@ const PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /**
  * The selectors a named profile carries (#535), stored beside its rows.
  */
+// ---------------------------------------------------------------------------
+// THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
+// filled there with `ServerProse.fill()` and matched by
+// `common/server_prose.ts` to refill in a console reader's language. A
+// `param.` key is a phrase that only ever stands inside another sentence.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  usernameless: 'a passkey may sign a person in with no username (user ' +
+    'verification required)',
+  noUsernameless: 'every sign-in names the person first: no passkey ' +
+    'sign-in without a username',
+  createPasskey: '"Create a passkey" asks for a discoverable credential ' +
+    '(residentKey required)',
+  securityKeyRequired: '"Use a security key" asks residentKey {{value}}, so ' +
+    'it makes a discoverable credential too',
+  securityKeyOther: '"Use a security key" asks residentKey {{value}}, so a ' +
+    'key enrolled through it may need the username to sign in',
+  deviceBound: 'only device-bound passkeys: a synced (backup-eligible) ' +
+    'passkey is refused at registration and at sign-in',
+  synced: 'synced (backup-eligible) passkeys are accepted',
+  noPinLength: 'no minimum PIN length is asked of a security key',
+  pinLengthAccepted: 'a security key must report a minimum PIN of at least ' +
+    '{{n}} characters, at registration and at sign-in; a key that does ' +
+    'not report is accepted',
+  pinLengthRefused: 'a security key must report a minimum PIN of at least ' +
+    '{{n}} characters, at registration and at sign-in; a key that does ' +
+    'not report is refused',
+  attestationAtSignIn: 'every passkey sign-in is held to the attestation ' +
+    'rules in force',
+  attestationAtRegistration: 'the attestation rules are checked when a ' +
+    'passkey is registered',
+  hints: '"Create a passkey" hints {{passkey}}; "Use a security key" ' +
+    '{{securityKey}}; a sign-in {{signIn}}',
+  'param.nothing': 'nothing',
+  enterpriseSerial: 'a security key registers only with a trusted ' +
+    'enterprise attestation naming a serial in the person\'s {{attribute}}',
+  noEnterpriseSerial: 'no security-key serial is checked',
+  promptAttribute: 'a passkey prompt shows the person\'s {{attribute}}',
+  promptAttributeExtras: 'a passkey prompt shows the person\'s ' +
+    '{{attribute}}, and the service\'s name with its {{extras}}',
+  promptName: 'a passkey prompt shows the person\'s name as the sign-in ' +
+    'knows it',
+  promptNameExtras: 'a passkey prompt shows the person\'s name as the ' +
+    'sign-in knows it, and the service\'s name with its {{extras}}',
+  chooseOne: 'a person with several passkeys chooses one at sign-in',
+  aggregate: 'a person\'s passkeys are offered as one sign-in choice'
+});
+
 const SELECTORS = [
   { key: 'selectApplications', attribute: 'stsPasskeySelectApplication',
     what: 'The applications (identifier or client_id) a named passkey ' +
@@ -377,9 +430,9 @@ const RP_NAME_EXTRAS = ['none', 'realm', 'organisation',
  */
 const FIELDS: PolicyField[] = [
   { key: 'allowUsernameless', attribute: 'stsPasskeyAllowUsernameless',
-    type: 'bool', dflt: false,
+    type: 'bool', dflt: true,
     label: 'Allow a passkey sign-in with no username',
-    what: 'OFF BY DEFAULT. On, the sign-in screen offers *Sign in with a ' +
+    what: 'ON BY DEFAULT. On, the sign-in screen offers *Sign in with a ' +
           'passkey* and the username field\'s autofill, which ask the ' +
           'browser for any discoverable credential of this realm (WebAuthn ' +
           'Level 3 section 5.4, `allowCredentials` empty) and sign in the ' +
@@ -584,6 +637,10 @@ class PasskeyPolicy {
    * The directory schema of `ou=passkeyPolicies`.
    */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The sentences `describe()` makes, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -1691,44 +1748,42 @@ class PasskeyPolicy {
     log.debug("Entering PasskeyPolicy.describe().");
     const rules = profile || this.read();
     const securityKey = this.securityKeyResidentKey(rules);
+    const fill = serverProse.fill;
+    const extras = rules.rpNameExtras && rules.rpNameExtras !== 'none'
+      ? rules.rpNameExtras : '';
+    const prompt = rules.userDisplayName
+      ? fill(extras ? SENTENCES.promptAttributeExtras
+                    : SENTENCES.promptAttribute,
+             { attribute: rules.userDisplayName, extras: extras })
+      : fill(extras ? SENTENCES.promptNameExtras : SENTENCES.promptName,
+             { extras: extras });
     const out = [
       rules.allowUsernameless === true
-        ? 'a passkey may sign a person in with no username (user ' +
-          'verification required)'
-        : 'every sign-in names the person first: no passkey sign-in ' +
-          'without a username',
-      '"Create a passkey" asks for a discoverable credential ' +
-        '(residentKey required)',
-      '"Use a security key" asks residentKey ' + securityKey +
-        (securityKey === 'required'
-          ? ', so it makes a discoverable credential too'
-          : ', so a key enrolled through it may need the username to sign in'),
+        ? SENTENCES.usernameless
+        : SENTENCES.noUsernameless,
+      SENTENCES.createPasskey,
+      fill(securityKey === 'required' ? SENTENCES.securityKeyRequired
+                                      : SENTENCES.securityKeyOther,
+           { value: securityKey }),
       rules.backupEligibility === 'disallow'
-        ? 'only device-bound passkeys: a synced (backup-eligible) passkey ' +
-          'is refused at registration and at sign-in'
-        : 'synced (backup-eligible) passkeys are accepted',
+        ? SENTENCES.deviceBound
+        : SENTENCES.synced,
       this.pinLengthSentence(rules),
       rules.enforceAttestationAtSignIn === true
-        ? 'every passkey sign-in is held to the attestation rules in force'
-        : 'the attestation rules are checked when a passkey is registered',
-      '"Create a passkey" hints ' + this.hintSentence(rules.passkeyHints) +
-        '; "Use a security key" ' +
-        this.hintSentence(rules.securityKeyHints) + '; a sign-in ' +
-        this.hintSentence(rules.signInHints),
+        ? SENTENCES.attestationAtSignIn
+        : SENTENCES.attestationAtRegistration,
+      fill(SENTENCES.hints, {
+        passkey: this.hintSentence(rules.passkeyHints),
+        securityKey: this.hintSentence(rules.securityKeyHints),
+        signIn: this.hintSentence(rules.signInHints) }),
       rules.enterpriseSerialAttribute
-        ? 'a security key registers only with a trusted enterprise ' +
-          'attestation naming a serial in the person\'s ' +
-          rules.enterpriseSerialAttribute
-        : 'no security-key serial is checked',
-      'a passkey prompt shows ' + (rules.userDisplayName
-        ? 'the person\'s ' + rules.userDisplayName
-        : 'the person\'s name as the sign-in knows it') +
-        (rules.rpNameExtras && rules.rpNameExtras !== 'none'
-          ? ', and the service\'s name with its ' + rules.rpNameExtras
-          : ''),
+        ? fill(SENTENCES.enterpriseSerial,
+               { attribute: rules.enterpriseSerialAttribute })
+        : SENTENCES.noEnterpriseSerial,
+      prompt,
       rules.aggregateDevices === false
-        ? 'a person with several passkeys chooses one at sign-in'
-        : 'a person\'s passkeys are offered as one sign-in choice'
+        ? SENTENCES.chooseOne
+        : SENTENCES.aggregate
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -1740,7 +1795,7 @@ class PasskeyPolicy {
     log.debug("Entering PasskeyPolicy.hintSentence().");
     const list = PasskeyPolicy.listOf(value);
     log.debug("Leaving PasskeyPolicy.hintSentence().");
-    return list.length ? list.join(', ') : 'nothing';
+    return list.length ? list.join(', ') : SENTENCES['param.nothing'];
   }
 
   // The PIN-length rule in a sentence (#529).
@@ -1750,11 +1805,10 @@ class PasskeyPolicy {
     const rule = this.pinLengthRule(rules);
     log.debug("Leaving PasskeyPolicy.pinLengthSentence().");
     return !rule.enforce
-      ? 'no minimum PIN length is asked of a security key'
-      : 'a security key must report a minimum PIN of at least ' + rule.min +
-        ' characters, at registration and at sign-in' +
-        (rule.onlyIfSupported ? '; a key that does not report is accepted'
-                              : '; a key that does not report is refused');
+      ? SENTENCES.noPinLength
+      : serverProse.fill(rule.onlyIfSupported ? SENTENCES.pinLengthAccepted
+                                              : SENTENCES.pinLengthRefused,
+                         { n: rule.min });
   }
 
   // -------------------------------------------------------------------------
@@ -2011,6 +2065,7 @@ export = {
   FIELDS: PasskeyPolicy.FIELDS,
   FIELD_BY_KEY: PasskeyPolicy.FIELD_BY_KEY,
   SCHEMA: PasskeyPolicy.SCHEMA,
+  SENTENCES: PasskeyPolicy.SENTENCES,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),

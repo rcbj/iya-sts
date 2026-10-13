@@ -161,14 +161,26 @@ The navigation is a grouped list down the left. Its five sections:
   kind of content.
 * **Protocols** — a page, or a group of pages, per protocol family: OAuth2 /
   OIDC (settings, authorization servers, token lifetimes, custom claims,
-  UserInfo claims), SAML, Verifiable Credentials, XACML, SCIM, Shared Signals,
-  CAEP and RISC, Federation, OpenID Federation, GNAP, the second factors,
-  Kerberos, LDAP, WS-Trust, WS-Federation, PKI, certificate issuance (ACME,
-  EST, SCEP and SPIFFE) and TLS. [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
+  UserInfo claims), SAML, Verifiable Credentials, XACML (Metadata, Settings,
+  Policies, Policy editor, Remote PEPs and Try a decision tabs), SCIM, SSF
+  (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
+  PAC claims and Principals tabs), Federation, OpenID
+  Federation, GNAP, the second factors, Kerberos, LDAP, WS-Trust,
+  WS-Federation, PKI, Cert issuance (Metadata, ACME, EST, SCEP and SPIFFE
+  tabs, the SPIFFE tab's sub-tabs the trust domain, registration entries,
+  agents and brokers) and TLS.
+  [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
   maps each to its documentation.
+  Every page under Protocols is drawn as tabs, and the first tab is
+  **Metadata**: the realm's endpoints for that protocol and what explains it
+  or reports its state. The other tabs are the registers, forms and settings.
 * **Directory** — users, groups, roles, applications, policies, and *As the
   directory holds it*: the raw entries under each container and the directory
   service itself.
+  A page with more than one section is drawn as tabs, Metadata first (its
+  tiles, notes and the container's schema), then the list, its forms and its
+  settings. Monitoring and Server configuration follow the same rule: the
+  lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
   enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
@@ -618,6 +630,48 @@ Three behaviours are the directory being consistent with itself:
 Removing a member is an `ldapmodify`, a SCIM `PATCH`, or **Admin roles** for
 the two role groups; deleting a group is an `ldapdelete` or a SCIM `DELETE`.
 
+**Owners.** A group's page has two tabs: **Group**, which is everything
+described above, and **Owners**. A group's owners are its `owner` values
+(RFC 4519), and each one names a person or a group in the realm. To add one:
+
+1. Choose **people** or **groups** and type part of a username or a group's
+   name.
+2. Press **Find**. The results show five at a time, with **Previous** and
+   **Next**.
+3. Press **Add** beside the one you want.
+
+**Add** and **Remove** save the change as soon as you press them, and the
+search results stay on the page so you can add several in a row. Unlike a
+member, an owner must name somebody who exists in the realm. A group cannot
+own itself, and it can name at most 25 owners; for more, name a group. An
+owner grants nothing, because nothing in this service reads `owner` to decide
+anything. `POST /admin-api/groups/add-owner` and
+`POST /admin-api/groups/remove-owner` are the same acts, and the group's
+answer from `GET /admin-api/groups?group=` carries its `owners`.
+
+**A role's page.** On **Directory → Roles**, each name under *Roles you have
+made* opens that role's page, `/admin/roles?role=<name>`. It has two tabs:
+
+* **Role** shows everything known about the role: its kind, the application it
+  belongs to (if any), its display name and description, who may hold it, its
+  id and DN, when it was created and last changed, every member by kind, what
+  it authorizes, the clients that confer it, the applications that require it,
+  and its directory entry. Members, permissions and conferring clients are
+  still changed on the Roles page.
+* **Owners** works the way a group's Owners tab does: find a person or a group
+  and press **Add**, or press **Remove**, and each change is saved at once. A
+  role can name at most 25 owners, and an owner grants nothing.
+  `POST /admin-api/roles/add-owner` and `POST /admin-api/roles/remove-owner`
+  are the same acts, and `GET /admin-api/roles?role=` answers the role in full
+  as `role`.
+
+**An application's owners.** An application's page has an **Owners** tab
+too, after **Roles**, which works the same way: find a person or a group and
+press **Add**, or press **Remove**, and each change is saved at once. The
+owners are the application's `appOwner` values; at most 25, and an owner
+grants nothing. `POST /admin-api/applications/add-owner` and
+`POST /admin-api/applications/remove-owner` are the same acts.
+
 **What counts as a group is two rules.** An entry under `ou=groups`, *or* an
 entry carrying a group `objectClass` (`groupOfNames`, `groupOfUniqueNames`,
 `posixGroup`, `groupOfURLs`) wherever it sits. The directory is schemaless, so
@@ -907,7 +961,7 @@ and the section that defines it (`authorization_code` beside RFC 6749 §4.1,
 `refresh_token` beside §6, `client_credentials`, the password grant, implicit
 and hybrid responses, OpenID4VCI's pre-authorized code, RFC 8693 token
 exchange). The same person search accepts any spelling — `alice`,
-`alice@STS.MOCK` and `urn:sts:user:alice` find one person.
+`alice@EXAMPLE.COM` and `urn:sts:user:alice` find one person.
 
 * A **dotted** line into the hexagon is them signing in, one per protocol
   family with the method on it.
@@ -1321,8 +1375,8 @@ relying party see the same person. **Update** installs exactly the ticked
 boxes, and **Select all** and **Delete all** are the extremes — all form posts,
 with no script.
 
-The catalogue is the same list of attribute types `/admin/vc` and
-`/admin/vc-verifier-config` choose from, so there is one spelling of each. The
+The catalogue is the same list of attribute types the Credential claims and
+Verifier request tabs at `/admin/vc` choose from, so there is one spelling of each. The
 *selections* are independent: an access token carrying `employee_number` while
 the ID Token carries only `email` is a normal arrangement. **Nothing is
 selected on a fresh start**, so upgrading never adds a claim to every token.
@@ -1345,7 +1399,22 @@ Every change to a claim set writes an audit row naming the set and what was
 added and removed — never a value — in addition to the row the call log writes
 for the same POST.
 
-### Credential claims — `/admin/vc`
+### Verifiable Credentials — `/admin/vc`
+
+The former separate OpenID4VCI, Credential status, OpenID4VP and Verifier
+request leaves are tabs on this one Protocols page:
+
+* **Metadata** lists the issuer and verifier endpoints. The explanatory
+  OpenID4VCI and OpenID4VP guidance is in disclosures that are collapsed by
+  default.
+* **OpenID4VCI** holds issuance settings.
+* **Credential claims** selects claims on issued credentials.
+* **Credential status** manages this realm's issued credential statuses.
+* **OpenID4VP** holds verifier and wallet sign-in settings.
+* **Verifier request** configures what this realm's OpenID4VP Verifier asks
+  wallets to present.
+
+### Credential claims tab — `/admin/vc#vc-tab-claims`
 
 `/admin/vc` decides what every *future* verifiable credential carries, and its
 list is of **LDAP attribute types rather than claim names**, because this
@@ -1401,17 +1470,17 @@ authenticates, and once at startup.
 **A credential claim grants nothing and nothing reads one back.** It reaches a
 credential and stops there.
 
-### Verifier request — `/admin/vc-verifier-config`
+### Verifier request tab — `/admin/vc#vc-tab-verifier-request`
 
-The other end of `/admin/vc`, and deliberately a separate setting. `/admin/vc`
-decides what an issued credential *carries*; this decides what the Verifier at
-`/oid4vp/verifier` — *The Bar Door* — **asks for**, as the `dcql_query` of the
-next OID4VP request, and what the presentation is checked against. Keeping them
+The other end of the Credential claims tab, and deliberately a separate
+setting. `/admin/vc`
+decides what an issued credential *carries*; this decides what the Verifier
+**asks for**, as the `dcql_query` of the next OID4VP request, and what the presentation is checked against. Keeping them
 apart makes the interesting state reachable: a Verifier asking for a claim the
 issuer does not mint exercises a wallet's "I cannot satisfy this request" path.
 The page also chooses which of the three **credential formats** an unqualified
 request asks for, since a presentation cannot convert between them.
-[OpenID4VP](oid4vp.md#what-the-bar-door-asks-for) covers the Verifier.
+[OpenID4VP](oid4vp.md#what-the-verifier-asks-for) covers the Verifier.
 
 **Its table is of claims, grouped by what the credential can disclose.** An
 SD-JWT VC makes one Disclosure per *top-level* claim, so `address` is one unit
@@ -1429,13 +1498,37 @@ is configured to mint.
   for `address`). A claim the context has no term for is dropped from an
   `ldp_vc` query and named on the page.
 * **What a request asks for is frozen onto it**, so the verdict at
-  `/oid4vp/result/:state` records that exchange rather than the console's
+  `GET /admin-api/verifications?state=` records that exchange rather than the console's
   current state.
+* **Start a verification** (#587) builds the next request — a format, by value or by reference, a
+  Client Identifier Prefix, a response type and mode, and same-device or
+  cross-device, each left on the Verifier's default unless chosen — and the
+  notice names its `state`, the wallet URL to send the holder to and the
+  `openid4vp://` URI a QR code would carry. It is
+  `POST /admin-api/verifications/start`, which also takes a `redirect_uri`:
+  the starter's own page the wallet is sent to once it has answered (in
+  product mode, one of the calling client's registered redirect URIs). With
+  none, the wallet is sent nowhere. The development
+  [companion](docker-compose.md#the-companion-development-only) starts its
+  verifications this way.
+* **Open verifications** lists the requests still waiting or decided in this
+  realm, newest first: what each asked for, when it expires, and whether the
+  wallet's answer was accepted or refused, with the disclosed claims' names
+  and any failed checks — never a value. One whole verdict is
+  `GET /admin-api/verifications?state=`. A wallet sign-in is not listed.
 
-**This page admits nobody.** A presentation at the bar door starts no session
+**This page admits nobody.** A presentation to the Verifier starts no session
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for
 a credential this realm issued with a request of its own and is not configured
 here ([OpenID4VP](oid4vp.md#signing-in-with-a-wallet)).
+
+### XACML — `/admin/xacml`
+
+Protocols → XACML is one destination with tabs for Metadata (the realm's
+XACML endpoints), Settings, Policies, Policy editor, Remote PEPs and Try a
+decision. The policies, editor, PEP and decision views remain distinct tabs;
+their controls return to the tab they came from. **XACML decisions** remains a
+separate Monitoring page at `/admin/xacml/monitor`.
 
 ### Authorization servers — `/admin/authorization-servers`
 

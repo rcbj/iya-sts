@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — 模拟身份验证服务",
+  "shell.title": "{title} — 身份验证服务",
   "checkEmail": "请查收电子邮件",
   "signingInAs": "正在以 <code>{name}</code> 身份登录",
   "secondFactorFor": "<code>{name}</code> 的第二因素",

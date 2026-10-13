@@ -1,0 +1,326 @@
+{
+  "listeners.builtin.main.name": {
+    "en": "9dc3805bbb46619d",
+    "text": "Main port"
+  },
+  "listeners.builtin.main.what": {
+    "en": "431d7c6fda5c0cfb",
+    "text": "Bawat HTTP protocol, ang console at ang portal."
+  },
+  "listeners.builtin.ldap.name": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "listeners.builtin.ldap.what": {
+    "en": "177408f6a3cbe157",
+    "text": "Ang embedded na directory, nang walang encryption."
+  },
+  "listeners.builtin.ldaps.name": {
+    "en": "9618bbe69ddd3eb5",
+    "text": "LDAPS"
+  },
+  "listeners.builtin.ldaps.what": {
+    "en": "f40218d728835152",
+    "text": "Ang embedded na directory sa TLS."
+  },
+  "listeners.builtin.debugger.name": {
+    "en": "2bdecd403c36b3de",
+    "text": "Protocol debugger"
+  },
+  "listeners.builtin.debugger.what": {
+    "en": "5e758f21cab3cbd0",
+    "text": "Ang embedded na protocol debugger, kung saan may naka-embed."
+  },
+  "listeners.builtin.kdc.name": {
+    "en": "50337c0a4e94b039",
+    "text": "Kerberos KDC"
+  },
+  "listeners.builtin.kdc.what": {
+    "en": "3f7729c5149376d6",
+    "text": "TCP at UDP 88; mga Kerberos message, hindi TLS."
+  },
+  "listeners.builtin.revocation.name": {
+    "en": "384cb54062bffd4b",
+    "text": "Revocation (plain HTTP)"
+  },
+  "listeners.builtin.revocation.what": {
+    "en": "55a30857a7345fe6",
+    "text": "Mga CRL at OCSP sa plain HTTP, ayon sa hinihingi ng RFC 5280 section 8."
+  },
+  "listeners.builtin.spiffe-workload.name": {
+    "en": "8c6c635f7d593551",
+    "text": "SPIFFE Workload API (TCP)"
+  },
+  "listeners.builtin.spiffe-workload.what": {
+    "en": "42f169eed1663fe6",
+    "text": "Hindi TLS: ang transport ng specification ay ang network ng caller, na sine-serve lang ng product kung saan ito idineklarang authenticated."
+  },
+  "listeners.builtin.spiffe-server.name": {
+    "en": "5373db72c7e9bae7",
+    "text": "SPIRE Server API"
+  },
+  "listeners.builtin.spiffe-server.what": {
+    "en": "e4a22cf64fca967f",
+    "text": "Mutual TLS sa ilalim ng trust domain ng bawat realm."
+  },
+  "listeners.builtin.spiffe-server.clientAuth": {
+    "en": "6ff4a4e99a607b89",
+    "text": "hinihingi, hindi kinakailangan: ang agent na wala pang SVID ay dapat makaabot sa AttestAgent (ayon sa protocol)"
+  },
+  "listeners.builtin.spiffe-broker.name": {
+    "en": "4eeddd04a30a0491",
+    "text": "SPIFFE Broker API"
+  },
+  "listeners.builtin.spiffe-broker.what": {
+    "en": "560d5e79517fa839",
+    "text": "Mutual TLS para sa mga broker sa spiffe.brokers."
+  },
+  "listeners.builtin.spiffe-broker.clientAuth": {
+    "en": "588e0284f9d55b20",
+    "text": "kinakailangan: ang X509-SVID ng isang broker (ayon sa protocol)"
+  },
+  "listeners.builtin.cell.name": {
+    "en": "178e409afed3c530",
+    "text": "Channel sa pagitan ng mga cell"
+  },
+  "listeners.builtin.cell.what": {
+    "en": "da35fbcaf99404a1",
+    "text": "Mutual TLS sa pagitan ng mga cell ng iisang serbisyo; palaging TLS 1.3."
+  },
+  "listeners.builtin.cell.clientAuth": {
+    "en": "11980b13bc20d54a",
+    "text": "kinakailangan: ang certificate ng ibang cell (ayon sa protocol)"
+  },
+  "listeners.policy.nodeDefault": {
+    "en": "2a77fdd39a1fe033",
+    "text": "(default ng node)"
+  },
+  "listeners.policy.opensslDefault": {
+    "en": "bcdb3bd6dae8bd33",
+    "text": "(default ng OpenSSL)"
+  },
+  "listeners.policy.notBound": {
+    "en": "58c8d4b93b0f0599",
+    "text": "hindi naka-bind sa node na ito"
+  },
+  "listeners.policy.protocolTrust": {
+    "en": "4a4ba3c3bbf2a9fd",
+    "text": "(ang sariling trust bundle ng protocol)"
+  },
+  "listeners.policy.ownFile": {
+    "en": "d50b3852e4f7f274",
+    "text": "ang sarili nitong file na {{file}}"
+  },
+  "listeners.policy.ownFileAndRoot": {
+    "en": "002be94bf76acfc0",
+    "text": "ang sarili nitong file na {{file}} at ang service Root"
+  },
+  "listeners.policy.anchors": {
+    "en": "6788dbdb070b901c",
+    "text": "ang mga anchor ng serbisyo"
+  },
+  "listeners.policy.anchorsAndRoot": {
+    "en": "e8f30dd045f13fd7",
+    "text": "ang mga anchor ng serbisyo at ang service Root"
+  },
+  "listeners.applications.home.label": {
+    "en": "91b2dbada3ab1fa1",
+    "text": "Front door"
+  },
+  "listeners.applications.home.what": {
+    "en": "45245b5eb4a5b2c5",
+    "text": "GET /, ang image nito, ang dokumentasyon, ang mga page ng terms at policy, at ang listahan ng realm."
+  },
+  "listeners.applications.authn.label": {
+    "en": "72f0c79fe76b583e",
+    "text": "Authentication service"
+  },
+  "listeners.applications.authn.what": {
+    "en": "1d66f74984228996",
+    "text": "Ang sign-in service at ang mga second factor nito, ang wallet, SPNEGO at certificate sign-in, at ang sign-out."
+  },
+  "listeners.applications.portal.label": {
+    "en": "00cf214ba77e7497",
+    "text": "User portal"
+  },
+  "listeners.applications.portal.what": {
+    "en": "ae78f5077c808641",
+    "text": "Ang mga page na pag-aari ng taong tumitingin sa mga ito, at ang account API na pinagkukunan ng mga ito."
+  },
+  "listeners.applications.admin-console.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Admin console"
+  },
+  "listeners.applications.admin-console.what": {
+    "en": "01585f76e46f24d9",
+    "text": "Ang console sa /admin, ang script nito at ang mga page nito."
+  },
+  "listeners.applications.management-api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "Management API"
+  },
+  "listeners.applications.management-api.what": {
+    "en": "f87960a0be10dbb1",
+    "text": "/admin-api, bawat control ng console na naaabot ng isang makina."
+  },
+  "listeners.applications.oauth-oidc.label": {
+    "en": "ca2ce1b840c94ea6",
+    "text": "OAuth 2.0 / OpenID Connect"
+  },
+  "listeners.applications.oauth-oidc.what": {
+    "en": "2186eb305111cd6a",
+    "text": "Ang authorization server at OpenID provider, ang kanilang mga discovery document at ang access-token status list."
+  },
+  "listeners.applications.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "listeners.applications.saml2.what": {
+    "en": "e31f5a124e3105ff",
+    "text": "Ang SAML 2.0 identity provider."
+  },
+  "listeners.applications.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "listeners.applications.saml11.what": {
+    "en": "3f8a5e529e26ea47",
+    "text": "Ang SAML 1.1 identity provider."
+  },
+  "listeners.applications.ws-trust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "listeners.applications.ws-trust.what": {
+    "en": "6a7c8cd71b884bfd",
+    "text": "Ang WS-Trust security token service."
+  },
+  "listeners.applications.ws-federation.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "listeners.applications.ws-federation.what": {
+    "en": "d46418b8851b7875",
+    "text": "Ang passive requestor profile at ang metadata nito."
+  },
+  "listeners.applications.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federation"
+  },
+  "listeners.applications.federation.what": {
+    "en": "9dd9fae01faa7bb2",
+    "text": "Mga federation relationship sa mga banyagang identity service."
+  },
+  "listeners.applications.oidfed.label": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "listeners.applications.oidfed.what": {
+    "en": "3ad47704e5adf5bf",
+    "text": "Ang Entity Configuration at ang mga federation endpoint."
+  },
+  "listeners.applications.oid4vc.label": {
+    "en": "3ed217bd349c451a",
+    "text": "Mga verifiable credential"
+  },
+  "listeners.applications.oid4vc.what": {
+    "en": "9914c07872a2694d",
+    "text": "OpenID4VCI, OpenID4VP, mga DID at ang mga status list."
+  },
+  "listeners.applications.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "listeners.applications.scim.what": {
+    "en": "753bc4eccff231fc",
+    "text": "Provisioning papunta sa directory."
+  },
+  "listeners.applications.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "listeners.applications.ssf.what": {
+    "en": "0755a2e473f064ed",
+    "text": "Ang Shared Signals transmitter."
+  },
+  "listeners.applications.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "listeners.applications.gnap.what": {
+    "en": "f787462ada9a2720",
+    "text": "Ang GNAP authorization server at ang mga interaction page nito."
+  },
+  "listeners.applications.xacml.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "listeners.applications.xacml.what": {
+    "en": "fbd4d4a27b747323",
+    "text": "Ang policy decision point, ang mga policy nito at ang mga pinto ng mga remote PEP."
+  },
+  "listeners.applications.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "listeners.applications.acme.what": {
+    "en": "2398dbe02edc11de",
+    "text": "Certificate enrollment sa pamamagitan ng ACME."
+  },
+  "listeners.applications.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "listeners.applications.est.what": {
+    "en": "0792aaa5bdd515bb",
+    "text": "Certificate enrollment sa pamamagitan ng EST."
+  },
+  "listeners.applications.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "listeners.applications.scep.what": {
+    "en": "2b96ead3c4a041ba",
+    "text": "Certificate enrollment sa pamamagitan ng SCEP."
+  },
+  "listeners.applications.pki.label": {
+    "en": "b34129880663423f",
+    "text": "Certificate authority"
+  },
+  "listeners.applications.pki.what": {
+    "en": "8b280b2baedbdfe6",
+    "text": "Mga CRL, OCSP, ang mga CA certificate at chain, at ang mga cryptographic metadata document."
+  },
+  "listeners.applications.kerberos.label": {
+    "en": "43c19a093b34b581",
+    "text": "Kerberos"
+  },
+  "listeners.applications.kerberos.what": {
+    "en": "00e0e7e4163fd250",
+    "text": "MS-KKDCP, ang Kerberos KDC sa HTTPS."
+  },
+  "listeners.applications.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "listeners.applications.spiffe.what": {
+    "en": "76b7e20cfb090f52",
+    "text": "Ang SPIFFE bundle endpoint."
+  },
+  "listeners.applications.tls.label": {
+    "en": "d1c18ec0b1092683",
+    "text": "TLS"
+  },
+  "listeners.applications.tls.what": {
+    "en": "22e07124e7ed4aca",
+    "text": "Ang server certificate na ipinapakita ng serbisyong ito."
+  },
+  "listeners.map.sentences.rpIdNotCommon": {
+    "en": "629aac67a80b3ff9",
+    "text": "Ang mga application na bumabasa ng sign-on session ay nasa mga host name na {{hosts}}, at ang webauthn.rpId ({{rpId}}) ay hindi domain na kinapapalooban ng lahat ng mga ito: ang passkey na ni-register sa isa ay hindi magagamit sa iba. Itakda ang webauthn.rpId sa domain na pinapangalanan ng authn.cookieDomain."
+  },
+  "listeners.map.sentences.rpIdEmpty": {
+    "en": "d82c2e645f3ef21a",
+    "text": "Ang mga application na bumabasa ng sign-on session ay nasa mga host name na {{hosts}}, at walang laman ang webauthn.rpId, kaya ang bawat isa ay sarili nitong relying party: ang passkey na ni-register sa isa ay hindi magagamit sa iba. Itakda ang webauthn.rpId sa domain na pinapangalanan ng authn.cookieDomain."
+  }
+}

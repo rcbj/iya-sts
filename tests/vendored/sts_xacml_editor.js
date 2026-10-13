@@ -46,10 +46,14 @@
 // THE ASSERTION THIS FILE IS REALLY FOR.
 //
 // **A RULE BUILT BY PRESSING BUTTONS CHANGES WHAT THE PDP DECIDES.** Sections 5
-// and 8 build one out of four form submissions, ask `/xacml/protected` about
-// somebody who was refused before, and get a 200 — then remove the rule on the
-// page and watch the refusal come back. Everything else here is about the
-// editor; that pair is about whether the editor edits the policy the service is
+// and 8 build one out of four form submissions, ask the PDP about somebody
+// who was refused before, and see them allowed — then remove the rule on the
+// page and watch the refusal come back. (They asked `/xacml/protected` until
+// #596 moved the demonstration PEP to the remote PEP container, which decides
+// for ONE realm, the launcher's; this job's realm is its own, so it asks the
+// PDP through the console's what-if, `GET /admin-api/xacml/decide`, whose
+// deny-biased outcome is what that PEP enforced.) Everything else here is
+// about the editor; that pair is about whether the editor edits the policy the service is
 // actually deciding with, which is the one claim the page makes that a person
 // cannot check by looking at it.
 //
@@ -194,8 +198,11 @@ function api(path) {
 function editorUrl(policy) {
   log.debug("Entering editorUrl().");
   log.debug("Leaving editorUrl().");
-  return realmUrl("/admin/xacml/editor" +
-                  (policy ? "?policy=" + encodeURIComponent(policy) : ""));
+  // THE EDITOR IS A TAB OF /admin/xacml SINCE 2026-10-11 (the protocol
+  // pages were consolidated into tabs); the fragment opens it.
+  return realmUrl("/admin/xacml" +
+                  (policy ? "?policy=" + encodeURIComponent(policy) : "") +
+                  "#xacml-tab-editor");
 }
 
 // ---------------------------------------------------------------------------
@@ -207,11 +214,11 @@ function editorUrl(policy) {
 // A CLIENT CERTIFICATE, FOR THE TWO DOORS THIS FILE OPENS THAT ARE NOT THE
 // CONSOLE (2026-09-06).
 //
-// `/xacml/protected` and `/xacml/policies` went behind the built-in
-// `XACML_USER` role, and this job reads both — the first is what makes an edit
-// on the page mean something, and the second is how it learns which policy
-// became the root. `fetch` cannot present a client certificate, so those two
-// go through `https.request` with a credential minted here.
+// `/xacml/policies` went behind the built-in `XACML_USER` role (and so did
+// `/xacml/protected`, which this job read until #596), and this job reads it
+// — it is how it learns which policy became the root. `fetch` cannot present
+// a client certificate, so it goes through `https.request` with a credential
+// minted here.
 //
 // **IT REQUIRES `tests/tools/pep-credential.js` RATHER THAN BUILDING A CHAIN
 // OF ITS OWN**, which is the rule `sts_xacml_endpoints.js` states: a second
@@ -236,7 +243,8 @@ async function mintTheCredential() {
   xacmlUser = await credentials.mint({
     subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
-  assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
+  assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+    "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and every read below is a 403.");
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject + ".");
@@ -382,16 +390,27 @@ function pathOfKind(tree, kind, parentPath) {
   return row.path;
 }
 
-// The embedded PEP, asked about somebody. This is the OTHER door — a protocol
-// endpoint rather than the console — and it is what makes an edit on the page
-// mean something.
+// The PDP, asked about somebody, and what a deny-biased PEP does with the
+// answer. This is the OTHER door — the decision rather than the editor — and
+// it is what makes an edit on the page mean something. It was the embedded
+// PEP at `/xacml/protected` until #596; the answer keeps that endpoint's
+// shape (200 or 403, the decision on the body) so the assertions read the
+// same, and the policy here is deny-unless-permit, so a deny-biased PEP's
+// outcome is the decision itself.
 async function enforcementFor(subject, action) {
   log.debug("Entering enforcementFor().");
-  const r = await certJson(realmUrl("/xacml/protected?subject=" +
-                                    encodeURIComponent(subject) + "&action=" +
-                                    encodeURIComponent(action)));
+  const r = await json(api("/xacml/decide?subject=" +
+                           encodeURIComponent(subject) + "&action=" +
+                           encodeURIComponent(action)));
+  assert.ok(r.status === 200 && r.body && r.body.enforcement,
+    "GET /admin-api/xacml/decide answered " + r.status + " " +
+    String(r.text).slice(0, 300));
   log.debug("Leaving enforcementFor().");
-  return r;
+  return { status: r.body.enforcement.allowed ? 200 : 403,
+           body: { decision: r.body.decision,
+                   allowed: r.body.enforcement.allowed,
+                   why: r.body.enforcement.why },
+           text: r.text };
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +543,11 @@ async function replaced(driver, element, what) {
 // browser will actually POST to — which is the difference a missing realm
 // prefix would show up in.
 const SURVEY = `
+  // THE EDITOR'S OWN PANEL (2026-10-11): /admin/xacml draws its six tabs in
+  // one document, so a form, a notice or a table belongs to the editor only
+  // when it is inside its panel. A form keeps its index among ALL the
+  // document's forms, which is what submitForm() counts by.
+  const root = document.getElementById("xacml-tab-editor") || document.body;
   const forms = Array.from(document.forms).map(function (f, i) {
     const controls = Array.from(f.elements).map(function (e) {
       return {
@@ -551,7 +575,8 @@ const SURVEY = `
     // actually POST to, which is the difference a missing realm prefix shows
     // up in.
     const written = f.getAttribute("action") || "";
-    return { index: i, method: (f.getAttribute("method") || "get").toLowerCase(),
+    return { index: i, inEditor: root.contains(f),
+             method: (f.getAttribute("method") || "get").toLowerCase(),
              resolvedAction: new URL(written, location.href).href,
              nested: !!f.querySelector("form"),
              controls: controls, named: named };
@@ -563,8 +588,8 @@ const SURVEY = `
   return {
     url: location.href,
     title: (document.querySelector("h1") ? document.querySelector("h1").textContent : "").trim(),
-    forms: forms,
-    warnings: Array.from(document.querySelectorAll("details, div"))
+    forms: forms.filter(function (f) { return f.inEditor; }),
+    warnings: Array.from(root.querySelectorAll("details, div"))
       .map(function (e) { return (e.textContent || "").trim(); })
       .filter(function (t) { return t.indexOf("Editing is live") === 0 ||
                                     t.indexOf("This policy does not type-check") === 0 ||
@@ -573,17 +598,17 @@ const SURVEY = `
     // Protocols page now draws an Endpoints table as well
     // (admin-core/protocol_endpoints.ts), and "every tr on the page" counted
     // its rows as elements of a policy — so the empty repository drew "1 row".
-    rows: Array.from(document.querySelectorAll("table")).filter(function (t) {
+    rows: Array.from(root.querySelectorAll("table")).filter(function (t) {
         const th = t.querySelector("tr th");
         return !!th && (th.textContent || "").trim() === "Element";
       }).reduce(function (all, t) {
         return all.concat(Array.from(t.querySelectorAll("tr")).slice(1));
       }, [])
       .map(function (r) { return { element: cell(r, 0), kind: cell(r, 1) }; }),
-    pres: Array.from(document.querySelectorAll("pre")).map(function (p) {
+    pres: Array.from(root.querySelectorAll("pre")).map(function (p) {
       return p.textContent;
     }),
-    bodyText: document.body.textContent
+    bodyText: root.textContent
   };
 `;
 
@@ -745,10 +770,19 @@ async function pressOn(driver, path, action, values, carrying) {
              .join("|"));
       })).slice(0, 1200));
   const wanted = Object.assign({}, values || {});
+  // BY ITS INDEX, NOT ITS POSITION (2026-10-12). `index` counts every form in
+  // the document — it is what submitForm() presses — and `before.forms` holds
+  // the editor panel's alone, so `before.forms[index]` was some other form:
+  // an edit form with a hidden `action`, which made an Add menu look like one
+  // and left it at its first option. The press then SUCCEEDED and added a
+  // Target clause where a Condition was asked for.
+  const pressed = before.forms.filter(function (f) {
+    return f.index === index;
+  })[0];
   // An Add menu carries the action as a `<select>`; an edit form carries it as
   // a hidden field and must not be "set".
-  if (before.forms[index].named.action === undefined ||
-      before.forms[index].controls.some(function (c) {
+  if (pressed.named.action === undefined ||
+      pressed.controls.some(function (c) {
         return c.name === "action" && c.options;
       })) {
     wanted.action = action;
@@ -788,18 +822,22 @@ async function signIn(driver, username) {
     log.debug("Leaving signIn(). No gate.");
     return false;
   }
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): its form exists once the page has drawn it.
+  await driver.wait(async function () {
+    return (await driver.findElements(By.css("input[name='username']")))
+      .length > 0;
+  }, 15000, "the sign-in screen never drew its form.");
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
   const secret = await driver.findElement(By.css("input[name='password']"));
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
-  // THE PASSWORD FORM'S OWN BUTTON, not the page's first: since #539 the
-  // screen carries a language chooser, a form of its own with a submit
-  // button drawn above this one.
-  const button = await secret.findElement(
-      By.xpath("ancestor::form//button[@type='submit' or not(@type)] | " +
-               "ancestor::form//input[@type='submit']"));
+  // THE PASSWORD FORM'S OWN BUTTON, Sign In, not the page's first: since
+  // #539 the screen carries a language chooser, a form of its own with a
+  // submit button drawn above this one.
+  const button = await driver.findElement(By.id("kc-login"));
   await button.click();
   // An administrator is OFFERED a second factor since #246, on a page drawn
   // at the same URL; this suite ignores it, as rcbj asked ("just click
@@ -817,8 +855,9 @@ async function signIn(driver, username) {
     return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0 &&
       (await driver.getCurrentUrl()).indexOf("/authn/mfa-setup") < 0;
   }, 15000, "signing in as " + username + " left the browser on the sign-in " +
-            "screen. The mock checks no password, so this is a name that was " +
-            "typed and a button that was pressed; if it did not open the " +
+            "screen. In development mode the mock checks no password, so " +
+            "this is a name that was typed and a button that was pressed; " +
+            "if it did not open the " +
             "console, the screen is broken rather than the credential.");
   // Back through the authorization endpoint and the console's callback to a
   // drawn page: the console signs in in the browser since #446.
@@ -931,7 +970,8 @@ async function theTreeIsDrawn(driver) {
     const wrong = page.forms.filter(function (f) {
       return f.method === "post" &&
              f.resolvedAction.indexOf("/admin/signout") < 0 &&
-             f.resolvedAction.indexOf("/realm/" + REALM + "/admin/xacml/") < 0;
+             !new RegExp("/realm/" + REALM + "/admin/xacml(?:[/?#]|$)")
+               .test(f.resolvedAction);
     });
     assert.deepStrictEqual(wrong.map(function (f) {
       return f.resolvedAction;
@@ -1174,14 +1214,20 @@ async function aConditionMayBeAddedOnce(driver) {
   const rule = pathOfKind(await treeOf(POLICY), "rule");
   await open(driver, editorUrl(POLICY));
   const after = await pressOn(driver, rule, "add-condition", {});
+  const stored = await treeOf(POLICY);
 
   check("the condition was added and the page says so", function () {
     assert.strictEqual(outcomeOf(after.url, "error"), "",
       "adding a condition was refused: " + outcomeOf(after.url, "error"));
-    assert.ok(after.rows.some(function (row) {
-      return row.element.indexOf("Condition") >= 0;
-    }), "no row on the redrawn page mentions a Condition; the rows are " +
-        JSON.stringify(after.rows.map(function (r) { return r.kind; })));
+    // THE STORED TREE, NOT THE PAGE'S WORDS (2026-10-12). Every rule row's
+    // help text mentions a Condition, so "a row mentions Condition" held
+    // while the edit that ran was a Target clause.
+    assert.ok(stored.some(function (row) {
+      return row.path === rule + ".condition";
+    }), "the stored policy has no condition at " + rule + ".condition; its " +
+        "paths are " + JSON.stringify(stored.map(function (r) {
+          return r.kind + "@" + r.path;
+        })));
   });
 
   check("and the rule's menu no longer offers a second one", function () {
@@ -1720,7 +1766,12 @@ async function createTheRealm() {
     id: REALM, domain: REALM + ".example.net", name: "XACML editor test realm",
     description: "Created by tests/vendored/sts_xacml_editor.js; LEFT IN " +
                  "PLACE on purpose, so that a failed run can be read " +
-                 "afterwards. Remove it by hand when you are done with it."
+                 "afterwards. Remove it by hand when you are done with it.",
+    // A DEVELOPMENT REALM IN EVERY MODE (#585). What the editor builds was
+    // asked of /xacml/protected, a demonstration a product realm was not
+    // served; it is asked of the PDP now (#596), which product serves, but
+    // the realm stays as it was so the job's other assumptions do.
+    overrides: { "global.mode": "development" }
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the throwaway realm " + REALM + " answered " + r.status + " " +

@@ -30,11 +30,14 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const tls = require("tls");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -129,6 +132,8 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -216,14 +221,12 @@ function atClient(r) {
 
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, with this
+  // browser's jar: the answer is read as the form's 303 was.
+  const posted = await authnSignin.signInWithJar(base + R, location,
+    { action: "login", username: who, password: PASSWORD }, b.jar);
+  assert.ok(posted.answer.view, "the sign-in screen: " +
+            posted.answer.status + " " + JSON.stringify(posted.answer.json));
   log.debug("Leaving signIn().");
   return posted;
 }
@@ -246,13 +249,15 @@ async function follow(b, first, who, onConsent) {
       r = signed;
       continue;
     }
-    r = await b.go("GET", where);
-    if (r.status === 200 && /id="consent-allow"/.test(r.text) && onConsent) {
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576: its
+    // view and its answer are `/authn-api/consent`'s, through the one
+    // helper, with this browser's jar; the answer is read as the form's 303.
+    if (authnSignin.isConsent(where) && onConsent) {
       onConsent.shown += 1;
-      const fields = hiddenFields(r.text);
-      fields.action = "allow";
-      r = await b.go("POST", R + "/oauth2/consent", form(fields));
+      r = await authnSignin.consentWithJar(where, "allow", b.jar);
+      continue;
     }
+    r = await b.go("GET", where);
   }
   log.debug("Leaving follow(). " + r.status);
   return r;
@@ -594,15 +599,26 @@ async function test() {
   });
 
   log.info("=== g. the portal ===");
-  const portal = browser("portal");
-  r = await follow(portal, await portal.go("GET", R + "/portal"), ALICE,
-                   { shown: 0 });
+  // THE STATIC PORTAL (#568) signs in IN THE BROWSER, as the public client
+  // `sts-user-portal` with PKCE and a DPoP-bound token — the one public client
+  // besides the console a FAPI profile lets through (`fapi.js`
+  // PUBLIC_CLIENT_EXEMPT) — so the sign-in is driven the way its runtime
+  // drives it, and the account API answers the person.
+  let portalProblem = "";
+  let portalMe = null;
+  try {
+    const portal = await portalSignin.signInToThePortal(absolute(R), ALICE,
+      null, { password: PASSWORD });
+    portalMe = await portal.api("GET", "/account-api/me");
+  } catch (e) {
+    portalProblem = String((e && e.message) || e);
+  }
   check("the portal signs its person in under FAPI 2.0 — pushed, code, " +
-        "DPoP-bound", function () {
-    assert.ok(r.status === 200 || (r.status === 302 &&
-              /\/portal/.test(r.location)),
-              r.status + " " + r.location + " " + r.text.slice(0, 400));
-    assert.ok(!/cannot sign/i.test(r.text), r.text.slice(0, 400));
+        "PKCE, DPoP-bound — and its account API answers them", function () {
+    assert.strictEqual(portalProblem, "", portalProblem.slice(0, 600));
+    assert.ok(portalMe && portalMe.status === 200 && portalMe.json &&
+              portalMe.json.user.username === ALICE,
+              portalMe ? portalMe.text.slice(0, 300) : "no answer");
   });
 
   log.info("=== h. TLS ===");

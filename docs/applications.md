@@ -279,7 +279,7 @@ grants nothing.
 
 **The client secret is stored on the entry.** `oauthClientSecret` and
 `appRegistrationAccessToken` hold credentials this service minted. That is the
-same decision `/krb5/principals` makes about the Kerberos fixture passwords: a
+same decision the development Kerberos password settings make: a
 test service whose accounts are unusable without reading the source is worse
 than one that says what they are. Be precise about the cost: wherever the
 secret is checked, anyone who can read it can authenticate as that client. In

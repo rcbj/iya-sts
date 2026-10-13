@@ -177,7 +177,7 @@
   "essentialA": "<strong>Markerat som väsentligt och ändå frånvarande:</strong> ",
   "essentialB": ". Det är fortfarande inget fel — <code>essential</code> är ett påstående om vad KLIENTEN gör utan anspråket, inte en instruktion till servern. Det loggas på nivån warn så att det går att hitta.",
   "mismatchA": "<strong>Ett värde efterfrågades och ett annat finns:</strong> ",
-  "mismatchB": ". Det värde som FINNS är det som returneras. Tjänsten skulle kunna eka vad en begäran än bad den intyga och gör det avsiktligt inte: allt den säger om en person kommer från katalogen eller den påhittade personan, och en attrapp som höll med begäran kunde inte användas för att testa något.",
+  "mismatchB": ". Det värde som FINNS är det som returneras. Tjänsten skulle kunna eka vad en begäran än bad den intyga och gör det avsiktligt inte: allt den säger om en person kommer från katalogen eller den påhittade personan, och en tjänst som höll med begäran kunde inte användas för att testa något.",
   "requestEntryFound": "{user} har en post under <code>ou=users</code>, så ett värde märkt <em>directory</em> är vad en <code>ldapsearch</code> läser.",
   "requestNoEntry": "{user} har ingen post i katalogen, så varje värde ovan är påhittat utifrån användarnamnet — samma påhittade person varje gång, även över omstarter.",
   "colClaimId": "Anspråks-id",

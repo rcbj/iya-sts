@@ -296,6 +296,12 @@ import stsKeystore = require('../common/keystore');
 // same module as `pki` above, under the name the key-pair code reads it by.
 import stsPki = require('../common/pki');
 import InstanceSlot = require('../common/instance_slot');
+// THE REPORT'S PROSE IN THE READER'S LANGUAGE (#543 phase 2c): `fill()` for
+// the sentences below that carry a runtime value, `harvest()` for
+// `prose()`. A library that requires nothing this file does not already
+// have loaded, and this module is built at 20a, long after it — so a
+// top-level require, as `encryption_admin.ts` (18b) has.
+import serverProse = require('../common/server_prose');
 
 // ---------------------------------------------------------------------------
 // THE HIGHER-LEVEL STANDARDS — the envelopes the primitives above travel in.
@@ -308,7 +314,7 @@ import InstanceSlot = require('../common/instance_slot');
 // in its `envelopes` — so a family naming an envelope that is not here is
 // reported by `driftReport()` rather than rendering as a dead link.
 //
-// `coverage` MUST START `full`, `partial` OR `mock`, which is the rule
+// `coverage` MUST START `full`, `partial` OR `minimal`, which is the rule
 // `sts_metadata.js` states for its own specification list and which is worth
 // more here than there: this is a page about cryptography, and a page about
 // cryptography that overstates what it implements is actively dangerous to
@@ -392,8 +398,14 @@ const STANDARDS = [
     specs: ['RFC 9449'],
     coverage: 'full: all twelve of section 4.3\'s checks, the `cnf.jkt` ' +
               'binding on access AND refresh tokens, `dpop_jkt`, `jti` ' +
-              'replay detection and the nonce handshake in both shapes. NOT ' +
-              'required — nonce mode makes proofs fresher, not mandatory.',
+              'replay detection and the nonce handshake in both shapes. Not ' +
+              'required by default — nonce mode makes proofs fresher, not ' +
+              'mandatory — but a realm can require it: ' +
+              '`oauth2.accessTokenRequireDpop` at every resource and ' +
+              '`oauth2.refreshTokenRequireDpop` at the token endpoint, both ' +
+              'off by default. A FAPI profile requires a sender constraint, ' +
+              'DPoP or mutual TLS, and the admin console\'s and the user ' +
+              'portal\'s public clients are always DPoP-bound.',
     what: 'The sender constraint that makes a stolen access token worthless ' +
           'without the key. Its algorithm list is a FILTER over the shared ' +
           'JWS table — asymmetric, and not post-quantum — rather than a ' +
@@ -437,7 +449,8 @@ const STANDARDS = [
     what: 'Every message this deliberately says out loud: the two CBC ' +
           'ciphers are NOT authenticated and `rsa-1_5` is broken by ' +
           'Bleichenbacher. Both are offered because real service providers ' +
-          'require them and a mock that offered only the safe choice could ' +
+          'require them and a service that offered only the safe choice ' +
+          'could ' +
           'not be used to show what the unsafe one does.' },
   { key: 'c14n', name: 'Canonical XML',
     specs: ['Canonical XML 1.0', 'Exclusive XML Canonicalization 1.0'],
@@ -456,7 +469,7 @@ const STANDARDS = [
           'shape of bug to chase.' },
   { key: 'wss', name: 'WS-Security (SOAP Message Security)',
     specs: ['WS-Security 1.1 (OASIS)', 'WSS SAML Token Profile 1.1'],
-    coverage: 'mock, and this row is the one to read before asking for ' +
+    coverage: 'minimal, and this row is the one to read before asking for ' +
               '"WS-Integrity" or "WS-Encryption" — neither is a document ' +
               'that exists. WSS is one specification whose integrity half is ' +
               'XML Signature over the SOAP Body and Timestamp inside a ' +
@@ -526,7 +539,7 @@ const STANDARDS = [
     // 2026-09-12, when `tls.minVersion` and `tls.ciphers` arrived
     // (`ldap/CLAUDE.md`, *THE SOCKETS*); corrected 2026-09-17 (#70), with the
     // debugger listener added to the sockets that share the certificate.
-    coverage: 'mock: node\'s OpenSSL defaults, except where two settings ' +
+    coverage: 'minimal: node\'s OpenSSL defaults, except where two settings ' +
               'narrow them on LDAPS 636 and the main port — ' +
               '`tls.minVersion` (TLS 1.2 by default) and `tls.ciphers` ' +
               '(node\'s list when empty). This service chooses no curve; ' +
@@ -652,8 +665,206 @@ const STANDARDS = [
           'signed by the RA whose certificate is encrypted to the requester.' }
 ];
 
-// One identity service's row: the four verbs, the prose, the envelopes it
-// cites from STANDARDS, and its algorithm table, read when it is called.
+// ---------------------------------------------------------------------------
+// THE SENTENCES THE REPORT MAKES, AS TEMPLATES (#543 phase 2c). One copy:
+// the code below fills these with `serverProse.fill()`, and `prose()` hands
+// them to the translator, so the English a reader sees and the English a
+// translation was made from cannot drift apart. A `{{name}}` is a runtime
+// value — a key type, an algorithm, a count, a DN — carried over as it is;
+// the server refills the translated template with it.
+//
+// Each was a concatenation where it is used until 2026-10-12, and each fills
+// to the same bytes it made. A variant (a plural, a branch) is a template of
+// its own rather than a fragment, so a translator sees a whole sentence.
+// The static members here are the ones that sat INSIDE a computed answer
+// (`keyMaterial()`, `cryptoJson()`), where `prose()` cannot read them back
+// without building that answer.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  oneModule: 'common/crypto.js is the one place this service signs, ' +
+             'verifies, encrypts and decrypts. Before 2026-08-27 it did ' +
+             'all four in about twenty places, including six XML signers ' +
+             'and four XML signature verifiers.',
+  // keyMaterial()
+  signingCertificateIssued:
+    'issued by this realm\'s JOSE Issuing CA under the service Root',
+  signingWhat: 'The realm\'s one RSA key. It signs every access token, every ' +
+               'refresh token, the default ID Token, and every XML document ' +
+               'this service mints.',
+  postQuantumWhat: 'Made on FIRST USE rather than at start — one SLH-DSA ' +
+                   'keygen ' +
+                   'is most of two seconds, which would be paid by every ' +
+                   'realm ' +
+                   'whether or not anybody asked for a post-quantum ' +
+                   'signature. ' +
+                   'The first JWKS fetch on a realm is what brings them into ' +
+                   'being.',
+  bbsWhat: 'Made on first use, like the post-quantum keys. It is ' +
+           'published as `publicKeyMultibase` on the DID document rather ' +
+           'than as a JWK, because a BLS key has no JWK representation to ' +
+           'be forced into.',
+  tlsWhat: '{{summary}}. The key is ' +
+           'generated at every start and certified by the TLS Issuing CA ' +
+           'under the process Intermediate wherever a hierarchy exists — ' +
+           'unless `tls.certificateFile` supplies the pair instead. ' +
+           'Shared by LDAPS 636 and — when `global.https` is on — the ' +
+           'main port and the debugger listener.',
+  // listenerCertificateSummary(): the key, the issuer, the expiry.
+  listenerSummary: '{{key}}, {{issuer}}, valid to {{notAfter}}',
+  listenerUnreadable: 'not readable by node, valid to {{notAfter}}',
+  listenerIssuedBy: 'issued by {{issuer}}',
+  listenerIssuedByChainOne:
+    'issued by {{issuer}} (presented with {{n}} certificate above it)',
+  listenerIssuedByChainMany:
+    'issued by {{issuer}} (presented with {{n}} certificates above it)',
+  // The families' algorithm rows that are sentences rather than names.
+  pkiCertificateBinding: '{{member}} — SHA-256 over the DER, base64url',
+  ldapsTransport: 'TLS, on the shared server certificate',
+  spiffeAuthorityPki:
+    '{{keyType}} — this realm\'s SPIFFE Issuing CA, under the service Root',
+  spiffeAuthoritySelfSigned:
+    '{{keyType}} — self-signed: this realm has no certificate authority',
+  spiffeAuthorityNone: 'none yet',
+  webauthnUvChecked:
+    '{{mode}} — requested AND checked against the signed UV flag',
+  webauthnUvRequested: '{{mode}} — requested only; nothing is refused on it',
+  totpInUse: '{{name}} — what a NEW enrolment gets',
+  totpSecret: '{{bits}}-bit, {{encoding}}',
+  totpLive: '{{digits}} digits, every {{period}} seconds, {{window}} ' +
+            'step(s) of skew forgiven either side',
+  codesEntropy: '{{bits}} bits per code, {{count}} codes of {{length}} ' +
+                'characters out of an alphabet of {{size}}',
+  codesAlphabet: '{{alphabet}} — the base32 characters, ' +
+                 'chosen here because no pair of them is ' +
+                 'confusable and NOT shared with the TOTP row ' +
+                 'above',
+  codesLegacyComparison: 'A set written before 2026-09-11: {{comparison}}',
+  emailCode: 'six decimal digits from crypto.randomInt(), leading ' +
+             'zeros kept',
+  emailLinkToken: '256 bits from crypto.randomBytes(), base64url',
+  emailAtRest: 'scrypt, via crypto.hashSecret(), on the sign-in ' +
+               'step',
+  // encryption()
+  jweGcmNote: 'AEAD: one key, one tag.',
+  jweCbcNote: 'The CEK is a MAC key followed by the AES key, and ' +
+              'the ' +
+              'tag is HMAC-{{hash}} truncated to half its length.',
+  tlsDefaults: 'Node\'s OpenSSL defaults, except the protocol floor ' +
+               '(`tls.minVersion`, TLS 1.2 by default) and the cipher list ' +
+               '(`tls.ciphers`, node\'s when empty) on LDAPS 636 and the ' +
+               'main port. This service chooses no curve — what else it ' +
+               'configures is which sockets are TLS and which certificate ' +
+               'they serve.',
+  socketMain: 'main port (when global.https is on)',
+  socketDebugger: 'debugger listener (when global.https is on)'
+});
+
+// A phrase used only INSIDE a filled template (a `.param.` key, #543): it is
+// translated there and never as a whole string, because `self-signed` on its
+// own is also a VALUE this answer carries — `keys.spiffe.authoritySource` and
+// `keys.signing.certificate` — and a value is never translated.
+const PARAMS: Readonly<Record<string, string>> = Object.freeze({
+  selfSigned: 'self-signed'
+});
+
+// ---------------------------------------------------------------------------
+// KEY ESTABLISHMENT'S SENTENCES (#82), as `keyEstablishment()` makes them
+// (#543 phase 2c). Every surface has two answers — the one in force and the
+// other — and only one is in any answer, so they are a table that `prose()`
+// can read whole rather than a branch it would have to take both ways.
+// ---------------------------------------------------------------------------
+const KEY_ESTABLISHMENT: Readonly<Record<string, string>> = Object.freeze({
+  jweOutSurface: 'JWE this service encrypts TO a client — ID Token, Logout ' +
+                 'Token, UserInfo, JARM, JWT introspection, OID4VCI ' +
+                 'Credential Response',
+  jweOutOn: 'A client registers an ML-KEM or HPKE-8 to HPKE-16 `alg` ' +
+            '(`id_token_encrypted_response_alg` and its siblings) and ' +
+            'publishes a matching AKP key — HPKE-10-KE is X-Wing — and ' +
+            'every one of these is encrypted with it ' +
+            '(`keys.offerKemEncryption` is on).',
+  jweOutOff: 'OFF by default: `keys.offerKemEncryption` is off, so no ML-KEM ' +
+             'or HPKE alg is advertised or accepted at registration. The ' +
+             'OpenID conformance suite and some client libraries reject a ' +
+             'discovery list naming algorithms they do not know.',
+  jweInSurface: 'JWE sent TO this realm — encrypted request objects, RFC ' +
+                '7523 / 7522 assertions, OID4VCI Credential Requests',
+  jweInHeld: 'This realm holds decryption keys for {{algs}}' +
+             ' (`keys.encryptionKemAlgs`), published in its JWKS and ' +
+             'advertised in the decryption lists.',
+  jweInOff: 'OFF, and by design: `keys.encryptionKemAlgs` is empty, so no ' +
+            'AKP key is in this realm\'s JWKS and no ML-KEM or HPKE alg is ' +
+            'advertised for decryption. An AKP key is a key type many ' +
+            'clients\' JOSE libraries do not parse yet, so publishing one ' +
+            'is an administrator\'s choice (rcbj, #82).',
+  federationSurface: 'Federation — an OpenID Connect partner\'s ID Token ' +
+                     'encrypted to a relationship\'s key',
+  federationHeld: '{{relationships}} hold an x-wing or ml-kem-768 key ' +
+                  '(fedEncryptionKeyType), published in the relationship\'s ' +
+                  'JWKS.',
+  federationNone: 'Per relationship: fedEncryptionKeyType x-wing ' +
+                  '(HPKE-10-KE) ' +
+                  'or ml-kem-768 on an OpenID Connect relationship. None ' +
+                  'has ' +
+                  'one; SAML 2.0 and WS-Federation cannot (XML Encryption).',
+  vpSurface: 'OID4VP encrypted responses (direct_post.jwt, dc_api.jwt)',
+  vpOffered: 'Each request offers {{algs}} (a key made for the ' +
+             'one transaction) ahead of or beside the P-256 ECDH-ES key HAIP ' +
+             'requires, so a wallet that can use it does ' +
+             '(`oid4vp.responseEncryptionKeyAlgs`).',
+  vpOnly: 'Only ECDH-ES is offered (`oid4vp.responseEncryptionKeyAlgs`).',
+  refreshSurface: 'Refresh tokens (sealed to this realm itself)',
+  refreshPq: 'Sealed with {{alg}} to a key pair derived from the ' +
+             'realm\'s refresh-token secret.',
+  refreshClassical: 'Sealed with {{alg}}; any ML-KEM or HPKE-8 to 16 ' +
+                    'alg may be chosen in ' +
+                    '`oauth2.refreshTokenEncryptionAlg`, ' +
+                    'which needs no key and changes nothing a client sees.',
+  tlsSurface: 'TLS — the main port, LDAPS and the debugger\'s listener',
+  tlsPq: 'The hybrid groups (X25519MLKEM768, SecP256r1MLKEM768, ' +
+         'SecP384r1MLKEM1024) come first in `tls.groups` (#212), and ' +
+         'the node in the service image — OpenSSL 3.5 — negotiates ' +
+         'them with any client that offers one.',
+  tlsNone: '`tls.groups` names no ML-KEM hybrid group.',
+  xmlSurface: 'XML Encryption — SAML assertions, WS-Federation, WS-Trust',
+  xmlHow: 'RSA-OAEP key transport or ECDH-ES key agreement. XML ' +
+          'Encryption 1.1 defines no KEM and no post-quantum key ' +
+          'transport, and no W3C or IETF document has added one — the ' +
+          'CMS answer, RFC 9629\'s KEMRecipientInfo, has no XML ' +
+          'counterpart. This is a gap in the specification stack, not a ' +
+          'setting left off.',
+  draftMlKem: 'draft-ietf-jose-pqc-kem-05 — the last revision with JOSE ' +
+              'text; -06 (2026-07-06) is COSE-only. The AKP `priv` is the ' +
+              '64-octet d||z seed -06 corrected -05\'s 32 octets to.',
+  draftHpke: 'draft-ietf-jose-hpke-encrypt-22 (HPKE-0 to HPKE-7), over ' +
+             'draft-ietf-hpke-hpke; the KEMs of draft-ietf-hpke-pq-05',
+  draftHybrid: 'draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8 to ' +
+               'HPKE-16), an INDIVIDUAL draft that expired on 2026-08-20 ' +
+               'and the only document that names a hybrid JWE alg',
+  what: 'THIS IS THE HALF THAT MATTERS SOONEST: a signature is checked ' +
+        'when it is presented, so a signature algorithm that falls in ' +
+        '2035 is a problem in 2035, while ciphertext captured today can ' +
+        'be kept and opened when the machine arrives. JWE here has ' +
+        'post-quantum and PQ/T hybrid key establishment — ML-KEM, and ' +
+        'HPKE over ML-KEM or a hybrid (X-Wing is HPKE-10) — and TLS ' +
+        'puts the hybrid groups first. What stays classical is listed ' +
+        'below with its reason, and every one of these JWE algorithms ' +
+        'is from an Internet-Draft.',
+  whatWouldClose: 'XML Encryption needs a specification before it can ' +
+                  'have an implementation. The JWE algorithms become ' +
+                  'standard when their drafts do; until then an ' +
+                  'administrator opts a realm in to publishing a key ' +
+                  'for them, and a client opts in by registering one.'
+});
+
+// The routes whose answers carry the crypto namespace's prose (#543): the
+// report `adminViews.cryptoView()` hands `GET /admin-api/crypto`, which is
+// `cryptoJson()`. `/admin-api/keys` and its history are this module's too
+// and are NOT listed: their prose is not harvested yet.
+const PROSE_ROUTES = ['/admin-api/crypto'];
+
+// One identity service's row: the four verbs, the prose, the keys it holds
+// of its own, the envelopes it cites from STANDARDS, and its algorithm table,
+// read when it is called.
 interface Family {
   name: string;
   signs: string;
@@ -665,6 +876,50 @@ interface Family {
   whatItDoesNot?: string;
   envelopes: string[];
   algorithms: () => any[];
+}
+
+// One row of a family's algorithm table as the report carries it: a label
+// and either a list of identifiers (`values`, chips the translation never
+// touches) or a sentence (`how`, prose).
+interface AlgorithmRow {
+  what: string;
+  values: string[];
+  how?: string;
+}
+
+// A family's `algorithms()` answers its rows in TWO SHAPES, and this is the
+// one place that reads both. Most families answer a PAIR, `[label, [ids]]`;
+// PKI and the User portal answer `{ what, how }` (a sentence) or
+// `{ what, values }` (identifiers), because their rows are mostly sentences.
+// `cryptoJson()` once read every row as a pair, so each object row reached
+// the answer as `{}` — a label-less, value-less row the page drew as an
+// empty header beside a dash — and `prose()` skipped them, so nothing had
+// failed. Both now go through this. `computed` (a sentence made from another
+// module's table or a setting, not written in this file) is `prose()`'s
+// business and is not carried.
+/**
+ * Reads one algorithm-table row in either shape a family answers.
+ *
+ * @param row - a `[label, values]` pair or a `{ what, values | how }` object
+ * @returns the row as the report carries it, and whether its sentence is
+ *   this file's prose
+ */
+function algorithmRow(row: any): { row: AlgorithmRow, computed: boolean } {
+  helpers.log.debug("Entering algorithmRow().");
+  if (Array.isArray(row)) {
+    helpers.log.debug("Leaving algorithmRow(). A pair.");
+    return { row: { what: String(row[0]), values: (row[1] || []).slice(0) },
+             computed: false };
+  }
+  const out: AlgorithmRow = {
+    what: String((row && row.what) || ''),
+    values: Array.isArray(row && row.values) ? row.values.slice(0) : []
+  };
+  if (row && typeof row.how === 'string') {
+    out.how = row.how;
+  }
+  helpers.log.debug("Leaving algorithmRow(). An object.");
+  return { row: out, computed: !!(row && row.computed) };
 }
 
 // Everything a `CryptoMetadata` reads. Named for the modules, because what
@@ -719,6 +974,7 @@ interface CryptoMetadataDeps {
   loadEstCodec: () => any;
   loadEstKeyMaterial: () => any;
   loadScepCms: () => any;
+  loadFederation: () => any;
 }
 
 // ---------------------------------------------------------------------------
@@ -743,6 +999,133 @@ class CryptoMetadata {
    * See the module's `STANDARDS`.
    */
   static readonly STANDARDS = STANDARDS;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  // -------------------------------------------------------------------------
+  // THE CRYPTO NAMESPACE (#543 phase 2c), the prose of `cryptoJson()`.
+  //
+  // Most of it is read back off the INSTANCE rather than out of a table —
+  // the families, and the hashing, signature and post-quantum sections — so
+  // the English extracted is the English the report carries, from the one
+  // copy in each. The extractor loads the whole protocol stack first, so
+  // every family's lazily-required module is there to be asked.
+  //
+  // What is deliberately NOT harvested, because it is a NAME or a VALUE:
+  //
+  //   * a family's `name` and a standard's `name` and `specs` — the names
+  //     are `/admin/sts-metadata`'s card names character for character
+  //     (`driftReport()` joins on them) and the titles of specifications;
+  //   * every `values` chip of a family's algorithm table — algorithm
+  //     identifiers, URIs, setting values — except the sentences this file
+  //     writes into one (`SENTENCES`) and `backup_codes.ts`'s and
+  //     `totp.ts`'s static sentences, read off their reports;
+  //   * a label that is ALSO a chip somewhere in the report (none today),
+  //     which would translate the chip;
+  //   * a `where` that is only a name (`PKCE \`S256\``, `RFC 7638 JWK
+  //     Thumbprint`) — kept when it has a word of prose in it;
+  //   * the vendored XML tables' labels, the hashes, the states and every
+  //     other identifier.
+  // -------------------------------------------------------------------------
+  /**
+   * Extracts the crypto namespace (#543 phase 2c): the families' verbs and
+   * algorithm labels, the hashing, signature and post-quantum sentences, the
+   * standards' coverage and descriptions, and the templates the report fills.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering CryptoMetadata.prose().");
+    const harvest = serverProse.harvest;
+    const instance = slot.get();
+    // A family's key: its name as the renderer's anchor spells it.
+    const slug = function (name: string): string {
+      helpers.log.debug("Entering slug().");
+      helpers.log.debug("Leaving slug().");
+      return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+    };
+    // A word of prose outside the code spans: a name like `SD-JWT \`_sd_alg\``
+    // has none.
+    const isProse = function (text: string): boolean {
+      helpers.log.debug("Entering isProse().");
+      helpers.log.debug("Leaving isProse().");
+      return /\b[a-z]{4,}\b/.test(String(text || '').replace(/`[^`]*`/g, ''));
+    };
+    // Every row, in either shape, read the way `cryptoJson()` reads it. A
+    // row's `how` is harvested unless it is `computed` — made from another
+    // module's table or a setting, so a value of this process rather than a
+    // sentence of this file.
+    const tables = instance.families.map(function (row) {
+      return row.algorithms().map(algorithmRow);
+    });
+    const chips = new Set<string>();
+    tables.forEach(function (table) {
+      table.forEach(function (one) {
+        one.row.values.forEach(function (value) {
+          chips.add(String(value));
+        });
+      });
+    });
+    const families = instance.families.map(function (row, i) {
+      return {
+        key: slug(row.name),
+        signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
+        decrypts: row.decrypts, hashes: row.hashes, keys: row.keys || '',
+        whatItDoesNot: row.whatItDoesNot || '',
+        algorithms: tables[i].map(function (one) {
+          return {
+            what: chips.has(one.row.what) ? '' : one.row.what,
+            how: one.computed ? '' : (one.row.how || '')
+          };
+        })
+      };
+    });
+    const hashing = instance.hashing();
+    const signatures = instance.signatures();
+    const pq = instance.postQuantum();
+    const codes = backupCodes.report();
+    const out: Record<string, string> = Object.assign({},
+      harvest('crypto.sentences', SENTENCES, Object.keys(SENTENCES)),
+      harvest('crypto.param', PARAMS, Object.keys(PARAMS)),
+      harvest('crypto.keyEstablishment', KEY_ESTABLISHMENT,
+              Object.keys(KEY_ESTABLISHMENT)),
+      harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
+      harvest('crypto.families', families,
+              ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
+               'keys', 'whatItDoesNot', 'what', 'how']),
+      harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
+        return { what: row.what, where: isProse(row.where) ? row.where : '' };
+      }), ['what', 'where']),
+      harvest('crypto.hashing.weak', hashing.weak.map(function (row) {
+        return { why: row.why, where: isProse(row.where) ? row.where : '' };
+      }), ['why', 'where']),
+      harvest('crypto.signatures.other', signatures.other.map(function (row) {
+        return { what: row.what, label: isProse(row.name) ? row.name : '' };
+      }), ['what', 'label']),
+      harvest('crypto.pq.algorithms', {
+        what: pq.algorithms.what, independence: pq.algorithms.independence
+      }, ['what', 'independence']),
+      harvest('crypto.pq.signatures', pq.signatures.map(function (row) {
+        return { surface: row.surface, how: row.how };
+      }), ['surface', 'how']),
+      harvest('crypto.pq.symmetric', pq.symmetric, ['what', 'strongest']),
+      // The recovery-code and TOTP sentences their own modules write, static
+      // where they are written; `comparison` and `encoding` reach the
+      // report only inside a template here, so they are parameters.
+      harvest('crypto.codes', codes,
+              ['source', 'atRest', 'comparisonOfAHash']),
+      harvest('crypto.param.codes', { comparison: codes.comparison },
+              ['comparison']),
+      harvest('crypto.param.totp', { encoding: totp.report().encoding },
+              ['encoding']));
+    helpers.log.debug("Leaving CryptoMetadata.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   // THE IDENTITY SERVICES, built once when the instance is — at load, for the
   // transitional instance, which is when the table was built before.
@@ -833,6 +1216,9 @@ class CryptoMetadata {
       },
       loadScepCms: function () {
         return require('../scep/scep_cms');
+      },
+      loadFederation: function () {
+        return require('../federation/federation');
       }
     };
   }
@@ -928,9 +1314,9 @@ class CryptoMetadata {
   //
   // An empty string for a verb means this service does not do it in that
   // family, and every one of those is a documented non-goal rather than an
-  // oversight — `federation/CLAUDE.md` on decrypting a partner's assertion
-  // (`saml/CLAUDE.md` on verifying an AuthnRequest signature was the other,
-  // until #37 reversed it on 2026-09-17). The page prints
+  // oversight (federation's decrypting a partner's assertion was one until
+  // #168 reversed it on 2026-09-23, and SAML 2.0's verifying an AuthnRequest
+  // signature until #37 on 2026-09-17). The page prints
   // them as "—" and the `whatItDoesNot` line beside them says which.
   // ---------------------------------------------------------------------------
   private buildFamilies(): Family[] {
@@ -939,7 +1325,7 @@ class CryptoMetadata {
             applicationRegistry, tlsServer, xmldsig, scimAuth, ssfEvents,
             ssfAuth, pki, loadRevocationStatus, loadGnapKeys,
             loadGnapTokens, loadAcmeJws, loadEstCodec, loadEstKeyMaterial,
-            loadScepCms } = this.deps;
+            loadScepCms, loadFederation } = this.deps;
     const self = this;
     log.debug("Entering CryptoMetadata.buildFamilies().");
     log.debug("Leaving CryptoMetadata.buildFamilies().");
@@ -1042,14 +1428,26 @@ class CryptoMetadata {
                    'common/vendored/x509.js, the parent project\'s own PKI ' +
                    'code, byte-identical. One encoder for this service and ' +
                    'for that project\'s PKI / X.509 page.' },
+            // THE TWO LISTS ARE IDENTIFIERS, so they are `values` — chips the
+            // translation never touches — and the weak ones are a list of
+            // their own rather than an English suffix on a chip.
             { what: 'CA key algorithms offered',
-              how: report.keyAlgorithms.map(function (one) { return one.id; })
-                .join(', ') },
+              values: report.keyAlgorithms.map(function (one) {
+                return one.id;
+              }) },
             { what: 'Certificate signature algorithms offered',
-              how: report.signatureAlgorithms.map(function (one) {
-                return one.id + (one.weak ? ' (weak, on purpose)' : '');
-              }).join(', ') },
-            { what: 'The three tiers',
+              values: report.signatureAlgorithms.map(function (one) {
+                return one.id;
+              }) },
+            { what: 'Of those, offered on purpose and marked weak',
+              values: report.signatureAlgorithms.filter(function (one) {
+                return one.weak;
+              }).map(function (one) {
+                return one.id;
+              }) },
+            // `computed`: the sentence is made from `pki.js`'s tier table, not
+            // written here, so `prose()` does not harvest it.
+            { what: 'The three tiers', computed: true,
               how: report.tiers.map(function (one) {
                 return one.label + ' (pathLen ' +
                   (one.pathLen === null || one.pathLen === undefined
@@ -1082,7 +1480,7 @@ class CryptoMetadata {
             // that performs the check now, which is this page's rule, so it
             // names the policy in force rather than a policy somebody once
             // wrote down.
-            { what: 'Revocation checked',
+            { what: 'Revocation checked', computed: true,
               how:
                 loadRevocationStatus().describePolicy().sentence },
             { what: 'Revocation check — how a foreign CRL is trusted',
@@ -1135,43 +1533,72 @@ class CryptoMetadata {
                    'its issuers fetched from its own caIssuers address. A ' +
                    'bare key with no certificate has nothing to check and is ' +
                    'reported as such.' },
-            { what: 'Where the CA private keys live', how: report.residency }
+            { what: 'Where the CA private keys live', computed: true,
+              how: report.residency }
           ];
         }
       },
-      // THE USER PORTAL IS THE ONLY FAMILY HERE WHOSE CRYPTOGRAPHY IS ENTIRELY
-      // ABOUT SECRETS AT REST. Every other row on this page is about a
-      // credential being SIGNED, VERIFIED or ENCRYPTED in flight; this one
-      // signs nothing and issues nothing. What it does is decide whether a
-      // presented password is the stored one, and protect two values that must
-      // never be readable from a directory dump.
+      // THE USER PORTAL: SECRETS AT REST ON THE SERVER, AND ONE PUBLIC
+      // CLIENT'S PROOF OF POSSESSION IN THE BROWSER. It signs nothing it
+      // issues and issues nothing. On the server it decides whether a
+      // presented password or link is the stored one, and its door,
+      // `/account-api`, verifies the person's own token on every call.
+      //
+      // **REWRITTEN FOR #568 (2026-10-12; #543 round 2).** Until then this row
+      // described the server-drawn portal: a CSRF token, an HMAC-SHA256 under
+      // a per-process key, on every form. That key, the token and the
+      // relying-party session cookie it guarded went when the portal became a
+      // static application over `/account-api` — a public OAuth client,
+      // `sts-user-portal`, with PKCE S256 and a DPoP-bound token held in
+      // memory (`portal/CLAUDE.md`, `account-api/CLAUDE.md`). What a page on
+      // another site cannot forge now is a DPoP proof by a key no other page
+      // holds. The scrypt sentences also named N=2^15 as fixed; it is the
+      // default of `security.passwordHashLogN` since 2026-09-12.
       {
         name: 'User portal',
-        signs: 'Nothing. The portal issues no token, no assertion and no ' +
-               'certificate — it changes credentials rather than minting them.',
-        verifies: 'A PRESENTED PASSWORD, against the scrypt hash on the ' +
-                  'person\'s own entry, and an ACTIVATION TOKEN against the ' +
-                  'scrypt hash of the one that was issued. Both comparisons ' +
-                  'are constant-time through common/crypto.js — a ' +
-                  'byte-by-byte early return on either is a timing oracle. A ' +
-                  'WebAuthn assertion is verified too, but by ' +
-                  'authn/webauthn.js, which is where the ceremony lives.',
+        signs: 'Nothing it issues. The portal mints no token, no assertion ' +
+               'and no certificate — it changes credentials rather than ' +
+               'minting them. Its runtime, in the browser, signs one thing: ' +
+               'an RFC 9449 DPoP proof (ES256) on every `/account-api` call ' +
+               'and at the token endpoint, with a P-256 key WebCrypto ' +
+               'generated non-extractable for that page load.',
+        verifies: 'EVERY `/account-api` CALL, at its gate ' +
+                  '(account-api/account_api.ts): the access token is an RFC ' +
+                  '9068 `at+jwt` verified under THIS realm\'s signing key ' +
+                  '(any generation), its issuer and audience checked, and ' +
+                  'its DPoP binding matched by a proof the gate verifies — ' +
+                  'never accepted as Bearer. The person it names is the only ' +
+                  'account it acts on. Beside that, a PRESENTED PASSWORD (a ' +
+                  'change re-proves the current one) against the scrypt hash ' +
+                  'on the person\'s own entry, and an ACTIVATION or PASSWORD ' +
+                  'RESET link\'s token against the scrypt hash of the one ' +
+                  'issued, each compared in constant time through ' +
+                  'common/crypto.js. The runtime verifies a JARM ' +
+                  'authorization response against the realm\'s JWKS where ' +
+                  'the realm sends one. A WebAuthn assertion is verified by ' +
+                  'authn/webauthn.js; the runtime only runs the ceremony.',
         encrypts: 'Nothing.',
         decrypts: 'Nothing.',
-        keys: 'None of its own. The CSRF token is an HMAC-SHA256 under a key ' +
-              'generated per process and deliberately NOT persisted — a CSRF ' +
-              'token is only meaningful for the life of a session, a session ' +
-              'does not survive a restart, so a key that did would protect ' +
-              'nothing and be one more secret at rest.',
-        hashes: 'SCRYPT (RFC 7914, N=2^15, r=8, p=1) for both the password ' +
-                'and the activation token, each with 16 random bytes of ' +
-                'salt, stored as `$scrypt$N$r$p$salt$hash` so the cost can ' +
-                'be raised later without invalidating what is already ' +
-                'stored. **NOT a digest**: a password is low-entropy and a ' +
-                'fast hash over one is a wordlist away from being the ' +
-                'password. SHA-256 under an HMAC for the CSRF token, which ' +
-                'is a different job — authenticity of a form, not protection ' +
-                'of a secret at rest.',
+        keys: 'None on the server. The DPoP key pair lives in the browser: ' +
+              'P-256, generated by WebCrypto with its private half ' +
+              'non-extractable, held in memory and gone with the page, and ' +
+              'every token the portal is issued is bound to its thumbprint. ' +
+              'The tokens themselves are signed by the realm\'s ' +
+              'authorization server (the OAuth2 / OIDC row). There is no ' +
+              'CSRF key any more: the per-process HMAC key went with the ' +
+              'CSRF token and the session cookie it guarded (#568).',
+        hashes: 'SCRYPT (RFC 7914) for the password and for an activation or ' +
+                'reset link\'s token, each with 16 random bytes of salt, at ' +
+                'the cost security.passwordHashLogN, passwordHashR and ' +
+                'passwordHashP name (N=2^15, r=8, p=1 by default), stored as ' +
+                '`$scrypt$N$r$p$salt$hash` so the cost can be raised later ' +
+                'without invalidating what is already stored. **NOT a ' +
+                'digest**: a password is low-entropy and a fast hash over ' +
+                'one is a wordlist away from being the password. SHA-256 in ' +
+                'the browser for the PKCE S256 challenge and the DPoP ' +
+                'proof\'s `ath`, which are a different job — binding a ' +
+                'request to a sign-in and a proof to a token, not ' +
+                'protecting a secret at rest.',
         // AN ARRAY, like every other row. Nothing this family protects travels
         // anywhere — every value is at rest in the embedded directory — so the
         // list is empty, and saying that as an empty list rather than as a
@@ -1181,12 +1608,18 @@ class CryptoMetadata {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
-            { what: 'Password and activation token at rest',
-              how: 'scrypt, N=32768, r=8, p=1, 32-byte key, 16-byte random ' +
+            { what: 'Password and link token at rest',
+              how: 'scrypt, N=32768, r=8, p=1 by default ' +
+                   '(security.passwordHash*), 32-byte key, 16-byte random ' +
                    'salt' },
             { what: 'Comparing either', how: 'constant-time equality' },
-            { what: 'CSRF token',
-              how: 'HMAC-SHA256 over the session id under a per-process key' }
+            { what: 'Access token at /account-api',
+              how: 'RFC 9068 at+jwt, verified under this realm\'s signing ' +
+                   'key, DPoP-bound' },
+            { what: 'DPoP proof (browser)',
+              how: 'ES256 with a non-extractable WebCrypto P-256 key per ' +
+                   'page load' },
+            { what: 'PKCE', how: 'S256' }
           ];
         }
       },
@@ -1219,18 +1652,18 @@ class CryptoMetadata {
                'is an HMAC-SHA256 chain under a key derived per resource ' +
                'server. It also signs an HTTP response with RFC 9421 when a ' +
                'client instance asks for one.',
-        verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it ' +
-                  'presented: an RFC 9421 HTTP message signature (with the ' +
-                  'body covered by an RFC 9530 Content-Digest), a mutual TLS ' +
-                  'certificate (revocation consulted; a chain to the client ' +
-                  'truststore and a binding to the application entry under ' +
+        verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, ' +
+                  'by the key it presented: an RFC 9421 HTTP message ' +
+                  'signature (with the body covered by an RFC 9530 ' +
+                  'Content-Digest), a mutual TLS certificate (revocation ' +
+                  'consulted; a chain to the client truststore and a ' +
+                  'binding to the application entry under ' +
                   'gnap.mtlsTrust=pki, product\'s default), a detached JWS ' +
-                  'over the body or an attached ' +
-                  'JWS carrying it. A key rotation is verified under BOTH ' +
-                  'keys. A resource server calling introspection or ' +
-                  'registration is proofed the same way, and every token ' +
-                  'format is verified at introspection and at the ' +
-                  'demonstration resource server.',
+                  'over the body or an attached JWS carrying it. A key ' +
+                  'rotation is verified under BOTH keys. A resource server ' +
+                  'calling introspection or registration is proofed the ' +
+                  'same way, and every token format is verified at ' +
+                  'introspection.',
         encrypts: 'jwt-encrypted: a signed GNAP JWT inside a JWE — to the ' +
                   'resource server\'s own key (RSA-OAEP-256 or ' +
                   'ECDH-ES+A256KW, with `gnap.jweEnc`) when its application ' +
@@ -1506,29 +1939,71 @@ class CryptoMetadata {
       { name: 'Federation',
         signs: 'The SAML 2.0 `<AuthnRequest>` it sends a foreign identity ' +
                'provider, enveloped, RSA-SHA256 over exclusive c14n — the ' +
-               'same signer every other document here goes through.',
+               'same signer every other document here goes through — and ' +
+               'the `<LogoutRequest>` that tells a partner of a sign-out ' +
+               'here, enveloped or as the Redirect binding\'s detached ' +
+               'query signature.',
         verifies: 'THE WHOLE POINT OF THE FEATURE. A partner\'s SAML ' +
                   'Response and the Assertion inside it, each checked ' +
                   'SEPARATELY and each against the certificate configured on ' +
                   'the relationship — never against a certificate the ' +
                   'document carries in its own `ds:KeyInfo`, which is the ' +
                   'check a naive implementation skips. A partner\'s ID Token ' +
-                  'as an ordinary JWS against the partner\'s published keys.',
+                  'as an ordinary JWS against the partner\'s published keys. ' +
+                  'A partner\'s SIGN-OUT — a SAML `<LogoutRequest>` or a ' +
+                  'Back-Channel Logout Token — against the same configured ' +
+                  'keys, and refused unsigned unless the relationship turns ' +
+                  '`fedRequireSignedLogout` off, which only development ' +
+                  'allows.',
         encrypts: '',
-        decrypts: '',
+        // Reversed by #168 (2026-09-23): this was empty, and the row said
+        // the feature decrypted nothing a partner sent.
+        decrypts: 'What a partner encrypts to the relationship\'s own ' +
+                  'key: an `<EncryptedAssertion>`, an `<EncryptedID>` or ' +
+                  '`<EncryptedAttribute>` inside a verified assertion or a ' +
+                  '`<LogoutRequest>`, a WS-Federation token, and a JWE ID ' +
+                  'Token or Logout Token — under exactly the one ' +
+                  'key-management and one content-encryption algorithm the ' +
+                  'relationship accepts. The assertion\'s signature is ' +
+                  'verified on its plaintext and the Response\'s on the ' +
+                  'ciphertext as it arrived; a JWE must hold a signed JWT. ' +
+                  'Every decryption failure is one answer, so the ACS is no ' +
+                  'oracle.',
         hashes: 'Whatever the partner\'s `DigestMethod` names, out of the ' +
                 'vendored table below.',
-        whatItDoesNot: 'It does not decrypt an assertion a partner ' +
-                       'encrypted, and it does not consume a federated ' +
-                       'sign-out. THE GATE IS ON THE SIGNER AND ON THE ' +
+        keys: 'One encryption key pair per SAML 2.0, WS-Federation or ' +
+              'OpenID Connect relationship, made when the relationship is ' +
+              'created: RSA 3072 or EC P-256 under the realm\'s ' +
+              'Intermediate, or for OpenID Connect X-Wing or ML-KEM-768, ' +
+              'which carry no certificate. Its private half is sealed under ' +
+              'the key-encryption key wherever keys persist; a rotation ' +
+              'keeps the one it replaced for ' +
+              '`federation.encryptionKeyGraceS`, and only the current key ' +
+              'is published. What it signs, it signs with the realm\'s ' +
+              'signing key.',
+        // #167 and #168 (2026-09-23) reversed both halves of what this line
+        // said — that the feature decrypted no assertion and consumed no
+        // sign-out.
+        whatItDoesNot: 'It encrypts nothing it sends, and it polls no ' +
+                       'partner about a session: what reaches a session ' +
+                       'after sign-in is the partner\'s sign-out, which ' +
+                       'ends it, and the SAML `SessionNotOnOrAfter` it ' +
+                       'sent at sign-in, which bounds it. In product mode ' +
+                       'it refuses a plaintext assertion that crosses the ' +
+                       'browser unless the relationship sets ' +
+                       '`fedAllowUnencrypted`; AES-CBC and RSA PKCS #1 ' +
+                       'v1.5 are refused in every mode. ' +
+                       'THE GATE IS ON THE SIGNER AND ON THE ' +
                        'SUBJECT (#109): past a verified signature only the ' +
                        'person the partner\'s subject is linked to is ' +
                        'signed in. This is the one surface here where a ' +
                        'missing check is an authentication bypass for every ' +
                        'protocol in the process — see federation/CLAUDE.md.',
-        envelopes: ['xmldsig', 'c14n', 'jws'],
+        envelopes: ['xmldsig', 'xmlenc', 'c14n', 'jws', 'jwe'],
         algorithms: function () {
           log.debug("Entering algorithms().");
+          // Read from the register that enforces them, like every row here.
+          const federation = loadFederation();
           log.debug("Leaving algorithms().");
           return [
             ['Outbound request signature',
@@ -1538,7 +2013,16 @@ class CryptoMetadata {
                function (row) {
                  return row.uri;
                })],
-            ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS]
+            ['Inbound ID Token', stsCrypto.JWS_ASYMMETRIC_ALGS],
+            ['Encryption key types', federation.ENCRYPTION_KEY_TYPES],
+            ['XML Encryption key management, one of',
+             federation.XML_KEY_MANAGEMENT],
+            ['XML Encryption content encryption, one of',
+             federation.XML_CONTENT_ENCRYPTION],
+            ['JWE key management, one of', federation.JOSE_KEY_MANAGEMENT],
+            ['JWE content encryption, one of',
+             federation.JOSE_CONTENT_ENCRYPTION],
+            ['Refused in every mode', federation.REFUSED_ALGORITHMS]
           ];
         } },
 
@@ -1614,7 +2098,8 @@ class CryptoMetadata {
                'the issuer is an ATTRIBUTE — so "after the issuer" is not a ' +
                'position that exists and the signature goes LAST. A Response ' +
                'signs FIRST, ahead of the assertion it carries.',
-        verifies: 'Its own artifacts, for the mock relying party.',
+        verifies: 'Nothing: SAML 1.1 has no request message to verify a ' +
+                  'signature on.',
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
@@ -1639,11 +2124,7 @@ class CryptoMetadata {
         signs: 'The SAML assertion inside the `wresult`, in whichever ' +
                'version the relying party asked for, through the shared ' +
                'signer.',
-        verifies: 'The mock relying party at `/wsfed/rp` verifies that ' +
-                  'assertion check by check, and is told WHICH element to ' +
-                  'verify rather than taking the first `<ds:Signature>` in ' +
-                  'the document — the defect four separate verifiers here ' +
-                  'used to have.',
+        verifies: 'Nothing: a sign-in request carries no signature.',
         encrypts: '',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
@@ -1668,16 +2149,26 @@ class CryptoMetadata {
                'or 2.0, through the shared signer.',
         verifies: 'It READS a requester\'s `<wsse:Security>` credential and ' +
                   'the `<ds:X509Certificate>` in a signed request — the ' +
-                  'latter to find out who to ENCRYPT to. It checks no ' +
-                  'password behind it.',
+                  'latter to find out who to ENCRYPT to. In product mode a ' +
+                  'UsernameToken\'s password is verified against the ' +
+                  'person\'s `userPassword`, or an application\'s client ' +
+                  'secrets; development believes it, except the reserved ' +
+                  '`invalid`.',
         encrypts: 'With `?encrypt=1`, the issued 2.0 assertion, to the ' +
                   'certificate found in the request signature. Same two ' +
                   'tables as SAML 2.0, because it is the same code — ' +
                   '`saml/saml2.ts` re-exports it.',
         decrypts: '',
         hashes: 'SHA-256 for the Reference digest.',
-        whatItDoesNot: 'It polices no delegation: an RST asking for a token ' +
-                       'for somebody else is answered. And it produces no ' +
+        // "It polices no delegation" until #543's review: #108 and #186 put
+        // `OnBehalfOf` and `ActAs` under the delegation policy.
+        whatItDoesNot: 'It does not answer every request for a token for ' +
+                       'somebody else: `OnBehalfOf` (impersonation) and ' +
+                       '`ActAs` (delegation) are decided by the issuance ' +
+                       'policy over the delegation controls on the ' +
+                       'requester\'s and the subject\'s entries — refused ' +
+                       'in product, recorded as what would have been ' +
+                       'refused in development. And it produces no ' +
                        'signed SOAP envelope of its own — see WS-Security ' +
                        'below, which is the row that says what this service ' +
                        'does and does not do with that specification.',
@@ -1817,11 +2308,11 @@ class CryptoMetadata {
              })],
             ['X.509 authority in this realm',
              [authority
-               ? String(authority.keyType) + ' — ' +
-                 (authority.source === 'pki'
-                   ? 'this realm\'s SPIFFE Issuing CA, under the service Root'
-                   : 'self-signed: this realm has no certificate authority')
-               : 'none yet']],
+               ? serverProse.fill(authority.source === 'pki'
+                   ? SENTENCES.spiffeAuthorityPki
+                   : SENTENCES.spiffeAuthoritySelfSigned,
+                 { keyType: String(authority.keyType) })
+               : SENTENCES.spiffeAuthorityNone]],
             ['X509-SVID key in this realm',
              [String(config.value('spiffe.x509KeyType'))]],
             ['JWT authority in this realm',
@@ -1832,14 +2323,17 @@ class CryptoMetadata {
       { name: 'SCIM',
         signs: 'Nothing. It MINTS no credential — it is the one family here ' +
                'that only ever checks them.',
+        // Both modes' truth (#543 round 2): "any password but one passes
+        // Basic" was unqualified, and product verifies it.
         verifies: 'A credential in any of the six schemes RFC 7644 section 2 ' +
-                  'names, and TWO OF THE SIX ARE REALLY VERIFIED: HTTP ' +
-                  'Digest computes the response over the configured ' +
-                  'password, and a HOBA signature is checked against the ' +
-                  'public key the client registered. The other four are ' +
-                  'turnstiles — any password but one passes Basic, and the ' +
-                  'OAuth ones need only a token this service issued carrying ' +
-                  '`scim:read` or `scim:write`.',
+                  'names. The OAuth ones need a token this service issued ' +
+                  'carrying `scim:read` or `scim:write`, and a HOBA ' +
+                  'signature is checked against the public key the client ' +
+                  'registered. In DEVELOPMENT mode HTTP Digest computes the ' +
+                  'response over the one configured password and any ' +
+                  'password but one passes Basic; in PRODUCT mode Basic ' +
+                  'verifies the password against the person\'s hashed ' +
+                  '`userPassword` and Digest is not offered.',
         encrypts: '',
         decrypts: '',
         hashes: 'RFC 7616 Digest: SHA-256, SHA-512-256 and MD5, each with ' +
@@ -1882,17 +2376,10 @@ class CryptoMetadata {
                'signature takes up to a second and runs on libuv\'s thread ' +
                'pool, so this service answers throughout and the receiver ' +
                'waits.',
-        verifies: 'A Security Event Token pushed AT this service at `POST ' +
-                  '/ssf/receive` — the roles reversed — against its own ' +
-                  'JWKS, which is the only key it has. A SET signed by ' +
-                  'anybody else is reported as NOT VERIFIABLE HERE rather ' +
-                  'than as invalid, and is ACCEPTED anyway unless ' +
-                  '`ssf.receiveRequireSignature` is on: a receiver that ' +
-                  'refused could not show anybody what arrived or why it did ' +
-                  'not verify, which is the question being asked. It also ' +
-                  'verifies the access token on every stream management ' +
-                  'call, through the same check every other protected ' +
-                  'endpoint here uses.',
+        verifies: 'The access token on every stream management call, ' +
+                  'through the same check every other protected endpoint ' +
+                  'here uses, and a SET pushed to the console\'s or the ' +
+                  'portal\'s own receiver against this service\'s JWKS.',
         encrypts: 'Nothing. SSF has no encrypted-SET profile — RFC 8417 ' +
                   'permits a JWE-wrapped SET and neither this service nor ' +
                   'any deployed transmitter emits one, so what protects an ' +
@@ -1972,8 +2459,7 @@ class CryptoMetadata {
         algorithms: function () {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
-          return [['LDAPS transport',
-                   ['TLS, on the shared server certificate']]];
+          return [['LDAPS transport', [SENTENCES.ldapsTransport]]];
         } },
 
       // **THIS ROW DESCRIBED THE ARRANGEMENT BEFORE 2026-09-11 UNTIL
@@ -2038,8 +2524,9 @@ class CryptoMetadata {
           log.debug("Leaving algorithms().");
           return [
             ['Server certificate', [self.listenerCertificateSummary(cert)]],
-            ['Certificate binding', [mtls.CONFIRMATION_MEMBER +
-                                     ' — SHA-256 over the DER, base64url']]
+            ['Certificate binding', [serverProse.fill(
+              SENTENCES.pkiCertificateBinding,
+              { member: mtls.CONFIRMATION_MEMBER })]]
           ];
         } },
 
@@ -2107,10 +2594,10 @@ class CryptoMetadata {
               return webauthn.COSE_CURVES[k];
             })],
             ['User verification',
-             [webauthnPolicy.settings().userVerification +
-              (webauthnPolicy.requireUserVerification()
-                ? ' — requested AND checked against the signed UV flag'
-                : ' — requested only; nothing is refused on it')]]
+             [serverProse.fill(webauthnPolicy.requireUserVerification()
+               ? SENTENCES.webauthnUvChecked
+               : SENTENCES.webauthnUvRequested,
+               { mode: webauthnPolicy.settings().userVerification })]]
           ];
         } },
 
@@ -2171,16 +2658,20 @@ class CryptoMetadata {
           return [
             ['HMAC (the enrolled parameter, not a live one)',
              report.algorithms.map(function (one) {
-               return one.name +
-                 (one.inUse ? ' — what a NEW enrolment gets' : '');
+               return one.inUse
+                 ? serverProse.fill(SENTENCES.totpInUse, { name: one.name })
+                 : one.name;
              })],
+            // `truncation` is `common/totp.ts`'s sentence, computed there
+            // from the live digit count, and is left English (#543).
             ['Truncation', [report.truncation]],
-            ['Shared secret', [String(report.secretBits) + '-bit, ' +
-                               report.encoding]],
-            ['Live settings', [String(report.digits) + ' digits, every ' +
-                               String(report.period) + ' seconds, ' +
-                               String(report.window) + ' step(s) of skew ' +
-                               'forgiven either side']]
+            ['Shared secret', [serverProse.fill(SENTENCES.totpSecret, {
+              bits: String(report.secretBits), encoding: report.encoding
+            })]],
+            ['Live settings', [serverProse.fill(SENTENCES.totpLive, {
+              digits: String(report.digits), period: String(report.period),
+              window: String(report.window)
+            })]]
           ];
         } },
 
@@ -2250,17 +2741,17 @@ class CryptoMetadata {
           log.debug("Leaving algorithms().");
           return [
             ['Generation', [report.source]],
-            ['Entropy', [String(report.bitsPerCode) + ' bits per code, ' +
-                         String(report.count) + ' codes of ' +
-                         String(report.length) + ' characters out of an ' +
-                         'alphabet of ' + String(report.alphabetSize)]],
-            ['Alphabet', [report.alphabet + ' — the base32 characters, ' +
-                          'chosen here because no pair of them is ' +
-                          'confusable and NOT shared with the TOTP row ' +
-                          'above']],
+            ['Entropy', [serverProse.fill(SENTENCES.codesEntropy, {
+              bits: String(report.bitsPerCode), count: String(report.count),
+              length: String(report.length),
+              size: String(report.alphabetSize)
+            })]],
+            ['Alphabet', [serverProse.fill(SENTENCES.codesAlphabet,
+                                           { alphabet: report.alphabet })]],
             ['Comparison', [report.comparisonOfAHash,
-                            'A set written before 2026-09-11: ' +
-                            report.comparison]],
+                            serverProse.fill(SENTENCES.codesLegacyComparison,
+                                             { comparison: report.comparison })
+                           ]],
             ['At rest', [report.atRest]]
           ];
         } },
@@ -2292,11 +2783,9 @@ class CryptoMetadata {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
-            ['Code', ['six decimal digits from crypto.randomInt(), leading ' +
-                      'zeros kept']],
-            ['Link token', ['256 bits from crypto.randomBytes(), base64url']],
-            ['At rest', ['scrypt, via crypto.hashSecret(), on the sign-in ' +
-                         'step']]
+            ['Code', [SENTENCES.emailCode]],
+            ['Link token', [SENTENCES.emailLinkToken]],
+            ['At rest', [SENTENCES.emailAtRest]]
           ];
         } },
 
@@ -2568,10 +3057,16 @@ class CryptoMetadata {
       // otherwise render as a dead cross-reference.
       envelopes: []
     };
+    // The dedupe compares the ENTRY it pushes. It compared the bare key
+    // against entries of the form 'family → key', which never matched, so
+    // a family listing one unknown envelope twice was reported twice. Two
+    // families citing the same unknown key are still two entries: each is
+    // a row to fix.
     self.families.forEach(function (row) {
       (row.envelopes || []).forEach(function (key) {
-        if (known.indexOf(key) < 0 && report.envelopes.indexOf(key) < 0) {
-          report.envelopes.push(row.name + ' → ' + key);
+        const entry = row.name + ' → ' + key;
+        if (known.indexOf(key) < 0 && report.envelopes.indexOf(entry) < 0) {
+          report.envelopes.push(entry);
         }
       });
     });
@@ -2674,7 +3169,8 @@ class CryptoMetadata {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering CryptoMetadata.listenerCertificateSummary().");
     const held = cert || {};
-    const validTo = ', valid to ' + String(held.notAfter || '');
+    const fill = serverProse.fill;
+    const notAfter = String(held.notAfter || '');
     let read: import('crypto').X509Certificate | null = null;
     try {
       read = stsCrypto.parseCertificate(String(held.certPem || ''));
@@ -2686,7 +3182,7 @@ class CryptoMetadata {
     if (!read) {
       log.debug("Leaving CryptoMetadata.listenerCertificateSummary(). " +
                 "Unreadable.");
-      return 'not readable by node' + validTo;
+      return fill(SENTENCES.listenerUnreadable, { notAfter: notAfter });
     }
     const details: { modulusLength?: number; namedCurve?: string } =
       read.publicKey.asymmetricKeyDetails || {};
@@ -2706,14 +3202,18 @@ class CryptoMetadata {
       selfSigned = false;
     }
     const above = (held.chainPem || []).length;
+    const issuedBy = read.issuer.split('\n').join(', ');
+    // A template per variant (#543): none above it, one, or several.
     const issuer = selfSigned
-      ? 'self-signed'
-      : 'issued by ' + read.issuer.split('\n').join(', ') +
-        (above ? ' (presented with ' + above + ' certificate' +
-                 (above === 1 ? '' : 's') + ' above it)' : '');
+      ? PARAMS.selfSigned
+      : fill(!above ? SENTENCES.listenerIssuedBy
+                    : (above === 1 ? SENTENCES.listenerIssuedByChainOne
+                                   : SENTENCES.listenerIssuedByChainMany),
+             { issuer: issuedBy, n: above });
     log.debug("Leaving CryptoMetadata.listenerCertificateSummary(). " +
               "selfSigned=" + selfSigned);
-    return key + ', ' + issuer + validTo;
+    return fill(SENTENCES.listenerSummary,
+                { key: key, issuer: issuer, notAfter: notAfter });
   }
 
   /**
@@ -2741,12 +3241,10 @@ class CryptoMetadata {
         // five years* until the certificate became openable from this page and
         // the dialog beside it said otherwise.
         certificate: (keys.certChainPem || []).length
-          ? 'issued by this realm\'s JOSE Issuing CA under the service Root'
+          ? SENTENCES.signingCertificateIssued
           : 'self-signed',
         certificateFingerprint: self.certificateFingerprint(keys.certPem),
-        what: 'The realm\'s one RSA key. It signs every access token, every ' +
-              'refresh token, the default ID Token, and every XML document ' +
-              'this service mints.'
+        what: SENTENCES.signingWhat
       },
       curveKeys: (keys.extraKeys || []).map(function (one) {
         return { alg: one.alg, kty: one.publicJwk.kty,
@@ -2763,11 +3261,7 @@ class CryptoMetadata {
                    certificateFingerprint:
                      self.slotCertificateFingerprint(one.alg) };
         }),
-        what: 'Made on FIRST USE rather than at start — one SLH-DSA keygen ' +
-              'is most of two seconds, which would be paid by every realm ' +
-              'whether or not anybody asked for a post-quantum signature. ' +
-              'The first JWKS fetch on a realm is what brings them into ' +
-              'being.'
+        what: SENTENCES.postQuantumWhat
       },
       // THE SIGNER GROUPS (#68): the realm's model and, where it has made
       // them, every group key — the classical ones with the ML-DSA key they
@@ -2786,10 +3280,7 @@ class CryptoMetadata {
       bbs: {
         cryptosuite: bbs2023.CRYPTOSUITE,
         curve: 'BLS12-381 G2, SHA-256 ciphersuite',
-        what: 'Made on first use, like the post-quantum keys. It is ' +
-              'published as `publicKeyMultibase` on the DID document rather ' +
-              'than as a JWK, because a BLS key has no JWK representation to ' +
-              'be forced into.'
+        what: SENTENCES.bbsWhat
       },
       tls: {
         subject: cert.subject,
@@ -2809,12 +3300,9 @@ class CryptoMetadata {
         // until 2026-09-17 (#70), six days after the key was certified under
         // the service Root; the key and issuer are read off the certificate
         // now, as the PKI / X.509 family row reads them.
-        what: self.listenerCertificateSummary(cert) + '. The key is ' +
-              'generated at every start and certified by the TLS Issuing CA ' +
-              'under the process Intermediate wherever a hierarchy exists — ' +
-              'unless `tls.certificateFile` supplies the pair instead. ' +
-              'Shared by LDAPS 636 and — when `global.https` is on — the ' +
-              'main port and the debugger listener.'
+        what: serverProse.fill(SENTENCES.tlsWhat, {
+          summary: self.listenerCertificateSummary(cert)
+        })
       },
       spiffe: {
         enabled: spiffe.enabled,
@@ -2980,7 +3468,7 @@ class CryptoMetadata {
         { where: 'Key identifiers (`kid`)', hash: 'SHA-256, truncated',
           what: 'A `kid` names a KEY and is therefore DERIVED from the ' +
                 'key\'s own public material. It was a constant once, so two ' +
-                'instances of this mock published one name over two ' +
+                'instances of this service published one name over two ' +
                 'different keys — a verifier matches the kid exactly, tries ' +
                 'that key, and reports a bad signature.' },
         { where: 'Kerberos string-to-key',
@@ -3153,11 +3641,10 @@ class CryptoMetadata {
                    // is twice `bits/8` — splitting it the wrong way round is a
                    // ciphertext that decrypts to garbage with a valid tag.
                    note: spec.mode === 'gcm'
-                     ? 'AEAD: one key, one tag.'
-                     : 'The CEK is a MAC key followed by the AES key, and ' +
-                       'the ' +
-                       'tag is HMAC-' + String(spec.hash).toUpperCase() +
-                       ' truncated to half its length.' };
+                     ? SENTENCES.jweGcmNote
+                     : serverProse.fill(SENTENCES.jweCbcNote, {
+                       hash: String(spec.hash).toUpperCase()
+                     }) };
         })
       },
       xml: {
@@ -3187,17 +3674,12 @@ class CryptoMetadata {
         // (#70): `tls.minVersion` and `tls.ciphers` have narrowed 636 and the
         // main port since 2026-09-12, and `debugger/debugger_server.ts`
         // presents the same certificate when `global.https` is on.
-        what: 'Node\'s OpenSSL defaults, except the protocol floor ' +
-              '(`tls.minVersion`, TLS 1.2 by default) and the cipher list ' +
-              '(`tls.ciphers`, node\'s when empty) on LDAPS 636 and the ' +
-              'main port. This service chooses no curve — what else it ' +
-              'configures is which sockets are TLS and which certificate ' +
-              'they serve.',
+        what: SENTENCES.tlsDefaults,
         // THREE SOCKETS SINCE 2026-09-16, and it was five: the 8443 and 9443
         // listeners were deleted, so the certificate this service mints is
         // presented by the main port, LDAPS 636 and the debugger listener.
-        sockets: ['main port (when global.https is on)', 'LDAPS 636',
-                  'debugger listener (when global.https is on)']
+        sockets: [SENTENCES.socketMain, 'LDAPS 636',
+                  SENTENCES.socketDebugger]
       }
     };
     log.debug("Leaving CryptoMetadata.encryption(). " +
@@ -3276,34 +3758,18 @@ class CryptoMetadata {
       config.value('oauth2.refreshTokenEncryptionAlg') || '');
     const groups = String(config.value('tls.groups') || '');
     const tlsPq = /MLKEM/i.test(groups);
+    const K = KEY_ESTABLISHMENT;
+    const fill = serverProse.fill;
+    const offersKem = config.value('keys.offerKemEncryption') === true;
     const surfaces = [
-      { surface: 'JWE this service encrypts TO a client — ID Token, Logout ' +
-                 'Token, UserInfo, JARM, JWT introspection, OID4VCI ' +
-                 'Credential Response',
-        state: config.value('keys.offerKemEncryption') === true
-          ? 'pq' : 'optional',
-        how: config.value('keys.offerKemEncryption') === true
-          ? 'A client registers an ML-KEM or HPKE-8 to HPKE-16 `alg` ' +
-            '(`id_token_encrypted_response_alg` and its siblings) and ' +
-            'publishes a matching AKP key — HPKE-10-KE is X-Wing — and ' +
-            'every one of these is encrypted with it ' +
-            '(`keys.offerKemEncryption` is on).'
-          : 'OFF by default: `keys.offerKemEncryption` is off, so no ML-KEM ' +
-            'or HPKE alg is advertised or accepted at registration. The ' +
-            'OpenID conformance suite and some client libraries reject a ' +
-            'discovery list naming algorithms they do not know.' },
-      { surface: 'JWE sent TO this realm — encrypted request objects, RFC ' +
-                 '7523 / 7522 assertions, OID4VCI Credential Requests',
+      { surface: K.jweOutSurface,
+        state: offersKem ? 'pq' : 'optional',
+        how: offersKem ? K.jweOutOn : K.jweOutOff },
+      { surface: K.jweInSurface,
         state: heldPq.length ? 'pq' : 'optional',
         how: heldPq.length
-          ? 'This realm holds decryption keys for ' + heldPq.join(', ') +
-            ' (`keys.encryptionKemAlgs`), published in its JWKS and ' +
-            'advertised in the decryption lists.'
-          : 'OFF, and by design: `keys.encryptionKemAlgs` is empty, so no ' +
-            'AKP key is in this realm\'s JWKS and no ML-KEM or HPKE alg is ' +
-            'advertised for decryption. An AKP key is a key type many ' +
-            'clients\' JOSE libraries do not parse yet, so publishing one ' +
-            'is an administrator\'s choice (rcbj, #82).' },
+          ? fill(K.jweInHeld, { algs: heldPq.join(', ') })
+          : K.jweInOff },
       (function () {
         // A federation relationship's own key (#82): read lazily — the
         // register is loaded long before this page, and a require here at
@@ -3316,50 +3782,27 @@ class CryptoMetadata {
           return r.fedId;
         });
         return {
-          surface: 'Federation — an OpenID Connect partner\'s ID Token ' +
-                   'encrypted to a relationship\'s key',
+          surface: K.federationSurface,
           state: pqRels.length ? 'pq' : 'optional',
           how: pqRels.length
-            ? pqRels.join(', ') + ' hold an x-wing or ml-kem-768 key ' +
-              '(fedEncryptionKeyType), published in the relationship\'s ' +
-              'JWKS.'
-            : 'Per relationship: fedEncryptionKeyType x-wing (HPKE-10-KE) ' +
-              'or ml-kem-768 on an OpenID Connect relationship. None has ' +
-              'one; SAML 2.0 and WS-Federation cannot (XML Encryption).'
+            ? fill(K.federationHeld, { relationships: pqRels.join(', ') })
+            : K.federationNone
         };
       })(),
-      { surface: 'OID4VP encrypted responses (direct_post.jwt, dc_api.jwt)',
+      { surface: K.vpSurface,
         state: vp.length ? 'pq' : 'classical',
-        how: vp.length
-          ? 'Each request offers ' + vp.join(', ') + ' (a key made for the ' +
-            'one transaction) ahead of or beside the P-256 ECDH-ES key HAIP ' +
-            'requires, so a wallet that can use it does ' +
-            '(`oid4vp.responseEncryptionKeyAlgs`).'
-          : 'Only ECDH-ES is offered (`oid4vp.responseEncryptionKeyAlgs`).' },
-      { surface: 'Refresh tokens (sealed to this realm itself)',
+        how: vp.length ? fill(K.vpOffered, { algs: vp.join(', ') })
+                       : K.vpOnly },
+      { surface: K.refreshSurface,
         state: isPq(refreshAlg) ? 'pq' : 'optional',
-        how: isPq(refreshAlg)
-          ? 'Sealed with ' + refreshAlg + ' to a key pair derived from the ' +
-            'realm\'s refresh-token secret.'
-          : 'Sealed with ' + refreshAlg + '; any ML-KEM or HPKE-8 to 16 ' +
-            'alg may be chosen in `oauth2.refreshTokenEncryptionAlg`, which ' +
-            'needs no key and changes nothing a client sees.' },
-      { surface: 'TLS — the main port, LDAPS and the debugger\'s listener',
+        how: fill(isPq(refreshAlg) ? K.refreshPq : K.refreshClassical,
+                  { alg: refreshAlg }) },
+      { surface: K.tlsSurface,
         state: tlsPq ? 'pq' : 'classical',
-        how: tlsPq
-          ? 'The hybrid groups (X25519MLKEM768, SecP256r1MLKEM768, ' +
-            'SecP384r1MLKEM1024) come first in `tls.groups` (#212), and ' +
-            'the node in the service image — OpenSSL 3.5 — negotiates ' +
-            'them with any client that offers one.'
-          : '`tls.groups` names no ML-KEM hybrid group.' },
-      { surface: 'XML Encryption — SAML assertions, WS-Federation, WS-Trust',
+        how: tlsPq ? K.tlsPq : K.tlsNone },
+      { surface: K.xmlSurface,
         state: 'classical',
-        how: 'RSA-OAEP key transport or ECDH-ES key agreement. XML ' +
-             'Encryption 1.1 defines no KEM and no post-quantum key ' +
-             'transport, and no W3C or IETF document has added one — the ' +
-             'CMS answer, RFC 9629\'s KEMRecipientInfo, has no XML ' +
-             'counterpart. This is a gap in the specification stack, not a ' +
-             'setting left off.' }
+        how: K.xmlHow }
     ];
     const out = {
       state: 'pq',
@@ -3373,29 +3816,12 @@ class CryptoMetadata {
       postQuantum: pqAlgs.slice(0),
       hybrid: stsCrypto.JWE_HYBRID_ALGS.slice(0),
       drafts: {
-        mlKem: 'draft-ietf-jose-pqc-kem-05 — the last revision with JOSE ' +
-               'text; -06 (2026-07-06) is COSE-only. The AKP `priv` is the ' +
-               '64-octet d||z seed -06 corrected -05\'s 32 octets to.',
-        hpke: 'draft-ietf-jose-hpke-encrypt-22 (HPKE-0 to HPKE-7), over ' +
-              'draft-ietf-hpke-hpke; the KEMs of draft-ietf-hpke-pq-05',
-        hybrid: 'draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8 to ' +
-                'HPKE-16), an INDIVIDUAL draft that expired on 2026-08-20 ' +
-                'and the only document that names a hybrid JWE alg'
+        mlKem: K.draftMlKem,
+        hpke: K.draftHpke,
+        hybrid: K.draftHybrid
       },
-      what: 'THIS IS THE HALF THAT MATTERS SOONEST: a signature is checked ' +
-            'when it is presented, so a signature algorithm that falls in ' +
-            '2035 is a problem in 2035, while ciphertext captured today can ' +
-            'be kept and opened when the machine arrives. JWE here has ' +
-            'post-quantum and PQ/T hybrid key establishment — ML-KEM, and ' +
-            'HPKE over ML-KEM or a hybrid (X-Wing is HPKE-10) — and TLS ' +
-            'puts the hybrid groups first. What stays classical is listed ' +
-            'below with its reason, and every one of these JWE algorithms ' +
-            'is from an Internet-Draft.',
-      whatWouldClose: 'XML Encryption needs a specification before it can ' +
-                      'have an implementation. The JWE algorithms become ' +
-                      'standard when their drafts do; until then an ' +
-                      'administrator opts a realm in to publishing a key ' +
-                      'for them, and a client opts in by registering one.'
+      what: K.what,
+      whatWouldClose: K.whatWouldClose
     };
     log.debug("Leaving CryptoMetadata.keyEstablishment(). " +
               surfaces.filter(function (row) {
@@ -3538,10 +3964,7 @@ class CryptoMetadata {
       issuer: base,
       realm: realms.currentId(),
       generatedAt: new Date().toISOString(),
-      oneModule: 'common/crypto.js is the one place this service signs, ' +
-                 'verifies, encrypts and decrypts. Before 2026-08-27 it did ' +
-                 'all four in about twenty places, including six XML signers ' +
-                 'and four XML signature verifiers.',
+      oneModule: SENTENCES.oneModule,
       drift: self.driftReport(),
       keys: self.keyMaterial(),
       families: self.families.map(function (row) {
@@ -3550,10 +3973,14 @@ class CryptoMetadata {
           signs: row.signs, verifies: row.verifies,
           encrypts: row.encrypts, decrypts: row.decrypts,
           hashes: row.hashes,
+          // The keys the family holds OF ITS OWN, beside the realm's signing
+          // keys — written by eight families and carried by none until #543's
+          // review found it. Empty where the family has nothing to say.
+          keys: row.keys || '',
           whatItDoesNot: row.whatItDoesNot,
           envelopes: row.envelopes.slice(0),
-          algorithms: row.algorithms().map(function (pair) {
-            return { what: pair[0], values: pair[1] };
+          algorithms: row.algorithms().map(function (one) {
+            return algorithmRow(one).row;
           })
         };
       }),
@@ -4204,6 +4631,9 @@ class CryptoMetadata {
         plaintextHeld: store.plaintextHeld
       },
       formats: keystore.keystoreFormats(),
+      // Which sentence the page's warning carries where the keys are not
+      // persisted (#543 round 2): "protecting nothing" is development's.
+      verifiesCredentials: mode.verifiesCredentials(),
       keys: rows,
       // THE ROTATION STATE (#42/#48): every signing unit's current, next and
       // retired keys and the schedule — what the Rotate controls act on.
@@ -4216,9 +4646,14 @@ class CryptoMetadata {
                    'signing after a restart — and a copy taken out of this ' +
                    'console goes on verifying against a live JWKS.'
                  : 'Every key here is generated at start, lives only in ' +
-                   'memory and dies with the process, and none of them ' +
-                   'protects anything — this service checks no password and ' +
-                   'validates no token it did not mint.')
+                   'memory and dies with the process' +
+                   // Per mode (#543 round 2): "checks no password" was said
+                   // of a product realm whose keys were not persisted too.
+                   (mode.verifiesCredentials()
+                     ? '.'
+                     : ', and none of them protects anything — this realm is ' +
+                       'in development mode, which checks no password and ' +
+                       'validates no token it did not mint.'))
     };
     log.debug("Leaving CryptoMetadata.keysJson(). " + rows.length + " key(s).");
     return out;
@@ -4277,6 +4712,11 @@ export = {
     return slot.get().families;
   },
   STANDARDS: STANDARDS,
+  // The crypto namespace (#543 phase 2c): the routes whose answers carry
+  // this module's prose, and the prose itself, read off the installed
+  // instance.
+  PROSE_ROUTES: CryptoMetadata.PROSE_ROUTES,
+  prose: CryptoMetadata.prose,
   // Filled by ../sts_metadata.js at ITS require time — see the header for why
   // this direction and not the other.
   setProtocolFamilies: slot.forward('setProtocolFamilies'),

@@ -206,6 +206,14 @@ function challengeTtlS(): number {
   return isFinite(raw) && raw > 0 ? Math.floor(raw) : 300;
 }
 
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: 'oauth2.clientAttestationChallengeTtlS ({{seconds}} s) after ' +
+    'it was issued.'
+});
+
 // The issued challenges, described to `/admin/caches` (#74, rule 3ap). A
 // challenge is SPENT in the used-assertion history, not here; what this
 // store answers is only "did this realm hand it out, and how long ago".
@@ -228,9 +236,12 @@ const challengesCount = cacheRegistry.register({
   bound: 'Enforced: oauth2.clientAttestationChallengeCacheSize per realm; ' +
     'the oldest challenge is dropped, and a client presenting it is handed ' +
     'a fresh one with use_attestation_challenge.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
-    return 'oauth2.clientAttestationChallengeTtlS (' + challengeTtlS() +
-      ' s) after it was issued.';
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
+    return serverProse.fill(CACHE_SENTENCES.lifetime,
+                            { seconds: challengeTtlS() });
   },
   eject: cacheRegistry.realmMapEjector(realms, challenges,
     function (issuedS: unknown, challenge: unknown, now: number): boolean {

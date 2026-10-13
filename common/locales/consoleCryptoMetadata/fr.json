@@ -1,6 +1,6 @@
 {
   "doesNot": "non",
-  "familiesHeading": "Les services d’identité qu’annonce cette maquette",
+  "familiesHeading": "Les services d’identité qu’annonce ce service",
   "familiesLead": "Une ligne par famille de protocoles de",
   "serviceMetadata": "Métadonnées du service",
   "familiesLeadAfter": ", avec ce que chacune fait de la cryptographie. Les quatre verbes sont volontairement séparés : signer, c’est produire quelque chose qu’une partie de confiance croira ; vérifier est une décision qui peut être mal prise ; chiffrer utilise la clé de quelqu’un d’autre ; et déchiffrer suppose de détenir une clé privée sur laquelle un appelant peut viser du texte chiffré. Ce sont quatre expositions différentes, et ce service fait de chacune une quantité différente.",
@@ -20,7 +20,7 @@
   "envelopes": "Enveloppes",
   "doesNotDo": "<strong>Ce qu’il ne fait délibérément pas.</strong>",
   "keysHeading": "Le matériel de clés que détient ce processus",
-  "keysLead": "Chaque clé ici est générée au démarrage et aucune n’est persistée, quel que soit le mode de persistance. C’est délibéré, et deux choses en dépendent : le <code>kid</code> est dérivé du matériel de clé, si bien que deux instances de cette maquette ne peuvent pas publier un même nom pour deux clés différentes, et chaque document qui porte ou décrit une clé est servi avec <code>Cache-Control: no-store</code>. <strong>Les clés de signature sont propres à chaque domaine de confiance ; le certificat TLS et les autorités SPIFFE ne le sont pas.</strong> Ceci montre le domaine <code>{realm}</code>.",
+  "keysLead": "Chaque clé ici est générée au démarrage et aucune n’est persistée, quel que soit le mode de persistance. C’est délibéré, et deux choses en dépendent : le <code>kid</code> est dérivé du matériel de clé, si bien que deux instances de ce service ne peuvent pas publier un même nom pour deux clés différentes, et chaque document qui porte ou décrit une clé est servi avec <code>Cache-Control: no-store</code>. <strong>Les clés de signature sont propres à chaque domaine de confiance ; le certificat TLS et les autorités SPIFFE ne le sont pas.</strong> Ceci montre le domaine <code>{realm}</code>.",
   "scopeRealm": "ce domaine",
   "scopeProcess": "le processus",
   "thKey": "Clé",
@@ -63,7 +63,7 @@
   "thDigest": "Condensat",
   "thWhat": "Quoi",
   "weakOnes": "Les faibles, et pourquoi ils sont là",
-  "weakNote": "<strong>Aucun n’est un oubli et aucun n’est une recommandation.</strong> Ce service existe pour éprouver les clients d’autres personnes, et une maquette qui n’offrirait que le choix sûr ne pourrait pas montrer ce que fait le choix dangereux. Chaque ligne indique quel parc installé le demande.",
+  "weakNote": "<strong>Aucun n’est un oubli et aucun n’est une recommandation.</strong> Ce service existe pour éprouver les clients d’autres personnes, et un service qui n’offrirait que le choix sûr ne pourrait pas montrer ce que fait le choix dangereux. Chaque ligne indique quel parc installé le demande.",
   "thWhy": "Pourquoi",
   "yes": "oui",
   "no": "non",
@@ -143,7 +143,7 @@
   "drafts": "Brouillons implémentés",
   "whatRemains": "Ce qui reste",
   "standardsHeading": "Les normes de plus haut niveau",
-  "standardsLead": "Savoir que ce service signe en RSA-SHA256 ne dit pas si cette signature est un JWS, un XMLDSIG enveloppé, une signature détachée sur une chaîne de requête ou un en-tête <code>&lt;wsse:Security&gt;</code> — quatre documents différents avec quatre modes de défaillance différents. C’est cette couche-ci. <strong>Chaque note de couverture commence par <code>full</code>, <code>partial</code> ou <code>mock</code></strong> et dit ce qui manque, ce qui est la règle que",
+  "standardsLead": "Savoir que ce service signe en RSA-SHA256 ne dit pas si cette signature est un JWS, un XMLDSIG enveloppé, une signature détachée sur une chaîne de requête ou un en-tête <code>&lt;wsse:Security&gt;</code> — quatre documents différents avec quatre modes de défaillance différents. C’est cette couche-ci. <strong>Chaque note de couverture commence par <code>full</code>, <code>partial</code> ou <code>minimal</code></strong> et dit ce qui manque, ce qui est la règle que",
   "standardsLeadAfter": "suit et qui vaut davantage ici : une page sur la cryptographie qui exagère ce qu’elle implémente est activement dangereuse pour quiconque s’en sert pour apprendre.",
   "specifications": "Spécifications",
   "coverage": "Couverture",
@@ -222,7 +222,8 @@
   "cryptography": "Cryptographie",
   "nextDoor": "juste à côté publie les types de clés, les identifiants et les empreintes, et délibérément aucun matériel de clé ; celle-ci en est l’autre moitié.",
   "persisted": "<strong>Les clés de signature de ce domaine sont PERSISTÉES</strong> : une clé exportée ici n’est donc pas jetable — elle continue de signer après un redémarrage, et tout ce qui est signé avec une copie continue d’être vérifié avec le JWKS en ligne de ce service. Les clés TLS et SPIFFE ci-dessous restent propres à chaque démarrage.",
-  "defensible": "C’est défendable en raison de ce que sont ces clés : générées au démarrage, gardées uniquement en mémoire, mortes à la sortie du processus, et ne protégeant rien — ce service ne vérifie aucun mot de passe et ne valide aucun jeton qu’il n’a pas émis.",
+  "defensible": "C’est défendable en raison de ce que sont ces clés : générées au démarrage, gardées uniquement en mémoire, mortes à la sortie du processus, et ne protégeant rien — ce domaine de confiance est en mode développement, qui ne vérifie aucun mot de passe et ne valide aucun jeton qu’il n’a pas émis.",
+  "notPersistedProduct": "Ces clés sont générées au démarrage, gardées uniquement en mémoire et mortes à la sortie du processus — le stockage de ce domaine de confiance ne conserve pas ses clés de signature. Mais ce domaine de confiance est en mode produit et vérifie chaque mot de passe et chaque jeton : jusque-là, une clé remise ici signe ce que les parties de confiance croient. Traitez-la comme la clé de signature active qu’elle est.",
   "needsWrite": "Cela nécessite <strong>Admin Write</strong>, une exigence plus forte que toute autre lecture de cette console, parce qu’ici lire, C’EST prendre.",
   "exporter": "<strong>L’exportateur est celui du débogueur, intégré tel quel.</strong> <code>common/vendored/key_material.js</code> gère les quatre formats avec un mot de passe — PEM, DER, JWK et PKCS#12 — et c’est le même code que celui qu’exerce la page PKI du débogueur. Un second exportateur à côté serait la moins bonne copie.",
   "theKeyPairs": "Les paires de clés",
@@ -242,5 +243,5 @@
   "passwordHint": "obligatoire pour PKCS#12 ; chiffre la moitié privée des autres",
   "downloadKey": "Télécharger",
   "publicOnly": "<strong>La moitié PUBLIQUE seulement.</strong> La RFC 9964 définit les membres publics d’une clé AKP et le traitement de la graine privée évolue encore : il n’existe donc aucun encodage privé interopérable à remettre. Un fichier qu’aucune bibliothèque ne lit serait pire que de le dire.",
-  "passwordNote": "<strong>Un mot de passe est OBLIGATOIRE pour PKCS#12 et facultatif pour les trois autres</strong>, où il chiffre la moitié privée (PKCS#8 pour PEM et DER, PBES2 en .jwe pour JWK). Laissez-le vide et la clé privée sort en clair, ce qui est généralement ce qu’on veut d’une maquette et jamais ce qu’on veut ailleurs."
+  "passwordNote": "<strong>Un mot de passe est OBLIGATOIRE pour PKCS#12 et facultatif pour les trois autres</strong>, où il chiffre la moitié privée (PKCS#8 pour PEM et DER, PBES2 en .jwe pour JWK). Laissez-le vide et la clé privée sort en clair, ce qui est généralement ce qu’on veut en développement et jamais ce qu’on veut ailleurs."
 }

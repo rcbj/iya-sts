@@ -14,8 +14,10 @@
 //      REFUSED, and nobody is left behind as an ordinary person;
 //   b. a create naming a real owner makes one, and /admin-api/users tags it
 //      and filters it with ?kind=service and ?kind=person;
-//   c. its person page describes it — owner, and the policy's defaults: no
-//      browser sign-in, no exemption, no rotation;
+//   c. its person page describes it — its owners, and the policy's
+//      defaults: no browser sign-in, no exemption, no rotation; and (#600)
+//      it may name two owners, and an empty list is refused while the
+//      policy requires one;
 //   d. the service-account policy is the third kind on /admin-api/policies,
 //      and a save of it is read back, inherited by nothing else;
 //   e. Rotate now is REFUSED for an account that names no destination, and
@@ -61,6 +63,7 @@ const REALM = ("svc221-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
                                                .slice(0, 31);
 const realmApi = base + "/realm/" + REALM + "/admin-api";
 const OWNER = "svc221-owner-" + STAMP.toLowerCase();
+const OWNER_TWO = "svc221-owner2-" + STAMP.toLowerCase();
 const ACCOUNT = "svc221-acct-" + STAMP.toLowerCase();
 const REFUSED = "svc221-refused-" + STAMP.toLowerCase();
 
@@ -120,7 +123,7 @@ async function test() {
   log.info("=== a. a refused owner creates nobody ===");
   const refused = await postJson(realmApi + "/users/create", {
     username: REFUSED, invent: false, credential: "none",
-    serviceAccount: true, owner: "nobody-" + STAMP.toLowerCase() });
+    serviceAccount: true, owners: ["nobody-" + STAMP.toLowerCase()] });
   check("a service account whose owner is nobody is refused", function () {
     assert.ok(refused.status >= 400 && refused.status < 500,
               refused.status + " " + refused.raw.slice(0, 400));
@@ -136,7 +139,8 @@ async function test() {
 
   log.info("=== b. a service account, tagged and filtered ===");
   const made = await ok(realmApi + "/users/create", { username: ACCOUNT,
-    invent: false, credential: "none", serviceAccount: true, owner: OWNER },
+    invent: false, credential: "none", serviceAccount: true,
+    owners: [OWNER] },
     "created the service account");
   check("the create says it made a service account", function () {
     assert.strictEqual(made.serviceAccount, true, JSON.stringify(made));
@@ -166,12 +170,37 @@ async function test() {
   check("its page describes it, with the policy's secure defaults",
         function () {
     const sa = page.body && page.body.serviceAccount;
-    assert.ok(sa && /svc221-owner-/.test(sa.owner) &&
-              sa.ownerKind === "person", JSON.stringify(sa));
+    assert.ok(sa && Array.isArray(sa.owners) && sa.owners.length === 1 &&
+              /svc221-owner-/.test(sa.owners[0].dn) &&
+              sa.owners[0].kind === "person", JSON.stringify(sa));
     assert.strictEqual(sa.policy.allowBrowserSignIn, false);
     assert.strictEqual(sa.policy.exemptFromSecondFactor, false);
     assert.strictEqual(sa.rotation.enabled, false);
   });
+
+  log.info("=== c2. more than one owner (#600) ===");
+  await ok(realmApi + "/users/create", { username: OWNER_TWO, invent: false,
+    credential: "none" }, "created a second owner");
+  await ok(realmApi + "/users/set-service-account", { user: ACCOUNT,
+    owners: [OWNER, OWNER_TWO] }, "named two owners");
+  const two = await send(realmApi + "/users?user=" +
+                         encodeURIComponent(ACCOUNT));
+  check("its page lists both owners", function () {
+    const sa = two.body && two.body.serviceAccount;
+    assert.ok(sa && sa.owners.length === 2 &&
+              sa.owners.every(function (one) {
+                return one.kind === "person";
+              }), JSON.stringify(sa));
+  });
+  const emptied = await postJson(realmApi + "/users/set-service-account", {
+    user: ACCOUNT, owners: [] });
+  check("an empty list is refused while the policy requires an owner",
+        function () {
+    assert.ok(emptied.status === 400, emptied.status + " " +
+              emptied.raw.slice(0, 300));
+  });
+  await ok(realmApi + "/users/set-service-account", { user: ACCOUNT,
+    owners: [OWNER] }, "named one owner again");
 
   log.info("=== d. the third kind of policy ===");
   const policies = await send(realmApi + "/policies");

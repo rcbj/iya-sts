@@ -1,0 +1,1742 @@
+{
+  "crypto.sentences.oneModule": {
+    "en": "89ae1e6707cdc9ab",
+    "text": "common/crypto.js est le seul endroit où ce service signe, vérifie, chiffre et déchiffre. Avant le 2026-08-27, il faisait ces quatre opérations à une vingtaine d’endroits, dont six signataires XML et quatre vérificateurs de signature XML."
+  },
+  "crypto.sentences.signingCertificateIssued": {
+    "en": "ccb74c3fcf226008",
+    "text": "émis par la JOSE Issuing CA de ce domaine sous la Root du service"
+  },
+  "crypto.sentences.signingWhat": {
+    "en": "f7404c1e2d82ed3b",
+    "text": "L’unique clé RSA du domaine. Elle signe chaque jeton d’accès, chaque jeton d’actualisation, l’ID Token par défaut et chaque document XML que ce service frappe."
+  },
+  "crypto.sentences.postQuantumWhat": {
+    "en": "d1e5e7645744f3f2",
+    "text": "Créées à la PREMIÈRE UTILISATION plutôt qu’au démarrage — une seule génération de clé SLH-DSA prend près de deux secondes, que paierait chaque domaine, que quelqu’un ait demandé ou non une signature post-quantique. C’est la première récupération du JWKS d’un domaine qui les fait naître."
+  },
+  "crypto.sentences.bbsWhat": {
+    "en": "906077034776820c",
+    "text": "Créée à la première utilisation, comme les clés post-quantiques. Elle est publiée comme `publicKeyMultibase` dans le document DID plutôt que comme JWK, car une clé BLS n’a aucune représentation JWK dans laquelle on pourrait la faire entrer."
+  },
+  "crypto.sentences.tlsWhat": {
+    "en": "35681a509d8441ff",
+    "text": "{{summary}}. La clé est générée à chaque démarrage et certifiée par la TLS Issuing CA sous l’Intermediate du processus partout où une hiérarchie existe — sauf si `tls.certificateFile` fournit la paire à la place. Partagée par LDAPS 636 et — lorsque `global.https` est activé — par le port principal et l’écouteur du débogueur."
+  },
+  "crypto.sentences.listenerSummary": {
+    "en": "2a1315844d834040",
+    "text": "{{key}}, {{issuer}}, valide jusqu’au {{notAfter}}"
+  },
+  "crypto.sentences.listenerUnreadable": {
+    "en": "724ae89d2a9a816d",
+    "text": "illisible par node, valide jusqu’au {{notAfter}}"
+  },
+  "crypto.sentences.listenerIssuedBy": {
+    "en": "637d641d5f35ce2e",
+    "text": "émis par {{issuer}}"
+  },
+  "crypto.sentences.listenerIssuedByChainOne": {
+    "en": "bc6822b39335d61a",
+    "text": "émis par {{issuer}} (présenté avec {{n}} certificat au-dessus)"
+  },
+  "crypto.sentences.listenerIssuedByChainMany": {
+    "en": "2f869cd5d1f97c09",
+    "text": "émis par {{issuer}} (présenté avec {{n}} certificats au-dessus)"
+  },
+  "crypto.sentences.pkiCertificateBinding": {
+    "en": "2d72d4ec39f7cf95",
+    "text": "{{member}} — SHA-256 sur le DER, en base64url"
+  },
+  "crypto.sentences.ldapsTransport": {
+    "en": "29459972b5e8fe87",
+    "text": "TLS, sur le certificat de serveur partagé"
+  },
+  "crypto.sentences.spiffeAuthorityPki": {
+    "en": "c60444730e80e729",
+    "text": "{{keyType}} — la SPIFFE Issuing CA de ce domaine, sous la Root du service"
+  },
+  "crypto.sentences.spiffeAuthoritySelfSigned": {
+    "en": "9ad0068d9cf973fe",
+    "text": "{{keyType}} — autosigné : ce domaine n’a pas d’autorité de certification"
+  },
+  "crypto.sentences.spiffeAuthorityNone": {
+    "en": "98ca0d518997f8a4",
+    "text": "aucune pour l’instant"
+  },
+  "crypto.sentences.webauthnUvChecked": {
+    "en": "a16940eb3be81667",
+    "text": "{{mode}} — demandé ET vérifié par rapport à l’indicateur UV signé"
+  },
+  "crypto.sentences.webauthnUvRequested": {
+    "en": "46a9952f4713d986",
+    "text": "{{mode}} — seulement demandé ; rien n’est refusé sur cette base"
+  },
+  "crypto.sentences.totpInUse": {
+    "en": "491869a05f6f78db",
+    "text": "{{name}} — ce que reçoit un NOUVEL enrôlement"
+  },
+  "crypto.sentences.totpSecret": {
+    "en": "bb442c325bb6fe24",
+    "text": "{{bits}} bits, {{encoding}}"
+  },
+  "crypto.sentences.totpLive": {
+    "en": "87c1e9d28ffb4842",
+    "text": "{{digits}} chiffres, toutes les {{period}} secondes, {{window}} pas de décalage tolérés de part et d’autre"
+  },
+  "crypto.sentences.codesEntropy": {
+    "en": "c4d0c03046e6da5f",
+    "text": "{{bits}} bits par code, {{count}} codes de {{length}} caractères tirés d’un alphabet de {{size}}"
+  },
+  "crypto.sentences.codesAlphabet": {
+    "en": "d8a72dc58f835d17",
+    "text": "{{alphabet}} — les caractères base32, choisis ici parce qu’aucune paire d’entre eux n’est confusable, et NON partagés avec la ligne TOTP ci-dessus"
+  },
+  "crypto.sentences.codesLegacyComparison": {
+    "en": "0461fbbf6b72b08d",
+    "text": "Un jeu écrit avant le 2026-09-11 : {{comparison}}"
+  },
+  "crypto.sentences.emailCode": {
+    "en": "7d9bef7355b70ed9",
+    "text": "six chiffres décimaux issus de crypto.randomInt(), zéros de tête conservés"
+  },
+  "crypto.sentences.emailLinkToken": {
+    "en": "4f34264954dc7cc2",
+    "text": "256 bits issus de crypto.randomBytes(), en base64url"
+  },
+  "crypto.sentences.emailAtRest": {
+    "en": "270607a9609c73d2",
+    "text": "scrypt, via crypto.hashSecret(), sur l’étape de connexion"
+  },
+  "crypto.sentences.jweGcmNote": {
+    "en": "738d45485f10fb8b",
+    "text": "AEAD : une clé, une étiquette."
+  },
+  "crypto.sentences.jweCbcNote": {
+    "en": "31dbbd47a0e04c86",
+    "text": "La CEK est une clé MAC suivie de la clé AES, et l’étiquette est un HMAC-{{hash}} tronqué à la moitié de sa longueur."
+  },
+  "crypto.sentences.tlsDefaults": {
+    "en": "404bc0f7f4f4729a",
+    "text": "Les valeurs par défaut d’OpenSSL de Node, à l’exception du plancher de protocole (`tls.minVersion`, TLS 1.2 par défaut) et de la liste de suites de chiffrement (`tls.ciphers`, celle de node si elle est vide) sur LDAPS 636 et le port principal. Ce service ne choisit aucune courbe — ce qu’il configure par ailleurs, c’est quels sockets sont en TLS et quel certificat ils servent."
+  },
+  "crypto.sentences.socketMain": {
+    "en": "83b9398392ab48f7",
+    "text": "port principal (lorsque global.https est activé)"
+  },
+  "crypto.sentences.socketDebugger": {
+    "en": "277abe82f40632d7",
+    "text": "écouteur du débogueur (lorsque global.https est activé)"
+  },
+  "crypto.param.selfSigned": {
+    "en": "125ce3085aa6bf99",
+    "text": "autosigné"
+  },
+  "crypto.keyEstablishment.jweOutSurface": {
+    "en": "d2aa3e07f69c7123",
+    "text": "JWE que ce service chiffre À DESTINATION d’un client — ID Token, Logout Token, UserInfo, JARM, introspection JWT, Credential Response OID4VCI"
+  },
+  "crypto.keyEstablishment.jweOutOn": {
+    "en": "185d94e3a2bf618d",
+    "text": "Un client enregistre un `alg` ML-KEM ou HPKE-8 à HPKE-16 (`id_token_encrypted_response_alg` et ses équivalents) et publie une clé AKP correspondante — HPKE-10-KE est X-Wing — et chacun de ces éléments est chiffré avec elle (`keys.offerKemEncryption` est activé)."
+  },
+  "crypto.keyEstablishment.jweOutOff": {
+    "en": "7277b2789e28697b",
+    "text": "DÉSACTIVÉ par défaut : `keys.offerKemEncryption` est désactivé, si bien qu’aucun alg ML-KEM ou HPKE n’est annoncé ni accepté à l’enregistrement. La suite de conformité OpenID et certaines bibliothèques clientes rejettent une liste de découverte qui nomme des algorithmes qu’elles ne connaissent pas."
+  },
+  "crypto.keyEstablishment.jweInSurface": {
+    "en": "c10485c5cccaca78",
+    "text": "JWE envoyés À ce domaine — objets de requête chiffrés, assertions RFC 7523 / 7522, Credential Requests OID4VCI"
+  },
+  "crypto.keyEstablishment.jweInHeld": {
+    "en": "210505600241cdc0",
+    "text": "Ce domaine détient des clés de déchiffrement pour {{algs}} (`keys.encryptionKemAlgs`), publiées dans son JWKS et annoncées dans les listes de déchiffrement."
+  },
+  "crypto.keyEstablishment.jweInOff": {
+    "en": "8d920fdcbb4ea950",
+    "text": "DÉSACTIVÉ, et à dessein : `keys.encryptionKemAlgs` est vide, si bien qu’aucune clé AKP ne figure dans le JWKS de ce domaine et qu’aucun alg ML-KEM ou HPKE n’est annoncé pour le déchiffrement. Une clé AKP est un type de clé que les bibliothèques JOSE de nombreux clients n’analysent pas encore ; en publier une relève donc du choix d’un administrateur (rcbj, #82)."
+  },
+  "crypto.keyEstablishment.federationSurface": {
+    "en": "3f594dc7fbebb416",
+    "text": "Fédération — l’ID Token d’un partenaire OpenID Connect chiffré vers la clé d’une relation"
+  },
+  "crypto.keyEstablishment.federationHeld": {
+    "en": "358d8a6a9b318fca",
+    "text": "{{relationships}} détiennent une clé x-wing ou ml-kem-768 (fedEncryptionKeyType), publiée dans le JWKS de la relation."
+  },
+  "crypto.keyEstablishment.federationNone": {
+    "en": "14fd09aadd8a0fcd",
+    "text": "Par relation : fedEncryptionKeyType x-wing (HPKE-10-KE) ou ml-kem-768 sur une relation OpenID Connect. Aucune n’en a ; SAML 2.0 et WS-Federation ne le peuvent pas (XML Encryption)."
+  },
+  "crypto.keyEstablishment.vpSurface": {
+    "en": "6baf471c665ac6b8",
+    "text": "Réponses chiffrées OID4VP (direct_post.jwt, dc_api.jwt)"
+  },
+  "crypto.keyEstablishment.vpOffered": {
+    "en": "849d86b5d19e6d58",
+    "text": "Chaque requête propose {{algs}} (une clé créée pour cette seule transaction) avant ou à côté de la clé ECDH-ES P-256 qu’exige HAIP, afin qu’un portefeuille capable de l’utiliser le fasse (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.keyEstablishment.vpOnly": {
+    "en": "44a7464ddcf375d6",
+    "text": "Seul ECDH-ES est proposé (`oid4vp.responseEncryptionKeyAlgs`)."
+  },
+  "crypto.keyEstablishment.refreshSurface": {
+    "en": "3f22f83a49b55c9e",
+    "text": "Jetons d’actualisation (scellés vers ce domaine lui-même)"
+  },
+  "crypto.keyEstablishment.refreshPq": {
+    "en": "6758fcba4a4a35dd",
+    "text": "Scellés avec {{alg}} vers une paire de clés dérivée du secret de jeton d’actualisation du domaine."
+  },
+  "crypto.keyEstablishment.refreshClassical": {
+    "en": "24e071b986638635",
+    "text": "Scellés avec {{alg}} ; tout alg ML-KEM ou HPKE-8 à 16 peut être choisi dans `oauth2.refreshTokenEncryptionAlg`, ce qui ne requiert aucune clé et ne change rien de ce que voit un client."
+  },
+  "crypto.keyEstablishment.tlsSurface": {
+    "en": "416b130491f7d0f2",
+    "text": "TLS — le port principal, LDAPS et l’écouteur du débogueur"
+  },
+  "crypto.keyEstablishment.tlsPq": {
+    "en": "b68367c2a8d321c1",
+    "text": "Les groupes hybrides (X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024) viennent en premier dans `tls.groups` (#212), et le node de l’image du service — OpenSSL 3.5 — les négocie avec tout client qui en propose un."
+  },
+  "crypto.keyEstablishment.tlsNone": {
+    "en": "b032759b3e0d7e2f",
+    "text": "`tls.groups` ne nomme aucun groupe hybride ML-KEM."
+  },
+  "crypto.keyEstablishment.xmlSurface": {
+    "en": "5eae0076f7a6157c",
+    "text": "XML Encryption — assertions SAML, WS-Federation, WS-Trust"
+  },
+  "crypto.keyEstablishment.xmlHow": {
+    "en": "c37ae0c7c030acc0",
+    "text": "Transport de clé RSA-OAEP ou accord de clé ECDH-ES. XML Encryption 1.1 ne définit aucun KEM ni aucun transport de clé post-quantique, et aucun document du W3C ou de l’IETF n’en a ajouté — la réponse CMS, le KEMRecipientInfo de la RFC 9629, n’a pas d’équivalent XML. Il s’agit d’une lacune dans l’ensemble des spécifications, et non d’un paramètre laissé désactivé."
+  },
+  "crypto.keyEstablishment.draftMlKem": {
+    "en": "f6d7c744b504a044",
+    "text": "draft-ietf-jose-pqc-kem-05 — la dernière révision contenant du texte JOSE ; -06 (2026-07-06) ne concerne que COSE. Le `priv` AKP est la graine d||z de 64 octets à laquelle -06 a corrigé les 32 octets de -05."
+  },
+  "crypto.keyEstablishment.draftHpke": {
+    "en": "185d1e99a7a7ab4e",
+    "text": "draft-ietf-jose-hpke-encrypt-22 (HPKE-0 à HPKE-7), au-dessus de draft-ietf-hpke-hpke ; les KEM de draft-ietf-hpke-pq-05"
+  },
+  "crypto.keyEstablishment.draftHybrid": {
+    "en": "14ac1097493134f5",
+    "text": "draft-reddy-cose-jose-pqc-hybrid-hpke-11 (HPKE-8 à HPKE-16), un draft INDIVIDUEL qui a expiré le 2026-08-20 et le seul document qui nomme un alg JWE hybride"
+  },
+  "crypto.keyEstablishment.what": {
+    "en": "b84af2bfe888da27",
+    "text": "C’EST LA MOITIÉ QUI COMPTE LE PLUS TÔT : une signature est vérifiée au moment où elle est présentée, si bien qu’un algorithme de signature qui tombe en 2035 pose problème en 2035, tandis qu’un texte chiffré capturé aujourd’hui peut être conservé et ouvert lorsque la machine arrivera. Le JWE dispose ici d’un établissement de clé post-quantique et hybride PQ/T — ML-KEM, et HPKE sur ML-KEM ou un hybride (X-Wing est HPKE-10) — et TLS place les groupes hybrides en premier. Ce qui reste classique est listé ci-dessous avec sa raison, et chacun de ces algorithmes JWE provient d’un Internet-Draft."
+  },
+  "crypto.keyEstablishment.whatWouldClose": {
+    "en": "ea8450559eeb91ec",
+    "text": "XML Encryption a besoin d’une spécification avant de pouvoir avoir une implémentation. Les algorithmes JWE deviendront standard lorsque leurs drafts le deviendront ; d’ici là, un administrateur inscrit un domaine pour publier une clé à leur intention, et un client s’inscrit en en enregistrant une."
+  },
+  "crypto.standards.jws.coverage": {
+    "en": "a0c6c0c5333f0961",
+    "text": "full pour les algorithmes listés ci-dessous. La sérialisation compacte est produite et lue partout ; la sérialisation JSON APLATIE n’est lue que par une seule famille, ACME, parce que la RFC 8555 section 6.2 l’exige (chaque requête est recomposée sous forme compacte et vérifiée par la même fonction). La sérialisation JSON générale n’est ni produite ni lue ; rien ici n’en demande."
+  },
+  "crypto.standards.jws.what": {
+    "en": "862303371dc5663b",
+    "text": "L’enveloppe de chaque jeton que ce service frappe et de chaque assertion qui lui est remise. UNE SEULE TABLE POUR TOUT LE SERVICE — le `JWS_ALGS` de `common/crypto.js` — parce qu’il y en a eu deux autrefois, et c’est ainsi que DPoP en est venu à accepter un ensemble d’algorithmes différent de tout le reste, sans que personne ne l’ait choisi."
+  },
+  "crypto.standards.jwe.coverage": {
+    "en": "251f48e95fd0f14b",
+    "text": "partial : sérialisation compacte, et il CHIFFRE avec une liste plus longue que celle avec laquelle il DÉCHIFFRE. Cette asymétrie est délibérée — ce qu’il reçoit est chiffré vers la clé RSA qu’il publie, et il ne détient aucune clé privée EC avec laquelle effectuer un accord."
+  },
+  "crypto.standards.jwe.what": {
+    "en": "991c797c32f2038b",
+    "text": "Une réponse UserInfo chiffrée, et tout ce qu’un client envoie chiffré vers la clé de ce service. La famille CBC-HMAC est présente parce que `A128CBC-HS256` est ce qu’obtient un client OpenID Connect PAR DÉFAUT : enregistrez `userinfo_encrypted_response_alg` sans rien dire de `enc`, et la section 2 de la spécification d’enregistrement l’a choisi pour vous."
+  },
+  "crypto.standards.jwk.coverage": {
+    "en": "30637f1756016b71",
+    "text": "full pour la publication. Le JWKS publié ne porte AUCUN membre `alg`, et cette absence est délibérée : la RFC 7517 section 4.4 le rend facultatif et indique qu’il nomme l’algorithme PRÉVU, or une seule clé RSA signe ici six algorithmes. Il indiquait `RS256` jusqu’au 2026-08-28, et c’était une promesse que le service ne tenait plus — Web Crypto refuse d’importer une JWK dont l’`alg` ne concorde pas avec l’opération demandée."
+  },
+  "crypto.standards.jwk.what": {
+    "en": "c0a4c4242da20c76",
+    "text": "La manière dont chaque clé publique est publiée ici, et dont la propre clé d’un client est lue. L’empreinte RFC 7638 est ce à quoi DPoP se lie."
+  },
+  "crypto.standards.jwt.coverage": {
+    "en": "007e59f3363125e7",
+    "text": "full pour ce qu’il frappe ; `partial` pour ce qu’il lit, car il ne vérifie aucun jeton d’accès qu’il n’a pas émis, sauf à UserInfo."
+  },
+  "crypto.standards.jwt.what": {
+    "en": "71a4f9ece0aa9a3b",
+    "text": "Le jeu de claims à l’intérieur du JWS. `oauth2.clockSkewS` est appliqué partout où ce service relit un jeton qu’il a signé, à UN SEUL endroit depuis le 2026-08-27 — quatre des dix sites d’appel qui le faisaient auparavant avaient discrètement cessé de le faire."
+  },
+  "crypto.standards.thumbprint.coverage": {
+    "en": "43bf5a528e56416c",
+    "text": "full pour RSA, EC, OKP et oct, soit chaque type de clé pour lequel la RFC définit des membres. IL N’Y A PAS D’EMPREINTE POUR `AKP`, le type de clé post-quantique, et c’est pourquoi les algorithmes PQ sont exclus de DPoP."
+  },
+  "crypto.standards.thumbprint.what": {
+    "en": "3738772040c6c429",
+    "text": "Une canonisation, un SHA-256, un seul endroit — il en existait ici deux implémentations avant le 2026-08-27."
+  },
+  "crypto.standards.dpop.coverage": {
+    "en": "97405f66eaffc812",
+    "text": "full : les douze vérifications de la section 4.3, la liaison `cnf.jkt` sur les jetons d’accès ET d’actualisation, `dpop_jkt`, la détection de rejeu par `jti` et la négociation de nonce sous ses deux formes. Non obligatoire par défaut — le mode nonce rend les preuves plus fraîches, pas obligatoires — mais un domaine peut l’exiger : `oauth2.accessTokenRequireDpop` à chaque ressource et `oauth2.refreshTokenRequireDpop` au point de terminaison de jeton, tous deux désactivés par défaut. Un profil FAPI exige une contrainte d’expéditeur, DPoP ou TLS mutuel, et les clients publics de la console d’administration et du portail utilisateur sont toujours liés par DPoP."
+  },
+  "crypto.standards.dpop.what": {
+    "en": "fd2e6cef9f5dc069",
+    "text": "La contrainte d’expéditeur qui rend un jeton d’accès volé sans valeur sans la clé. Sa liste d’algorithmes est un FILTRE sur la table JWS partagée — asymétriques, et non post-quantiques — plutôt qu’une table distincte."
+  },
+  "crypto.standards.mtls.coverage": {
+    "en": "d10a6eaf8ebf09b2",
+    "text": "partial : les deux méthodes d’authentification du client et le jeton d’accès lié au certificat. Elle transforme un certificat vérifié en EMPREINTE et jamais en connexion."
+  },
+  "crypto.standards.mtls.what": {
+    "en": "3e588c6d2a0eca04",
+    "text": "`x5t#S256` est le SHA-256 en base64url du DER du certificat — le DER, pas le PEM, ce qui est l’erreur qui semble correcte dans un journal et ne correspond à rien."
+  },
+  "crypto.standards.pkce.coverage": {
+    "en": "2727b9104835cdc1",
+    "text": "full pour `S256` et `plain`. En mode RFC 9700, `plain` est retiré et la liste annoncée se réduit à `S256`."
+  },
+  "crypto.standards.pkce.what": {
+    "en": "71ccd02e8a1c70cf",
+    "text": "SHA-256 sur le code verifier. Le seul endroit de ce service où un hachage constitue à lui seul une propriété de sécurité."
+  },
+  "crypto.standards.xmldsig.coverage": {
+    "en": "6ac11d8fcf045168",
+    "text": "partial : ce service SIGNE uniquement avec RSA-SHA256, et VÉRIFIE tout ce qui figure dans la table ci-dessous — RSA, RSASSA-PSS, ECDSA et HMAC sur quatre condensés. Signatures enveloppées uniquement ; il ne produit aucune signature détachée ou enveloppante, hormis celle de la liaison Redirect, qui relève d’un mécanisme différent."
+  },
+  "crypto.standards.xmldsig.what": {
+    "en": "65d7098a43b07f40",
+    "text": "L’enveloppe de chaque document XML que ce service frappe. Depuis le 2026-08-27, il s’agit du propre `xmldsig.js` du projet parent, vendorisé à l’identique octet pour octet, qui constitue L’AUTRE EXTRÉMITÉ de la plupart de ces échanges — les deux côtés canonisent donc avec le même code, et un désaccord sur la c14n ne peut pas rester invisible jusqu’à devenir une signature qui se vérifie d’un côté et pas de l’autre."
+  },
+  "crypto.standards.xmlenc.coverage": {
+    "en": "dbb840eef5ab3a75",
+    "text": "partial : quatre chiffrements par blocs et deux transports de clé, enveloppant un élément à la fois. Ce n’est pas l’implémentation vendorisée, et il s’agit d’une exception délibérée — la sortie des deux est déjà compatible octet pour octet, et ce que celle-ci possède et que l’autre n’a pas, c’est le DIAGNOSTIC."
+  },
+  "crypto.standards.xmlenc.what": {
+    "en": "88fff06d7d7b1664",
+    "text": "Chaque message que celle-ci énonce délibérément à voix haute : les deux chiffrements CBC ne sont PAS authentifiés et `rsa-1_5` est cassé par Bleichenbacher. Les deux sont proposés parce que de vrais fournisseurs de services les exigent, et qu’un service qui ne proposerait que le choix sûr ne permettrait pas de montrer ce que fait le choix dangereux."
+  },
+  "crypto.standards.c14n.coverage": {
+    "en": "dcdbea06a9c35da8",
+    "text": "partial : les deux algorithmes et leurs deux jumeaux `#WithComments`. C14N 1.1 n’est PAS proposé — toute sa différence tient à la manière dont `xml:base`, `xml:lang` et `xml:space` sont hérités dans un sous-arbre détaché, le moteur n’implémente pas cet héritage, et une option nommant une méthode qu’il n’exécute pas est pire qu’une option absente."
+  },
+  "crypto.standards.c14n.what": {
+    "en": "ca991439b4559070",
+    "text": "LA FORME EXCLUSIVE EST PORTEUSE ET C’EST LA VALEUR PAR DÉFAUT PARTOUT ICI. Une assertion est signée isolément puis incorporée dans un RSTR, une Response ou un `wresult` qui déclare ses propres préfixes ; une c14n INCLUSIVE ferait donc entrer ces déclarations d’ancêtres dans le condensé au moment de la vérification — la signature échoue alors pour chaque partie de confiance tout en se vérifiant parfaitement ici, ce qui est la pire forme de bogue à traquer."
+  },
+  "crypto.standards.wss.coverage": {
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal, et c’est cette ligne qu’il faut lire avant de demander « WS-Integrity » ou « WS-Encryption » — aucun de ces deux documents n’existe. WSS est une spécification unique dont la moitié intégrité est XML Signature sur le Body et le Timestamp SOAP à l’intérieur d’un en-tête `<wsse:Security>`, et dont la moitié confidentialité est XML Encryption appliqué de la même manière. CE SERVICE NE FAIT NI L’UN NI L’AUTRE. Il ne signe aucune enveloppe SOAP, ne chiffre aucun corps SOAP, ne produit aucun Timestamp et ne vérifie aucune signature au niveau du message sur une requête."
+  },
+  "crypto.standards.wss.what": {
+    "en": "d6dcd66e6476aa91",
+    "text": "Ce qu’il FAIT, c’est le SAML Token Profile : une assertion SAML signée transportée dans un corps SOAP, avec un `<wsse:SecurityTokenReference>` qui la désigne par `KeyIdentifier`, et un `<wsse:BinarySecurityToken>` lorsqu’un jeton X.509 a été demandé. Il LIT l’en-tête `<wsse:Security>` d’un demandeur pour y trouver un justificatif d’authentification et le certificat vers lequel chiffrer. Le `xmldsig.js` vendorisé PEUT produire une véritable signature `<wsse:Security>` — `signSoapMessage()` s’y trouve et le débogueur l’utilise — et rien ici ne l’appelle."
+  },
+  "crypto.standards.krb5.coverage": {
+    "en": "33a060bc7143a706",
+    "text": "partial : quatre profils AES et RC4-HMAC exécutés, DES et 3DES en décodage uniquement. Profil simplifié, dérivation de clé par usage de clé, confounder et CTS, tous réels — les tests de vecteurs atteignent chaque couche individuellement, car un chiffrement de bout en bout qui réussit peut masquer deux erreurs qui se compensent."
+  },
+  "crypto.standards.krb5.what": {
+    "en": "6c3cb428090dfdcf",
+    "text": "LA SEULE FAMILLE ICI SANS AUCUNE CRYPTOGRAPHIE À CLÉ PUBLIQUE. La confidentialité et l’intégrité proviennent toutes deux d’une seule clé symétrique à long terme, et c’est précisément pourquoi c’est la seule porte de ce service qui vérifie réellement un justificatif d’authentification."
+  },
+  "crypto.standards.gssapi.coverage": {
+    "en": "3955b6b4a25e305e",
+    "text": "partial : le mécanisme Kerberos uniquement, avec l’échange de MIC. Pas de NTLM, pas de négociation de mécanisme digne de ce nom — il n’y a qu’un seul mécanisme à négocier."
+  },
+  "crypto.standards.gssapi.what": {
+    "en": "4aaf48ef02c4f689",
+    "text": "L’enveloppe qui transporte un AP-REQ sur HTTP. Elle n’ajoute aucune cryptographie propre : le MIC est une somme de contrôle Kerberos calculée avec la clé du mécanisme."
+  },
+  "crypto.standards.x509.coverage": {
+    "en": "5e34667c87a2bbca",
+    "text": "partial : une Root pour le service, une Intermediate par domaine de confiance (et une pour le processus) et une Issuing CA par cas d’usage, de sorte qu’un chemin de certificat feuille compte quatre certificats, et un SVID sous une CA SPIFFE en aval cinq. Des CRL RFC 5280 et OCSP RFC 6960 sont publiées par CA, et un certificat présenté est vérifié par rapport à elles selon pki.revocationCheck. Conservée uniquement en mode PRODUIT, où le magasin de clés est persistant ; en mode DÉVELOPPEMENT, la hiérarchie est reconstruite à chaque démarrage. Sans hiérarchie (pki.autoBuild désactivé), une clé conserve le certificat autosigné avec lequel elle est née, et l’autorité SPIFFE d’un domaine se rabat sur une autorité autosignée."
+  },
+  "crypto.standards.x509.what": {
+    "en": "0bd1dc7400215c5a",
+    "text": "La clé de CA est celle de la hiérarchie, choisie sur /admin/pki (`pki.keyAlgorithm`, RSA 2048 par défaut ; l’Issuing CA SPIFFE préfère EC P-256) ; la clé de signature est RSA 2048, et le certificat TLS est ce que demande `tls.certificateAlgorithms`. `spiffe.x509KeyType` détermine la clé de chaque SVID. LE SUBJECTALTNAME EST LE SEUL ENDROIT OÙ FIGURENT LES NOMS sur le certificat TLS — la RFC 6125 indique depuis 2011 que le CN est ignoré."
+  },
+  "crypto.standards.tls.coverage": {
+    "en": "33822c9691deb784",
+    "text": "minimal : les valeurs par défaut d’OpenSSL dans node, sauf là où deux paramètres les restreignent sur LDAPS 636 et le port principal — `tls.minVersion` (TLS 1.2 par défaut) et `tls.ciphers` (la liste de node lorsqu’il est vide). Ce service ne choisit aucune courbe ; ce qu’il configure par ailleurs, c’est quels sockets sont en TLS et quel certificat ils présentent."
+  },
+  "crypto.standards.tls.what": {
+    "en": "a3c8abc13508c6c3",
+    "text": "LDAPS 636, le port principal et l’écouteur du débogueur partagent un même certificat. `STS_HTTPS=false` est la manière prise en charge de revenir au HTTP en clair, et non une porte de sortie."
+  },
+  "crypto.standards.cose.coverage": {
+    "en": "35d0b5526ad54ff2",
+    "text": "partial : analyse de COSE_Key et vérification de signature pour les algorithmes ci-dessous. Elle n’écrit aucune structure COSE et ne lit aucun COSE_Encrypt."
+  },
+  "crypto.standards.cose.what": {
+    "en": "7b6ab5c285065ab0",
+    "text": "La manière dont arrive la clé publique d’un justificatif WebAuthn. Le lecteur CBOR et la correspondance COSE sont propres à ce dépôt et ne partagent aucun code avec ceux du débogueur, ce qui fait des deux une vérification indépendante l’un de l’autre."
+  },
+  "crypto.standards.webauthn.coverage": {
+    "en": "4610e926ac80ab7d",
+    "text": "partial : la moitié de la partie de confiance. Les signatures d’enregistrement et d’assertion sont réellement vérifiées, de même que les DÉCLARATIONS d’attestation (#105) — les huit formats, leurs chaînes et le FIDO Metadata Service — selon webauthn.attestationPolicy."
+  },
+  "crypto.standards.webauthn.what": {
+    "en": "ea84aed02de27496",
+    "text": "La signature couvre `authenticatorData || SHA-256(clientDataJSON)` et le hachage du RP ID contenu dans ces données d’authentificateur est comparé octet par octet au SHA-256 du domaine de l’origine."
+  },
+  "crypto.standards.digest.coverage": {
+    "en": "427fc3ecbf538bfc",
+    "text": "partial : `qop=auth` avec SHA-256, SHA-512-256 et MD5 et leurs variantes `-sess`, avec compteurs de nonce, nonces périmés et `Authentication-Info`. Pas de `qop=auth-int`."
+  },
+  "crypto.standards.digest.what": {
+    "en": "cf6005726f6143e0",
+    "text": "L’UN DES DEUX ENDROITS DE CE SERVICE OÙ UN MOT DE PASSE EST RÉELLEMENT VÉRIFIÉ, et il le faut : le mot de passe est une entrée du hachage, de sorte qu’un serveur qui accepterait n’importe quoi ne pourrait pas calculer la réponse qu’attend le client."
+  },
+  "crypto.standards.hoba.coverage": {
+    "en": "b17c97ab09503261",
+    "text": "partial : algorithme 0 (RSA-SHA256) uniquement, avec la signature réellement vérifiée par rapport à la clé enregistrée."
+  },
+  "crypto.standards.hoba.what": {
+    "en": "519e56806159f70f",
+    "text": "Un substitut au mot de passe : le client détient une paire de clés limitée à une origine, en enregistre la moitié publique et signe un bloc composé du nonce, de l’algorithme, de l’origine, du realm, de l’identifiant de clé et du défi du serveur. N’IMPORTE QUI PEUT ENREGISTRER UNE CLÉ — c’est là le tourniquet — mais une signature qui ne se vérifie pas avec la clé enregistrée sous ce `kid` est refusée."
+  },
+  "crypto.standards.sdjwt.coverage": {
+    "en": "2d231e5864c82088",
+    "text": "partial : condensés `_sd` avec `_sd_alg: sha-256`, divulgations et le type `dc+sd-jwt`. La liaison de clé repose sur la preuve de possession du portefeuille lors de l’émission."
+  },
+  "crypto.standards.sdjwt.what": {
+    "en": "2e65e3747a37aeb8",
+    "text": "Divulgation sélective par hachage : le justificatif porte le CONDENSÉ de chaque claim et le détenteur remet ceux qu’il choisit de révéler."
+  },
+  "crypto.standards.dataintegrity.coverage": {
+    "en": "a3a1c4d7b9f3d4d4",
+    "text": "partial : émettre, vérifier une preuve de base et vérifier une preuve DÉRIVÉE. Suite de chiffrement BLS12381-SHA-256."
+  },
+  "crypto.standards.dataintegrity.what": {
+    "en": "28e302a01c047d5c",
+    "text": "LA SEULE SIGNATURE À BASE DE COUPLAGES DE CE SERVICE, et la seule divulgation sélective ici qui ne repose pas sur le hachage. Ce qui doit être partagé avec l’autre extrémité, c’est la FORME CANONIQUE — bbs-2023 signe des déclarations RDF canonisées —, c’est pourquoi les contextes JSON-LD sont vendorisés plutôt que récupérés."
+  },
+  "crypto.standards.did.coverage": {
+    "en": "c5075ca6beddd229",
+    "text": "partial : résolution `did:web`, un document publiant les clés de ce service, et le justificatif de liaison de domaine."
+  },
+  "crypto.standards.did.what": {
+    "en": "40ddc5fd877325e6",
+    "text": "La manière dont un portefeuille trouve la clé qui vérifie un justificatif dont l’`iss` est un DID. La clé BBS est publiée sous forme de `publicKeyMultibase` parce qu’elle n’a aucune représentation JWK dans laquelle on pourrait la forcer."
+  },
+  "crypto.standards.httpsig.coverage": {
+    "en": "ce26dda6f26f398b",
+    "text": "partial : signature et vérification des requêtes et des réponses avec chaque composant dérivé et chaque paramètre de composant, `;req` liant une réponse à sa requête, signatures multiples, chaque algorithme JWS que ce service parle (post-quantique compris) en plus des six enregistrés, et Content-Digest avec sha-256 et sha-512. Repr-Digest, les champs Want- et les trailers ne sont pas implémentés."
+  },
+  "crypto.standards.httpsig.what": {
+    "en": "e5ca4ef8dd596c94",
+    "text": "La preuve de clé préférée de GNAP, et le profil FAPI 2.0 HTTP Signatures aux serveurs de ressources OAuth (requêtes signées en entrée, réponses signées en sortie). LA BASE DE SIGNATURE EST CE QUE LES DEUX EXTRÉMITÉS DOIVENT CONSTRUIRE À L’IDENTIQUE, octet pour octet, à partir d’un message que chacune a analysé séparément — c’est pourquoi le sérialiseur de champs structurés est écrit en entier dans `common/structured_fields.ts` plutôt qu’emprunté, et confronté aux propres vecteurs de test de la RFC. La signature et la vérification se trouvent dans la section 14 de `common/crypto.js`."
+  },
+  "crypto.standards.macaroon.coverage": {
+    "en": "cd6de0c7e0abd87e",
+    "text": "partial : caveats de première partie et atténuation. Pas de caveats tierces, donc pas de macaroons de décharge."
+  },
+  "crypto.standards.macaroon.what": {
+    "en": "8fd19c5836aec908",
+    "text": "Un justificatif au porteur que son détenteur peut RESTREINDRE sans rien demander à personne, en ajoutant une caveat et en recalculant la clé de la chaîne HMAC. Le vérificateur doit détenir la clé racine, ce qui explique qu’un macaroon soit le seul format GNAP sans élément de vérification public."
+  },
+  "crypto.standards.biscuit.coverage": {
+    "en": "80fb7c8db4101849",
+    "text": "partial : signatures Ed25519 de la racine et des blocs, faits Datalog, vérifications et blocs d’atténuation, vérifiés par un autorisateur exécuté sous limites. Pas de blocs tiers."
+  },
+  "crypto.standards.biscuit.what": {
+    "en": "d26de21ef48f4222",
+    "text": "Un jeton à clé publique qu’un détenteur peut atténuer HORS LIGNE, comme un macaroon, mais vérifiable par quiconque détient la clé publique racine. Sa logique d’autorisation est du Datalog transporté dans le jeton, de sorte que le vérificateur s’exécute TOUJOURS avec des limites de temps et d’itérations."
+  },
+  "crypto.standards.cms.coverage": {
+    "en": "abe1a25e47d96baf",
+    "text": "partial : SignedData avec un seul signataire et des attributs signés, vérifiés sur les octets des attributs tels que reçus et écrits triés en DER ; EnvelopedData avec KeyTransRecipientInfo (RSA PKCS#1 v1.5 et OAEP) et contenu AES-CBC ; SignedData dégénéré « certs-only » avec certificats et CRL. Pas de KeyAgreeRecipientInfo, pas de données authentifiées ou compressées, pas de contre-signatures."
+  },
+  "crypto.standards.cms.what": {
+    "en": "0f35f026a507dc11",
+    "text": "L’enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée vers la RA, et un CertRep signé par la RA dont le certificat est chiffré vers le demandeur."
+  },
+  "crypto.families.pki.signs": {
+    "en": "f1ce79cf624ab6f5",
+    "text": "DES CERTIFICATS. La Root se signe elle-même une fois pour le service ; elle signe une Intermediate par domaine de confiance et une pour le processus ; chaque Intermediate signe une Issuing CA par cas d’usage ; et chaque Issuing CA signe les certificats feuilles de son cas d’usage — les propres clés de signature et d’écouteur du service, ainsi que les paires de clés délivrées aux applications et aux personnes. L’algorithme de signature est celui choisi pour la hiérarchie et est contraint par la famille de clé de l’ÉMETTEUR plutôt que par celle du sujet, ce qui est l’erreur à laquelle l’en-tête même de `common/vendored/x509.js` consacre un paragraphe : importer une clé sous un condensé et signer avec un autre produit un certificat dont l’algorithme déclaré et la signature réelle divergent, et `openssl verify` le signale comme une mauvaise signature sans nommer ni l’un ni l’autre."
+  },
+  "crypto.families.pki.verifies": {
+    "en": "e27202f2b20a852a",
+    "text": "UN CHEMIN DE CERTIFICATION. Lorsqu’une assertion RFC 7523 arrive avec un en-tête `x5c`, chaque maillon est vérifié — la signature, le nom de l’émetteur et la période de validité — et le chemin doit SE TERMINER À LA ROOT DU SERVICE ET PASSER PAR L’INTERMEDIATE PROPRE À CE DOMAINE. La seconde moitié est la frontière du domaine : tous les domaines partagent la Root, de sorte qu’une chaîne qui se contente de l’atteindre ne prouve rien quant au domaine qui l’a émise — et une chaîne ancrée ailleurs vérifie chaque maillon et ne prouve absolument rien ici."
+  },
+  "crypto.families.pki.encrypts": {
+    "en": "15a9d95d58ee2384",
+    "text": "Rien lui-même. En mode PRODUIT, la hiérarchie qu’il a construite est scellée en AES-256-GCM sous la clé de chiffrement de clé, par common/keystore.js, dans la même famille de lignes `sts_keys` que les clés de signature — ce module la transmet et n’effectue pas le chiffrement."
+  },
+  "crypto.families.pki.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.pki.hashes": {
+    "en": "fed52b623a3769f0",
+    "text": "SHA-256 par défaut pour la signature du certificat, et SHA-384 ou SHA-512 lorsque la hiérarchie a été construite avec eux. De nouveau SHA-256 pour les empreintes de certificat et pour l’empreinte JWK RFC 7638 dont est dérivé le `kid` délivré — un kid est dérivé du matériel de clé partout dans ce service, de sorte que deux instances ne peuvent pas publier un même nom pour deux clés. **SHA-1 EST PROPOSÉ ET MARQUÉ COMME FAIBLE** : « ma pile refuse-t-elle un certificat SHA-1 ? » est une question qu’un débogueur doit pouvoir poser, et rien ne l’utilise par défaut."
+  },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "UNE SEULE PAIRE DE CLÉS ROOT POUR LE SERVICE, une Intermediate pour chaque domaine de confiance et une pour le processus, une Issuing CA sous chacune par cas d’usage, plus une par paire de clés délivrée. Les clés privées des CA ne quittent jamais ce processus. Celle d’une application, SI : elle est remise une seule fois, à la délivrance, et écrite sur l’entrée d’annuaire de cette application sous `oauthAssertionPrivateKey` — **scellée en AES-256-GCM sous la même clé de chiffrement de clé que la hiérarchie au-dessus d’elle partout où cette clé survit au processus**, de sorte qu’un vidage d’annuaire, un fichier ldif, une ligne de base de données ou une sauvegarde ne contient que du texte chiffré. La console et l’API de gestion l’ouvrent pour un appelant qui détient un identifiant, car une paire de clés délivrée qu’un opérateur ne peut pas récupérer est une paire de clés délivrée que personne ne peut utiliser. En mode DÉVELOPPEMENT, elle est écrite en clair, car la clé de chiffrement de clé y est éphémère et ne survivrait pas au redémarrage auquel l’entrée survit. Ce service ne conserve AUCUNE seconde copie dans un cas comme dans l’autre. ET DEPUIS LE 2026-09-11, UNE PERSONNE PEUT AUSSI EN DÉTENIR UNE, sous `stsAssertionPrivateKey` sur sa propre entrée `ou=users`, scellée sous la même clé et par le même mécanisme. La différence est la voie de SORTIE : celle d’une application est ouverte pour un lecteur muni d’un identifiant par `applications.js`, et celle d’une personne est remise une seule fois par la délivrance et plus jamais, car rien ici n’affiche l’entrée d’une personne au moyen d’un module qui l’ouvrirait."
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "Encodage des certificats"
+  },
+  "crypto.families.pki.algorithms.0.how": {
+    "en": "d40c79caa059f986",
+    "text": "X.509 v3, DER, via pkijs et asn1js — common/vendored/x509.js, le code PKI propre au projet parent, identique octet pour octet. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
+  },
+  "crypto.families.pki.algorithms.1.what": {
+    "en": "1b9e0c9e96801219",
+    "text": "Algorithmes de clé de CA proposés"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "Algorithmes de signature de certificat proposés"
+  },
+  "crypto.families.pki.algorithms.3.what": {
+    "en": "d7548daf57cc5a45",
+    "text": "Parmi eux, proposés à dessein et signalés comme faibles"
+  },
+  "crypto.families.pki.algorithms.4.what": {
+    "en": "f048d7205f8503a3",
+    "text": "Les trois niveaux"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "Empreinte de certificat"
+  },
+  "crypto.families.pki.algorithms.5.how": {
+    "en": "a4f69d39eeec5cec",
+    "text": "SHA-256 sur le DER"
+  },
+  "crypto.families.pki.algorithms.6.what": {
+    "en": "57afb1b90615a720",
+    "text": "Le `kid` de la clé délivrée"
+  },
+  "crypto.families.pki.algorithms.6.how": {
+    "en": "81f96a08bbb65569",
+    "text": "Empreinte JWK RFC 7638, SHA-256, tronquée à 16 caractères"
+  },
+  "crypto.families.pki.algorithms.7.what": {
+    "en": "4ced5cc355ad9abc",
+    "text": "Révocation publiée"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "CRL RFC 5280 et OCSP RFC 6960, UNE DE CHAQUE PAR AUTORITÉ DE CERTIFICATION — une liste est signée par un émetteur, si bien qu’une liste par domaine n’aurait aucun émetteur valide. Signées avec la CA elle-même plutôt qu’avec un certificat de répondeur délégué (RFC 6960 section 4.2.2.2), de sorte qu’un client vérifie avec l’ancre qu’il possède déjà. Chaque certificat que délivre ce service nomme sa propre CRL en http et ldap simples et son répondeur dans une Authority Information Access — jamais https ni ldaps, que la section 8 de RFC 5280 dit qu’une CA NE DEVRAIT PAS écrire dans une extension."
+  },
+  "crypto.families.pki.algorithms.8.what": {
+    "en": "5b01411fa6de40bb",
+    "text": "Révocation vérifiée"
+  },
+  "crypto.families.pki.algorithms.9.what": {
+    "en": "55718f5523bcb7a5",
+    "text": "Vérification de révocation — comment une CRL étrangère est jugée digne de confiance"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "Sa signature est vérifiée par rapport au certificat de l’ÉMETTEUR (le certificat suivant en remontant la chaîne présentée), son nom d’émetteur doit correspondre, une extension critique que ce service n’implémente pas la rend inutilisable (RFC 5280 section 6.3.3), et elle est utilisée jusqu’à son nextUpdate ou pki.revocationCrlMaxAgeS, selon ce qui survient en premier. Le transport n’est pas contrôlé par certificat : la signature est l’authentification, et le propre certificat d’un serveur de CRL remonte couramment à la CA en cours de vérification. Une CRL INDIRECTE est vérifiée par rapport au certificat du cRLIssuer que nomme le certificat présenté, qui doit porter cRLSign et remonter au chemin présenté — pris dans la chaîne, dans les autorités de ce service, dans pki.revocationCrlIssuersFile, ou à l’adresse caIssuers de l’Authority Information Access de la CRL elle-même ; une CRL DELTA par rapport au même signataire que sa base. Les listes sont récupérées via http, https ou ldaps (ldap simple uniquement lorsque pki.revocationLdap le permet) ; le certificat d’un annuaire ldaps doit remonter au magasin de node ou à pki.revocationLdapCaFile. Une liste à une adresse qui n’est pas contactée est un statut qui n’a pas pu être établi, refusé en hard-fail (STS-PKI-0188) ; un certificat ne nommant ni liste ni répondeur est refusé en mode produit (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190), et un certificat portant noRevAvail de RFC 9608 n’est pas vérifié."
+  },
+  "crypto.families.pki.algorithms.10.what": {
+    "en": "d3bae1bd728d5ec3",
+    "text": "Vérification de révocation — comment une réponse OCSP étrangère est jugée digne de confiance"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "La requête porte un CertID SHA-1 (l’identifiant du profil RFC 5019, pas une signature) et un nonce de 32 octets. La réponse doit être signée par l’émetteur du certificat, ou par un répondeur délégué dont le certificat a été signé par l’émetteur avec id-kp-OCSPSigning (RFC 6960 section 4.2.2.2) ; un nonce différent renvoyé est refusé comme rejeu ; thisUpdate et nextUpdate doivent être frais à pki.revocationClockSkewS près. Le statut PROPRE d’un répondeur délégué est recherché sur la CRL que nomme son certificat (jamais via OCSP) sauf s’il porte id-pkix-ocsp-nocheck ; les réponses d’un répondeur révoqué ne sont pas utilisées, et celles d’un répondeur inconnu ne le sont pas en hard-fail."
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "Vérification de révocation — un certificat ENREGISTRÉ"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "Un certificat enregistré plutôt que présenté — le x5c d’une clé RFC 7523, un certificat RFC 7522, fedSigningCertificate ou le x5c d’une clé de partenaire de fédération, un certificat de oid4vp.trustedIssuerCertificates — est vérifié de la même manière lorsqu’il vérifie une signature, ses émetteurs étant récupérés depuis sa propre adresse caIssuers. Une clé nue sans certificat n’a rien à vérifier et est signalée comme telle."
+  },
+  "crypto.families.pki.algorithms.12.what": {
+    "en": "20d318d0fe44aae4",
+    "text": "Où résident les clés privées des CA"
+  },
+  "crypto.families.user-portal.signs": {
+    "en": "9febb36f585ca159",
+    "text": "Rien de ce qu’il émet. Le portail ne frappe aucun jeton, aucune assertion et aucun certificat — il modifie des justificatifs d’authentification plutôt que d’en frapper. Son environnement d’exécution, dans le navigateur, signe une seule chose : une preuve DPoP RFC 9449 (ES256) à chaque appel à `/account-api` et au point de terminaison de jeton, avec une clé P-256 que WebCrypto a générée non extractible pour ce chargement de page."
+  },
+  "crypto.families.user-portal.verifies": {
+    "en": "8a095d27cbed0ab1",
+    "text": "CHAQUE APPEL À `/account-api`, à sa barrière (account-api/account_api.ts) : le jeton d’accès est un `at+jwt` RFC 9068 vérifié sous la clé de signature de CE domaine (toute génération), son émetteur et son audience sont contrôlés, et sa liaison DPoP est rapprochée d’une preuve que la barrière vérifie — jamais accepté en tant que Bearer. La personne qu’il nomme est le seul compte sur lequel il agit. À côté de cela, un MOT DE PASSE PRÉSENTÉ (une modification prouve à nouveau le mot de passe actuel), par rapport au hachage scrypt figurant sur la propre entrée de la personne, et le jeton d’un lien d’ACTIVATION ou de RÉINITIALISATION DU MOT DE PASSE par rapport au hachage scrypt de celui qui a été émis, chacun comparé en temps constant via common/crypto.js. L’environnement d’exécution vérifie une réponse d’autorisation JARM par rapport au JWKS du domaine lorsque le domaine en envoie une. Une assertion WebAuthn est vérifiée par authn/webauthn.js ; l’environnement d’exécution ne fait que mener la cérémonie."
+  },
+  "crypto.families.user-portal.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.user-portal.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.user-portal.hashes": {
+    "en": "2955567f83fe0eee",
+    "text": "SCRYPT (RFC 7914) pour le mot de passe et pour le jeton d’un lien d’activation ou de réinitialisation, chacun avec 16 octets aléatoires de sel, au coût que nomment security.passwordHashLogN, passwordHashR et passwordHashP (N=2^15, r=8, p=1 par défaut), stockés sous la forme `$scrypt$N$r$p$salt$hash` afin que le coût puisse être augmenté plus tard sans invalider ce qui est déjà stocké. **PAS un condensé** : un mot de passe est de faible entropie, et un hachage rapide sur un mot de passe n’est qu’à une liste de mots du mot de passe lui-même. SHA-256 dans le navigateur pour le défi PKCE S256 et le `ath` de la preuve DPoP, ce qui est une tâche différente — lier une requête à une connexion et une preuve à un jeton, et non protéger un secret au repos."
+  },
+  "crypto.families.user-portal.keys": {
+    "en": "7a356445be1d2a7b",
+    "text": "Aucune sur le serveur. La paire de clés DPoP vit dans le navigateur : P-256, générée par WebCrypto avec sa moitié privée non extractible, conservée en mémoire et disparue avec la page, et chaque jeton émis au portail est lié à son empreinte. Les jetons eux-mêmes sont signés par le serveur d’autorisation du domaine (la ligne OAuth2 / OIDC). Il n’y a plus de clé CSRF : la clé HMAC par processus est partie avec le jeton CSRF et le cookie de session qu’il protégeait (#568)."
+  },
+  "crypto.families.user-portal.algorithms.0.what": {
+    "en": "2e88a42ac4b1c9fa",
+    "text": "Mot de passe et jeton de lien au repos"
+  },
+  "crypto.families.user-portal.algorithms.0.how": {
+    "en": "51254f21a3bc3036",
+    "text": "scrypt, N=32768, r=8, p=1 par défaut (security.passwordHash*), clé de 32 octets, sel aléatoire de 16 octets"
+  },
+  "crypto.families.user-portal.algorithms.1.what": {
+    "en": "8117839e71d9cf2c",
+    "text": "Comparaison de l’un ou de l’autre"
+  },
+  "crypto.families.user-portal.algorithms.1.how": {
+    "en": "3c3507a38f025c3d",
+    "text": "égalité en temps constant"
+  },
+  "crypto.families.user-portal.algorithms.2.what": {
+    "en": "e9ec660a650f5513",
+    "text": "Jeton d’accès sur /account-api"
+  },
+  "crypto.families.user-portal.algorithms.2.how": {
+    "en": "87be1920112e9844",
+    "text": "at+jwt RFC 9068, vérifié sous la clé de signature de ce domaine, lié par DPoP"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "Preuve DPoP (navigateur)"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 avec une clé P-256 WebCrypto non extractible par chargement de page"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.gnap.signs": {
+    "en": "ad4b982edb070f2c",
+    "text": "LES CINQ FORMATS DE JETON D’ACCÈS, dont trois ne sont pas des JWT. jwt-signed passe par le même signataire que tous les autres JWT ici, avec l’en-tête `typ` gnap-at+jwt (#157) ; un biscuit est signé avec la clé Ed25519 du domaine (la signature de bloc propre à Biscuit) ; une capacité ZCAP-LD porte une preuve Data Integrity dans la suite que nomme gnap.zcapCryptosuite — eddsa-jcs-2022 par défaut, mldsa44-jcs-2024 ou slhdsa128-jcs-2024 avec la clé post-quantique du domaine, ou Ed25519Signature2020 pour la compatibilité ; un macaroon est une chaîne HMAC-SHA256 sous une clé dérivée par serveur de ressources. Il signe également une réponse HTTP avec la RFC 9421 lorsqu’une instance de client en demande une."
+  },
+  "crypto.families.gnap.verifies": {
+    "en": "0128ae60345397de",
+    "text": "CHAQUE REQUÊTE QUE FAIT UNE INSTANCE DE CLIENT, au moyen de la clé qu’elle a présentée : une signature de message HTTP RFC 9421 (le corps étant couvert par un Content-Digest RFC 9530), un certificat TLS mutuel (révocation consultée ; une chaîne vers le magasin de confiance des clients et une liaison à l’entrée d’application avec gnap.mtlsTrust=pki, la valeur par défaut en mode produit), un JWS détaché sur le corps ou un JWS attaché le contenant. Une rotation de clé est vérifiée sous LES DEUX clés. Un serveur de ressources qui appelle l’introspection ou l’enregistrement fait l’objet de la même preuve, et chaque format de jeton est vérifié à l’introspection."
+  },
+  "crypto.families.gnap.encrypts": {
+    "en": "fd3d73b7072a0617",
+    "text": "jwt-encrypted : un JWT GNAP signé à l’intérieur d’un JWE — vers la propre clé du serveur de ressources (RSA-OAEP-256 ou ECDH-ES+A256KW, avec `gnap.jweEnc`) lorsque son entrée d’application en porte une, sinon `dir` avec A256GCM sous une clé dérivée du domaine, afin que seul ce serveur d’autorisation puisse l’ouvrir."
+  },
+  "crypto.families.gnap.decrypts": {
+    "en": "5a6336f65e8343ba",
+    "text": "Un jeton jwt-encrypted chiffré sous `dir`, à l’introspection. Un jeton chiffré vers la clé d’un serveur de ressources est opaque ici, ce qui est précisément le but du chiffrement vers celle-ci."
+  },
+  "crypto.families.gnap.hashes": {
+    "en": "a478d2fd912623b6",
+    "text": "SHA-256 et SHA-512 pour Content-Digest ; le hachage d’interaction de la section 4.2.3 avec toute méthode de hachage Named Information que node calcule (SHA-2 et SHA-3, formes tronquées comprises) ; SHA-256 pour une empreinte JWK, une empreinte de certificat et le condensé d’une approbation mémorisée ; SHA-256 du jeton d’accès pour `ath` dans une preuve JWS."
+  },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "La clé de l’instance cliente est l’identité du client — une JWK, un certificat, une empreinte de certificat ou une référence à une clé sur l’entrée de l’application. Une clé symétrique partagée (gnapSymmetricKey) et une clé racine de macaroon (gnapMacaroonKey) sont scellées au repos sous la clé de chiffrement de clé du processus. Les clés de macaroon et de dir sont des dérivations HKDF-SHA256 du secret du domaine, chacune avec son propre séparateur de domaine."
+  },
+  "crypto.families.gnap.whatItDoesNot": {
+    "en": "a0a7f11d9b8bed02",
+    "text": "IL N’ACCEPTE PAS DE REQUÊTE SANS PREUVE POUR UN JETON LIÉ, et aucun paramètre ne le permet : une preuve de clé GNAP est le protocole lui-même et non une option de durcissement. Ce qui est facultatif, c’est un jeton AU PORTEUR, que gnap.bearerTokens désactive. Les caveats tierces des macaroons, les blocs tiers de Biscuit et les preuves d’invocation ZCAP ne sont pas implémentés."
+  },
+  "crypto.families.gnap.algorithms.0.what": {
+    "en": "0acd0a9999d15131",
+    "text": "Formats de jeton d’accès"
+  },
+  "crypto.families.gnap.algorithms.1.what": {
+    "en": "9b4d9be6956c3850",
+    "text": "Méthodes de preuve de clé"
+  },
+  "crypto.families.gnap.algorithms.2.what": {
+    "en": "3017e5b92c8dca35",
+    "text": "Formats de clé"
+  },
+  "crypto.families.gnap.algorithms.3.what": {
+    "en": "6b925880a910e023",
+    "text": "Algorithmes de signature de message HTTP"
+  },
+  "crypto.families.gnap.algorithms.4.what": {
+    "en": "7d3b20ad8cfcdfc1",
+    "text": "Algorithmes Content-Digest"
+  },
+  "crypto.families.gnap.algorithms.5.what": {
+    "en": "3d3974ea5d2bc632",
+    "text": "Chiffrement du contenu jwt-encrypted, via gnap.jweEnc"
+  },
+  "crypto.families.openid-federation.signs": {
+    "en": "deb6cc962655484e",
+    "text": "Chaque déclaration de fédération que fait un domaine — sa Entity Configuration, ses Subordinate Statements, les Trust Marks qu’il émet, et ses réponses resolve, Trust Mark Status et Historical Keys — sous forme de JWT typés (RFC 8725 3.11) avec la Federation Entity Key du domaine, une clé tenue à l’écart de toutes les clés de protocole (OpenID Federation 1.1 3.1.1)."
+  },
+  "crypto.families.openid-federation.verifies": {
+    "en": "3d96827548ae76be",
+    "text": "Chaque déclaration d’une Trust Chain par rapport aux clés que nomme la déclaration située au-dessus, et la dernière par rapport aux clés CONFIGURÉES pour le Trust Anchor (10.2) ; une Entity Configuration par rapport à ses propres clés ; une Trust Mark par rapport aux clés de son émetteur telles qu’établies par la propre chaîne de l’émetteur (7.3), et sa délégation par rapport au propriétaire que nomme l’ancre (7.2.2). Le kid doit désigner exactement une clé ; HMAC et none sont refusés."
+  },
+  "crypto.families.openid-federation.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.openid-federation.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.openid-federation.hashes": {
+    "en": "de5f85f4b8049f51",
+    "text": "SHA-256 pour l’empreinte RFC 7638 que constitue le kid de chaque clé, et pour nommer une entrée de registre d’après l’entité ou la marque qu’elle concerne."
+  },
+  "crypto.families.openid-federation.keys": {
+    "en": "8407e160ab2fe530",
+    "text": "Une table de Federation Entity Key par domaine (oidfed.signingAlg, ES256 par défaut, ML-DSA proposé), sur l’entrée ou=oidfed du domaine, les moitiés privées étant scellées sous la clé de chiffrement de clé partout où les clés sont persistées ; une clé suivante publiée à l’avance, les clés retirées publiées pendant oidfed.keyOverlapDays et conservées définitivement pour le point de terminaison Historical Keys, leurs moitiés privées étant abandonnées au retrait. Les clés épinglées de chaque Trust Anchor et de chaque subordonné sont des clés publiques dans le registre."
+  },
+  "crypto.families.openid-federation.whatItDoesNot": {
+    "en": "bb73b0a66ac9741b",
+    "text": "Il n’authentifie pas de client à un point de terminaison de fédération (8.8 — « none » est la valeur par défaut et la seule méthode ici), et il ne signe aucune déclaration de fédération avec une clé de protocole, ni inversement."
+  },
+  "crypto.families.openid-federation.algorithms.0.what": {
+    "en": "b8a1589c947f6093",
+    "text": "Algorithmes de Federation Entity Key proposés"
+  },
+  "crypto.families.openid-federation.algorithms.1.what": {
+    "en": "38bc9028c0d9c2d4",
+    "text": "Les nouvelles clés de ce domaine, via oidfed.signingAlg"
+  },
+  "crypto.families.openid-federation.algorithms.2.what": {
+    "en": "b0e042f34dd410d1",
+    "text": "Signatures vérifiées dans les déclarations de fédération"
+  },
+  "crypto.families.xacml.signs": {
+    "en": "f25654e9962f4f24",
+    "text": "Rien. Une décision n’est pas un jeton et ne porte aucune signature."
+  },
+  "crypto.families.xacml.verifies": {
+    "en": "876b7d98bbc03953",
+    "text": "Rien dans le chemin de décision. Le certificat client du PEP distant est vérifié par la couche TLS (voir TLS / TLS mutuel), et non ici."
+  },
+  "crypto.families.xacml.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.xacml.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.xacml.hashes": {
+    "en": "cb519e6f900e9b51",
+    "text": "UN SEUL, ET CE N’EST PAS DE LA SÉCURITÉ. Le jeton de synchronisation du PEP distant est un SHA-256 sur les documents de chaque politique activée, plus l’indication de celle qui est la racine — un moyen peu coûteux pour un PEP de demander « quelque chose a-t-il changé ? » et d’obtenir un 304, et rien de plus. Il n’authentifie rien et n’est comparé à rien de ce qu’un appelant fournit comme justificatif, de sorte qu’il resterait correct sous forme de CRC."
+  },
+  "crypto.families.xacml.keys": {
+    "en": "b8e87648cce690ed",
+    "text": "Aucune. Aucune clé, de quelque sorte que ce soit, ne participe à l’obtention d’une décision."
+  },
+  "crypto.families.xacml.whatItDoesNot": {
+    "en": "6d7c9938306101b5",
+    "text": "Il ne signe aucune décision, de sorte qu’une décision ayant transité entre deux processus ne porte aucune intégrité propre et repose entièrement sur le transport. C’est une position et non une lacune : signer une décision exigerait qu’un PEP détienne une clé et la vérifie, et toute la prémisse de ce service est que la partie intéressante est la politique plutôt que la tuyauterie."
+  },
+  "crypto.families.xacml.algorithms.0.what": {
+    "en": "c10d5f9e12000a4e",
+    "text": "Rien n’est signé, vérifié, chiffré ou déchiffré ici"
+  },
+  "crypto.families.xacml.algorithms.1.what": {
+    "en": "00642c75836a2377",
+    "text": "Le jeton de synchronisation du PEP distant, qui est un détecteur de changement plutôt qu’un mécanisme de sécurité"
+  },
+  "crypto.families.oauth2-oidc.signs": {
+    "en": "ba9dd042c619d87e",
+    "text": "Chaque jeton d’accès et jeton d’actualisation, ainsi que l’ID Token, avec la clé RSA du domaine en RS256. Un client qui enregistre `id_token_signed_response_alg` obtient cet algorithme à la place, pour son ID Token comme pour son Logout Token back-channel (section 2.4 : les mêmes clés que les ID Tokens), tiré de la table JWS partagée — chaque courbe, les deux courbes d’Edwards, et les algorithmes post-quantiques et composites. Une réponse UserInfo signée de la même manière, plus la famille HMAC (signée avec le propre `client_secret` de ce client, raison pour laquelle elle ne nécessite aucune clé publiée) et `none`. **AINSI QU’UNE RÉPONSE D’INTROSPECTION JWT RFC 9701** (2026-09-13), de type `token-introspection+jwt`, en RS256 ou avec l’`introspection_signed_response_alg` que le serveur de ressources a enregistré — la même table et la famille HMAC, jamais `none`. **AINSI QU’UNE RÉPONSE DE RESSOURCE** (#178) : une signature de message HTTP RFC 9421 étiquetée `fapi-2-response`, avec la clé du domaine que nomme `oauth2.httpSignatureResponseAlg` (ES256 par défaut ; ML-DSA proposé), sur la réponse et, par `;req`, sur la requête à laquelle elle répond."
+  },
+  "crypto.families.oauth2-oidc.verifies": {
+    "en": "8f530ebb541fc71d",
+    "text": "UN OBJET DE REQUÊTE (RFC 9101, 2026-09-13), signé par le client avec une clé qu’il a enregistrée ou avec son secret, et DÉCHIFFRE un objet chiffré vers la clé RSA ou EC `use: \"enc\"` publiée par ce domaine ou vers ce secret. Les preuves DPoP (RFC 9449), les assertions client `private_key_jwt` et `client_secret_jwt`, et chaque jeton d’accès qui lui est remis à un point de terminaison protégé — par rapport à son propre JWKS, avec `oauth2.clockSkewS` appliqué. **AINSI QU’UNE SIGNATURE XML**, la seule chose de cette famille qui ne soit pas un JWS : la RFC 7522 place une assertion SAML 2.0 dans les deux mêmes paramètres de requête que ceux où la RFC 7523 place un JWT, de sorte que le point de terminaison de jeton vérifie une signature XML enveloppée sur un <saml:Assertion> au moyen du même moteur vendorisé avec lequel `/saml2` signe. Elle est vérifiée par rapport à un certificat ENREGISTRÉ pour la partie émettrice de l’assertion et jamais par rapport à un certificat qui se contente de remonter jusqu’à la CA de ce domaine — ce qui est plus strict que le chemin `x5c` qu’autorise la RFC 7523, car une chaîne prouve que le domaine a délivré une clé et ne dit rien de l’application qui la détient. **AINSI QU’UNE REQUÊTE DE RESSOURCE SIGNÉE** (#178) : une signature RFC 9421 étiquetée `fapi-2-request` à chaque serveur de ressources, avec la clé que son keyid désigne dans le jwks ou le jwks_uri enregistré du client, et le Content-Digest RFC 9530 de la requête."
+  },
+  "crypto.families.oauth2-oidc.encrypts": {
+    "en": "e3a5330c42e05359",
+    "text": "Une réponse UserInfo pour un client qui a enregistré `userinfo_encrypted_response_alg`, et une réponse d’introspection JWT pour un client qui a enregistré `introspection_encrypted_response_alg` : JWE compact, RSA-OAEP ou ECDH-ES vers la propre clé du client, un Nested JWT lorsqu’elle est signée. **AINSI QUE CHAQUE JETON D’ACTUALISATION** (2026-09-12) : le JWT signé est scellé sous forme de JWT imbriqué (`cty: JWT`, RFC 7519 section 11.2) vers les propres clés de CE DOMAINE, selon `oauth2.refreshTokenEncryptionAlg` et `…Enc` — tout algorithme de gestion de clé qu’implémente la table JWE partagée, vers la clé RSA du domaine, sa clé EC ou un secret qui lui est propre. Aucun client ne voit jamais ces clés ni n’en a besoin."
+  },
+  "crypto.families.oauth2-oidc.decrypts": {
+    "en": "2b53f4f465776fac",
+    "text": "Un JWE chiffré vers la clé RSA de ce service, en RSA-OAEP-256 uniquement — une liste plus courte que celle avec laquelle il chiffre, à dessein, car il ne détient aucune clé privée EC avec laquelle effectuer l’accord. **AINSI QU’UN JETON D’ACTUALISATION**, selon l’algorithme que nomme son propre en-tête, avant que l’octroi d’actualisation, l’introspection, la révocation ou l’échange de jeton n’y lise quoi que ce soit ; un jeton d’actualisation non chiffré est refusé."
+  },
+  "crypto.families.oauth2-oidc.hashes": {
+    "en": "4e7cfb95ddd04fc5",
+    "text": "`at_hash` et `c_hash` sont la moitié gauche du SHA-256 du jeton ; PKCE `S256` est un SHA-256 sur le verifier ; `cnf.jkt` est une empreinte JWK RFC 7638 (SHA-256) et `cnf[\"x5t#S256\"]` est le SHA-256 du DER du certificat client."
+  },
+  "crypto.families.oauth2-oidc.whatItDoesNot": {
+    "en": "8d259f93358c4bbf",
+    "text": "Il ne vérifie aucun jeton d’accès qu’il n’a pas émis, sauf à UserInfo. Le `jwks_uri` d’un client n’est récupéré (#120) que dans le cadre de la politique sortante, et uniquement pour un client qui n’a enregistré aucun `jwks` en ligne."
+  },
+  "crypto.families.oauth2-oidc.algorithms.0.what": {
+    "en": "6b88c7f4acfda628",
+    "text": "Jetons que ce service frappe par défaut"
+  },
+  "crypto.families.oauth2-oidc.algorithms.1.what": {
+    "en": "4061cd4b31da8060",
+    "text": "Signatures des réponses de ressource (RFC 9421, oauth2.httpSignatureResponseAlg)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.2.what": {
+    "en": "56ef2b0cc6f54335",
+    "text": "ID Token, lorsqu’un client en enregistre un"
+  },
+  "crypto.families.oauth2-oidc.algorithms.3.what": {
+    "en": "7f4c7f19d506a5ac",
+    "text": "Réponse UserInfo"
+  },
+  "crypto.families.oauth2-oidc.algorithms.4.what": {
+    "en": "1bd11ab0955e8290",
+    "text": "Réponse d’introspection JWT (RFC 9701)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.5.what": {
+    "en": "f80ef0758c850e59",
+    "text": "Chiffrement de la réponse d’introspection JWT (RFC 9701)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.6.what": {
+    "en": "ee79eb44634d7a69",
+    "text": "Signature de l’objet de requête (RFC 9101)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.7.what": {
+    "en": "bc7822342ad3ba50",
+    "text": "Déchiffrement de l’objet de requête (RFC 9101)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.8.what": {
+    "en": "4f2f583388edb490",
+    "text": "Preuve DPoP"
+  },
+  "crypto.families.oauth2-oidc.algorithms.9.what": {
+    "en": "ba753c9e11eb8f43",
+    "text": "Assertion client"
+  },
+  "crypto.families.oauth2-oidc.algorithms.10.what": {
+    "en": "648f1a07777e17bd",
+    "text": "Gestion de clé JWE (sortant)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.11.what": {
+    "en": "30e457f0295c4b6a",
+    "text": "Gestion de clé JWE (entrant)"
+  },
+  "crypto.families.oauth2-oidc.algorithms.12.what": {
+    "en": "dce5f5fa4d35a642",
+    "text": "Chiffrement du contenu JWE"
+  },
+  "crypto.families.oauth2-oidc.algorithms.13.what": {
+    "en": "66653d219c100db3",
+    "text": "Chiffrement des jetons d’actualisation (vers les propres clés de ce domaine)"
+  },
+  "crypto.families.federation.signs": {
+    "en": "4f58817f19139f26",
+    "text": "La `<AuthnRequest>` SAML 2.0 qu’il envoie à un fournisseur d’identité étranger, enveloppée, en RSA-SHA256 sur c14n exclusive — le même signataire que celui par lequel passent tous les autres documents ici — et la `<LogoutRequest>` qui informe un partenaire d’une déconnexion ici, enveloppée ou sous forme de signature de requête détachée de la liaison Redirect."
+  },
+  "crypto.families.federation.verifies": {
+    "en": "b986e6fffdabc6e3",
+    "text": "TOUTE LA RAISON D’ÊTRE DE LA FONCTIONNALITÉ. La SAML Response d’un partenaire et l’Assertion qu’elle contient, chacune vérifiée SÉPARÉMENT et chacune par rapport au certificat configuré sur la relation — jamais par rapport à un certificat que le document porte dans son propre `ds:KeyInfo`, ce qui est la vérification qu’une implémentation naïve omet. L’ID Token d’un partenaire en tant que JWS ordinaire, par rapport aux clés publiées du partenaire. La DÉCONNEXION d’un partenaire — un `<LogoutRequest>` SAML ou un Logout Token Back-Channel — par rapport aux mêmes clés configurées, et refusée si elle n’est pas signée, sauf si la relation désactive `fedRequireSignedLogout`, ce que seul le mode développement permet."
+  },
+  "crypto.families.federation.decrypts": {
+    "en": "c5308d3c65d9cca0",
+    "text": "Ce qu’un partenaire chiffre vers la propre clé de la relation : un `<EncryptedAssertion>`, un `<EncryptedID>` ou `<EncryptedAttribute>` à l’intérieur d’une assertion vérifiée ou d’un `<LogoutRequest>`, un jeton WS-Federation, et un ID Token ou un Logout Token JWE — avec exactement l’unique algorithme de gestion de clé et l’unique algorithme de chiffrement du contenu que la relation accepte. La signature de l’assertion est vérifiée sur son texte en clair, et celle de la Response sur le texte chiffré tel qu’il est arrivé ; un JWE doit contenir un JWT signé. Tout échec de déchiffrement donne une seule et même réponse, de sorte que l’ACS n’est pas un oracle."
+  },
+  "crypto.families.federation.hashes": {
+    "en": "2d3c2fd5b62d8002",
+    "text": "Ce que nomme le `DigestMethod` du partenaire, parmi la table vendorisée ci-dessous."
+  },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "Une paire de clés de chiffrement par relation SAML 2.0, WS-Federation ou OpenID Connect, créée en même temps que la relation : RSA 3072 ou EC P-256 sous l’Intermediate du domaine, ou pour OpenID Connect X-Wing ou ML-KEM-768, qui ne portent aucun certificat. Sa moitié privée est scellée sous la clé de chiffrement de clé partout où les clés sont persistées ; un renouvellement conserve celle qu’il remplace pendant `federation.encryptionKeyGraceS`, et seule la clé actuelle est publiée. Ce qu’il signe, il le signe avec la clé de signature du domaine."
+  },
+  "crypto.families.federation.whatItDoesNot": {
+    "en": "76366a6354696014",
+    "text": "Il ne chiffre rien de ce qu’il envoie, et il n’interroge aucun partenaire au sujet d’une session : ce qui atteint une session après la connexion, c’est la déconnexion du partenaire, qui y met fin, et le `SessionNotOnOrAfter` SAML qu’il a envoyé à la connexion, qui la borne. En mode produit, il refuse une assertion en clair qui transite par le navigateur, sauf si la relation définit `fedAllowUnencrypted` ; AES-CBC et RSA PKCS #1 v1.5 sont refusés dans tous les modes. LE CONTRÔLE PORTE SUR LE SIGNATAIRE ET SUR LE SUJET (#109) : au-delà d’une signature vérifiée, seule la personne à laquelle le sujet du partenaire est lié est connectée. C’est la seule surface ici où une vérification manquante constitue un contournement de l’authentification pour tous les protocoles du processus — voir federation/CLAUDE.md."
+  },
+  "crypto.families.federation.algorithms.0.what": {
+    "en": "7c3206a1a259cf99",
+    "text": "Signature des requêtes sortantes"
+  },
+  "crypto.families.federation.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "Signature entrante, l’une des suivantes"
+  },
+  "crypto.families.federation.algorithms.2.what": {
+    "en": "1a25a971a5ba739e",
+    "text": "ID Token entrant"
+  },
+  "crypto.families.federation.algorithms.3.what": {
+    "en": "c53f0beeb485d23e",
+    "text": "Types de clé de chiffrement"
+  },
+  "crypto.families.federation.algorithms.4.what": {
+    "en": "51df0d2b33ed2512",
+    "text": "Gestion de clé XML Encryption, l’un de"
+  },
+  "crypto.families.federation.algorithms.5.what": {
+    "en": "b6c8a81b07dedcf0",
+    "text": "Chiffrement du contenu XML Encryption, l’un de"
+  },
+  "crypto.families.federation.algorithms.6.what": {
+    "en": "1cabfdebd09f6040",
+    "text": "Gestion de clé JWE, l’un de"
+  },
+  "crypto.families.federation.algorithms.7.what": {
+    "en": "97af5681ca47c186",
+    "text": "Chiffrement du contenu JWE, l’un de"
+  },
+  "crypto.families.federation.algorithms.8.what": {
+    "en": "4912e5bb4c7ef303",
+    "text": "Refusés dans tous les modes"
+  },
+  "crypto.families.saml-2-0.signs": {
+    "en": "cae50b198b378a2b",
+    "text": "Les assertions, les Responses, les LogoutRequests et les métadonnées par fournisseur de services — enveloppées, RSA-SHA256, canonisation EXCLUSIVE, avec la `<ds:Signature>` immédiatement après `<Issuer>`, là où le schéma la place. La liaison HTTP Redirect est signée différemment, et cela relève de la spécification plutôt que de ce service : il s’agit d’une signature DÉTACHÉE sur les octets de la chaîne de requête, `SigAlg` nommant l’algorithme en tant que paramètre."
+  },
+  "crypto.families.saml-2-0.verifies": {
+    "en": "4e8292c2dfea891b",
+    "text": "Les signatures des AuthnRequest, LogoutRequest, LogoutResponse et ArtifactResolve d’un fournisseur de services (depuis le 2026-09-17) — la signature détachée de requête de la liaison Redirect, celle de la liaison SimpleSign sur les valeurs du formulaire, ou une signature enveloppée — par rapport aux certificats ENREGISTRÉS du fournisseur de services (RSA, EC, EdDSA, DSA, ML-DSA, SLH-DSA), jamais celui contenu dans la requête ; la propre signature d’un document de métadonnées consommé, par rapport au certificat de l’entrée ou aux ancres de confiance du domaine ; et ses propres artefacts. Un `<EncryptedID>` d’un fournisseur de services est déchiffré plutôt que vérifié."
+  },
+  "crypto.families.saml-2-0.encrypts": {
+    "en": "fc0f0e879fca3b40",
+    "text": "L’assertion d’une Response, sous forme de `<EncryptedAssertion>`, et le NameID d’une LogoutRequest sous forme de `<EncryptedID>` — par application, vers le certificat détenu sur son entrée. SIGNÉE D’ABORD PUIS CHIFFRÉE, ce qui est l’ordre qu’attend chaque fournisseur de services : la signature se trouve à l’intérieur du texte chiffré et c’est elle qui survit au déchiffrement."
+  },
+  "crypto.families.saml-2-0.decrypts": {
+    "en": "428824d407f646cc",
+    "text": "Un `<EncryptedID>` qu’un fournisseur de services envoie dans une LogoutRequest, vers la clé RSA du domaine."
+  },
+  "crypto.families.saml-2-0.hashes": {
+    "en": "d825722f0bd1bef5",
+    "text": "SHA-256 pour le condensé de la Reference ; SHA-1 à l’intérieur de RSA-OAEP-MGF1P, parce que c’est ce que SIGNIFIE l’URI et non un choix fait par ce service."
+  },
+  "crypto.families.saml-2-0.whatItDoesNot": {
+    "en": "30efb1054d4e7582",
+    "text": "Il n’accepte pas de signature SHA-1 à moins que saml.allowSha1Signatures soit activé — jamais en mode produit, qui ne signe jamais non plus avec rsa-sha1, n’enveloppe jamais de clé avec rsa-1_5 et n’en désenveloppe jamais — ni MD5, ni MAC, ni aucune signature à base de hachage avec état. Un fournisseur de services pour lequel il ne détient aucun certificat, avec le chiffrement activé, reçoit l’assertion EN CLAIR, ostensiblement, en développement, et est refusé en mode produit ; un fournisseur dont les métadonnées publient une clé de chiffrement reçoit des données chiffrées dans les deux modes."
+  },
+  "crypto.families.saml-2-0.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.saml-2-0.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "Signature entrante, l’une des suivantes"
+  },
+  "crypto.families.saml-2-0.algorithms.2.what": {
+    "en": "652091f367e363c5",
+    "text": "Chiffrement par blocs (saml2.encryptionAlgorithm)"
+  },
+  "crypto.families.saml-2-0.algorithms.3.what": {
+    "en": "62bf49b6ee453a1e",
+    "text": "Transport de clé (saml2.keyTransportAlgorithm)"
+  },
+  "crypto.families.saml-2-0.algorithms.4.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "Chiffrements par blocs proposés"
+  },
+  "crypto.families.saml-2-0.algorithms.5.what": {
+    "en": "b224b153758d7f54",
+    "text": "Transports de clé proposés"
+  },
+  "crypto.families.saml-1-1.signs": {
+    "en": "60dc72ccb0685a15",
+    "text": "Les assertions et les Responses Browser/POST, en RSA-SHA256 sur c14n exclusive, par le même signataire. Le PLACEMENT diffère, et la raison en est la grammaire plutôt que la cryptographie : une assertion 1.1 n’a pas d’ÉLÉMENT `<Issuer>` — en 1.1, l’émetteur est un ATTRIBUT —, de sorte que « après l’émetteur » n’est pas une position qui existe, et la signature vient EN DERNIER. Une Response est signée EN PREMIER, avant l’assertion qu’elle transporte."
+  },
+  "crypto.families.saml-1-1.verifies": {
+    "en": "f11251a4b826b873",
+    "text": "Rien : SAML 1.1 n’a pas de message de requête dont vérifier une signature."
+  },
+  "crypto.families.saml-1-1.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 pour le condensé de la Reference."
+  },
+  "crypto.families.saml-1-1.whatItDoesNot": {
+    "en": "035395f48a6d34a3",
+    "text": "SAML 1.1 n’a aucun chiffrement — `<EncryptedAssertion>` est arrivé avec la 2.0 — ni aucun message de requête sur lequel vérifier une signature. L’URI de référence nomme `AssertionID` ou `ResponseID`, ce qui est toute la raison pour laquelle le signataire partagé résout un identifiant en le CHERCHANT plutôt qu’en se voyant indiquer son nom."
+  },
+  "crypto.families.saml-1-1.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.ws-federation.signs": {
+    "en": "038da0701eacf8e7",
+    "text": "L’assertion SAML contenue dans le `wresult`, dans la version qu’a demandée la partie de confiance, par le signataire partagé."
+  },
+  "crypto.families.ws-federation.verifies": {
+    "en": "02c1a08782ac0629",
+    "text": "Rien : une requête de connexion ne porte aucune signature."
+  },
+  "crypto.families.ws-federation.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 pour le condensé de la Reference."
+  },
+  "crypto.families.ws-federation.whatItDoesNot": {
+    "en": "c0aea7549def7066",
+    "text": "Il ne simule aucun `wauth` — une exigence que la session ne peut satisfaire déclenche une authentification renforcée, et une AuthenticationMethod est ce que la session a effectivement fait — et ne déréférence aucun `wreqptr` — récupérer une URL que quelqu’un a enregistrée est une falsification de requête côté serveur assortie d’une référence."
+  },
+  "crypto.families.ws-federation.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.ws-trust.signs": {
+    "en": "65b99eb9fa477ac2",
+    "text": "L’assertion SAML de la RequestSecurityTokenResponse, en 1.1 ou 2.0, par le signataire partagé."
+  },
+  "crypto.families.ws-trust.verifies": {
+    "en": "e1450965d276d357",
+    "text": "Il LIT le justificatif `<wsse:Security>` d’un demandeur et le `<ds:X509Certificate>` d’une requête signée — ce dernier pour savoir vers qui CHIFFRER. En mode produit, le mot de passe d’un UsernameToken est vérifié par rapport au `userPassword` de la personne, ou aux secrets client d’une application ; le mode développement le croit sur parole, sauf le mot réservé `invalid`."
+  },
+  "crypto.families.ws-trust.encrypts": {
+    "en": "fa359afa3450379c",
+    "text": "Avec `?encrypt=1`, l’assertion 2.0 émise, vers le certificat trouvé dans la signature de la requête. Les deux mêmes tables que SAML 2.0, car il s’agit du même code — `saml/saml2.ts` le réexporte."
+  },
+  "crypto.families.ws-trust.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "SHA-256 pour le condensé de la Reference."
+  },
+  "crypto.families.ws-trust.whatItDoesNot": {
+    "en": "a65f60d0f2191130",
+    "text": "Il ne répond pas à toute demande de jeton pour quelqu’un d’autre : `OnBehalfOf` (usurpation d’identité) et `ActAs` (délégation) sont tranchés par la politique d’émission sur la base des contrôles de délégation portés par les entrées du demandeur et du sujet — refusés en mode produit, consignés en mode développement comme ce qui aurait été refusé. Et il ne produit aucune enveloppe SOAP signée qui lui soit propre — voir WS-Security ci-dessous, la ligne qui indique ce que ce service fait et ne fait pas avec cette spécification."
+  },
+  "crypto.families.ws-trust.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "Signature"
+  },
+  "crypto.families.ws-trust.algorithms.1.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "Chiffrements par blocs proposés"
+  },
+  "crypto.families.ws-trust.algorithms.2.what": {
+    "en": "b224b153758d7f54",
+    "text": "Transports de clé proposés"
+  },
+  "crypto.families.kerberos.signs": {
+    "en": "d0004d29106d6b55",
+    "text": "Une réponse PKINIT (#179) : le KDCDHKeyInfo, dans un CMS SignedData avec SHA-256, par le certificat KDC du domaine (ECDSA par défaut). À part cela, rien au sens de la clé publique. L’intégrité provient d’une somme de contrôle à clé (HMAC-SHA1-96, HMAC-SHA-256-128, HMAC-SHA-384-192 ou HMAC-MD5) sous une clé dérivée de la clé à long terme pour le numéro d’usage de clé de ce message."
+  },
+  "crypto.families.kerberos.verifies": {
+    "en": "fac18bcfa8ced4dd",
+    "text": "La pré-authentification — dont l’AuthPack signé de PKINIT et son chemin de certification — chaque authentificateur AP-REQ, et les sommes de contrôle ci-dessus. C’EST LA SEULE PORTE DE CE SERVICE QUI VÉRIFIE RÉELLEMENT UN JUSTIFICATIF, et ce n’est pas un choix de politique : dans Kerberos, le mot de passe EST la clé, de sorte qu’un KDC qui accepterait n’importe quoi devrait tout de même choisir une clé que le client ne pourrait pas deviner. La permissivité a été déplacée dans la POLITIQUE DE COMPTE à la place — un mot de passe partagé unique, un compte créé pour n’importe quel nom."
+  },
+  "crypto.families.kerberos.encrypts": {
+    "en": "4f7b84df5e4c1070",
+    "text": "Chaque partie chiffrée de chaque message : l’enc-part de l’AS-REP, le ticket, l’authentificateur, le TGS-REP. AES en mode CTS avec un confounder, ou RC4-HMAC."
+  },
+  "crypto.families.kerberos.decrypts": {
+    "en": "b736df153bccfa13",
+    "text": "La même chose, dans l’autre sens, y compris un véritable ticket de service présenté à `/authn/spnego`."
+  },
+  "crypto.families.kerberos.hashes": {
+    "en": "6b01eb6b40541434",
+    "text": "PBKDF2-HMAC-SHA1 (RFC 3962) ou PBKDF2-HMAC-SHA-256/384 (RFC 8009) pour string-to-key ; MD4 (le hachage NT) pour RC4-HMAC, qui est sans sel, ce qui explique que la découverte du sel n’importe que pour AES."
+  },
+  "crypto.families.kerberos.whatItDoesNot": {
+    "en": "564dfc55115cbde1",
+    "text": "Pas de transport de clé RSA dans PKINIT (la clé de réponse est toujours convenue par Diffie-Hellman), et pas de PKINIT post-quantique, que rien ne normalise. DES et 3DES sont en DÉCODAGE UNIQUEMENT — nommés pour qu’une capture s’affiche fidèlement, jamais exécutés."
+  },
+  "crypto.families.kerberos.algorithms.0.what": {
+    "en": "8b12881e65e625c4",
+    "text": "Types de chiffrement exécutés"
+  },
+  "crypto.families.spnego.signs": {
+    "en": "df250490aa6ca80f",
+    "text": "Rien qui lui soit propre. Le MIC d’un `negTokenResp` est une somme de contrôle Kerberos sur la négociation, calculée avec la clé du mécanisme."
+  },
+  "crypto.families.spnego.verifies": {
+    "en": "d809021f4e9d84a9",
+    "text": "L’AP-REQ contenu dans le jeton GSS, via l’accepteur Kerberos — y compris le cache de rejeu, qui est la seule vérification à cette porte dont l’absence serait un bogue de sécurité plutôt qu’un bogue de fidélité."
+  },
+  "crypto.families.spnego.decrypts": {
+    "en": "a46cdba23bd3e592",
+    "text": "L’authentificateur de l’AP-REQ, sous la clé à long terme du service."
+  },
+  "crypto.families.spnego.hashes": {
+    "en": "2230ed54174ccefc",
+    "text": "Ce qu’utilise la somme de contrôle du type de chiffrement négocié."
+  },
+  "crypto.families.spnego.whatItDoesNot": {
+    "en": "85057be5d17ba628",
+    "text": "Il n’ajoute aucune vérification propre à celles de l’accepteur, et ne négocie aucun mécanisme autre que Kerberos v5."
+  },
+  "crypto.families.spnego.algorithms.0.what": {
+    "en": "d09ab09f9ee0e400",
+    "text": "Mécanisme négocié"
+  },
+  "crypto.families.spiffe.signs": {
+    "en": "99f5793498f36e41",
+    "text": "Des X509-SVID, sous l’Issuing CA SPIFFE de ce domaine — une CA placée sous l’Intermediate du domaine et la Root du service, de sorte que le bundle publie la Root et qu’un SVID porte l’Issuing CA et l’Intermediate dans sa chaîne. Un domaine sans hiérarchie se rabat sur une autorité autosignée, qui est alors sa propre ancre. Les JWT-SVID sont des JWS ordinaires, émis par une autorité JWT générée à chaque démarrage dans les deux modes. Chaque type de clé fixe à la fois l’algorithme de signature du certificat et l’`alg` JWS — un certificat dont l’algorithme déclaré et la signature réelle divergent s’analyse parfaitement et est refusé avec un message concernant une signature, sans nommer aucun des deux hachages."
+  },
+  "crypto.families.spiffe.verifies": {
+    "en": "3d9b175cf83a0c70",
+    "text": "Un X509-SVID sur TLS mutuel sur le port TCP de la SPIRE Server API, et un JWT-SVID à `ValidateJWTSVID`."
+  },
+  "crypto.families.spiffe.hashes": {
+    "en": "3d8ab87bbee0aaf7",
+    "text": "SHA-256 sur le DER du SVID partout où il est enregistré, et le condensé propre à la signature du certificat, qui suit le type de clé."
+  },
+  "crypto.families.spiffe.whatItDoesNot": {
+    "en": "34749d8581fa8262",
+    "text": "Il n’atteste aucun appelant de la Workload API sur TCP — les appelants du socket Unix et chaque agent sont attestés, et la spécification de la Workload API indique qu’elle NE DOIT PAS authentifier. Il n’enregistre aucun SVID qu’il frappe, de sorte qu’un SVID n’est révoqué qu’en nommant son numéro de série à la main ; c’est la révocation de l’Issuing CA SPIFFE du domaine sur /admin/pki qui fait refuser chaque SVID placé sous elle à la SPIRE Server API. L’annuaire enregistre qui peut encore se voir DÉLIVRER un SVID, ce qui est une affirmation différente. Ed25519 est disponible pour une clé de X509-SVID (et pour une autorité de repli autosignée) et NON pour l’autorité JWT, ce qui est une limite de `jsonwebtoken` et non de la spécification."
+  },
+  "crypto.families.spiffe.algorithms.0.what": {
+    "en": "ab46510f58c0af97",
+    "text": "Types de clé proposés (SVID, autorité de repli, autorité JWT)"
+  },
+  "crypto.families.spiffe.algorithms.1.what": {
+    "en": "1ab9e59d403cfe7f",
+    "text": "Autorité X.509 dans ce domaine"
+  },
+  "crypto.families.spiffe.algorithms.2.what": {
+    "en": "bddc2c1047bd1bfb",
+    "text": "Clé de X509-SVID dans ce domaine"
+  },
+  "crypto.families.spiffe.algorithms.3.what": {
+    "en": "e0c4b0f50d03be7d",
+    "text": "Autorité JWT dans ce domaine"
+  },
+  "crypto.families.scim.signs": {
+    "en": "0f56021e8d3293fb",
+    "text": "Rien. Il ne FRAPPE aucun justificatif — c’est la seule famille ici qui se contente toujours de les vérifier."
+  },
+  "crypto.families.scim.verifies": {
+    "en": "90704e4d59344987",
+    "text": "Un justificatif dans l’un des six schémas que nomme la RFC 7644 section 2. Ceux d’OAuth exigent un jeton émis par ce service portant `scim:read` ou `scim:write`, et une signature HOBA est vérifiée par rapport à la clé publique que le client a enregistrée. En mode DÉVELOPPEMENT, HTTP Digest calcule la réponse à partir du seul mot de passe configuré et n’importe quel mot de passe sauf un passe Basic ; en mode PRODUIT, Basic vérifie le mot de passe par rapport au `userPassword` haché de la personne et Digest n’est pas proposé."
+  },
+  "crypto.families.scim.hashes": {
+    "en": "8b5fd034b1743a03",
+    "text": "Digest RFC 7616 : SHA-256, SHA-512-256 et MD5, chacun avec sa variante `-sess`, proposés du plus fort au plus faible parce que la section 3.7 le prescrit et parce qu’un client prend le premier qu’il comprend. Chacun est confronté à l’openssl dont dispose réellement ce processus, de sorte qu’un défi ne nomme jamais un algorithme que le serveur ne peut pas calculer."
+  },
+  "crypto.families.scim.whatItDoesNot": {
+    "en": "9d23420bb1b23ff7",
+    "text": "Il ne stocke aucun mot de passe qui lui soit propre — le mot de passe Digest est un paramètre. (`active: false` DÉSACTIVE bien le compte, depuis le 2026-09-17.)"
+  },
+  "crypto.families.scim.algorithms.0.what": {
+    "en": "61a2c91673703a02",
+    "text": "Schémas d’authentification"
+  },
+  "crypto.families.scim.algorithms.1.what": {
+    "en": "6e2f80bf9cfaabad",
+    "text": "Digest"
+  },
+  "crypto.families.scim.algorithms.2.what": {
+    "en": "8ffb36406b3f2925",
+    "text": "HOBA"
+  },
+  "crypto.families.shared-signals.signs": {
+    "en": "ad10748a9c91a0d6",
+    "text": "CHAQUE SECURITY EVENT TOKEN, et c’est le document de ce service pour lequel le choix de l’algorithme mérite le plus de réflexion. Un SET consigne que quelque chose S’EST PRODUIT et la RFC 8417 section 4.1.4 lui interdit d’expirer ; il est donc lu longtemps après avoir été écrit — ce qui est précisément le cas visé par l’argument « récolter maintenant, déchiffrer plus tard ». La signature passe par le MÊME signataire que tous les autres JWT ici, de sorte que `ssf.signingAlgorithm` donne accès à toute la table : RS256 par défaut, les familles PS et ES, EdDSA, et les algorithmes post-quantiques — ML-DSA en trois tailles, SLH-DSA en deux, et les six algorithmes composites ML-DSA + traditionnel. Une signature SLH-DSA prend jusqu’à une seconde et s’exécute sur le pool de threads de libuv, de sorte que ce service continue de répondre pendant ce temps et que le récepteur attend."
+  },
+  "crypto.families.shared-signals.verifies": {
+    "en": "eb64e2686979148b",
+    "text": "Le jeton d’accès à chaque appel de gestion de flux, par la même vérification que celle de tout autre point de terminaison protégé ici, et un SET poussé vers le récepteur propre à la console ou au portail, avec le JWKS de ce service."
+  },
+  "crypto.families.shared-signals.encrypts": {
+    "en": "3a0ce36975e5d5a1",
+    "text": "Rien. SSF n’a pas de profil de SET chiffré — la RFC 8417 autorise un SET enveloppé dans un JWE, et ni ce service ni aucun émetteur déployé n’en produit ; ce qui protège un événement en transit est donc le TLS du point de terminaison de livraison, c’est pourquoi le certificat du récepteur est vérifié — et, depuis #171, vérifié en mode produit quoi qu’indique `ssf.pushSkipTlsVerification`."
+  },
+  "crypto.families.shared-signals.decrypts": {
+    "en": "58ee378a4cea46f2",
+    "text": "Rien, pour la même raison."
+  },
+  "crypto.families.shared-signals.hashes": {
+    "en": "022790fa40b66490",
+    "text": "Ce qu’implique l’algorithme de signature choisi, et rien qui lui soit propre : un SET ne porte le condensé de rien, contrairement à un ID Token qui porte `at_hash`."
+  },
+  "crypto.families.shared-signals.whatItDoesNot": {
+    "en": "66fb8f17d972a92b",
+    "text": "IL SIGNE MAL EXPRÈS QUAND ON LE LUI DEMANDE. `ssf.breakSetSignature` modifie UN SEUL CARACTÈRE de la signature après la signature, de sorte qu’un récepteur qui ne vérifie pas accepte un événement que rien n’a signé. Il s’agit délibérément d’un caractère plutôt que d’une troncature : une signature tronquée échoue au décodage base64url et est signalée comme un jeton MAL FORMÉ, ce qui est, pour celui qui est testé, un bogue différent d’un jeton mal signé. Mode développement uniquement : un domaine en mode produit l’ignore et refuse qu’on le définisse (#104)."
+  },
+  "crypto.families.shared-signals.algorithms.0.what": {
+    "en": "e1abd835e83344ac",
+    "text": "Security Event Tokens, actuellement"
+  },
+  "crypto.families.shared-signals.algorithms.1.what": {
+    "en": "0011f3fa76892e63",
+    "text": "L’un des suivants, via ssf.signingAlgorithm"
+  },
+  "crypto.families.shared-signals.algorithms.2.what": {
+    "en": "61a2c91673703a02",
+    "text": "Schémas d’authentification"
+  },
+  "crypto.families.ldap.signs": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.ldap.verifies": {
+    "en": "77beffdc6d964fc9",
+    "text": "Le mot de passe d’un bind simple, en mode PRODUIT, par rapport au `userPassword` scrypt de l’entrée — après avoir refusé un bind anonyme, tout bind sur le port en clair 389, un mot de passe vide et un DN ou une adresse ayant dépassé sa limite de binds échoués. Les écritures y sont ensuite autorisées (tout pour un administrateur, quelques attributs de sa propre entrée pour n’importe qui d’autre) et une lecture nécessite un bind. En mode DÉVELOPPEMENT, chaque bind réussit — n’importe quel DN, n’importe quel mot de passe, anonyme, sur 389 comme sur 636 — et rien n’est autorisé. Dans les deux modes, le seul mot de passe `invalid` est refusé, afin de pouvoir exercer le chemin d’échec d’un client."
+  },
+  "crypto.families.ldap.encrypts": {
+    "en": "de2261d41092316b",
+    "text": "L’écouteur LDAPS sur 636 est en TLS, sur le certificat que détient `tls/tls_server.js` — certifié sous la Root du service — que le port principal et l’écouteur du débogueur présentent également. Un seul ensemble de gestionnaires et un seul magasin se trouvent derrière les deux ports de l’annuaire."
+  },
+  "crypto.families.ldap.decrypts": {
+    "en": "f009e2342690a9e8",
+    "text": "La même connexion, dans l’autre sens."
+  },
+  "crypto.families.ldap.hashes": {
+    "en": "2486a4ede1f05d87",
+    "text": "`userPassword` est stocké sous forme de hachage scrypt dans LES DEUX modes, via crypto.hashSecret(), quelle que soit la porte qui l’a écrit — un add ou un modify LDAP compris. Le mode produit refuse une valeur envoyée déjà hachée, qui ne peut pas être soumise à la politique de mots de passe ; le développement la conserve telle quelle, ce qui permet de déplacer un annuaire entre deux instances."
+  },
+  "crypto.families.ldap.whatItDoesNot": {
+    "en": "b5fd76f7abc4adab",
+    "text": "Il ne répond à AUCUN MÉCANISME SASL — le root DSE omet `supportedSASLMechanisms` plutôt que de le publier vide, car un attribut LDAP a toujours au moins une valeur et un attribut vide n’est pas une affirmation plus faible, c’est une affirmation mal formée. Donc pas de bind GSSAPI, pas de bind EXTERNAL, et pas de StartTLS : 636 est en TLS dès le premier octet."
+  },
+  "crypto.families.ldap.algorithms.0.what": {
+    "en": "896a443631bae685",
+    "text": "Transport LDAPS"
+  },
+  "crypto.families.pki-x-509.signs": {
+    "en": "ece532b86564b74e",
+    "text": "Rien lui-même — les certificats que ce service PRÉSENTE sont délivrés par `common/pki.js` (la ligne PKI ci-dessus) sur des clés créées ici. Le certificat de SIGNATURE est la clé RSA 2048 du domaine, certifiée deux fois, par les Issuing CA JOSE et XML. Le certificat de SERVEUR TLS est délivré par l’Issuing CA TLS sous l’Intermediate du processus, sur une clé générée à chaque démarrage, avec le subjectAltName qui est le seul endroit où figurent les noms, car la RFC 6125 indique depuis 2011 que le CN est ignoré. L’autorité SPIFFE est l’Issuing CA SPIFFE du domaine. Tous remontent à une seule Root, que le mode PRODUIT conserve dans le magasin de clés et que le mode DÉVELOPPEMENT reconstruit à chaque démarrage. Sans hiérarchie, ou avec `tls.certificateFile` défini, le certificat est autosigné ou celui qui a été fourni."
+  },
+  "crypto.families.pki-x-509.verifies": {
+    "en": "9a6b03049e4c72de",
+    "text": "Un certificat client présenté sur le port principal (ou sur l’écouteur du débogueur, qui le demande de la même manière), par rapport aux ancres du magasin de confiance (dont la Root du service avec `tls.trustIssuedClientCertificates`), sa révocation étant vérifiée selon `pki.revocationCheck` — puis `GET /tls/sign-in` transforme un certificat vérifié en SESSION dans le domaine de l’autorité qui l’a signé, tandis que l’authentification client RFC 8705 le lie à un jeton. LDAPS 636 ne demande aucun certificat client."
+  },
+  "crypto.families.pki-x-509.encrypts": {
+    "en": "36e58d75de057d83",
+    "text": "Chaque octet sur LDAPS 636 et, lorsque `global.https` est activé (chaque fichier appconfig de env/ le définit, depuis le 2026-08-30), sur le port principal et l’écouteur du débogueur. L’échange de clés est celui par défaut d’OpenSSL dans node ; sur 636 et le port principal, le plancher de protocole est `tls.minVersion` (TLS 1.2 par défaut) et les suites `tls.ciphers` (la liste de node lorsqu’il est vide)."
+  },
+  "crypto.families.pki-x-509.decrypts": {
+    "en": "002a94032db09f02",
+    "text": "La même chose."
+  },
+  "crypto.families.pki-x-509.hashes": {
+    "en": "c6bb4311866e3099",
+    "text": "SHA-256, partout où un certificat est désigné : sur le DER pour la confirmation `x5t#S256` de la RFC 8705 et l’empreinte de `/tls`, et sur la clé publique pour l’épinglage SPKI que porte la suite de tests."
+  },
+  "crypto.families.pki-x-509.whatItDoesNot": {
+    "en": "d82e95d63fdba050",
+    "text": "La première récupération de l’ancre ne peut pas être vérifiée — il ne reste aucun écouteur en clair auprès duquel la récupérer, elle est donc effectuée avec la vérification désactivée. En mode DÉVELOPPEMENT, cette récupération est de nouveau nécessaire après chaque redémarrage, car la Root est reconstruite ; en mode PRODUIT, et avec un certificat fourni, elle n’est nécessaire qu’une fois. Le certificat d’une application est refusé comme moyen de connexion : c’est un justificatif client RFC 8705."
+  },
+  "crypto.families.pki-x-509.algorithms.0.what": {
+    "en": "4293457d8bfdfe50",
+    "text": "Certificat de serveur"
+  },
+  "crypto.families.pki-x-509.algorithms.1.what": {
+    "en": "2c65407a378b57b8",
+    "text": "Liaison de certificat"
+  },
+  "crypto.families.webauthn-ctap.signs": {
+    "en": "4da1e2515e736e7d",
+    "text": "Rien. C’est l’AUTHENTIFICATEUR qui signe ; ce service est la partie de confiance, c’est-à-dire la moitié qui ne fait jamais que vérifier."
+  },
+  "crypto.families.webauthn-ctap.verifies": {
+    "en": "d8daa1e1b9b11704",
+    "text": "L’enregistrement, sa déclaration d’attestation (signatures packed, tpm, android-key, android-safetynet, fido-u2f, apple et composées, COSE ES256/384/512, RS256/384/512, PS256/384/512, EdDSA et ML-DSA-44/65/87), et chaque assertion : la signature sur `authenticatorData || SHA-256(clientDataJSON)`, par rapport à la clé publique COSE que le justificatif a enregistrée."
+  },
+  "crypto.families.webauthn-ctap.hashes": {
+    "en": "2e2a1dacb370539f",
+    "text": "SHA-256 à deux reprises — le hachage des données client que couvre la signature, et le hachage du RP ID contenu dans les données d’authentificateur, comparé octet par octet au SHA-256 du domaine de l’origine."
+  },
+  "crypto.families.webauthn-ctap.whatItDoesNot": {
+    "en": "d1ebaf94158094a0",
+    "text": "Depuis #105, il VÉRIFIE la déclaration d’attestation — les huit formats de la section 8 de WebAuthn Level 3, la chaîne par rapport aux ancres configurées et aux racines du FIDO Metadata Service, la révocation et les rapports d’état MDS — selon `webauthn.attestationPolicy`, désactivé par défaut en développement uniquement. L’enregistrement propose moins d’algorithmes que le vérificateur n’en ACCEPTE, et c’est délibéré : ce qu’un authentificateur de plateforme produit réellement est ce qu’une personne est venue voir ici. La seule option de cérémonie que ce service VÉRIFIE également est `webauthn.userVerification`, car l’indicateur UV se trouve dans les octets que l’authentificateur a signés."
+  },
+  "crypto.families.webauthn-ctap.algorithms.0.what": {
+    "en": "5fc293ab8b154f42",
+    "text": "Proposés à l’enregistrement"
+  },
+  "crypto.families.webauthn-ctap.algorithms.1.what": {
+    "en": "8931ff19e45887e4",
+    "text": "Acceptés à la vérification"
+  },
+  "crypto.families.webauthn-ctap.algorithms.2.what": {
+    "en": "4c2c115ca08db2af",
+    "text": "Courbes"
+  },
+  "crypto.families.webauthn-ctap.algorithms.3.what": {
+    "en": "8b134177fe992d91",
+    "text": "Vérification de l’utilisateur"
+  },
+  "crypto.families.one-time-passwords-totp.signs": {
+    "en": "4d15a52bf511dc2e",
+    "text": "Rien qui quitte ce service. Une valeur HOTP EST un HMAC tronqué — RFC 4226 section 5.3 — de sorte que cette famille calcule un MAC à clé puis le compare, c’est pourquoi la primitive se trouve dans common/crypto.js à côté de toutes les autres signatures d’ici plutôt que dans le module qui décide de la politique."
+  },
+  "crypto.families.one-time-passwords-totp.verifies": {
+    "en": "071552dc11014cdd",
+    "text": "Un code présenté, en calculant le HMAC pour chaque pas de temps de la fenêtre de dérive et en comparant en temps constant. CHAQUE pas est calculé même après une correspondance, délibérément : retourner plus tôt ferait dépendre le temps écoulé de QUEL pas a correspondu, ce qui constitue un meilleur oracle que la comparaison des chiffres que l’on prend la peine de rendre constante en temps."
+  },
+  "crypto.families.one-time-passwords-totp.encrypts": {
+    "en": "c18d0d11279cb6c0",
+    "text": "Le secret partagé au repos, en mode PRODUIT — AES-256-GCM sous la même clé de chiffrement de clé que celle qui protège les clés de signature, via common/keystore.js. En mode DÉVELOPPEMENT, il est stocké en base32, car la clé de chiffrement de clé y est générée à chaque exécution, et le scellement signifierait un authentificateur cessant silencieusement de fonctionner au redémarrage suivant."
+  },
+  "crypto.families.one-time-passwords-totp.decrypts": {
+    "en": "d2cefc498eff5443",
+    "text": "Le même secret, pour vérifier un code. **C’EST LE SEUL JUSTIFICATIF DE CE SERVICE QUI PUISSE ÊTRE RELU** — un mot de passe est un hachage scrypt auquel on ne peut que comparer, et vérifier un code à usage unique implique de le CALCULER. Ce n’est pas une faiblesse de la RFC 6238 ; c’est ce que signifie « secret partagé », et c’est précisément pourquoi ce mécanisme est ici un SECOND facteur et ne peut jamais devenir un premier facteur."
+  },
+  "crypto.families.one-time-passwords-totp.hashes": {
+    "en": "decb0b31d14255e5",
+    "text": "SHA-1, SHA-256 ou SHA-512, à l’intérieur du HMAC et nulle part ailleurs."
+  },
+  "crypto.families.one-time-passwords-totp.whatItDoesNot": {
+    "en": "512b47bf629fcfe5",
+    "text": "Il n’indique jamais à personne le code en cours, et n’enrôle jamais personne sur un écran de connexion — l’enrôlement implique de se voir montrer un secret, il a donc lieu là où la personne est déjà authentifiée ou détient un lien d’activation. Il n’existe pas de HOTP à compteur comme mécanisme d’authentification, ni de protocole de resynchronisation : la fenêtre de dérive est tout ce qui est proposé pour une horloge qui dérive."
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.0.what": {
+    "en": "0c410835b8ade404",
+    "text": "HMAC (le paramètre enrôlé, et non un paramètre actif)"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.1.what": {
+    "en": "89645198ddad3fa6",
+    "text": "Troncature"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.2.what": {
+    "en": "7f1e853e5a5aa7bf",
+    "text": "Secret partagé"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.3.what": {
+    "en": "e08e19def21e22b2",
+    "text": "Paramètres actifs"
+  },
+  "crypto.families.recovery-codes.signs": {
+    "en": "e07d5c09c87dcaf1",
+    "text": "Rien. Il n’y a ni MAC ni signature nulle part dans ce mécanisme — un code de récupération est une chaîne aléatoire vérifiée par rapport à un hachage stocké de celle-ci, ce qui fait toute la différence avec la ligne TOTP ci-dessus, où le « code » est un HMAC tronqué."
+  },
+  "crypto.families.recovery-codes.verifies": {
+    "en": "430daa72e518a39a",
+    "text": "Un code présenté, comparé à CHAQUE entrée de l’ensemble de la personne — chacune un hachage scrypt vérifié avec crypto.verifySecret(), en parallèle sur le pool de threads de libuv à l’écran de connexion — et toutes sont vérifiées même après une correspondance, de sorte que le temps nécessaire ne dépend pas de QUEL code a correspondu. La forme est vérifiée en premier, si bien qu’un mot de passe saisi dans le champ est refusé sur ses caractères et ne coûte aucun hachage. Une entrée écrite avant le 2026-09-11 est le code lui-même et est comparée avec crypto.constantTimeEquals()."
+  },
+  "crypto.families.recovery-codes.decrypts": {
+    "en": "b54e014c105f44df",
+    "text": "Uniquement un ensemble écrit avant le 2026-09-11 en mode PRODUIT, qui était scellé en AES-256-GCM sous la clé de chiffrement de clé et est ouvert via common/keystore.js pour vérifier un code. Rien de ce qui a été écrit depuis n’est chiffré."
+  },
+  "crypto.families.recovery-codes.hashes": {
+    "en": "8fbdc5e4a28b0f77",
+    "text": "CHAQUE CODE, UN HACHAGE SCRYPT PAR CODE, via crypto.hashSecret() — la même fonction et la même forme stockée que userPassword et stsActivationToken — au seul moment où les codes existent en clair : lorsque la personne confirme les avoir enregistrés. Les hachages ne sont pas secrets et sont stockés en clair sous la forme d’un tableau JSON sur l’entrée de la personne, avec les compteurs à côté, afin qu’une console puisse afficher \"7 sur 10 inutilisés\" sans parcourir le tableau."
+  },
+  "crypto.families.recovery-codes.whatItDoesNot": {
+    "en": "650840850ca2aba6",
+    "text": "Il ne montre jamais à nouveau un code stocké — ni à la console, ni à /admin-api, ni à la personne à qui il appartient : un ensemble est affiché UNE SEULE FOIS, dans la réponse qui l’a généré, et n’est pas stocké du tout tant que son propriétaire ne l’a pas confirmé. Il ne génère jamais un ensemble de lui-même : une personne en génère un sur /portal/mfa, et l’inscription d’un second facteur ne fait qu’afficher une invitation à le faire. La confirmation d’un nouvel ensemble remplace l’ancien, et l’action Effacer d’un opérateur supprime un ensemble sans en émettre un autre. Un ensemble écrit par une version antérieure n’est pas migré. Et il n’y a ici aucun schéma fondé sur un compteur ou dérivé : ce sont des chaînes aléatoires, et rien dans un code ne dit quoi que ce soit du suivant."
+  },
+  "crypto.families.recovery-codes.algorithms.0.what": {
+    "en": "40536dd8a0e2d0c7",
+    "text": "Génération"
+  },
+  "crypto.families.recovery-codes.algorithms.1.what": {
+    "en": "bb846881f6a5075c",
+    "text": "Entropie"
+  },
+  "crypto.families.recovery-codes.algorithms.2.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alphabet"
+  },
+  "crypto.families.recovery-codes.algorithms.3.what": {
+    "en": "571527339d0e3e34",
+    "text": "Comparaison"
+  },
+  "crypto.families.recovery-codes.algorithms.4.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "Au repos"
+  },
+  "crypto.families.email-codes-and-links.signs": {
+    "en": "469daea0865e7d80",
+    "text": "Rien. Un code ou un lien est un secret aléatoire vérifié par rapport à un hachage stocké de celui-ci ; le message qui le transporte n’est signé par DKIM que lorsque le transport SMTP est configuré pour cela (voir Mail)."
+  },
+  "crypto.families.email-codes-and-links.verifies": {
+    "en": "3368b2038045996a",
+    "text": "Un code ou un jeton de lien présenté, par rapport au hachage scrypt de l’étape de connexion, avec crypto.verifySecret() sur le pool de workers ; et la liaison d’un lien au navigateur, sous la forme du SHA-256 du cookie défini lors de son envoi."
+  },
+  "crypto.families.email-codes-and-links.hashes": {
+    "en": "f7ea8e1a659a8cce",
+    "text": "Chaque secret UNE SEULE FOIS, avec crypto.hashSecret() (scrypt), lorsqu’il est créé — le code ou le jeton lui-même n’est jamais stocké, et le canal de messagerie supprime le corps d’un message envoyé. Le cookie de liaison en SHA-256."
+  },
+  "crypto.families.email-codes-and-links.whatItDoesNot": {
+    "en": "ce5ddd6002061926",
+    "text": "Il ne compte jamais comme un facteur résistant à l’hameçonnage ni comme une authentification renforcée liée au risque, n’envoie jamais de courriel à une adresse non vérifiée et ne conserve jamais un secret au-delà de dix minutes ou d’une seconde utilisation."
+  },
+  "crypto.families.email-codes-and-links.algorithms.0.what": {
+    "en": "340f463033e0fd5d",
+    "text": "Code"
+  },
+  "crypto.families.email-codes-and-links.algorithms.1.what": {
+    "en": "d93d75ab47922b92",
+    "text": "Jeton de lien"
+  },
+  "crypto.families.email-codes-and-links.algorithms.2.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "Au repos"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
+    "en": "30d11da1c63a38f1",
+    "text": "Un SD-JWT VC sous forme de JWS RS256 avec `_sd_alg: sha-256`, et un `ldp_vc` W3C avec une preuve Data Integrity `bbs-2023` — BLS12-381-SHA-256, qui est une signature à base de couplages et la seule de ce service. Sa clé n’est pas une JWK et est publiée en tant que `publicKeyMultibase` plutôt que d’être forcée dans une forme qui ne lui convient pas."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.verifies": {
+    "en": "c0036a45ed2b60bc",
+    "text": "La preuve de possession d’un portefeuille au point de terminaison de justificatif, qui doit être un JWS ASYMÉTRIQUE — jamais un MAC et jamais `none` — et une présentation au vérificateur, y compris une preuve bbs-2023 DÉRIVÉE, qui est ce à quoi ressemble la divulgation sélective lorsqu’il ne s’agit pas d’un SD-JWT."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.hashes": {
+    "en": "c5832c6dab4733ea",
+    "text": "SHA-256 pour chaque condensé de divulgation SD-JWT, et à l’intérieur de la suite de chiffrement BBS pour la correspondance des messages."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.whatItDoesNot": {
+    "en": "30ac22a7b1387e83",
+    "text": "Il ne vérifie rien des VALEURS d’un justificatif, qui sont inventées, et une présentation vérifiée ne connecte quelqu’un qu’à /authn/wallet, uniquement pour un SD-JWT VC lié à son détenteur que ce domaine a émis — jamais à la porte du bar, et jamais sur la signature d’un émetteur étranger."
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.0.what": {
+    "en": "7bea7584da7de03b",
+    "text": "Signature des justificatifs"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.1.what": {
+    "en": "5c9c19ca8b4d7044",
+    "text": "Preuve de possession du portefeuille"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.2.what": {
+    "en": "82a6225da8149a43",
+    "text": "Condensé de divulgation"
+  },
+  "crypto.families.acme.signs": {
+    "en": "0e2e7b69729b7927",
+    "text": "Chaque certificat qu’il délivre, avec la clé de l’Issuing CA ACME de ce domaine, via issueEnrolled() de common/pki.js. Rien d’autre : une réponse ACME est du JSON brut sur TLS, et un Replay-Nonce porte un HMAC plutôt qu’une signature."
+  },
+  "crypto.families.acme.verifies": {
+    "en": "b6ea5d2aab528d1d",
+    "text": "Le JWS aplati de chaque requête, avec la clé de compte désignée par jwk ou kid et uniquement l’algorithme nommé par l’en-tête (via verifyCompactJws de common/crypto.js) ; le JWS interne d’un changement de clé avec la nouvelle clé ; le HMAC d’une External Account Binding avec la clé émise sous son kid, en temps constant et dans tous les modes ; et la preuve de possession de la CSR dans common/cert_enrollment.ts."
+  },
+  "crypto.families.acme.encrypts": {
+    "en": "e233f6d30d606df3",
+    "text": "La clé HMAC de l’External Account Binding, scellée en AES-256-GCM sous la clé de chiffrement de clé sur l’entrée pour laquelle elle a été émise, partout où cette clé survit au processus."
+  },
+  "crypto.families.acme.decrypts": {
+    "en": "3f1b161b12e519d1",
+    "text": "Cette clé HMAC, pour vérifier une liaison. Rien sur le réseau."
+  },
+  "crypto.families.acme.hashes": {
+    "en": "6817583ce52ea878",
+    "text": "SHA-256 pour l’empreinte de la clé de compte (RFC 7638), pour le MAC du Replay-Nonce et pour l’empreinte de chaque certificat dans l’enregistrement de l’entrée."
+  },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "Une clé d’Issuing CA ACME par domaine de confiance sous l’Intermediate du domaine ; la clé publique de chaque compte (RSA d’au moins 2048 bits, P-256/P-384/P-521 ou Ed25519), conservée sous forme de JWK publique et retrouvée par son empreinte RFC 7638 ; la propre clé du client pour chaque certificat ; et un secret par exécution sous lequel le MAC du Replay-Nonce est dérivé, partagé avec les workers de requêtes forkés et jamais écrit."
+  },
+  "crypto.families.acme.whatItDoesNot": {
+    "en": "61718f6daa70f201",
+    "text": "Aucune clé privée n’est jamais vue : ACME fonctionne uniquement par CSR. Une clé de compte post-quantique est refusée, car son type de clé n’a pas d’empreinte RFC 7638 et un compte est retrouvé par sa clé. Une clé KEM ne peut pas être certifiée, car elle ne peut pas signer la preuve de possession. Le JWS est la sérialisation JSON APLATIE qu’exige RFC 8555, que ce service ne lit qu’ici."
+  },
+  "crypto.families.acme.algorithms.0.what": {
+    "en": "6fd2e09cab511244",
+    "text": "Signatures de clé de compte"
+  },
+  "crypto.families.acme.algorithms.1.what": {
+    "en": "ee010a599d2a0404",
+    "text": "MAC d’External Account Binding"
+  },
+  "crypto.families.acme.algorithms.2.what": {
+    "en": "394a5e94275d9df1",
+    "text": "Motifs de révocation acceptés d’un abonné"
+  },
+  "crypto.families.acme.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "Conteneur de certificat"
+  },
+  "crypto.families.est.signs": {
+    "en": "e9aa41aa13c5b6e9",
+    "text": "Chaque certificat qu’il délivre, avec la clé de l’Issuing CA EST de ce domaine, via issueEnrolled() de common/pki.js — le même encodeur dont proviennent tous les autres certificats ici. Les messages CMS certs-only qu’il renvoie sont DÉGÉNÉRÉS : un SignedData avec des certificats et sans signataire, de sorte qu’ils ne portent aucune signature propre et sont approuvés pour les certificats qu’ils contiennent."
+  },
+  "crypto.families.est.verifies": {
+    "en": "d40d37c4bd83de49",
+    "text": "La preuve de possession PKCS#10 — la signature de la requête avec sa propre clé publique, classique et post-quantique, dans common/cert_enrollment.ts — et, pour l’authentification par certificat, le chemin du certificat client jusqu’à l’Intermediate de ce domaine et à la Root du service, la révocation étant consultée. Un modèle /serverkeygen n’est pas vérifié : sa clé est remplacée."
+  },
+  "crypto.families.est.encrypts": {
+    "en": "2f48e10a9ad6494d",
+    "text": "La clé privée d’une paire de clés générée par le serveur, scellée en AES-256-GCM sous la clé de chiffrement de clé sur l’entrée, partout où cette clé survit au processus. Elle n’est PAS chiffrée pour le client (RFC 7030 section 4.4.1.2) : une requête qui le demande est refusée, et la clé ne circule qu’à l’intérieur de TLS."
+  },
+  "crypto.families.est.decrypts": {
+    "en": "8d5c676935439726",
+    "text": "Rien sur le réseau."
+  },
+  "crypto.families.est.hashes": {
+    "en": "78ff84df2eb09c64",
+    "text": "SHA-256 pour l’empreinte de chaque certificat dans l’enregistrement de l’entrée."
+  },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "Une clé d’Issuing CA EST par domaine de confiance, sous l’Intermediate du domaine ; la propre clé du client pour tout ce qu’il enrôle ; et pour /serverkeygen une paire de clés générée ici dans l’algorithme du modèle (ML-KEM compris, pour le chiffrement de clé), renvoyée une seule fois."
+  },
+  "crypto.families.est.whatItDoesNot": {
+    "en": "0fbae781db5fb46b",
+    "text": "CMC complet, la liaison de canal tls-unique (TLS 1.3 n’en a pas) et une clé générée par le serveur chiffrée. Une clé KEM ne peut pas être inscrite avec /simpleenroll, car elle ne peut pas signer la preuve de possession."
+  },
+  "crypto.families.est.algorithms.0.what": {
+    "en": "42710d1e9ca4dc7a",
+    "text": "Algorithmes de signature de CSR annoncés par /csrattrs"
+  },
+  "crypto.families.est.algorithms.1.what": {
+    "en": "0d5abf11fe24b9c0",
+    "text": "Algorithmes de clé générée par le serveur"
+  },
+  "crypto.families.est.algorithms.2.what": {
+    "en": "c62bb06b4e213c58",
+    "text": "Conteneur de clé privée"
+  },
+  "crypto.families.est.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "Conteneur de certificat"
+  },
+  "crypto.families.scep.signs": {
+    "en": "9cbcb1a72f470540",
+    "text": "Chaque certificat qu’il émet, avec la clé de l’Issuing CA SCEP de ce domaine via issueEnrolled() de common/pki.js ; et chaque CertRep, avec la clé de la RA — CMS SignedData sur des attributs signés triés selon DER, sha256WithRSAEncryption (SHA-384/512 lorsque la requête les a utilisés)."
+  },
+  "crypto.families.scep.verifies": {
+    "en": "cf05562a26d80aaf",
+    "text": "La signature SignedData du demandeur sur ses attributs signés et le messageDigest du contenu (SHA-256, SHA-384, SHA-512 ; les signataires RSA ou ECDSA sont vérifiés, et un signataire ECDSA est ensuite refusé parce qu’aucune réponse ne peut lui être chiffrée) ; la preuve de possession PKCS#10 ; pour RenewalReq, GetCert et GetCRL, le chemin du certificat du signataire jusqu’à l’Intermediate de ce domaine, la révocation étant consultée ; et le mot de passe de challenge, par une comparaison SHA-256 en temps constant."
+  },
+  "crypto.families.scep.encrypts": {
+    "en": "e41a0442f653089f",
+    "text": "Le contenu certs-only d’une CertRep SUCCESS, pour le certificat de signataire du demandeur : transport de clé RSAES-PKCS1-v1_5 et la taille de clé AES-CBC utilisée par la requête."
+  },
+  "crypto.families.scep.decrypts": {
+    "en": "902b7d23d39fba20",
+    "text": "Le pkcsPKIEnvelope avec la clé privée de la RA : RSAES-PKCS1-v1_5 (via node-forge, car node refuse le déchiffrement privé PKCS#1 v1.5) ou RSAES-OAEP, puis AES-128/192/256-CBC. Un désenveloppement échoué est remplacé par des octets de clé aléatoires, de sorte qu’une erreur de remplissage et une mauvaise clé donnent une seule et même réponse."
+  },
+  "crypto.families.scep.hashes": {
+    "en": "47b332491bb2a39b",
+    "text": "SHA-256 d’un secret de challenge, d’une CSR et d’une clé de signataire pour l’idempotence des transactions ; les algorithmes de condensé de message ci-dessus."
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "Une clé d’Issuing CA SCEP par domaine de confiance, et une paire de clés de RA par domaine — RSA de scep.raKeyAlgorithm, une feuille de cette CA, conservée dans la ligne PKI du domaine (scellée avec la hiérarchie en mode produit) et redélivrée dans les trente jours précédant son expiration. La clé du demandeur n’est jamais vue."
+  },
+  "crypto.families.scep.whatItDoesNot": {
+    "en": "4a19c5629d38be11",
+    "text": "Les signatures SHA-1 ou MD5, le chiffrement de contenu DES ou 3DES (refusé badAlg), une clé de demandeur non RSA, KeyAgreeRecipientInfo, GetNextCACert et PENDING."
+  },
+  "crypto.families.scep.algorithms.0.what": {
+    "en": "19e34a0379a1db34",
+    "text": "Condensés de requête acceptés"
+  },
+  "crypto.families.scep.algorithms.1.what": {
+    "en": "96ce29f429f2a103",
+    "text": "Signatures de requête vérifiées"
+  },
+  "crypto.families.scep.algorithms.2.what": {
+    "en": "3ada8d30fb7fbaa7",
+    "text": "Chiffrements de contenu acceptés"
+  },
+  "crypto.families.scep.algorithms.3.what": {
+    "en": "ce3dfd4aca5eb72b",
+    "text": "Transports de clé acceptés"
+  },
+  "crypto.families.scep.algorithms.4.what": {
+    "en": "ce72ec23c64b378f",
+    "text": "Condensés refusés"
+  },
+  "crypto.families.scep.algorithms.5.what": {
+    "en": "2a3243f281f3be54",
+    "text": "Chiffrements refusés"
+  },
+  "crypto.families.scep.algorithms.6.what": {
+    "en": "88868db59d8a7d1e",
+    "text": "Signature de CertRep"
+  },
+  "crypto.families.scep.algorithms.7.what": {
+    "en": "b8d71b508570c5bd",
+    "text": "Transport de clé de CertRep"
+  },
+  "crypto.hashing.fixed.0.what": {
+    "en": "572fc67678eccd94",
+    "text": "La JWK canonique, hachée. C’est ce à quoi `cnf.jkt` lie un jeton lié par DPoP, et c’est pourquoi les algorithmes post-quantiques ne peuvent pas être utilisés pour DPoP — RFC 7638 définit les membres requis pour RSA, EC, OKP et oct, et `AKP` ne figure sur aucune de ces listes."
+  },
+  "crypto.hashing.fixed.1.what": {
+    "en": "789f03952b2a25a9",
+    "text": "Sur le DER du certificat, en base64url. Le DER et non le PEM, ce qui est l’erreur qui semble correcte dans un journal et ne correspond à rien."
+  },
+  "crypto.hashing.fixed.2.what": {
+    "en": "8b86d10dedfeb4c0",
+    "text": "Sur le vérificateur de code. En mode RFC 9700, `plain` est retiré et ceci devient la seule méthode annoncée."
+  },
+  "crypto.hashing.fixed.3.what": {
+    "en": "af8ddc4be27e9471",
+    "text": "Section 3.1.3.6 : la moitié la plus à gauche du condensé du jeton ASCII, en base64url. La moitié est la partie que l’on oublie."
+  },
+  "crypto.hashing.fixed.4.what": {
+    "en": "f40f7e4f1dcfa612",
+    "text": "Chaque condensé de divulgation dans un SD-JWT VC."
+  },
+  "crypto.hashing.fixed.5.what": {
+    "en": "2181a5f9381ac153",
+    "text": "La signature couvre `authenticatorData || SHA-256(clientDataJSON)`, et le hachage de l’identifiant de RP à l’intérieur de ces données d’authentificateur est le SHA-256 du domaine de l’origine, comparé octet par octet."
+  },
+  "crypto.hashing.fixed.5.where": {
+    "en": "5b03dda25987cfe3",
+    "text": "Hachage des données client WebAuthn"
+  },
+  "crypto.hashing.fixed.6.what": {
+    "en": "5b899812c1a1ae4a",
+    "text": "Sur le DER du SVID, partout où une émission est enregistrée pour une entrée de l’annuaire."
+  },
+  "crypto.hashing.fixed.6.where": {
+    "en": "f28d649163220153",
+    "text": "Identité de SVID SPIFFE"
+  },
+  "crypto.hashing.fixed.7.what": {
+    "en": "c49939c25a7e8ccc",
+    "text": "Un `kid` nomme une CLÉ et est donc DÉRIVÉ du matériel public de la clé elle-même. Il fut autrefois une constante, si bien que deux instances de ce service publiaient un même nom pour deux clés différentes — un vérificateur fait correspondre le kid exactement, essaie cette clé et signale une signature invalide."
+  },
+  "crypto.hashing.fixed.7.where": {
+    "en": "5a3cb59275a8e560",
+    "text": "Identifiants de clé (`kid`)"
+  },
+  "crypto.hashing.fixed.8.what": {
+    "en": "8274ca190e064807",
+    "text": "RFC 3962 pour les profils AES-SHA1 et RFC 8009 pour les profils AES-SHA2. Le nombre d’itérations et le sel proviennent de l’ETYPE-INFO2 du KDC."
+  },
+  "crypto.hashing.fixed.8.where": {
+    "en": "cb8714e609cbe20f",
+    "text": "string-to-key Kerberos"
+  },
+  "crypto.hashing.weak.0.why": {
+    "en": "212d04701d52594e",
+    "text": "Les graphies XMLDSIG sont la recommandation originale de 2000 et sont ce que de très nombreuses parties de confiance déployées envoient encore. `rsa-oaep-mgf1p` EST SHA-1 par définition — l’URI le signifie — et le plus récent `rsa-oaep` porte son condensé dans un élément enfant et est proposé depuis #168 avec SHA-256 et MGF1-SHA-256, ce qu’une relation de fédération publie et exige. HMAC-SHA1-96 dans RFC 3962 est un MAC plutôt qu’une prétention de résistance aux collisions, et c’est ce qu’Active Directory utilise encore aujourd’hui."
+  },
+  "crypto.hashing.weak.0.where": {
+    "en": "13f9c1ea5d995805",
+    "text": "XMLDSIG `#sha1` et `rsa-sha1` ; RSA-OAEP-MGF1P ; le HMAC-SHA1-96 des etypes Kerberos 17 et 18"
+  },
+  "crypto.hashing.weak.1.why": {
+    "en": "04261c070ac406f5",
+    "text": "RC4-HMAC est ce vers quoi se rabat la plupart du parc installé de clients Kerberos, et MD5 Digest est ce que parle la plupart du parc installé de clients Digest. Tous deux sont proposés EN DERNIER et aucun n’est une recommandation."
+  },
+  "crypto.hashing.weak.1.where": {
+    "en": "5a60ff8915455c4c",
+    "text": "Kerberos RC4-HMAC (etype 23) ; HTTP Digest"
+  },
+  "crypto.hashing.weak.2.why": {
+    "en": "21b7cc730abd3500",
+    "text": "C’est ce qu’est l’etype. Il est sans sel, ce qui explique pourquoi la découverte du sel n’importe que pour AES."
+  },
+  "crypto.hashing.weak.2.where": {
+    "en": "cf9bbd71941b23b8",
+    "text": "Le hachage NT, à l’intérieur du string-to-key de RC4-HMAC"
+  },
+  "crypto.signatures.other.0.what": {
+    "en": "cccbf692b80811e7",
+    "text": "BLS12-381 G2 avec la suite de chiffrement SHA-256, sous forme de preuve W3C Data Integrity. La seule signature à base de couplages ici, et la seule divulgation sélective qui ne repose pas sur le hachage."
+  },
+  "crypto.signatures.other.1.what": {
+    "en": "183b0aafb0db82b8",
+    "text": "RFC 7486. Sur un bloc composé du nonce, de l’algorithme, de l’origine, du domaine, de l’identifiant de clé et du challenge du serveur, par rapport à une clé publique que le client a enregistrée."
+  },
+  "crypto.signatures.other.1.label": {
+    "en": "c99c992832df60da",
+    "text": "HOBA algorithme 0 (RSA-SHA256)"
+  },
+  "crypto.signatures.other.2.what": {
+    "en": "080c17e1422d21ee",
+    "text": "HMAC-SHA1-96 (etypes 17, 18), HMAC-SHA-256-128 (19), HMAC-SHA-384-192 (20) et HMAC-MD5 (23), chacun sous une clé dérivée de la clé à long terme pour le NUMÉRO D’USAGE DE CLÉ de ce message. Les numéros d’usage sont ce qui se passe mal : le mauvais produit une non-concordance de somme de contrôle et aucun autre symptôme."
+  },
+  "crypto.signatures.other.2.label": {
+    "en": "4a4b2ce0b267e0cb",
+    "text": "Sommes de contrôle à clé Kerberos"
+  },
+  "crypto.signatures.other.3.what": {
+    "en": "9b34ad7078774fa9",
+    "text": "SHA-256 avec RSA pour les certificats de signature et TLS ; ce qu’implique `spiffe.x509KeyType` pour un SVID."
+  },
+  "crypto.signatures.other.3.label": {
+    "en": "fe859f25e5d2fbae",
+    "text": "Signatures de certificats X.509"
+  },
+  "crypto.pq.algorithms.what": {
+    "en": "86c7af6a76fda4b9",
+    "text": "ML-DSA est FIPS 204 et SLH-DSA est FIPS 205 — une signature à base de réseaux euclidiens et une signature à base de hachage, qui sont des paris différents et sont toutes deux présentes pour cette raison. Les six COMPOSITES sont draft-ietf-jose-pq-composite-sigs : une signature ML-DSA et une signature traditionnelle sur le même message, qui doivent toutes deux être vérifiées, de sorte que la paire n’est pas plus faible que sa moitié la plus forte. Chacune porte un SÉPARATEUR DE DOMAINE dans le message composite et dans la chaîne de contexte ML-DSA, ce qui empêche qu’une signature faite pour un composite soit rejouée comme un autre."
+  },
+  "crypto.pq.algorithms.independence": {
+    "en": "3cdf2b7a57681a4e",
+    "text": "La PRIMITIVE à base de réseaux euclidiens est l’OpenSSL 3.5 de node (#363), là où le débogueur utilise @noble/post-quantum, de sorte que ML-DSA lui-même est contre-vérifié entre deux implémentations. TOUT CE QUI L’ENTOURE est écrit ici à partir des spécifications, et la moitié traditionnelle de chaque composite s’exécute sur l’OpenSSL de node plutôt que sur la bibliothèque de courbes qu’utilise l’autre extrémité. C’est là que la contre-vérification a une valeur : un malentendu partagé sur le cadrage serait parfaitement d’accord avec lui-même et n’interopérerait avec rien."
+  },
+  "crypto.pq.signatures.0.surface": {
+    "en": "43b13a17ca0ec49f",
+    "text": "ID Token"
+  },
+  "crypto.pq.signatures.0.how": {
+    "en": "529fa3a0343d70ce",
+    "text": "Un client enregistre `id_token_signed_response_alg`, et la liste annoncée EST la table JWS partagée — ainsi chaque algorithme ML-DSA, SLH-DSA et composite peut être sélectionné."
+  },
+  "crypto.pq.signatures.1.surface": {
+    "en": "fe8507eede42f0e1",
+    "text": "Réponse UserInfo signée"
+  },
+  "crypto.pq.signatures.1.how": {
+    "en": "c088631501cab27c",
+    "text": "Les entrées post-quantiques sont extraites de la table partagée par un filtre plutôt qu’énumérées, de sorte que cette liste ne peut pas prendre de retard sur elle."
+  },
+  "crypto.pq.signatures.2.surface": {
+    "en": "cf12c2348883a409",
+    "text": "Publication JWKS"
+  },
+  "crypto.pq.signatures.2.how": {
+    "en": "6278d02404536b1e",
+    "text": "Chaque clé post-quantique est publiée sous forme de JWK `AKP` avec un `kid` propre, afin qu’un client puisse réellement en VÉRIFIER une plutôt que de simplement se la voir proposer. Elles sont créées à la PREMIÈRE UTILISATION, ce qui rend lente la première récupération du JWKS d’un domaine."
+  },
+  "crypto.pq.signatures.3.surface": {
+    "en": "627636b4e140b9ec",
+    "text": "Jetons d’accès et jetons d’actualisation"
+  },
+  "crypto.pq.signatures.3.how": {
+    "en": "b1af7e79ec3085c8",
+    "text": "RS256, toujours. `signJwt()` est le seul chemin qui enregistre un jeton dans les compteurs de la console, et il signe avec la clé RSA du domaine."
+  },
+  "crypto.pq.signatures.4.surface": {
+    "en": "9199abebcef8fe6e",
+    "text": "Preuves DPoP"
+  },
+  "crypto.pq.signatures.4.how": {
+    "en": "0b0a7888ad6cfa27",
+    "text": "DÉLIBÉRÉMENT, et c’est l’exclusion la plus intéressante ici. Une preuve DPoP est liée via `cnf.jkt`, l’empreinte JWK RFC 7638 — et RFC 7638 définit les membres requis pour RSA, EC, OKP et oct uniquement. Une clé ML-DSA est `kty: \"AKP\"`, pour laquelle aucune empreinte n’est enregistrée, de sorte qu’une preuve signée avec elle serait parfaitement vérifiée et ne serait liée à RIEN. La lacune est dans la liaison, pas dans la signature."
+  },
+  "crypto.pq.signatures.5.surface": {
+    "en": "85f00831d63f0dfa",
+    "text": "Chaque signature XML — SAML 2.0, SAML 1.1, WS-Federation, WS-Trust, fédération"
+  },
+  "crypto.pq.signatures.5.how": {
+    "en": "2835531d7d7db342",
+    "text": "RSA-SHA256. XMLDSIG n’a pas de SignatureMethod post-quantique enregistrée, il n’y a donc rien à sélectionner : c’est une lacune de la pile de spécifications plutôt que de ce service."
+  },
+  "crypto.pq.signatures.6.surface": {
+    "en": "fa5f732d88799b31",
+    "text": "Certificats X.509 et SVID SPIFFE"
+  },
+  "crypto.pq.signatures.6.how": {
+    "en": "eb2d0cae1421130c",
+    "text": "RSA 2048 ou une courbe elliptique. Les types de clé d’autorité SPIFFE sont EC P-256/384/521, RSA 2048/4096 et Ed25519 — tous cassés par Shor."
+  },
+  "crypto.pq.signatures.7.surface": {
+    "en": "3ed217bd349c451a",
+    "text": "Justificatifs vérifiables"
+  },
+  "crypto.pq.signatures.7.how": {
+    "en": "197a934d4f2a9aa9",
+    "text": "RS256 pour un SD-JWT VC, et `bbs-2023` pour un `ldp_vc` — une signature à base de couplages, qui est, si tant est, PLUS exposée qu’un simple ECDSA."
+  },
+  "crypto.pq.signatures.8.surface": {
+    "en": "03f7f9d91f479718",
+    "text": "Assertions WebAuthn"
+  },
+  "crypto.pq.signatures.8.how": {
+    "en": "d2274d309abdae8b",
+    "text": "ES256, RS256 ou EdDSA, et ce n’est pas le choix de ce service : c’est l’AUTHENTIFICATEUR qui signe, et COSE n’enregistre aucun algorithme post-quantique qu’un authentificateur de plateforme produise."
+  },
+  "crypto.pq.symmetric.what": {
+    "en": "657d0ce4c2df4646",
+    "text": "L’algorithme de Grover coûte une racine carrée plutôt que de les casser purement et simplement, la réponse est donc la longueur de clé. AES-256 et SHA-384 ne sont pas affectés en pratique ; AES-128 et SHA-256 conservent une marge réduite qui est toujours considérée comme suffisante. KERBEROS EST DONC LA FAMILLE LA MOINS AFFECTÉE ICI PAR TOUT CELA — c’est la seule qui ne contient aucune cryptographie à clé publique — ce qui est le contraire de ce que suggère sa réputation. Ce qui ne va pas avec RC4-HMAC, MD5 et MD4 n’a rien à voir avec les ordinateurs quantiques."
+  },
+  "crypto.pq.symmetric.strongest": {
+    "en": "d169ec1de3f8e13c",
+    "text": "aes256-cts-hmac-sha384-192 (etype 20), AES-256-GCM pour XML Encryption, A256GCM pour JWE."
+  },
+  "crypto.codes.source": {
+    "en": "cfde0ca5c8d97444",
+    "text": "crypto.randomInt() par caractère — avec échantillonnage par rejet dans node, de sorte que l’uniformité ne dépend pas de ce que la taille de l’alphabet divise 256."
+  },
+  "crypto.codes.atRest": {
+    "en": "c12e485fcef80c57",
+    "text": "Un HACHAGE scrypt de chaque code, via crypto.hashSecret() — la même fonction et la même forme stockée que userPassword — de sorte que ce service peut vérifier un code et ne peut jamais en montrer un à nouveau, y compris à son propriétaire. Un ensemble écrit par une version antérieure au 2026-09-11 contient les codes eux-mêmes et est toujours accepté, code par code, jusqu’à ce que son propriétaire en génère un nouveau."
+  },
+  "crypto.codes.comparisonOfAHash": {
+    "en": "44128280e8823464",
+    "text": "crypto.verifySecret() en temps constant par rapport à chaque hachage stocké tour à tour, sur le pool de threads de libuv lorsque la porte est asynchrone."
+  },
+  "crypto.param.codes.comparison": {
+    "en": "0862bafae6ad7324",
+    "text": "crypto.constantTimeEquals(), après passage en majuscules et suppression des espaces et tirets que ce service imprime lui-même."
+  },
+  "crypto.param.totp.encoding": {
+    "en": "d9613131364834bc",
+    "text": "base32 RFC 4648, sans remplissage, comme l’attend le format otpauth Key Uri."
+  }
+}

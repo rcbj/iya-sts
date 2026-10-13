@@ -1,0 +1,194 @@
+{
+  "realms.support.oauth-2-0-oidc.family": {
+    "en": "b91523811462ec54",
+    "text": "OAuth 2.0 / OIDC"
+  },
+  "realms.support.oauth-2-0-oidc.note": {
+    "en": "ca6a3e0c45f09554",
+    "text": "En egen utfärdare, signeringsnyckel, egna auktoriseringskoder, åtkomst- och uppdateringstoken, uppdateringsfamiljer, DPoP-uppspelnings- och nonce-tillstånd, uppspelningstillstånd för klientintyg och namngivna auktoriseringsservrar. KLIENTREGISTRERINGARNA är per sfär sedan 2026-08-25, eftersom katalogen är det: en klient som registrerats under en sfär finns i den sfärens ou=applications och är okänd för alla andra. Den här raden sade motsatsen fram till dess. RFC 9700-LÄGET ÄR OCKSÅ PER SFÄR — `oauth2.rfc9700`, och `oauth2.oauth21` som innebär det, kräver omstart för processen och kan sättas på en sfär, eftersom en sfär inte binder någon socket — så en process kan svara tillåtande på /oauth2/authorize och upprätthålla BCP:n på en sfärs. Det som en sfär inte kan ta med sig är ett SCHEMA: huvudporten är https eller inte, för alla sfärer på en gång, och GET /oauth2/rfc9700 rapporterar vilket."
+  },
+  "realms.support.authentication-service.family": {
+    "en": "72f0c79fe76b583e",
+    "text": "Autentiseringstjänst"
+  },
+  "realms.support.authentication-service.note": {
+    "en": "9a873e6d5aa52ccb",
+    "text": "Egna sessioner och andra faktorer — WebAuthn-autentiseringsuppgifter, TOTP-hemligheter och återställningskoder — så att inloggning i en sfär loggar in dig endast i den sfären. Det är poängen med en sfär snarare än en begränsning hos den. Vem du får logga in SOM delas endast i den meningen att den här tjänsten inte kontrollerar något lösenord någonstans — PERSONEN är en post i sfärens egen katalog. Administratörskonsolen är den ENDA läsare som korsar den här gränsen: den loggar in en person via den sfär den nås i, och håller sin EGEN session i STANDARDsfären, så att en konsolsession kan hittas från varje sfär. Raden nedan säger vem den sessionen får administrera."
+  },
+  "realms.support.saml-2-0-saml-1-1.family": {
+    "en": "e56ec33fb3bd7bd5",
+    "text": "SAML 2.0 / SAML 1.1"
+  },
+  "realms.support.saml-2-0-saml-1-1.note": {
+    "en": "7e9175bdd8dd3808",
+    "text": "Egna entityID och providerID (sådda distinkta när sfären skapas), egen signeringsnyckel, eget begärandetillstånd, egna artefakter och egen metadata per tjänsteleverantör — vars URL därför bär sfären såväl som SP-sammandraget. POSTERNA FÖR TJÄNSTELEVERANTÖRER är per sfär, av samma skäl som OAuth-klienterna: de är applikationer i sfärens egen katalog."
+  },
+  "realms.support.ws-trust.family": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "realms.support.ws-trust.note": {
+    "en": "bcd3a33cadffbf2f",
+    "text": "En egen tokenutfärdare och signeringsnyckel."
+  },
+  "realms.support.ws-federation.family": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "realms.support.ws-federation.note": {
+    "en": "30e2050715958d86",
+    "text": "Eget entityID och egen signeringsnyckel. Enkel inloggning med OAuth bevaras INOM en sfär och korsar inte sfärer, eftersom sessionen den lutar sig mot inte gör det."
+  },
+  "realms.support.openid4vci-openid4vp-did.family": {
+    "en": "e544a89450409208",
+    "text": "OpenID4VCI / OpenID4VP / DID"
+  },
+  "realms.support.openid4vci-openid4vp-did.note": {
+    "en": "7c25e8039a79a632",
+    "text": "Egna erbjudanden om autentiseringsuppgifter, förauktoriserade koder, uppskjutna transaktioner, utfärdande-nonces och presentationstransaktioner — och ett eget svar på vad en autentiseringsuppgift intygar och vad verifieraren ber om. did:web-identifieraren bär sfärsegmentet, vilket är det som håller två sfärers DID-dokument isär."
+  },
+  "realms.support.gnap.family": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "realms.support.gnap.note": {
+    "en": "fe3bcb6ce4779bc4",
+    "text": "En auktoriseringsserver per sfär (RFC 9635), med egna grants, fortsättningar, interaktioner, användarkoder, token, hanteringshandtag, uppspelningstillstånd för nyckelbevis och resursserveranslutningar (RFC 9767) — tolv lager, var och ett per sfär och borttaget med den. En GNAP-klient är en applikation i sfärens egen katalog, och `gnap.enabled` är en sfärs inställning, så en sfär kan svara på /gnap medan en annan vägrar."
+  },
+  "realms.support.shared-signals-ssf-caep-risc.family": {
+    "en": "6420ea91cc8c6f7f",
+    "text": "Shared Signals (SSF, CAEP, RISC)"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.note": {
+    "en": "fa36979b00dee444",
+    "text": "En egen sändare: strömmar, deras subjekt, deras köer och döda brev, samt CAEP:s sessions- och RISC:s kontoregister är per sfär. En händelse sänds i den sfär där den inträffade, och den här tjänstens egen konsol och portal är sådda som mottagare i varje sfär, så att var och en bara hör sin egen sfär."
+  },
+  "realms.support.xacml-3-0-alfa.family": {
+    "en": "d6e8ac2f943bbdd6",
+    "text": "XACML 3.0 / ALFA"
+  },
+  "realms.support.xacml-3-0-alfa.note": {
+    "en": "6965ae9cced8a957",
+    "text": "Ett eget policyförråd (ou=policies) och ett eget register över fjärr-PEP:er (ou=peps), båda i sfärens katalog. En ny sfärs förråd börjar TOMT och faller aldrig tillbaka på standardsfärens, vilket skulle koppla ihop två sfärer: de två policyer som den här tjänsten fattar beslut om sitt eget utfärdande och sin egen åtkomst med är inbyggda och ANROPAS, så de beslutar i varje sfär, och en förrådspost i en sfär åsidosätter dem endast där. En fjärr-PEP hör till den sfär den är registrerad i, och dess HTTPS-lyssnarcertifikat utfärdas av den sfärens pep-tls Issuing CA."
+  },
+  "realms.support.federation.family": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federation"
+  },
+  "realms.support.federation.note": {
+    "en": "abe4d8cd1ff6af78",
+    "text": "Egna relationer — ou=federations finns i sfärens katalog — och egna pågående inloggningar, begränsade per sfär så att en sfärs flod inte kan tränga undan en annans. Ett flöde som påbörjats i en sfär kan inte avslutas på en annan sfärs /federation/acs/{id}: intyget verifieras mot certifikatet för en relation i den sfär där det anländer."
+  },
+  "realms.support.user-portal.family": {
+    "en": "00cf214ba77e7497",
+    "text": "Användarportal"
+  },
+  "realms.support.user-portal.note": {
+    "en": "f4b474a8d20ad298",
+    "text": "En persons eget konto i den sfär de befinner sig i: portalen loggar in via sfärens egen auktoriseringsserver som en klient sådd i varje sfär, och varje sida läser och skriver personens post i den sfärens katalog, hållen till den sfärens lösenordspolicy."
+  },
+  "realms.support.global-logout.family": {
+    "en": "1b4192fb739d93e9",
+    "text": "Global utloggning"
+  },
+  "realms.support.global-logout.note": {
+    "en": "d3320c4e59424581",
+    "text": "Den har inget eget tillstånd: /logout, /admin/logout och /admin/sessions läser lagren i den sfär de nås i, så en utloggning avslutar den sfärens session och det som vilar på den, och ingenting i en annan sfär."
+  },
+  "realms.support.statistics-and-the-audit-log.family": {
+    "en": "8f2960c701e2a7ec",
+    "text": "Statistik och granskningsloggen"
+  },
+  "realms.support.statistics-and-the-audit-log.note": {
+    "en": "a4e6e9e283c25d0b",
+    "text": "Varje sfär räknar och registrerar det som hände under dess eget prefix. Granskningens sekvensnummer är också per sfär, så en sfärs rader är sammanhängande."
+  },
+  "realms.support.scim-2-0.family": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "realms.support.scim-2-0.note": {
+    "en": "d506e39413c1c9d6",
+    "text": "Slutpunkterna OCH lagret. En användare som skapats via en sfärs /scim/v2 är en post i den sfärens ou=users och finns ingen annanstans — den här raden löd `partial` och sade motsatsen fram till 2026-08-25, då katalogen blev per sfär. SCIM fattar fortfarande inget eget beslut om det: den provisionerar till katalogen, och det är katalogen som är partitionerad."
+  },
+  "realms.support.admin-console-and-management-api.family": {
+    "en": "9aa33ceabfd73434",
+    "text": "Administratörskonsol och hanterings-API"
+  },
+  "realms.support.admin-console-and-management-api.note": {
+    "en": "2d1b64bdd91feaba",
+    "text": "Varje sida och varje operation är per sfär — /admin/config LÄSER och SKRIVER den sfär den nås i, och /admin/users listar sfärens egna personer. ADMINISTRATÖRSROLLERNA finns TVÅ GÅNGER, avsiktligt, sedan 2026-09-14 (#32): STANDARDsfärens cn=admin-read och cn=admin-write är TJÄNSTENS förteckning och administrerar varje sfär, och varje annan sfär har samma två grupper i sin egen ou=groups, sådda med ett `admin`-konto, vars medlemmar administrerar ENDAST DEN sfären — varje sida och operation som rör hela processen (lagret, databasen, hemlighetslagret, lyssnarna, felsökaren, utforskaren), att skapa eller ta bort en sfär, att ersätta tjänstens rot och inställningarna per process vägras dem. En sfärs egen förteckning ger därför ingenting utanför sfären, vilket är det som gjorde det säkert att lägga till den. Konsolen loggar in en person via den sfär den nås i, och de vanliga /admin och /portal frågar först vilken sfär när sfärer är definierade. /admin-api tar standardsfärens token överallt och en sfärs egen sts-management-api-token endast i den sfären."
+  },
+  "realms.support.ldap-389-636.family": {
+    "en": "651360794c5f87fc",
+    "text": "LDAP (389 / 636)"
+  },
+  "realms.support.ldap-389-636.note": {
+    "en": "1e061e6f4bab09ac",
+    "text": "En KATALOG PER SFÄR bakom en socket — ett separat lager, inte ett underträd i ett delat, sedan 2026-08-25. DN-layouten är vad en klient ser: VARJE SFÄR ÄR ETT EGET TRÄD, med rot i RFC 2247-mappningen av sfärens DOMÄN (sedan 2026-09-18) — standardsfären i global.domain:s (dc=example,dc=com), en sfär vars domän är iyasec.io i dc=iyasec,dc=io, och en som skapats utan domän i <id>.<global.domain>, vilket är det dc=<id> under standardsfärens bas som varje sfär hade tidigare. En domän inuti en annan sfärs är tillåten och är en separat namngivningskontext. Så ou=users, ou=groups, ou=applications, ou=federations och de två SPIFFE-behållarna finns en gång per sfär och delar ingenting — den här raden löd `none` och sade att varje sfär såg samma personer fram till 2026-08-25. Sfären finns i DN:t och inte i ett partitionerat lager EFTERSOM socketen inte har någon sökväg att sätta ett segment i: en ldapsearch anländer med ett bas-DN och ingenting annat, så `-b dc=acme,dc=example,dc=com` är det enda sätt på vilket en klient någonsin skulle kunna namnge en sfär, och det fungerar. VARJE OPERATION BESVARAS FRÅN DET LAGER SOM DN:T NAMNGER, sedan 2026-08-25 och på rcbj:s begäran — den här raden sade att en underträdssökning från namngivningskontexten returnerar varje sfärs poster, med argumentet att en namngivningskontext ÄR hela trädet. Det lämnade port 389 som den enda dörr genom vilken en sfär kunde se en annan sfärs personer, grupper och applikationer, medan konsolen, /scim/v2 och gruppanspråket visade varje sfär endast dess egna. Så `-b dc=example,dc=com` är standardsfärens katalog, `-b dc=acme,dc=example,dc=com` är acmes, och rot-DSE:n publicerar ett namingContexts-värde per sfär så att en klient kan upptäcka dem. En add, modify, delete, compare eller sökning med basomfång besvaras i den sfär som dess DN namnger, eftersom att skriva ut DN:t är hur en klient namnger en sfär på en socket utan något annat ställe att sätta den; en modifyDN som skulle korsa en sfär vägras med LDAP_AFFECTS_MULTIPLE_DSAS (71), eftersom två sfärer här är två kataloger."
+  },
+  "realms.support.kerberos-v5.family": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "realms.support.kerberos-v5.note": {
+    "en": "42fe03497278a0e3",
+    "text": "En KDC per förtroendesfär på den DELADE porten 88, åtskilda med Kerberos-sfärnamnet i varje begäran — den diskriminator som protokollet redan bär. En sfär skapas med krb5.enabled AV; sätt en egen krb5.realm (två sfärer får inte svara på samma namn) och slå på den, så bygger den sfären en egen principaldatabas, egna långtidsnycklar och en egen krbtgt, utifrån sina egna inställningar. Dess personer är personerna i dess eget katalogunderträd. Rå UDP/TCP 88 och en naken /KdcProxy dirigerar efter namnet; en sfärs egen /realm/<id>/KdcProxy är fastlåst till den sfären och vägrar en annan sfärs namn med KDC_ERR_WRONG_REALM. Det som fortfarande är PROCESSENS: de två socketarna, och förtroendet i utvecklingsläge med krb5.trustedRealm — förtroendesfärer litar inte på varandras Kerberos. Före 2026-09-15 fanns en KDC, en principaldatabas och ett sfärnamn för hela processen. SPNEGO bär samma biljetter över HTTP, så dess vägar svarar under varje sfärs sökvägsprefix som vilka andra som helst."
+  },
+  "realms.support.certificate-authority-crl-ocsp.family": {
+    "en": "1a5d99f237a9a182",
+    "text": "Certifikatutfärdare (CRL, OCSP)"
+  },
+  "realms.support.certificate-authority-crl-ocsp.note": {
+    "en": "23dc7902c5fa2e83",
+    "text": "EN ROT FÖR TJÄNSTEN, EN MELLANLIGGANDE CA PER SFÄR, och en Issuing CA per användningsfall under varje mellanliggande CA, så att ett certifikat som en sfär utfärdat inte kedjar till en annan sfärs mellanliggande CA. Det som delas är roten, som ingen sfär äger. CRL:erna, OCSP-respondrarna och kedjorna namnges av ett {scope}-segment i /pki/... snarare än av sfärprefixet, eftersom de adresserna hamnar INUTI certifikat och hämtas av klienter som inte vet något om den här tjänstens sfärer — och roten tillhör ingen sfär, så den kunde inte stavas med en."
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.family": {
+    "en": "915e2b4c1add7b8d",
+    "text": "Certifikatregistrering (ACME, EST, SCEP)"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.note": {
+    "en": "8eb76fc39d2c3029",
+    "text": "Var och en av de tre har en egen Issuing CA under varje sfärs mellanliggande CA, och egna lager per sfär — ACME:s konton, beställningar, auktoriseringar och nonces (en nonce är en MAC över sfären, så en sfärs vägras av en annan), SCEP:s RA-certifikat och transaktioner. Vem som får ha ett certifikat avgörs mot sfärens egen katalog: en ACME External Account Binding-nyckel, en EST-autentiseringsuppgift och en SCEP-utmaning är var och en bundna till en post i en sfär, och ett certifikat som en annan sfär utfärdat klarar inte kontrollen av mellanliggande CA. EST nås via sökvägsprefixet ELLER genom att sfären namnges på EST-etikettens position, /.well-known/est/<realm>/..., eftersom en EST-klient inte kan sätta en sökväg framför en well-known-URI (#251). Det som delas är EST:s hastighetsgräns per adress, som nycklas på klientadressen och inte sfären."
+  },
+  "realms.support.openid-federation.family": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "realms.support.openid-federation.note": {
+    "en": "afd1986b1784cb9c",
+    "text": "Varje sfär är en egen federationsentitet: dess Entity Identifier är dess utfärdare, dess Federation Entity Keys, underordnade, Trust Anchors och Trust Marks är poster i dess egen ou=oidfed, och dess slutpunkter ligger under dess eget prefix. Det som korsar sfärer är AVSIKTLIGT och signerat: med oidfed.realmsAreSubordinates på går standardsfären i god för varje annan sfär och de litar på den, där varje kedja verifieras som vilken annan som helst — upplöst i processen snarare än över HTTP."
+  },
+  "realms.support.tls-certificate.family": {
+    "en": "da0469bf71710144",
+    "text": "TLS-certifikat"
+  },
+  "realms.support.tls-certificate.note": {
+    "en": "ae9138672494fb4a",
+    "text": "ETT CERTIFIKAT FÖR PROCESSEN, som visas av huvudporten, av LDAPS 636 och av den inbäddade felsökarens lyssnare. Vad en socket visar upp är en egenskap hos socketen och inte hos en sfär, och de två första bär varje sfär. Den här raden löd `TLS (8443 / 9443)` fram till 2026-09-16, då de två lyssnarna togs bort: vad ett klientcertifikat är värt avgörs där det ANVÄNDS, och det är i den sfär som begäran anlände till."
+  },
+  "realms.support.spiffe.family": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "realms.support.spiffe.note": {
+    "en": "713aeaa8ddb6320e",
+    "text": "EN FÖRTROENDEDOMÄN, EN UTFÄRDARE, ETT REGISTER OCH ETT PAR gRPC-SOCKETAR PER SFÄR sedan 2026-09-12 — den här raden löd `none` fram till dess och sade en förtroendedomän, en signeringsutfärdare och fyra delade socketar. **DISKRIMINATORN ÄR SLUTPUNKTSADRESSEN OCH DEN KUNDE INTE HA VARIT NÅGOT ANNAT**: gRPC har en sökväg och den är METODEN — `/SpiffeWorkloadAPI/FetchX509SVID` är fastställd av den specifikationen och SPIRE-API:erna av sina — så ett sfärsegment i den skulle vara en metod som ingen konform klient anropar. En sfär skapas med `spiffe.trustDomain` satt till sin DOMÄN (sedan 2026-09-18; den var `<realm>.<the process's>` innan sfärer hade en) och med SPIFFE AV; att slå på den bygger den sfärens utfärdare och binder ett eget Workload API och ett eget SPIRE Server API, på Unix-socketsökvägar som såddes när sfären skapades — och på TCP först när någon ger den en adress (`spiffe.grpcHost`) och portar, vilket en sfär skapas utan, eftersom de den skulle ärva är standardsfärens och redan bundna. Join-token är också per sfär, eftersom en join-token är en autentiseringsuppgift för att ansluta till en förtroendedomän. **DET SOM FORTFARANDE DELAS ÄR PROCESSENS EGNA FYRA SOCKETAR**, som tillhör standardsfären och förblir bundna vad `spiffe.enabled` än säger — en socket som försvann skulle tolkas som en tjänst som hade stannat. De FEDERERADE paketen är en sfärs egna sedan 2026-09-12, och inget får registreras under en förtroendedomän som någon av den här tjänstens sfärer betjänar."
+  },
+  "realms.support.embedded-debugger.family": {
+    "en": "13158755ebc78c86",
+    "text": "Inbäddad felsökare"
+  },
+  "realms.support.embedded-debugger.note": {
+    "en": "6e1c9e3c0274c058",
+    "text": "En lyssnare för processen (`debugger.port`), inloggning via STANDARDsfärens auktoriseringsserver och öppen endast för den sfärens konsoladministratörer. En sfärs egna administratörer vägras den, eftersom den är en yta hos processen och inte hos någon sfär."
+  },
+  "realms.support.persistence-and-cluster.family": {
+    "en": "7fedc81f18af1420",
+    "text": "Persistens och kluster"
+  },
+  "realms.support.persistence-and-cluster.note": {
+    "en": "568ad713451c3e0b",
+    "text": "Ett lager för processen — minne, en LDIF-fil per sfär eller en postgres-databas — och ett klustermedlemskap, ett lån och en fencing-token. Varje lager per sfär ovan håller sina rader under sin sfär i det lagret och tas bort med sfären; det som delas är själva lagret, anslutningen till det och noderna som delar det."
+  }
+}

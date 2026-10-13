@@ -22,9 +22,10 @@
 //   T2. the definition, in product: a registered application by each of its
 //       four names is a registered target; this service's own resource
 //       servers (the default resource indicator, a named authorization
-//       server's, the realm's /admin-api, the GNAP demonstration resource
-//       server) are; an address nobody registered and one only SEEN are
-//       not; in development nothing is unregistered;
+//       server's, the realm's /admin-api) are, and the deleted GNAP
+//       demonstration resource server is one in neither mode (#593); an
+//       address nobody registered and one only SEEN are not; in development
+//       nothing is unregistered;
 //   T3. the authorization endpoint's request check (shared with PAR): in
 //       product an unregistered resource is a REDIRECTED invalid_target
 //       (STS-OAUTH-0950), a seen-only one too; a registered application's
@@ -39,9 +40,16 @@
 //       registered resource server, or a seen-only one, is refused
 //       invalid_request (STS-GNAP-0903); a location at or under a
 //       registered GNAP resource server's gnapResourceServerUri, a
-//       registered application's audience and the demonstration resource
-//       server pass; a reference string is not asked; development refuses
-//       none.
+//       registered application's audience pass; a reference string is not
+//       asked; development refuses none;
+//   T6. GNAP's request stage, in BOTH modes (#593, rcbj's decision 4 on
+//       #591): an access token request whose access names no resource
+//       server — a location naming none, an unknown reference, an
+//       uncatalogued type with no location — is refused invalid_request
+//       (STS-GNAP-0904), the second of two tokens by its index; one naming
+//       a registered GNAP resource server, or this service's Shared Signals
+//       transmitter by its scope or the `ssf` type, is not; there is no
+//       default audience any more.
 //
 // IN PROCESS, in a throwaway realm, because the cases are product's and
 // development's both and a job over HTTP runs in one mode.
@@ -217,7 +225,13 @@ function definition(t, f) {
   const registered = [API, 'rt-api-client', 'rt-api', BASE_URI,
                       BASE_URI.slice(0, -1)];
   const own = [base + '/resource', base + '/as1/resource',
-               base + '/admin-api', base + '/gnap/rs/resource'];
+               base + '/admin-api'];
+  // THE GNAP DEMONSTRATION RESOURCE SERVER was deleted by #593, and with it
+  // its place among the registered targets, in development too.
+  const demoRs = base + '/gnap/rs/resource';
+  const demoInDevelopment = inMode('development', function () {
+    return RegisteredTargets.ownResourceServer(demoRs, req);
+  });
   const product = inMode('product', function () {
     return { registered: RegisteredTargets.unregistered(registered, req),
              own: RegisteredTargets.unregistered(own, req),
@@ -225,7 +239,8 @@ function definition(t, f) {
                return RegisteredTargets.ownResourceServer(one, req);
              }),
              strangers: RegisteredTargets.unregistered(
-               [NOBODY, f.seen, base + '/other', base + '/resource/x'], req)
+               [NOBODY, f.seen, base + '/other', base + '/resource/x'], req),
+             demoRs: RegisteredTargets.unregistered([demoRs], req)
            };
   });
   t.check(product.registered.length === 0,
@@ -235,8 +250,11 @@ function definition(t, f) {
   t.check(product.own.length === 0 && product.owners.every(Boolean),
           'T2b. product: this service\'s own resource servers — the default ' +
           'resource indicator, a named authorization server\'s, the realm\'s ' +
-          '/admin-api and the GNAP demonstration resource server — are ' +
-          'registered targets', JSON.stringify(product));
+          '/admin-api — are registered targets', JSON.stringify(product));
+  t.check(product.demoRs.length === 1 && !demoInDevelopment,
+          'T2d. /gnap/rs/resource is a registered target in neither mode: ' +
+          'the demonstration resource server was deleted (#593)',
+          JSON.stringify([product.demoRs, demoInDevelopment]));
   t.check(product.strangers.length === 4,
           'T2c. product: an address nobody registered, one only seen, and ' +
           'paths of this service that are no resource server are not',
@@ -373,18 +391,87 @@ async function gnap(t, f, base) {
   const passed = [await judge('product', [right([GNAP_RS])]),
                   await judge('product', [right([GNAP_RS + '/photos/1'])]),
                   await judge('product', [right([API])]),
-                  await judge('product',
-                              [right([base + '/gnap/rs/resource'])]),
                   await judge('product', ['rt-some-reference']),
                   await judge('development', [right([NOBODY])]),
                   await judge('development', [right([f.seen])])];
   t.check(passed.every(function (r) {
     return r.code !== 'STS-GNAP-0903';
   }), 'T5b. a location at or under a registered GNAP resource server, a ' +
-          'registered application\'s audience and the demonstration ' +
-          'resource server pass in product, a reference is not asked, and ' +
-          'development refuses none', JSON.stringify(passed));
+          'registered application\'s audience pass in product, a ' +
+          'reference is not asked, and development refuses none',
+          JSON.stringify(passed));
   log.debug("Leaving gnap().");
+}
+
+// T6 (#593): a token for nobody in particular, in both modes.
+async function nobody(t) {
+  log.debug("Entering nobody().");
+  const grantsModule = require('../gnap/gnap_grants');
+  const grants = new grantsModule.GnapGrants(
+    grantsModule.GnapGrants.defaultDeps());
+  const app = { identifier: 'rt-gnap-client', fields: {} };
+  const judge = async function (m, tokens) {
+    log.debug("Entering judge(). " + m);
+    const out = await inModeAsync(m, function () {
+      return grants.judgeRequested(request({}), { as: 'default' }, app,
+                                   tokens, 'pending');
+    });
+    log.debug("Leaving judge().");
+    return { ok: !!out.ok, code: errorCodes.codeOf(out) || out.errorCode ||
+             '', error: out.gnapError || '', status: out.status || 0,
+             why: String(out.why || '').slice(0, 160) };
+  };
+  const one = function (access) {
+    log.debug("Entering one().");
+    log.debug("Leaving one().");
+    return [{ label: '', access: access }];
+  };
+  const photos = function (locations) {
+    log.debug("Entering photos().");
+    log.debug("Leaving photos().");
+    const right = { type: 'https://rt.example/photos', actions: ['read'] };
+    if (locations) {
+      right.locations = locations;
+    }
+    return right;
+  };
+  const refused = [];
+  for (const m of ['development', 'product']) {
+    refused.push(await judge(m, one(['rt-unknown-reference'])));
+  }
+  refused.push(await judge('development', one([photos([NOBODY])])));
+  refused.push(await judge('development', one([photos(null)])));
+  t.check(refused.every(function (r) {
+    return !r.ok && r.code === 'STS-GNAP-0904' &&
+      r.error === 'invalid_request' && r.status === 400;
+  }), 'T6. an access token request naming no resource server — an unknown ' +
+          'reference in either mode, a location naming none, an uncatalogued ' +
+          'type with no location — is refused invalid_request ' +
+          '(STS-GNAP-0904)', JSON.stringify(refused));
+  const second = await judge('development', [
+    { label: 'a', access: [photos([GNAP_RS])] },
+    { label: 'b', access: ['rt-unknown-reference'] }]);
+  t.check(second.code === 'STS-GNAP-0904' &&
+          /access_token\[1\]/.test(second.why),
+          'T6b. of two tokens, the one naming nobody is refused by its index',
+          JSON.stringify(second));
+  const passed = [];
+  for (const m of ['development', 'product']) {
+    passed.push(await judge(m, one([photos([GNAP_RS])])));
+    passed.push(await judge(m, one(['ssf:read'])));
+    passed.push(await judge(m, one([{ type: 'ssf', actions: ['read'] }])));
+  }
+  passed.push(await judge('development',
+                          one([photos([GNAP_RS]), photos([NOBODY])])));
+  passed.push(await judge('development', []));
+  t.check(passed.every(function (r) {
+    return r.code !== 'STS-GNAP-0904';
+  }), 'T6c. a token naming a registered GNAP resource server, or this ' +
+          'service\'s Shared Signals transmitter by its scope or the ssf ' +
+          'type, is not refused for it in either mode; nor is a token with ' +
+          'one right naming a resource server beside one naming none, nor ' +
+          'a request for no access token', JSON.stringify(passed));
+  log.debug("Leaving nobody().");
 }
 
 function run(t) {
@@ -407,6 +494,8 @@ function run(t) {
       const server = authorize(t, f, base);
       return token(t, f, base, server).then(function () {
         return gnap(t, f, base);
+      }).then(function () {
+        return nobody(t);
       });
     });
   } catch (e) {
@@ -429,6 +518,7 @@ module.exports = {
   describe: 'in product an RFC 8707 resource and a GNAP right\'s locations ' +
             'name a registered target — one of this service\'s own resource ' +
             'servers or a registered application — or are refused; ' +
-            'development is unchanged (#505)',
+            'development is unchanged (#505); and a GNAP token naming no ' +
+            'resource server is refused in both modes (#593)',
   run: run
 };

@@ -35,11 +35,12 @@
 // WHY THIS CANNOT BE MOCKED, WHICH IS THE ONE PLACE THIS FEATURE ARGUES WITH
 // THE REST OF THE SERVICE.
 //
-// `README.md` and every directory `CLAUDE.md` here say the same thing: this
-// service checks no password, validates no access token and attests no
-// workload. Three surfaces are already the exception (SCIM, the SPIRE Server
-// API, the admin console) and each has its argument written down. This is the
-// FOURTH, and its argument is different from all three of theirs.
+// `README.md` and every directory `CLAUDE.md` here say the same thing: in
+// development mode this service checks no password, validates no access token
+// and attests no workload (product mode verifies the first two). Three
+// surfaces are already the exception (SCIM, the SPIRE Server API, the admin
+// console) and each has its argument written down. This is the FOURTH, and
+// its argument is different from all three of theirs.
 //
 // Those three REFUSE a caller in order to make a client exercise a refusal.
 // This one refuses because THERE IS NO PERMISSIVE ANSWER AVAILABLE. "Accept
@@ -458,9 +459,10 @@ function roleRow(id) {
  */
 const MECHANISMS = [
   { mechanism: 'password', label: 'Username and password',
-    what: 'This service\'s own sign-in screen, which checks no password. The ' +
-          'ordinary case, and what an unset mechanism falls through to once ' +
-          'nothing else has an opinion.' },
+    what: 'This service\'s own sign-in screen: a username and a password, ' +
+          'the password verified in product mode and not in development ' +
+          'mode. The ordinary case, and what an unset mechanism falls ' +
+          'through to once nothing else has an opinion.' },
   { mechanism: 'password-mfa', label: 'Username and password, with MFA',
     what: 'The same screen with the second-factor box ticked and locked, so ' +
           'the WebAuthn ceremony runs after the password step and the ' +
@@ -492,9 +494,10 @@ const MECHANISMS = [
           'which answers 401 with WWW-Authenticate: Negotiate and signs them ' +
           'in on the service ticket their client sends back (RFC 4559 over ' +
           'RFC 4178 over RFC 4121). Nothing is typed and no screen is drawn. ' +
-          'It is the one mechanism here that rests on a credential this ' +
-          'service genuinely verifies — every other sign-in takes the name ' +
-          'it is given — and what the session then claims is read off the ' +
+          'Like a security key or a wallet, it rests on a credential this ' +
+          'service verifies in every mode — the sign-in screen\'s password ' +
+          'is verified only in product mode — and what the session then ' +
+          'claims is read off the ' +
           'TICKET\'s own flags: amr ["pwd"] for pre-authent, ["hwk"] for ' +
           'hw-authent, both for both, and NOTHING at all for a ticket that ' +
           'claims neither. A client that cannot get a ticket meets a page ' +
@@ -929,7 +932,9 @@ const SCHEMA = {
             'identity-provider (it asserts). One relationship is one ' +
             'direction — see the header.' },
     { name: 'fedProtocol', kind: 'single', role: 'both', from: 'this register',
-      what: 'One of saml2, saml11, wsfed, oidc, oauth2.' },
+      what: 'One of saml2, saml11, wsfed, oidc, oauth2 — the five ' +
+            'sign-in protocols — or ssf, a partner that only sends Shared ' +
+            'Signals and signs nobody in.' },
     { name: 'fedPeer', kind: 'single', role: 'both', from: 'this register',
       what: 'THE PARTNER\'S OWN IDENTIFIER, in whatever its protocol calls ' +
             'it: a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
@@ -1026,7 +1031,7 @@ const SCHEMA = {
       from: 'this register',
       what: 'THIS SERVICE\'S client_id AT THE PARTNER. Ours, issued by them ' +
             '— not to be confused with an oauthClientId on an application ' +
-            'entry, which is a mock client\'s id here.' },
+            'entry, which is a client\'s id here.' },
     { name: 'fedClientSecret', kind: 'single', role: 'service-provider',
       sensitive: true, from: 'this register',
       what: 'THIS SERVICE\'S SECRET AT THE PARTNER, in the clear, in a ' +
@@ -3121,6 +3126,15 @@ function releaseIndexTtlMs() {
   return Number(config.value('federation.releaseIndexTtlMs'));
 }
 
+// The lifetime sentence below, as a template (#543): `lifetime()` fills it
+// and `cache_registry.js`'s `prose()` reads it from the descriptor, so an
+// answer to `GET /admin-api/caches` can be refilled in a reader's language.
+const RELEASE_INDEX_SENTENCES = Object.freeze({
+  lifetime: 'federation.releaseIndexTtlMs ({{ms}} ms) after it was built, ' +
+    'or at once when a federation relationship is written through this ' +
+    'service.'
+});
+
 // Described to `/admin/caches` (#74, rule 3ap): one row per realm holding an
 // index, which is the whole cache for that realm.
 const releaseIndexCount = cacheRegistry.register({
@@ -3137,10 +3151,12 @@ const releaseIndexCount = cacheRegistry.register({
   },
   bound: 'Structural: one index per realm, holding one entry per ' +
     'application with a release list.',
+  sentences: RELEASE_INDEX_SENTENCES,
   lifetime: function () {
-    return 'federation.releaseIndexTtlMs (' + releaseIndexTtlMs() +
-      ' ms) after it was built, or at once when a federation ' +
-      'relationship is written through this service.';
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
+    return serverProse.fill(RELEASE_INDEX_SENTENCES.lifetime,
+                            { ms: releaseIndexTtlMs() });
   },
   // A realm's index past its lifetime, which `releaseIndexNow()` would
   // rebuild: dropped, and rebuilt at the next use (#49 P5).
@@ -4557,6 +4573,85 @@ function recordFailure(id, why) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE CONSOLE PROSE OF THIS REGISTER (#543 phase 2b): the `federation`
+// namespace's share. The tables above reach three `/admin-api` answers —
+// the relationship list and drill-down (`roles`, `protocols`, `schema`, the
+// labels of a select's values), the directory's own view of
+// `ou=federations` (the whole SCHEMA), and the federation picture — and the
+// server translates a string of those answers that is EXACTLY one of these.
+//
+// What is NOT here, on purpose: a protocol's `family` and `spec` (a name and
+// a citation), an object class's `where` other than "this service" (an RFC
+// number), the `needs` lists (attribute names), and `readinessOf()`'s
+// `missing` entries — each an attribute name, some with a parenthesis of
+// prose after it, so data and prose in one string, which stays English.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this register's prose.
+ */
+const PROSE_ROUTES = ['/admin-api/federation', '/admin-api/ldap/federations',
+                      '/admin-api/console/federation/map'];
+
+/**
+ * Re-keys a table by the member that names each row, so that a harvested key
+ * names the row rather than its position.
+ *
+ * @param rows - the table
+ * @param idMember - the member holding each row's id
+ * @param members - the prose members to keep
+ * @returns id → the row's prose members
+ */
+function proseById(rows, idMember, members) {
+  log.debug("Entering proseById(). " + idMember);
+  const out = {};
+  rows.forEach(function (row) {
+    const kept = {};
+    members.forEach(function (name) {
+      if (typeof row[name] === 'string') {
+        kept[name] = row[name];
+      }
+    });
+    out[row[idMember]] = kept;
+  });
+  log.debug("Leaving proseById().");
+  return out;
+}
+
+/**
+ * Extracts this register's console prose for the `federation` namespace: the
+ * roles, protocols, sign-in mechanisms and subject policies, and the schema's
+ * object classes and attributes.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY, because `server_prose` requires `config.js` and `helpers.js`
+  // at its load, and this module is required by much that they reach.
+  const harvest = require('./../common/server_prose').harvest;
+  const out = Object.assign({},
+    harvest('fed.roles', proseById(ROLES, 'role',
+                                   ['label', 'short', 'what']),
+            ['label', 'short', 'what']),
+    harvest('fed.protocols', proseById(PROTOCOLS, 'protocol',
+                                       ['label', 'what']),
+            ['label', 'what']),
+    harvest('fed.mechanisms', proseById(MECHANISMS, 'mechanism',
+                                        ['label', 'what']),
+            ['label', 'what']),
+    harvest('fed.subjectPolicies', proseById(SUBJECT_POLICIES, 'policy',
+                                             ['label', 'what']),
+            ['label', 'what']),
+    harvest('fed.schema', SCHEMA, ['what']));
+  // The two short phrases the directory's view draws in a column of their
+  // own, once each rather than once per row that carries them.
+  out['fed.schema.where.thisService'] = 'this service';
+  out['fed.schema.from.thisRegister'] = 'this register';
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The federation register: every relationship with a foreign identity service
  * in one trust realm, held in the directory under `ou=federations`, with its
@@ -4565,6 +4660,9 @@ function recordFailure(id, why) {
  * @namespace
  */
 module.exports = {
+  // The `federation` namespace's routes and English (#543).
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   clientSecretOf: clientSecretOf,
   PATHS: PATHS,
   ROLES: ROLES,

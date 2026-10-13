@@ -1,0 +1,158 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "PostgreSQL 愿意告诉本服务的有关它自身的一切，以及本服务在其中拥有的模式的状态。"
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode 为 \"{{mode}}\"，因此本服务没有可报告的数据库。`memory` 完全不写入任何内容，`ldif` 写入 RFC 2849 文件——两者都没有连接、连接池或目录。请将 persistence.mode 设置为 `postgres`（它仅在重启时生效：存储在监听器绑定之前打开）。"
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "persistence.mode 为 \"postgres\"，而此进程没有打开的存储。这是故障而不是配置问题：存储在监听器绑定之前由 persistence.start() 打开，那里的失败是致命的——因此处于这种状态的运行中服务，其存储是在运行时被停掉的。启动日志会说明发生了什么。"
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "打开的驱动程序没有报告 metrics 函数，这意味着 persistence_postgres.js 的构建早于 2026-09-11。"
+  },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "使用此存储的各进程相互协调：每个更改都在做出它的事务中写入一个单调递增的日志，每个进程应用其他进程已提交的内容。LISTEN/NOTIFY 提醒只是让这一过程更及时——日志才是契约，因此错过一次通知只会增加延迟，绝不会丢失更改。不共享的是套接字：KDC、LDAP 监听器、TLS 端口以及 SPIFFE 的四个套接字都是每个进程各自的，重放缓存是逐渐收敛而非同步。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 票据、计数器和审计日志——在产品模式下持久化到 postgres 存储中，在与签名密钥相同的密钥加密密钥下加密，在其他任何配置下都不持久化：开发模式每次启动都会重新生成签名密钥，因此恢复的令牌将无法通过任何验证。"
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "在此配置下，持久化并不等于协调。指向同一存储的两个进程各自在内存中保存自己的副本，在重启之前看不到对方的写入。在 postgres 存储上设置 persistence.coordinate 可改变这一点。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 票据、计数器和审计日志——在产品模式下持久化到 postgres 存储中，在与签名密钥相同的密钥加密密钥下加密，在其他任何配置下都不持久化：开发模式每次启动都会重新生成签名密钥，因此恢复的令牌将无法通过任何验证。"
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS，sslmode={{sslmode}}；服务器证书依据此进程的信任锚进行验证。"
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "72f7138134696ef9",
+    "text": "“警告”——TLS，sslmode={{sslmode}}，但服务器证书“未经验证”（persistence.databaseTlsRejectUnauthorized 已关闭），因此数据库服务器“未经身份验证”：任何能在其地址上应答的一方都可以冒充它，并读写本服务保存的每一行数据。连接是加密的，仅此而已。请重新开启该设置；若 node 尚未信任服务器的 CA，请用 persistence.databaseTlsCaFile 指定该 CA。"
+  },
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS——连接字符串未设置 sslmode，而本服务一律通过 TLS 连接每个数据库；服务器证书依据此进程的信任锚进行验证。"
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "67a6b00f57bdfed8",
+    "text": "“警告”——TLS（连接字符串未设置 sslmode，而本服务一律通过 TLS 连接每个数据库），但服务器证书“未经验证”（persistence.databaseTlsRejectUnauthorized 已关闭），因此数据库服务器“未经身份验证”：任何能在其地址上应答的一方都可以冒充它，并读写本服务保存的每一行数据。连接是加密的，仅此而已。请重新开启该设置；若 node 尚未信任服务器的 CA，请用 persistence.databaseTlsCaFile 指定该 CA。"
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS，sslmode=prefer——仅通过 TLS 连接：对于 prefer，libpq 会回退为明文连接，而本服务从不这样做；服务器证书依据此进程的信任锚进行验证。"
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "2a65ebb396c30cb4",
+    "text": "“警告”——TLS，sslmode=prefer，仅通过 TLS 连接（对于 prefer，libpq 会回退为明文连接，而本服务从不这样做），但服务器证书“未经验证”（persistence.databaseTlsRejectUnauthorized 已关闭），因此数据库服务器“未经身份验证”：任何能在其地址上应答的一方都可以冒充它，并读写本服务保存的每一行数据。连接是加密的，仅此而已。请重新开启该设置；若 node 尚未信任服务器的 CA，请用 persistence.databaseTlsCaFile 指定该 CA。"
+  },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS，sslmode=verify-full；按照该 sslmode 的要求，服务器证书依据此进程的信任锚进行验证，并检查其主机名，无论 persistence.databaseTlsRejectUnauthorized 如何设置。"
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS，sslmode=verify-ca；按照该 sslmode 的要求，服务器证书依据此进程的信任锚进行验证，无论 persistence.databaseTlsRejectUnauthorized 如何设置——但“不”检查其主机名：按照 libpq 的理解，verify-ca 信任受信任机构签发的任何证书。若要同时检查名称，请使用 verify-full。"
+  },
+  "persistence.status.trustCaFile": {
+    "en": "2e641ceb50a4206c",
+    "text": "此连接的信任锚是 {{file}}（persistence.databaseTlsCaFile）中的证书，取代此进程的默认信任库。"
+  },
+  "persistence.status.caFileUnusable": {
+    "en": "ce51e3182e53d854",
+    "text": "“不连接”——persistence.databaseTlsCaFile 指定了 {{file}}，但该文件无法读取或不含任何证书，因此本服务不会以它启动。"
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "“不连接”——sslmode={{sslmode}} 要求明文连接，而本服务从不打开这种连接，因此不会使用此连接字符串启动。"
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7c0ce538219125e3",
+    "text": "“不连接”——连接字符串不是 postgres:// URL，因此无法判断它是否会以明文连接，本服务也不会使用它启动。"
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "连接字符串不是 URL；由于其中带有密码，不显示其任何内容。"
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "这是哪个 PostgreSQL、本服务以什么身份连接，以及服务器已运行了多久。"
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "此数据库占用多少磁盘空间。"
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "PostgreSQL 为此数据库保留的每个计数器：提交和回滚、读取的块与在缓存中找到的块、各个方向的元组、死锁、临时文件，以及服务器收集时的 I/O 和会话计时。"
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "因恢复冲突而被取消的查询。在不是备用服务器的服务器上全部为零，而这正是这里的一般情况。"
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "此数据库有多少个后端进程，与服务器的上限相对照。"
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "此数据库上的每个后端进程一行。属于其他角色的后端显示为一行，其状态和查询被隐去，这正是非监控角色所能看到的。"
+  },
+  "postgres.probes.locks.what": {
+    "en": "b7988c9a1fc05949",
+    "text": "按模式列出持有的锁和等待的锁。在这里，等待中的锁几乎总是本服务在请求工作线程池中自己与自己争用。"
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "后台写入器。PostgreSQL 17 之前有十一列，从 17 起只有四列，因为检查点计数器被移出了它——这就是为什么这里请求全部列而不是逐一指名。"
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "检查点进程。自 PostgreSQL 17 起拥有自己的视图；在此之前，这些计数器是上面 pg_stat_bgwriter 的末尾部分。"
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "预写日志的生成情况。PostgreSQL 14 及更高版本。"
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "WAL 归档。除非 archive_mode 开启，否则全部为零，而本仓库提供的任何栈中都未开启它。"
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "从本服务器进行流复制的备用服务器。空是一般情况下的答案，但当确实存在备用服务器时，没有 pg_monitor 的角色看到的也是空——因此这里的空表代表两种不同的事实，页面会说明它无法区分的是哪一种。"
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "PostgreSQL 为每个表保留的每个计数器：顺序扫描和索引扫描、各个方向的元组、活行和死行，以及每个表最近一次清理（vacuum）和分析的时间。"
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "每个表的块 I/O：堆、其索引和 TOAST 各有多少来自缓冲区缓存、多少来自磁盘。"
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "每个表占用多少磁盘空间，分为堆、其索引和 TOAST，并附有规划器的行数估计。"
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "每个索引、被扫描的频率、大小，以及它是否为主键或唯一索引。"
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "本服务拥有的每个表的每一列，附其类型、是否可为空及其默认值。"
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "主键、唯一约束、外键和检查约束。"
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "操作员已从内置默认值更改的每个设置，以及设置的位置——外加少数几个无论是否有人改动都很重要的设置。"
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "此数据库中安装的扩展。"
+  }
+}

@@ -90,10 +90,12 @@ class SsfDeadLettersPage {
     });
     const listView = kit.listViewOf('/admin/ssf/dead-letters', ctx.query);
     // A link to the letters narrowed, keeping the rest of the view and going
-    // back to the first page of what it narrows to.
+    // back to the first page of what it narrows to — of the letters and of
+    // the streams, which the same two filters narrow (#313).
     const lettersOf = function (overrides) {
       return kit.esc('/admin/ssf/dead-letters' + kit.queryWith(listView,
-        Object.assign({ lettersPage: '' }, overrides))) + '#find-dlq';
+        Object.assign({ lettersPage: '', streamsPage: '' }, overrides))) +
+        '#find-dlq';
     };
     const share = function (count) {
       return totals.held
@@ -249,7 +251,11 @@ class SsfDeadLettersPage {
             '');
       return '<tr><td class="who">' + (row.state === 'unknown'
           ? '<code>' + kit.esc(row.stream_id) + '</code>'
-          : '<a href="/admin/ssf#stream-' + kit.esc(row.stream_id) +
+          // `stream` narrows /admin/ssf's paged cards to this one (#313's
+          // sweep), so the fragment lands whatever page it would be on.
+          : '<a href="/admin/ssf?stream=' +
+            kit.esc(encodeURIComponent(row.stream_id)) + '#stream-' +
+            kit.esc(row.stream_id) +
             '" title="' +
             kit.esc(t.text('consoleSsfDeadLetters.streams.cardTip')) +
                      '"><code>' +
@@ -274,6 +280,12 @@ class SsfDeadLettersPage {
     }).join('') ||
       '<tr><td colspan="6">' +
       t.html('consoleSsfDeadLetters.streams.none') + '</td></tr>';
+    // ONE ROW PER STREAM HOLDING A LETTER OR NOT DELIVERING, however many
+    // receivers there are, so the table is paged on `streamsPage` (#313),
+    // after the page's stream and cause filters have narrowed it.
+    const streamNav = kit.pageNavPair('/admin/ssf/dead-letters',
+                                       kit.pageParamsOf(ctx.query),
+                                       json.paging.streams, t);
 
     // THE LETTERS.
     const search = kit.sectionSearchForm({
@@ -356,7 +368,11 @@ class SsfDeadLettersPage {
       '</a>' + t.html('consoleSsfDeadLetters.reports.after',
         { when: kit.whenText(Date.parse(json.generatedAt)) })) +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.when.heading') + '</h2>' +
+      // A TAB PER SECTION (2026-10-12): the intro, the tiles and the note
+      // above are Metadata, and so are the closing links
+      // (`WebPages.protocolTabs()`).
+      '<h2 data-tab="when">' + t.html('consoleSsfDeadLetters.when.heading') +
+      '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.when.note', {
         bucket: SsfDeadLettersPage.deadLetterSpan(timeline.bucketS),
         window: SsfDeadLettersPage.deadLetterSpan(timeline.windowS) })) +
@@ -365,7 +381,8 @@ class SsfDeadLettersPage {
       timelineTable +
       older +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.why.heading') + '</h2>' +
+      '<h2 data-tab="why">' + t.html('consoleSsfDeadLetters.why.heading') +
+      '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.why.note')) +
       '<table><tr><th>' + t.html('consoleSsfDeadLetters.th.cause') +
       '</th><th>' + t.html('consoleSsfDeadLetters.th.meaning') + '</th>' +
@@ -393,8 +410,10 @@ class SsfDeadLettersPage {
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.share') +
       '</th></tr>' + typeRows + '</table>' +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
+      '<h2 data-tab="streams">' +
+      t.html('consoleSsfDeadLetters.streams.heading') + '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.streams.note')) +
+      streamNav.head +
       kit.wideTable(t.text('consoleSsfDeadLetters.streams.tableLabel'),
                      '<table><tr><th>' +
       t.html('consoleSsfDeadLetters.th.stream') + '</th>' +
@@ -406,9 +425,10 @@ class SsfDeadLettersPage {
       '</th><th class="num">' + t.html('consoleSsfDeadLetters.th.ever') +
       '</th></tr>' +
       streamRows + '</table>') +
+      streamNav.foot +
 
-      '<h2 id="letters">' + t.html('consoleSsfDeadLetters.letters.heading') +
-      '</h2>' +
+      '<h2 id="letters" data-tab="letters">' +
+      t.html('consoleSsfDeadLetters.letters.heading') + '</h2>' +
       search +
       (narrowed.length
         ? '<p class="sub">' + t.html('consoleSsfDeadLetters.narrow.before') +
@@ -429,7 +449,8 @@ class SsfDeadLettersPage {
       nav.foot +
       kit.note(t.html('consoleSsfDeadLetters.letters.note')) +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.process.heading') + '</h2>' +
+      '<h2 data-tab="process">' +
+      t.html('consoleSsfDeadLetters.process.heading') + '</h2>' +
       kit.warn(t.html('consoleSsfDeadLetters.process.warn',
                       { pid: String(proc.pid), role: proc.role })) +
       '<div class="tiles">' +
@@ -463,7 +484,8 @@ class SsfDeadLettersPage {
       '<th class="num">' + t.html('consoleSsfDeadLetters.th.probes') +
       '</th></tr>' + sweepRows + '</table>') +
 
-      '<h2>' + t.html('consoleSsfDeadLetters.settings.heading') + '</h2>' +
+      '<h2 data-tab="settings">' +
+      t.html('consoleSsfDeadLetters.settings.heading') + '</h2>' +
       kit.note(t.html('consoleSsfDeadLetters.settings.before') +
       '<a href="/admin/ssf">' + t.html('consoleSsfDeadLetters.link.ssf') +
       '</a>' + t.html('consoleSsfDeadLetters.settings.after')) +
@@ -473,6 +495,7 @@ class SsfDeadLettersPage {
       '</th></tr>' + settingRows +
       '</table>' +
 
+      '<div data-metadata>' +
       kit.note('<a href="/admin/ssf/dead-letters?format=json">' +
       t.html('consoleSsfDeadLetters.foot.json') + '</a> &middot; ' +
       '<a href="/admin-api/ssf/dead-letters">' +
@@ -482,7 +505,7 @@ class SsfDeadLettersPage {
       'href="/admin/error-codes">' +
       t.html('consoleSsfDeadLetters.foot.codes') + '</a> &middot; <a ' +
       'href="/admin/audit">' + t.html('consoleSsfDeadLetters.foot.audit') +
-      '</a>');
+      '</a>') + '</div>';
 
     return inner;
   }
@@ -510,7 +533,7 @@ class SsfDeadLettersPage {
         '</td>' +
         '<td class="who"><a href="' + kit.esc('/admin/ssf/dead-letters' +
           kit.queryWith(listView, { dlstream: row.stream_id,
-            lettersPage: '' })) +
+            lettersPage: '', streamsPage: '' })) +
         '#find-dlq"><code>' + kit.esc(row.stream_id) + '</code></a>' +
         (row.streamKnown
           ? ''

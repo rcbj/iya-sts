@@ -1,0 +1,1374 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "une recherche servie depuis le cache"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "la recherche se trouve dans un fichier que ce dépôt ne modifie pas"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "Nonces ACME"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "Les valeurs Replay-Nonce déjà présentées au serveur ACME (RFC 8555 section 6.5), afin que chacune ne soit acceptée qu’une fois."
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "Appliquée : acme.maxSpentNonces nonces consommés par domaine. Les nonces expirés sont effacés à la limite ; un historique encore plein REFUSE la consommation suivante (réponse badNonce) plutôt que d’oublier un nonce encore valide."
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "Jusqu’à l’expiration du nonce ; les nonces expirés sont effacés lorsque la limite est atteinte."
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "un nonce déjà consommé, si bien que la requête a été refusée"
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "Liste du registre des applications"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "Chaque entrée d’application d’un domaine, analysée, avec une recherche par client_id, audience, AppliesTo et permission — afin qu’une page ou une requête de jeton n’analyse pas tout le registre à chaque question."
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "Structurelle : une liste par domaine, de la taille de ou=applications (elle-même plafonnée par applications.max)."
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la lecture suivante l’analyse alors à nouveau."
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Permissions des récepteurs Shared Signals"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "Quelle application possède un flux Shared Signals et quels événements elle peut recevoir, par principal, afin qu’un événement de session ne parcoure pas chaque application enregistrée."
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "Appliquée : 4096 réponses par domaine, la plus ancienne étant supprimée puis recherchée à nouveau lorsqu’elle est de nouveau nécessaire."
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la recherche suivante vide alors les réponses de ce domaine."
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "Recherches dans les sources d’attributs"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "La ligne qu’une source d’attributs a renvoyée pour la clé d’une personne, conservée brièvement afin qu’une rafale de connexions ne fasse qu’une seule requête (#94)."
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "Appliquée : 2000 lignes par processus, la plus ancienne étant supprimée."
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "une connexion servie par une recherche effectuée quelques secondes plus tôt"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "{{seconds}} s après la recherche ; une modification de la source supprime ses lignes."
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "Informations de certificat analysées"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "Le sujet, l’émetteur et le notAfter qu’affiche une liste de certificats, et si un certificat porte une clé post-quantique, analysés une fois par certificat pour /admin/pki et GET /admin-api/certificates. Indexé par le SHA-256 du certificat lui-même."
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "Appliquée : 4 096 certificats, le plus ancien étant supprimé puis analysé à nouveau lorsqu’il est de nouveau affiché."
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "Aucune expiration : indexé par le contenu du certificat, dont les informations ne changent jamais. Le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "Verdicts sur les secrets d’authentificateur"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "Si chaque secret d’authentificateur (TOTP) scellé au sujet duquel ce processus a été interrogé s’ouvre sous sa clé de chiffrement de clés (#352), afin que la liste des utilisateurs et le registre des seconds facteurs puissent indiquer si un enrôlement est lisible ou non sans le desceller à chaque requête. Indexé par le texte scellé ; la valeur est oui ou non, jamais le secret."
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "Appliquée : 20000 verdicts ; une fois plein, le plus ancien est supprimé et ce secret est rouvert la prochaine fois qu’il est demandé."
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "Jusqu’à ce que les clés de chiffrement de clés changent, ou jusqu’à sa suppression pour faire de la place. Un nouvel enrôlement est un nouveau texte scellé et fait l’objet d’une nouvelle demande."
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "un secret scellé dont le verdict était déjà connu, si bien qu’il n’a pas été ouvert"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "Fichiers statiques du débogueur intégré"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "Les fichiers client du débogueur intégré dans lesquels l’adresse de ce service a été substituée, conservés par version de fichier et par adresse afin que l’écouteur du débogueur ne réécrive pas un fichier à chaque requête."
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "Appliquée : 400 fichiers, le plus ancien étant supprimé puis relu lorsqu’il est de nouveau servi."
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "Jusqu’à ce que le fichier change sur le disque (une nouvelle date de modification constitue une nouvelle entrée) ; le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "Défis d’enrôlement des appareils"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "Les défis que /portal/devices a émis pour une preuve de clé, une déclaration App Attest ou une liaison WebAuthn, et les nonces de fraîcheur que EST /nonce a émis pour une attestation de clé TPM, chacun lié à la session (ou au cookie EST) pour laquelle il a été émis et utilisable une seule fois."
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "Appliquée : devices.maxChallenges par domaine, le plus ancien étant supprimé à l’insertion ; un par session et par usage."
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "un défi émis par ce domaine, si bien que la preuve a été vérifiée"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "Événements du registre des appareils"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "Une ligne par appareil créé, supprimé ou évincé à la limite d’une personne dans ce domaine — ce que Supervision → Appareils représente dans le temps. Jamais une clé, un secret ni le nom d’un propriétaire."
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "Appliquée : devices.eventsKept par domaine, l’événement le plus ancien étant supprimé à l’insertion."
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "Jusqu’à ce que devices.eventsKept événements plus récents le poussent dehors."
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "Nonces DPoP"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "Les nonces DPoP émis par le serveur (RFC 9449 section 8), afin qu’une preuve qui en porte un puisse être comparée à ce qui a été distribué."
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "Appliquée : oauth2.dpopNonceCacheSize par domaine ; le nonce le plus ancien est supprimé, et un client qui le présente en reçoit un nouveau."
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "un nonce jugé valide, si bien que la preuve a été acceptée"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "Identifiants de preuve DPoP"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "Le jti de chaque preuve DPoP acceptée, afin qu’une preuve ne vaille que pour une seule requête (RFC 9449 section 11.1)."
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "Appliquée : oauth2.dpopReplayCacheSize identifiants valides par domaine. Un historique plein REFUSE la preuve suivante (STS-OAUTH-0554) plutôt que d’oublier un identifiant encore valide, ce qui rouvrirait son rejeu."
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "une preuve déjà utilisée, si bien que la requête a été refusée"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "Index de diffusion des attributs de fédération"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "Quelle liste de diffusion de partenaire s’applique à quelle application, construit à partir de ou=federations afin qu’une émission de jeton ne parcoure pas le registre. Un index par domaine."
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "Structurelle : un index par domaine, contenant une entrée par application dotée d’une liste de diffusion."
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "federation.releaseIndexTtlMs ({{ms}} ms) après sa construction, ou immédiatement lorsqu’une relation de fédération est écrite par l’intermédiaire de ce service."
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "Plages de proxys de confiance"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "global.trustedProxies, analysé en une BlockList, afin qu’une requête n’analyse pas de nouveau le paramètre pour décider à quelle adresse transmise se fier."
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Structurelle : une copie analysée du paramètre."
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "Jusqu’à ce que le texte de global.trustedProxies change."
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "Biscuits révoqués"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "Les identifiants de révocation de chaque jeton d’accès biscuit révoqué, publiés sur /gnap/biscuit/revocations pour un serveur de ressources qui vérifie lui-même les biscuits."
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "Appliquée : oauth2.maxRevokedJtis par domaine — la limite propre au registre des révocations, pour la même promesse sur les mêmes jetons. À la limite, une ligne expirée part en premier ; sinon la révocation la PLUS ANCIENNE est oubliée (STS-GNAP-0752), et ce biscuit est de nouveau accepté par un serveur de ressources qui ne consulte que cette liste, jusqu’à son expiration."
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "jusqu’au propre exp du jeton révoqué."
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "la liste publiée a été lue"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "Propriétaires de ressources recherchés"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "Le propriétaire que le gnapOwnerLookupUri d’un serveur de ressources a désigné pour un identifiant, afin que la requête d’une autorisation, sa page d’approbation et son émission n’interrogent le serveur de ressources qu’une fois (#432 phase 5)."
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "Appliquée : 1024 propriétaires par domaine, le plus ancien étant supprimé puis recherché à nouveau lorsqu’il est de nouveau nécessaire."
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "Signatures GNAP"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "Chaque requête GNAP signée acceptée (signatures de message HTTP et JWS attachée ou détachée), afin qu’une requête capturée ne puisse pas être renvoyée."
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "Appliquée : gnap.replayCacheSize signatures valides par domaine. Un historique plein REFUSE la requête signée suivante (STS-GNAP-0718) plutôt que d’oublier une signature encore valide, ce qui rouvrirait son rejeu."
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "Deux fois gnap.signatureMaxAgeS après avoir été vue."
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "une signature déjà vue, si bien que la requête a été refusée"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "Identifiants de clé RFC 9278"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "L’URI JWK Thumbprint publiée comme kid sous keys.kidFormat=jwk-thumbprint-uri, indexée par le kid interne, afin qu’une signature de jeton ne relise pas la clé dans son certificat."
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "Appliquée : 512 identifiants de clé, le plus ancien étant supprimé puis dérivé à nouveau lorsqu’il est de nouveau demandé."
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "Aucune expiration : un kid interne est dérivé de la clé, sa réponse ne change donc jamais. Le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "Chaînes de certificats aboutissant sous la Root"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "Si la chaîne stockée d’une ligne du registre aboutit sous la Root actuelle du service, ce qui décide si la Root est ajoutée à un en-tête x5c. Indexé par l’empreinte de la ligne et celle de la Root."
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Appliquée : 512 réponses, la plus ancienne étant supprimée puis recalculée lorsqu’elle est de nouveau demandée."
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Aucune expiration : indexé par l’empreinte du certificat et le kid, dont la réponse ne change jamais. Le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "Correspondances certificat–clé de signature"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "Si une ligne du registre des certificats détient la clé de signature, question posée avant qu’un en-tête x5c ou x5t#S256 ne soit placé sur un jeton. Indexé par l’empreinte de la ligne et le kid de la clé."
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Appliquée : 512 réponses, la plus ancienne étant supprimée puis recalculée lorsqu’elle est de nouveau demandée."
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Aucune expiration : indexé par l’empreinte du certificat et le kid, dont la réponse ne change jamais. Le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "Autorités de certification"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "La hiérarchie d’autorités de certification de chaque portée — la Root du service, l’Intermediate d’un domaine et ses Issuing CA — conservée déchiffrée pour signer, lue depuis le stockage au démarrage ou adoptée d’un autre processus."
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "Structurelle : une hiérarchie par portée (la Root du service, la branche du processus, et une par domaine), remplacée plutôt que complétée."
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "Aucune expiration : remplacée lorsque la hiérarchie change ici ou sur un autre nœud, et supprimée avec son domaine."
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "Clés de signature déchiffrées"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "Le matériel de clé de signature d’un domaine, déchiffré depuis le stockage de persistance sous la clé de chiffrement de clés et conservé pendant une fenêtre d’inactivité afin qu’une signature régulière ne paie pas un déchiffrement à chaque fois. Mode produit uniquement ; les clés de développement ne sont jamais stockées chiffrées."
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "Structurelle : le matériel de clé d’un domaine par domaine, quelle que soit la politique de rétention ; la politique ne décide que de la durée de conservation."
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "Jeux de clés post-quantiques"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "Les clés ML-DSA et SLH-DSA de chaque domaine, générées (ou lues dans le jeu stocké) la première fois que quelque chose en a besoin, puis conservées avec le jeu de clés du domaine."
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "Structurelle : un jeu post-quantique par domaine, conservé avec le jeu de clés du domaine."
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "Comme pour le jeu de clés du domaine : aucune expiration, supprimé lorsque le domaine est retiré ou que ses clés sont remplacées."
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "Jeux de clés de signature"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "Les clés de signature de chaque domaine de confiance (RSA, EC, et le jeu post-quantique une fois demandé), construites ou lues depuis le magasin de clés à la première utilisation et conservées pour chaque signature ultérieure."
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "Structurelle : un jeu de clés par domaine, supprimé avec le domaine ou remplacé lorsque ses clés font l’objet d’une rotation ou sont adoptées."
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "Aucune expiration : supprimé lorsque le domaine est retiré, que ses clés font l’objet d’une rotation, ou que les clés stockées d’un autre processus sont adoptées. Une entrée par domaine ayant signé."
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Authentificateurs Kerberos"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "Chaque authentificateur accepté par le service protégé, afin qu’un AP-REQ capturé ne puisse pas être présenté deux fois. Par domaine de confiance : le domaine dont le realm Kerberos a émis le ticket."
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "Appliquée : krb5.replayCacheMaxEntries par domaine. Un cache plein REFUSE l’authentificateur suivant plutôt que d’en oublier un encore valide, ce qui rouvrirait son rejeu."
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "un authentificateur déjà vu, si bien que la requête a été refusée"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Clés à long terme Kerberos"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "Les clés à long terme de chaque principal enregistré, dérivées de son mot de passe par string-to-key (ou lues depuis la source de clés) une fois par type de chiffrement et conservées pour chaque ticket ultérieur."
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "Appliquée : au plus 4096 principaux détiennent des clés simultanément, une ligne par type de chiffrement ; le moins récemment utilisé voit ses clés effacées, et les dérive ou les relit à son prochain ticket."
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "Aucune expiration : supprimées avec le principal, lorsque son enregistrement est remplacé (un changement de mot de passe ou une restauration), ou lorsqu’il est le moins récemment utilisé au-delà de la limite ; jamais persistées."
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "Index des appareils de l’annuaire"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "L’identifiant, les empreintes de clé et le hachage du secret Native SSO de chaque entrée d’appareil, vers son entrée sous ou=devices, afin que la reconnaissance d’un appareil au point de terminaison de jeton ne copie pas le registre (#164)."
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "Jusqu’à ce que quelque chose soit écrit sous ou=devices et qu’une recherche échoue ; un succès sur une entrée à jour n’attend pas une reconstruction. Un index par domaine."
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "Index entryUUID de l’annuaire"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "L’entryUUID de chaque entrée (et ses alias) vers son DN, ce qui permet à un identifiant de sujet et à un id SCIM de retrouver une personne."
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "Jusqu’à ce que l’annuaire change et qu’une recherche échoue ; un succès sur une entrée à jour n’attend pas une reconstruction. Un index par domaine."
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "Index des groupes de l’annuaire"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "L’appartenance aux groupes par membre et par DN de groupe, afin que le claim groups et chaque vérification de rôle ne parcourent pas ou=groups."
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Jusqu’à ce que l’annuaire soit écrit d’une manière que l’index ne peut pas intégrer ; la recherche suivante le reconstruit alors. Un index par domaine."
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "Déclarations memberOf, par groupe"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "Pour chaque groupe, les entrées dont le propre memberOf le nomme, afin que les pages des groupes et des listes d’administrateurs ne parcourent pas le domaine une fois par groupe (#352)."
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "Structurelle : un index par domaine, une ligne par valeur memberOf."
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "Jusqu’à la prochaine écriture dans l’annuaire, où que ce soit."
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "Personnes, sous forme de clés triées"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "Le DN normalisé et le nom d’utilisateur de chaque personne, dans l’ordre où allPersons() les liste, afin qu’une page de personnes ne parcoure, ne normalise et ne trie pas le domaine à chaque requête (#352)."
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "Structurelle : une liste par domaine, de la taille de ou=users."
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "Jusqu’à ce que quoi que ce soit soit écrit sous ou=users du domaine."
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "Listes des conteneurs de l’annuaire"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "Les entrées sous un conteneur (applications, fédérations, politiques et autres), conservées jusqu’à ce que quelque chose soit écrit sous celui-ci."
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "Appliquée : 64 listes de conteneurs par domaine, la plus ancienne étant supprimée puis parcourue à nouveau lorsqu’elle est de nouveau demandée."
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "Jusqu’à ce qu’une entrée sous le conteneur soit ajoutée, supprimée ou écrite sans indiquer où ; une entrée par conteneur listé."
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "Index des noms d’utilisateur de l’annuaire"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "Chaque nom auquel répond une personne (uid et RDN), vers son entrée sous ou=users, afin qu’une connexion ne parcoure pas l’annuaire."
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Jusqu’à ce que l’annuaire soit écrit d’une manière que l’index ne peut pas intégrer ; la recherche suivante le reconstruit alors. Un index par domaine."
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "Boîte d’envoi du courrier"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "Une ligne par message que ce service envoie : son destinataire, son état, ses tentatives, sa prochaine échéance — et son corps tant qu’il est en attente, mort ou capturé, jamais une fois envoyé. La file durable que balaie la tâche mail.deliver."
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "Appliquée : mail.maxRows par domaine, le message TERMINÉ le plus ancien étant supprimé en premier ; un message en attente n’est jamais supprimé pour faire de la place."
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "Jusqu’à mail.retentionS après sa mise en file, le plus ancien terminé partant en premier au-delà de mail.maxRows par domaine."
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "un message supprimé comme doublon d’un message déjà mis en file pour le même acte dans mail.dedupWindowS"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "Entrées de statut des jetons d’accès"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "L’index de chaque jeton d’accès valide dans la liste de statut des jetons d’accès de ce domaine — les jetons OAuth RFC 9068 et les deux formats JWT de GNAP — avec son jti, afin que le bit puisse être calculé à partir du registre des révocations."
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "04bb104bc7ab1ff8",
+    "text": "Appliquée : la liste contient 1048576 index par domaine ; une liste sans index libre REFUSE de frapper le jeton d’accès (STS-OAUTH-0817) plutôt que de réutiliser un index encore utilisé."
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "aussi longtemps que le jeton d’accès qu’elle décrit ; son index est ensuite de nouveau libre."
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "le statut d’un jeton a été trouvé ici"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "Listes de statut des jetons d’accès signées"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "Le dernier Status List Token des jetons d’accès que ce processus a signé pour chaque domaine, réutilisé tant que la liste n’a pas changé."
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "Appliquée : 1024 listes signées pour le processus, la plus ancienne étant supprimée puis signée à nouveau lorsqu’elle est de nouveau demandée."
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "jusqu’à ce que la liste change, ou la moitié de oauth2.accessTokenStatusListTtlS."
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "une liste a été servie sans être signée à nouveau"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "Défis d’attestation de client"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "Les défis distribués pour OAuth 2.0 Attestation-Based Client Authentication (draft-ietf-oauth-attestation-based-client-auth-11 section 6), afin qu’un Client Attestation PoP qui en porte un puisse être comparé à ce qui a été émis."
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "Appliquée : oauth2.clientAttestationChallengeCacheSize par domaine ; le défi le plus ancien est supprimé, et un client qui le présente en reçoit un nouveau avec use_attestation_challenge."
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "un défi jugé valide, si bien que le PoP a été accepté"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "oauth2.clientAttestationChallengeTtlS ({{seconds}} s) après son émission."
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "Types authorization_details analysés"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "Les définitions de types RFC 9396 déclarées sur les applications de ressources, analysées et leurs JSON Schemas compilés une fois par texte de définition distinct. Partagé par tous les domaines, car le texte est la clé."
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "Appliquée : 512 définitions analysées, la plus ancienne étant supprimée puis analysée à nouveau lors de sa prochaine utilisation."
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "Aucune expiration : indexé par le texte de la définition, une définition modifiée est donc une nouvelle entrée. Le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "Livraisons Back-channel Logout"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "Une ligne par partie de confiance informée de la fin d’une session (OpenID Connect Back-Channel Logout 1.0) : son état, ses tentatives, sa prochaine échéance et le Logout Token signé. La file durable que balaie chaque processus ; une lettre morte reste jusqu’à ce qu’elle soit relancée ou que la rétention la supprime."
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "Appliquée : oauth2.backchannelLogoutMaxRows par domaine, la livraison TERMINÉE la plus ancienne étant supprimée en premier ; une livraison en attente n’est jamais supprimée pour faire de la place."
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "Jusqu’à oauth2.backchannelLogoutRetentionS après sa mise en file (terminée ou non), la plus ancienne terminée partant en premier au-delà de oauth2.backchannelLogoutMaxRows par domaine."
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "une livraison déjà mise en file pour cette session et ce client, si bien qu’un second processus mettant fin à la même session n’a rien mis en file"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "Jeux de clés client récupérés"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "Le JSON Web Key Set renvoyé par le jwks_uri enregistré d’un client, afin que ses assertions client, ses objets de requête et ses réponses chiffrées trouvent ses clés sans une récupération par requête (#120)."
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "Appliquée : 256 jeux de clés par domaine, le plus ancien étant supprimé puis récupéré à nouveau lorsqu’il est de nouveau nécessaire."
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "Codes d’autorisation échangés"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "Chaque code d’autorisation déjà échangé au point de terminaison de jeton, afin qu’un second échange soit reconnu comme un rejeu (RFC 9700 section 4.5, RFC 6749 section 4.1.2)."
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "Appliquée : oauth2.redeemedCodeCacheSize par domaine ; l’échange le plus ancien est oublié. Le code lui-même a disparu lors de l’échange, si bien que la répétition d’un code oublié est toujours refusée, comme code inconnu."
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "Une durée de vie de code après l’expiration qu’aurait eue le code."
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "un code déjà échangé, présenté de nouveau"
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "Objets de requête récupérés"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "Le contenu d’un request_uri RFC 9101 enregistré, conservé afin qu’un client qui renvoie la même URI ne soit pas récupéré à nouveau (OpenID Connect Core section 6.2). Désactivé sauf si oauth2.requestUriCacheS est défini."
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "Appliquée : 256 objets de requête récupérés par domaine, le plus ancien étant supprimé puis récupéré à nouveau lors de sa prochaine utilisation."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "oauth2.requestUriCacheS ({{seconds}} s) après la récupération, par domaine ; le plus ancien part en premier lorsque le cache est plein."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "Désactivé : oauth2.requestUriCacheS vaut 0, donc rien n’est conservé."
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "Métadonnées signées du serveur d’autorisation"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "Les JWT signed_metadata RFC 8414, réutilisés tant que les métadonnées et les paramètres de signature à partir desquels ils ont été construits sont inchangés, afin qu’un point de terminaison de découverte très sollicité ne signe pas à chaque récupération."
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "Appliquée : oauth2.maxSignedMetadataEntries par domaine, le plus ancien étant supprimé puis signé à nouveau lorsqu’il est de nouveau demandé."
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "Assertions utilisées"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "Chaque JWT RFC 7523 et chaque assertion SAML RFC 7522 acceptés, pour une autorisation ou pour l’authentification du client, afin que chacun ne soit accepté qu’une seule fois, à jamais."
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "Appliquée : oauth2.assertionReplayCacheSize par domaine. Un historique plein REFUSE l’assertion suivante plutôt que d’en oublier une encore valide, ce qui rouvrirait son rejeu."
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "Jusqu’à l’expiration de l’assertion elle-même. Refuse les nouvelles assertions lorsqu’il est plein plutôt que d’en oublier une. Avec un stockage en base de données, les lignes sont dans la base et aucune n’est listée ici."
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "une assertion déjà utilisée, si bien que la requête a été refusée"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "Nonces OID4VCI"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "Les valeurs c_nonce remises aux portefeuilles, afin que la preuve d’une requête de justificatif en nomme une émise par cet émetteur, et ne l’utilise qu’une fois."
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "Appliquée : oid4vci.cNonceCacheSize par domaine ; le nonce le plus ancien est supprimé, et une preuve qui le cite reçoit la réponse invalid_nonce."
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "oid4vci.cNonceTtlS après son émission, ou dès qu’il est utilisé."
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "un nonce distribué par cet émetteur, si bien que la preuve a été vérifiée"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "Entrées de statut des justificatifs"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "L’index de chaque justificatif émis dans les listes de statut de ce domaine et le statut qu’un administrateur ou une déconnexion lui a attribué."
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "Appliquée : la liste de statut contient 131072 index par domaine ; une liste sans index libre REFUSE d’émettre le justificatif (STS-VC-0075) plutôt que de réutiliser un index encore utilisé."
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "aussi longtemps que le justificatif qu’elle décrit ; son index est ensuite de nouveau libre."
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "le statut d’un justificatif a été trouvé ici"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "Listes de statut signées"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "Le dernier Status List Token et le dernier justificatif Bitstring Status List que ce processus a signés pour chaque domaine, réutilisés tant que la liste n’a pas changé."
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "Appliquée : 1024 documents signés pour le processus, le plus ancien étant supprimé puis signé à nouveau lorsqu’il est de nouveau demandé."
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "jusqu’à ce que la liste change, ou la moitié de oid4vci.statusListTtlS."
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "une liste a été servie sans être signée à nouveau"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "Registre des connexions par portefeuille"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "Les justificatifs que ce domaine a émis pour une personne sur la base d’un jeton d’accès qu’il a vérifié, qui sont les seuls avec lesquels un portefeuille peut se connecter — indexés par un condensé du JWT signé par l’émetteur, ou pour ldp_vc par la clé du détenteur et la personne."
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "Appliquée : oid4vp.signInRegisterMaxEntries par domaine ; la ligne émise en premier est supprimée. L’échec est FERMÉ — un justificatif sans ligne ne connecte personne."
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "jusqu’à l’expiration du dernier justificatif de la ligne ; une ligne désavouée est elle aussi conservée jusque-là, afin qu’elle continue de refuser."
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "un justificatif présenté que ce domaine a enregistré comme pouvant connecter sa personne"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "Listes de statut récupérées"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "Les Status List Tokens et justificatifs Bitstring Status List publiés par un émetteur étranger de confiance, récupérés lorsqu’un de ses justificatifs a été présenté au Verifier."
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "Appliquée : 256 listes récupérées pour le processus, la plus ancienne étant supprimée puis récupérée à nouveau lorsqu’elle est de nouveau nécessaire."
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "le propre ttl de la liste (et jamais au-delà de son exp), au plus oid4vp.statusListMaxCacheS ; une récupération échouée, 30 secondes."
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "le statut d’un justificatif présenté a été obtenu sans récupération"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "Transactions OpenID4VP"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "Chaque requête de présentation que ce Verifier attend — celle de la porte du bar et celle d’une connexion par portefeuille, cette dernière portant la requête Digital Credentials API, son mode de réponse et la clé vers laquelle sa réponse est chiffrée."
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "Appliquée : oid4vp.maxTransactions par domaine ; la requête en attente la plus ancienne est supprimée (la règle de federation.maxContexts), car refuser permettrait à n’importe qui de bloquer le point de terminaison de requête pour tout le monde."
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS, ou oid4vp.signInTtlS pour une connexion ; balayée lors de la construction de la requête suivante."
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "la réponse d’un portefeuille a trouvé la requête pour laquelle elle a été faite"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "Collections OpenID Federation, constituées dans le processus"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "L’Entity Collection telle que ce processus la constitue sans rien récupérer — les propres domaines de ce service, et les subordonnés déjà résolus — utilisée là où aucune exploration n’a été conservée, afin que les requêtes anonymes ne signent pas chacune des déclarations pour chaque domaine (#136)."
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "Appliquée : 8 par domaine (une par hôte par lequel le domaine est atteint), la plus ancienne étant évincée en premier."
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS."
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "Résolutions OpenID Federation"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "Les Trust Chains que ce domaine a résolues — par l’acte d’un administrateur, ou dans le processus pour ses propres domaines — avec les métadonnées résolues et les Trust Marks vérifiés, afin que le point de terminaison de résolution puisse répondre sans parcourir la fédération pour un appelant non authentifié (18.1)."
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "Appliquée : oidfed.resolveCacheMax par domaine, la plus ancienne étant évincée en premier."
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "Jusqu’à l’expiration de la chaîne (son plus petit exp, 10.4), et au plus oidfed.resolveCacheS."
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "Plages de mots de passe compromis"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Les réponses de plage Pwned Passwords, par préfixe SHA-1 de cinq caractères demandé (#62 P6) : quels condensés de mots de passe sous ce préfixe sont connus pour avoir été compromis, et combien de fois."
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "Appliquée : risk.breachCacheSize préfixes ; une fois plein, le plus ancien est supprimé puis redemandé lorsqu’il est de nouveau nécessaire."
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "risk.breachCacheMinutes après sa récupération."
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "un préfixe déjà demandé, si bien qu’aucune requête n’a été faite"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "Verdicts sur les mots de passe compromis"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "Si un mot de passe qu’une porte vient de contrôler est compromis, pour que les règles de mot de passe synchrones le lisent dans la même requête (#62 P6). Indexé par un condensé du mot de passe, jamais par le mot de passe."
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "Appliquée : 1000 verdicts ; une fois plein, le plus ancien est supprimé."
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "cinq minutes après le contrôle du mot de passe."
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "un verdict trouvé pour un mot de passe en cours de définition"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "Déclarations des stockages d’observation"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "Si chaque stockage persisté a été déclaré comme observation (un décompte que la barrière de lecture n’attend pas), lu une fois par descripteur de stockage parce que la vérification se trouve sur le chemin de chaque écriture dans un stockage."
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "Structurelle : un indicateur par stockage persisté que déclare cette version."
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "Pendant toute la vie du processus : une déclaration ne peut pas changer pendant son exécution."
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "Copie fantôme des écritures inchangées"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "La dernière copie de chaque entrée d’annuaire et de l’enregistrement de domaine que ce processus a écrits dans le stockage de persistance, afin qu’un vidage n’écrive que ce qui a changé."
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "Structurelle : une ligne par entrée d’annuaire écrite et une pour l’enregistrement du domaine, soit au plus ldap.maxEntries + 1 dans un domaine."
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "Aucune expiration : actualisée à chaque vidage, une entrée par entrée d’annuaire et par domaine écrits. Vide en mode mémoire."
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "Certificats d’émetteur récupérés"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "Les certificats récupérés depuis une URL caIssuers de l’Authority Information Access ou un attribut LDAP cACertificate, pour construire un chemin en vue d’une vérification de révocation. Jamais considérés comme fiables du seul fait d’avoir été récupérés."
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Appliquée : pki.revocationCrlCacheEntries, l’écriture la plus ancienne étant supprimée puis récupérée à nouveau lorsqu’elle est de nouveau nécessaire."
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "Listes de révocation de certificats"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "Les CRL récupérées pour vérifier un certificat présenté, analysées et vérifiées, indexées par l’URL du point de distribution et les empreintes des signataires au regard desquels elles ont été vérifiées."
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Appliquée : pki.revocationCrlCacheEntries, l’écriture la plus ancienne étant supprimée puis récupérée à nouveau lorsqu’elle est de nouveau nécessaire."
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "Récupérations de révocation échouées"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "Un cache négatif : une récupération de CRL, d’OCSP ou de certificat qui a échoué n’est pas retentée avant l’écoulement de sa fenêtre de nouvelle tentative, et l’échec mémorisé sert de réponse entre-temps. Un succès de cache est un échec réutilisé."
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "Appliquée : pki.revocationCrlCacheEntries, le plus ancien étant supprimé ; un échec supprimé signifie seulement que l’adresse pourra être interrogée de nouveau plus tôt."
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "Réponses OCSP"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "Les réponses OCSP concernant chacune un certificat, indexées par l’URL du répondeur, l’empreinte de l’émetteur et le numéro de série."
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "Appliquée : pki.revocationCrlCacheEntries, l’écriture la plus ancienne étant supprimée puis redemandée lorsqu’elle est de nouveau nécessaire."
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "Certificats d’ancre de confiance analysés"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "Les propres certificats d’AC de ce service, analysés une fois par PEM pour le parcours du registre des révocations. Indexé par le PEM lui-même ; une AC remplacée a un PEM différent et une nouvelle entrée."
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "Appliquée : 8192 analyses ; une fois plein, le mémo entier est vidé et reconstruit au fil de son utilisation."
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "Aucune expiration : indexé par contenu. Une fois plein, le mémo entier est vidé d’un coup."
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "Fichiers de confiance lus sur le disque"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "Les fichiers PEM désignés par les paramètres de révocation, lus une fois et conservés jusqu’à ce que la date de modification du fichier change."
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "Structurelle : une entrée par paramètre désignant un fichier (pki.revocationCrlIssuersFile, pki.revocationLdapCaFile)."
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "Jusqu’à ce que le fichier désigné change sur le disque, ou que le paramètre désigne un autre fichier. Une entrée par paramètre."
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "Chaînes de certificats client, pour les sessions reprises"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "Le chemin qu’un certificat client vérifié a construit lors d’une négociation TLS complète, indexé par la feuille, restitué lorsque cette session est REPRISE — node ne donne à une session reprise que la feuille, et sans cela le parcours de révocation refuse un certificat qui a été vérifié."
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "Appliquée : 1024 feuilles ; la plus ancienne est oubliée en premier."
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "Partagé par tous les nœuds et répliqué (#406) : une heure, ou la durée de vie de session du port principal plus une minute lorsqu’elle est plus longue, renouvelée par la prochaine négociation complète de la feuille ; la plus ancienne est supprimée lorsque le cache est plein."
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "Recherches dans les jeux de données de risque"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "Ce que les jeux de données actifs de géolocalisation, d’ASN et de listes d’IP ont indiqué sur une adresse, par domaine. Effacé chaque fois qu’une version de jeu de données est activée sur un nœud quelconque."
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "Appliquée : 10000 recherches, la plus ancienne étant supprimée en premier."
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "Jusqu’à ce qu’une version de jeu de données soit activée, ou que la limite la supprime."
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "Situations de risque"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "Le dernier risque évalué de chaque personne (niveau, score, signaux), pour une émission sans session dans laquelle le lire — un ticket Kerberos, un jeton WS-Trust (#62 P3)."
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "Appliquée : risk.standingCacheSize personnes par processus ; une fois plein, la plus ancienne est supprimée, ce qui fait décider la prochaine émission sans session de cette personne sur ses seuls rôles."
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "risk.standingValidMinutes après l’évaluation qu’elle enregistre."
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "une situation conservée et encore valide, si bien que l’émission a été décidée avec elle"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "Assertions SAML 1.1"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "Les assertions SAML 1.1 émises, conservées afin qu’une requête d’autorité d’attributs qui en désigne une par AssertionIDReference puisse recevoir une réponse."
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "Appliquée : saml11.assertionCacheMax par domaine, la plus ancienne étant supprimée ; un artefact désignant une assertion supprimée reçoit la réponse « inconnue »."
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "4397e5b8b411e7a8",
+    "text": "Aucune expiration : la plus ancienne est supprimée au-delà de saml11.assertionCacheMax."
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "une AssertionIDReference a reçu une réponse"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "Compteurs de nonce Digest SCIM"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "Les valeurs nonce-count (nc) déjà acceptées sous chaque nonce Digest, afin qu’une réponse ne puisse pas être envoyée deux fois."
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "Appliquée : scim.maxDigestNonces nonces par domaine, le plus ancien étant supprimé (le nonce est alors périmé et le client en reçoit un nouveau) ; et 1024 compteurs par nonce, après quoi le nonce est retiré de la même façon."
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "Oublié avec son nonce. Persisté, si bien qu’un processus redémarré refuse toujours un compteur qu’il a accepté ; c’est la revendication que fait une consommation qui tranche un rejeu entre nœuds actifs."
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "un compteur de nonce déjà utilisé, si bien que la requête a été refusée"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "Nonces Digest SCIM"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "Les défis HTTP Digest que /scim/v2 a distribués (RFC 7616), afin qu’une réponse en désigne un émis par ce service."
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "Appliquée : scim.maxDigestNonces par domaine, le plus ancien étant supprimé ; un client qui l’utilise reçoit stale=true avec un nouveau nonce."
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "un nonce émis par ce service, si bien que la réponse a été vérifiée"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "Défis HOBA SCIM"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "Les défis HOBA que /scim/v2 a distribués (RFC 7486), afin qu’une signature en désigne un émis par ce service."
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "Appliquée : scim.maxHobaChallenges par domaine, le plus ancien étant supprimé ; un client qui l’utilise reçoit un nouveau défi."
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "un défi émis par ce service, si bien que la signature a été vérifiée"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "Signatures HOBA SCIM"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "Chaque triplet (kid, défi, nonce) avec lequel une signature HOBA est arrivée, afin qu’un identifiant copié soit refusé."
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "Appliquée : scim.maxHobaSeen par domaine, la plus ancienne étant supprimée avec le défi pour lequel elle a été faite, afin qu’elle ne puisse pas être rejouée contre un défi encore valide."
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "Jusqu’à l’expiration de son défi ; au-delà de la limite, les plus anciennes partent avec leur défi."
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "une signature déjà vue, si bien que la requête a été refusée"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "Autorités X.509 SPIFFE décompressées"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "Les autorités X.509 stockées de chaque domaine, converties une fois de leur forme stockée en certificats, pour chaque SVID signé et chaque bundle servi."
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "Structurelle : une liste d’autorités décompressée par domaine, remplacée lorsque la liste stockée change."
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "Jusqu’à ce que les autorités du domaine fassent l’objet d’une rotation ou d’une restauration, ce qui remplace la liste stockée à partir de laquelle l’entrée a été décompressée."
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Décomptes des lettres mortes Shared Signals"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "Une estimation des lettres mortes de chaque flux, conservée afin qu’une nouvelle lettre puisse être comparée au plafond par flux sans compter la file. Les lettres écrites par un autre processus n’y figurent pas avant le balayage suivant."
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "Structurelle : un décompte par flux, et un domaine contient au plus ssf.maxStreams flux."
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "Aucune expiration : recompté à chaque balayage des lettres mortes, une entrée par flux."
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "Identités des certificats client"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "Ce à quoi un certificat client TLS vérifié a été associé — une personne ou une application dans un domaine, ou un refus — indexé par le condensé de la feuille et les autorités détenues au moment du parcours."
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "Appliquée : 256 réponses ; une fois plein, le mémo entier est vidé et reconstruit au fil de son utilisation."
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "Aucune expiration : une Issuing CA remplacée change la clé. Une fois plein, le mémo entier est vidé d’un coup."
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "Justificatifs VC-API avec statut"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "6276c639d08ac2a7",
+    "text": "Chaque attestation émise par la W3C VC API avec une entrée de statut, et l'index de liste de statut qu'elle a pris, afin qu'un changement de statut puisse la retrouver."
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "Appliquée : 4096 justificatifs par domaine, le plus ancien étant oublié en premier (son statut ne peut alors plus être modifié ici ; l’entrée de liste elle-même relève de vc_status.ts et demeure)."
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "le validUntil du justificatif, ou un an."
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "un changement de statut a trouvé le justificatif"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "Marque de version"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "L’enregistrement de build (M.N.O, le commit, l’instant de build) lu une fois depuis version.json, que lit chaque surface qui affiche une version."
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "Structurelle : un enregistrement."
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "Pendant toute la vie du processus : le build ne peut pas changer pendant son exécution."
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "common/version.js s’exécute aussi dans le conteneur du PEP distant et ne peut pas requérir le registre"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "Affinité des workers de requêtes"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "À quel worker de requêtes une session de navigateur, un identifiant ou un flux est rattaché, une table par pool (protocole et surfaces), afin qu’un flux en plusieurs étapes reste sur le worker qui le détient."
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "Appliquée : 5000 par pool, le plus ancien étant supprimé ; un rattachement supprimé est simplement routé à nouveau."
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "Aucune expiration : oublié lorsque son worker se termine ; le plus ancien part en premier lorsqu’un pool en contient {{max}}. Processus frontal uniquement."
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "Politiques XACML analysées"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "Les politiques et ensembles de politiques de ou=policies, analysés et validés statiquement une fois par texte de document, indexés par le SHA-256 de ce texte afin qu’une modification par n’importe quelle porte constitue une nouvelle entrée."
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "Appliquée : 1024 analyses, la moins récemment utilisée étant supprimée ; une politique supprimée est analysée à nouveau lorsqu’elle est de nouveau demandée."
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "Aucune expiration : indexé par contenu, une politique modifiée est donc une nouvelle entrée et son ancienne analyse part lorsqu’elle devient la moins récemment utilisée."
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "Un cache borné dans l’ordre du moins récemment utilisé."
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "Appliquée : une insertion au-delà de la limite évince les entrées non épinglées les moins récemment utilisées."
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "une lecture servie depuis le cache sans passer par le stockage"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "Jusqu’à l’éviction par la limite ou la suppression par son propriétaire."
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "Métadonnées des fournisseurs de services SAML"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "stockées sur l’entrée de l’application telles que reçues, non conservées en mémoire ; actualisées depuis la page de l’application"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "La politique d’un PEP distant"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "détenue par le conteneur du PEP distant, et non par ce processus"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "Une connexion au magasin de secrets"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "une variable locale d’un rapport /admin/secrets, si bien qu’on ne se connecte à un magasin qu’une fois par rapport ; elle disparaît une fois le rapport affiché, et rien ne la conserve entre les requêtes"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "expiré depuis {{span}}"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "aucune expiration (indexé par contenu)"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "périmé"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "jusqu’à ce que {{basis}} change"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "périmé : {{basis}} a changé"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "jusqu’à ce que la limite la supprime comme la moins récemment utilisée"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "jusqu’à ce que la limite la supprime"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "jusqu’à ce qu’une version de jeu de données soit activée"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "jusqu’à ce qu’elle reste inutilisée pendant le délai d’inactivité"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "périmé : son nonce a expiré"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "périmé : son défi a expiré"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "périmé : le justificatif a été désavoué"
+  }
+}

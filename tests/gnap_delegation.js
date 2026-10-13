@@ -19,9 +19,11 @@
 //      reaches R; refused with no relationship to R (0770); a protected
 //      subject (0771); a may_act naming somebody else, in EVERY mode (0774);
 //      appDelegationSubjectGroup, and a may_act naming the client standing
-//      in for it; the client acting as ITSELF asking nothing and releasing no
-//      subject; `appAllowedProtocol` without GNAP refused at issuance in
-//      product;
+//      in for it; rights naming no resource server refused before the
+//      policy is asked, in every mode (#593, STS-GNAP-0904 — R was "the
+//      client itself" until then); the client acting as ITSELF asking
+//      nothing and releasing no subject; `appAllowedProtocol` without GNAP
+//      refused at issuance in product;
 //  II. DERIVATION (RFC 9767 section 4) — refused in product with no
 //      relationship (0776) and recorded in development; allowed by
 //      appAllowedToDelegateTo, with the `act` chain on the token; a wider
@@ -250,13 +252,16 @@ function childMain() {
     note(r.status === 403 && lastCode() === 'STS-GNAP-0770',
          'I7. product: impersonation allowed but R not reachable by the ' +
          'client — STS-GNAP-0770', r.status + ' ' + lastCode());
+    // #593 (rcbj's decision 4 on #591): a token whose rights name no
+    // resource server is refused before anybody is asked. It was R = "the
+    // client itself" (S4U2Self's ticket to yourself) until then.
     r = await impersonate('gd-imp-self', 'gd-alice', ['gd-unregistered']);
-    act = newestAct();
-    note(r.status === 200 && r.json && r.json.access_token &&
-         act.target.application === 'gd-imp-self',
-         'I8. product: rights naming no resource server — R is the client ' +
-         'itself (S4U2Self\'s ticket to yourself), allowed with impersonation',
-         r.status + ' ' + r.text + ' ' + JSON.stringify(act.target));
+    note(r.status === 400 && r.json && r.json.error &&
+         r.json.error.code === 'invalid_request' &&
+         lastCode() === 'STS-GNAP-0904',
+         'I8. product: rights naming no resource server are refused ' +
+         'invalid_request before the delegation policy — STS-GNAP-0904',
+         r.status + ' ' + lastCode() + ' ' + r.text);
     r = await impersonate('gd-imp', 'gd-bob', [right([RS.a])]);
     note(r.status === 403 && lastCode() === 'STS-GNAP-0771',
          'I9. product: a subject carrying stsNotDelegated — STS-GNAP-0771',
@@ -282,7 +287,7 @@ function childMain() {
     product(true);
     r = await keys['gd-plain'].send('POST', GRANT, { json: {
       client: { key: keys['gd-plain'].keyObject() },
-      access_token: { access: ['gd-read'] } } });
+      access_token: { access: [right([RS.a])] } } });
     note(r.status === 200 && r.json && r.json.access_token &&
          !r.json.subject && !claimsOf(r.json.access_token.value).sub,
          'I14. the client acting as itself asks nothing (product, delegation ' +

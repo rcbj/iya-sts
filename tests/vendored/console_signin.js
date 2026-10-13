@@ -27,7 +27,7 @@
 // operations:
 //
 //   GET  /oauth2/authorize?…code_challenge…     -> 302 /authn/login?authn=…
-//   POST /authn/login                           -> 303 back to authorize
+//   the sign-in screen, over /authn-api (#571)  -> back to authorize
 //   GET  /oauth2/authorize                      -> 302 /admin/callback?code=…
 //   POST /oauth2/token (DPoP)                   -> a DPoP-bound access token
 //
@@ -63,6 +63,8 @@
 // ===========================================================================
 
 const assert = require("assert");
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -384,7 +386,11 @@ async function signInToTheConsole(base, user, log2, options) {
     scope: "openid admin:read admin:write admin:console",
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
-    code_challenge_method: "S256", resource: resource }).toString();
+    code_challenge_method: "S256", resource: resource,
+    // OpenID Connect's nonce, derived from the verifier as the runtime
+    // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
+    nonce: crypto.createHash("sha256").update("nonce:" + verifier)
+      .digest("base64url") }).toString();
   const toScreen = await fetchKeeping(authorize);
   const where = toScreen.headers.get("location") || "";
   const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
@@ -395,50 +401,29 @@ async function signInToTheConsole(base, user, log2, options) {
     "\". The console signs in as the seeded public client " +
     "sts-admin-console, with PKCE.");
 
-  const screen = await fetchKeeping(fromLocation(where));
-  const screenHtml = await screen.text();
-  const csrf =
-    (screenHtml.match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
-  let signedIn = await fetchKeeping(fromLocation(where).split("?")[0], {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "authn_id=" + encodeURIComponent(authn) +
-          "&username=" + encodeURIComponent(user) +
-          "&password=" + encodeURIComponent(password) +
-          "&action=login" +
-          (csrf ? "&csrf_token=" + encodeURIComponent(csrf) : "")
-  });
-  // AN ADMINISTRATOR IS OFFERED A SECOND FACTOR (#246): the authentication
-  // policy's `requireSecondFactorForAdministrators` is `offer` by default, so
-  // an account holding a console role and no second factor is shown the
-  // set-up step instead of being signed in. rcbj: "update tests to just
-  // click ignore for the time being" — the Ignore button finishes the
-  // sign-in on the password, which is what every job here wants.
-  if (signedIn.status === 200) {
-    const offered = await signedIn.text();
-    const setupId = /id="mfa-setup-ignore"/.test(offered)
-      ? (offered.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
-    assert.ok(setupId,
-      "signing in at /authn/login answered 200 and no Ignore button: " +
-      offered.slice(0, 300));
-    signedIn = await fetchKeeping(base + "/authn/mfa-setup", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "mfa_id=" + encodeURIComponent(setupId) + "&action=ignore"
-    });
+  // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one helper:
+  // the shell, the view and the act, with this walk's cookies — and an
+  // administrator's OFFERED second factor (#246) ignored there, as rcbj
+  // asked ("update tests to just click ignore for the time being").
+  const signedIn = await authnSignin.signIn(base, fromLocation(where),
+    { action: "login", username: user, password: password },
+    { cookie: cookies.header() });
+  cookies.keep(signedIn);
+  if (signedIn.ignored) {
     say("[console] " + user + " was offered a second factor and ignored it.");
   }
-  assert.ok(cookies.get("sts_session"),
-    "signing in at /authn/login should set the sign-on session cookie; the " +
-    "reply was " + signedIn.status + ".");
+  assert.ok(signedIn.next === "redirect" && cookies.get("sts_session"),
+    "signing in at /authn/login should set the sign-on session cookie and " +
+    "answer where to go; it answered " + signedIn.status + " " +
+    signedIn.next + " " + JSON.stringify(signedIn.errors));
 
   // Back through the authorization endpoint — which now has a session —
   // until it answers the callback with a code. Bounded, so a loop fails as
   // a loop; the callback is the console's page and is not fetched.
-  let at = signedIn;
-  let location = at.headers.get("location") || "";
+  let at = null;
+  let location = signedIn.location;
   for (let i = 0; i < 5 && !/\/admin\/callback\?/.test(location) &&
-       (at.status === 302 || at.status === 303); i++) {
+       (!at || at.status === 302 || at.status === 303); i++) {
     at = await fetchKeeping(fromLocation(location));
     location = at.headers.get("location") || "";
   }
@@ -447,7 +432,8 @@ async function signInToTheConsole(base, user, log2, options) {
   assert.ok(/\/admin\/callback$/.test(back.pathname) && code &&
             back.searchParams.get("state") === state,
     "the authorization endpoint should answer the console's callback with " +
-    "a code and the state it was sent; it answered " + at.status + " to \"" +
+    "a code and the state it was sent; it answered " +
+    (at ? at.status : signedIn.status) + " to \"" +
     location + "\"");
 
   // THE TOKEN REQUEST, DPoP-bound, retried once with a nonce.
@@ -640,7 +626,31 @@ async function signInToTheConsole(base, user, log2, options) {
         q = asked;
       }
       const qs = new URLSearchParams(q).toString();
-      return api("GET", operation + (qs ? "?" + qs : ""));
+      const answer = await api("GET", operation + (qs ? "?" + qs : ""));
+      // A COMBINED PAGE IS SEVERAL ANSWERS (2026-10-11): the SAML, Kerberos,
+      // XACML, VC, OAuth and SSF pages draw their tabs from the `compose`
+      // members their page row names, fetched beside the main operation and
+      // merged in under each member's name — what the runtime's draw does.
+      // Without them the renderer throws "missing a tab view".
+      // Each member is asked as the runtime asks it (`composeRequests()`,
+      // 2026-10-12): under the names its own operation reads, which on
+      // Protocols → Cert issuance are not the page's.
+      if (known && known.compose && answer.status === 200 && answer.json) {
+        const members = table.composeRequests(known, asked);
+        const answers = await Promise.all(members.map(function (one) {
+          const search = new URLSearchParams(one.params).toString();
+          return api("GET", one.operation + (search ? "?" + search : ""));
+        }));
+        const json = Object.assign({}, answer.json);
+        answers.forEach(function (one, index) {
+          assert.ok(one.status === 200 && one.json,
+                    members[index].operation + " answered " +
+                    one.status + " composing " + path);
+          json[members[index].member] = one.json;
+        });
+        return Object.assign({}, answer, { json: json });
+      }
+      return answer;
     },
     // THE READER'S LANGUAGE FOR A BUNDLE A JOB LOADED ITSELF (#539): the
     // shell's `locale` member, asked once, built into that bundle's

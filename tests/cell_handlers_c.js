@@ -22,6 +22,16 @@
 //   4. MS-KKDCP: the KDC-PROXY-MESSAGE unframed, the client of an AS-REQ
 //      found, and a request for a person homed elsewhere relayed rather than
 //      handed to the KDC.
+//   5. RAW TCP AND UDP 88 (#588): the KDC's real listeners on an ephemeral
+//      port, the router `krb5_home.install()` sets, and the inter-cell
+//      channel's `call()` stubbed — answered by the `kdc-message` operation's
+//      own handler, in process, so the round trip through JSON is real. A
+//      request whose client is homed elsewhere is relayed and its reply
+//      framed for the transport; one homed here is answered locally; a
+//      router that throws falls through; RFC 4120 section 7.2.1's UDP size
+//      limit holds for a relayed reply; an unreachable home is
+//      KDC_ERR_SVC_UNAVAILABLE; single-cell mode sets no router; and with no
+//      router the sockets answer as they always did.
 //
 // What is NOT here, and why: the XACML PIP, the TLS sign-in and the LDAP bind
 // decide inside a running service's handlers (a parsed PIP query, a verified
@@ -40,6 +50,8 @@ const msgs = require('../kerberos/krb5_messages.js');
 const asn1 = require('../kerberos/krb5_asn1.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
 const principals = require('../kerberos/krb5_principals.js');
+const net = require('net');
+const dgram = require('dgram');
 
 const log = require('bunyan').createLogger({ name: 'cell_handlers_c',
   level: process.env.LOG_LEVEL || 'info' });
@@ -381,6 +393,246 @@ async function kdcProxy(t) {
   log.debug("Leaving kdcProxy().");
 }
 
+// One message over TCP 88's framing, and the reply unframed.
+function overTcp(port, bytes) {
+  log.debug("Entering overTcp().");
+  log.debug("Leaving overTcp().");
+  return new Promise(function (resolve, reject) {
+    const socket = net.connect(port, '127.0.0.1');
+    let got = Buffer.alloc(0);
+    const timer = setTimeout(function () {
+      socket.destroy();
+      reject(new Error('no TCP reply in 5 s'));
+    }, 5000);
+    socket.on('error', function (e) {
+      clearTimeout(timer);
+      reject(e);
+    });
+    socket.on('data', function (chunk) {
+      got = Buffer.concat([got, chunk]);
+      if (got.length >= 4 && got.length >= 4 + got.readUInt32BE(0)) {
+        clearTimeout(timer);
+        socket.end();
+        resolve({ declared: got.readUInt32BE(0),
+                  message: got.subarray(4, 4 + got.readUInt32BE(0)) });
+      }
+    });
+    const framed = Buffer.alloc(4 + bytes.length);
+    framed.writeUInt32BE(bytes.length, 0);
+    Buffer.from(bytes).copy(framed, 4);
+    socket.write(framed);
+  });
+}
+
+// One datagram to UDP 88, and the datagram that answers it.
+function overUdp(port, bytes) {
+  log.debug("Entering overUdp().");
+  log.debug("Leaving overUdp().");
+  return new Promise(function (resolve, reject) {
+    const socket = dgram.createSocket('udp4');
+    const timer = setTimeout(function () {
+      socket.close();
+      reject(new Error('no UDP reply in 5 s'));
+    }, 5000);
+    socket.on('message', function (message) {
+      clearTimeout(timer);
+      socket.close();
+      resolve(message);
+    });
+    socket.send(Buffer.from(bytes), port, '127.0.0.1');
+  });
+}
+
+// The KRB-ERROR code a reply carries, or null for a reply that is not one.
+function errorCodeOf(reply) {
+  log.debug("Entering errorCodeOf().");
+  try {
+    log.debug("Leaving errorCodeOf().");
+    return msgs.readKrbError(reply).errorCode;
+  } catch (e) {
+    log.debug("Caught in errorCodeOf(): " + ((e && e.message) || e));
+    return null;
+  }
+}
+
+async function rawSockets(t) {
+  log.debug("Entering rawSockets().");
+  const kdc = require('../kerberos/krb5_kdc.js');
+  const realm = principals.REALM;
+  const frank = asReq(realm, ['frank']);
+  const listeners = kdc.listen(0);
+  await listeners.whenReady;
+  const port = listeners.port;
+  // The other cell, as `cell_channel.call()` reaches it: the operation's
+  // own handler, through JSON both ways, or what a test sets `homeAnswer` to.
+  const calls = [];
+  let homeAnswer = null;
+  const savedCall = cellChannel.call;
+  cellChannel.call = function (cellId, name, body) {
+    calls.push({ cell: cellId, name: name, body: body });
+    if (homeAnswer) {
+      return homeAnswer(body);
+    }
+    return krb5Home.answerRelayed(JSON.parse(JSON.stringify(body)),
+                                  { peer: 'usw2' })
+      .then(function (answer) {
+        return JSON.parse(JSON.stringify(answer));
+      });
+  };
+  try {
+    // --- No router: what the sockets did before #588. ---
+    reset();
+    kdc.setMessageRouter(null);
+    const before = (await overTcp(port, frank)).message;
+    t.check(!!msgs.identify(before) && !calls.length && !seen.lookups,
+            'with no router a TCP message is answered here, nothing asked');
+    const beforeUdp = await overUdp(port, frank);
+    t.check(!!msgs.identify(beforeUdp) && !calls.length,
+            'with no router a UDP message is answered here');
+
+    // --- Single-cell mode sets no router. ---
+    reset();
+    multi = false;
+    t.equal(krb5Home.install(kdc), false,
+            'single-cell mode installs no message router');
+    await overTcp(port, frank);
+    t.check(!calls.length && !seen.lookups,
+            'and port 88 asks nothing of the routing index');
+    t.check(require('../common/cell_channel').opNames()
+      .indexOf(krb5Home.KDC_MESSAGE_OP) >= 0,
+            'the kdc-message operation is registered');
+
+    // --- Multi-cell: the router installed. ---
+    reset();
+    t.equal(krb5Home.install(kdc), true,
+            'a service deployed as cells installs the router');
+
+    reset();
+    homes.frank = 'cac1';
+    const relayed = await overTcp(port, frank);
+    t.check(calls.length === 1 && calls[0].cell === 'cac1' &&
+            calls[0].name === 'kdc-message' &&
+            calls[0].body.transport === 'tcp' &&
+            /127\.0\.0\.1/.test(calls[0].body.address) &&
+            Buffer.from(calls[0].body.message, 'base64').equals(frank),
+            'a TCP AS-REQ for a person homed elsewhere is sent home whole, ' +
+            'with its transport and client address', calls[0]);
+    t.check(!!msgs.identify(relayed.message) &&
+            relayed.declared === relayed.message.length,
+            'and the home cell\'s reply is framed with its length prefix');
+
+    reset();
+    calls.length = 0;
+    homes.frank = 'cac1';
+    const relayedUdp = await overUdp(port, frank);
+    t.check(calls.length === 1 && calls[0].body.transport === 'udp' &&
+            !!msgs.identify(relayedUdp),
+            'a UDP AS-REQ for a person homed elsewhere is answered at home');
+
+    // A reply the home cell made that is too big for a datagram.
+    reset();
+    calls.length = 0;
+    const marker = kdc.errorReply(60, { eText: 'answered by cac1' });
+    const big = Buffer.concat([Buffer.from(marker), Buffer.alloc(4000)]);
+    homeAnswer = function () {
+      return Promise.resolve({ reply: big.toString('base64'),
+                               refusal: null });
+    };
+    const tooBig = await overUdp(port, frank);
+    t.equal(errorCodeOf(tooBig), 52,
+            'a relayed reply too big for UDP is KRB_ERR_RESPONSE_TOO_BIG, ' +
+            'exactly as one made here');
+    const wholeOverTcp = await overTcp(port, frank);
+    t.check(wholeOverTcp.message.equals(big),
+            'and over TCP the same relayed reply arrives whole');
+    homeAnswer = function () {
+      return Promise.resolve({
+        reply: Buffer.from(marker).toString('base64'), refusal: null });
+    };
+    const small = await overUdp(port, frank);
+    t.check(msgs.readKrbError(small).eText === 'answered by cac1',
+            'a relayed reply that fits is the home cell\'s, byte for byte');
+
+    // A home cell that cannot be reached: fail-closed.
+    reset();
+    homeAnswer = function () {
+      return Promise.reject(new Error('connect ECONNREFUSED'));
+    };
+    const unreachable = await overTcp(port, frank);
+    t.equal(errorCodeOf(unreachable.message), 29,
+            'an unreachable home cell is KDC_ERR_SVC_UNAVAILABLE, not an ' +
+            'answer here');
+    homeAnswer = null;
+
+    // A realm's hard geofence: refused here, not carried.
+    reset();
+    calls.length = 0;
+    const transfer = require('../common/cell_transfer');
+    const savedServe = transfer.serveDecision;
+    transfer.serveDecision = function () {
+      return require('../common/error_codes').mark({ allowed: false,
+        relay: false, why: 'geofenced' }, 'STS-CELL-0183');
+    };
+    let fenced = null;
+    try {
+      fenced = await overTcp(port, frank);
+    } finally {
+      transfer.serveDecision = savedServe;
+    }
+    t.check(errorCodeOf(fenced.message) === 12 && !calls.length,
+            'a hard geofence refuses KDC_ERR_POLICY and relays nothing');
+
+    // Homed here, or nobody to route by: answered where it arrived.
+    reset();
+    calls.length = 0;
+    homes.frank = 'usw2';
+    await overTcp(port, frank);
+    t.check(!calls.length && seen.lookups === 1,
+            'a person homed here is answered here');
+    reset();
+    calls.length = 0;
+    await overTcp(port, asReq(realm, ['frank', 'admin']));
+    await overUdp(port, Buffer.from('not Kerberos'));
+    t.check(!calls.length && !seen.lookups,
+            'a multi-component name and an undecodable message are the ' +
+            'KDC\'s to answer here');
+
+    // A router that throws: logged, and the message answered here.
+    reset();
+    calls.length = 0;
+    kdc.setMessageRouter(function () {
+      throw new Error('a router that fails');
+    });
+    const fell = await overTcp(port, frank);
+    t.check(!!msgs.identify(fell.message) && !calls.length,
+            'a router that throws falls through to this cell\'s KDC');
+    kdc.setMessageRouter(function () {
+      return Promise.resolve(null);
+    });
+    const declined = await overUdp(port, frank);
+    t.check(!!msgs.identify(declined) && errorCodeOf(declined) !== 29,
+            'a router that answers null leaves the message to this KDC');
+
+    // The home half on its own: no message is a failed operation.
+    let threw = false;
+    try {
+      await krb5Home.answerRelayed({}, { peer: 'cac1' });
+    } catch (e) {
+      log.debug("Caught in rawSockets(): " + ((e && e.message) || e));
+      threw = /STS-KRB-0208/.test(String(e && e.message));
+    }
+    t.check(threw, 'an operation carrying no message fails, coded');
+  } finally {
+    kdc.setMessageRouter(null);
+    cellChannel.call = savedCall;
+    listeners.tcp.close();
+    if (listeners.udp) {
+      listeners.udp.close();
+    }
+  }
+  log.debug("Leaving rawSockets().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   stub();
@@ -389,6 +641,7 @@ async function run(t) {
     await placement(t);
     await ingress(t);
     await kdcProxy(t);
+    await rawSockets(t);
   } finally {
     unstub();
   }
@@ -397,9 +650,10 @@ async function run(t) {
 
 module.exports = {
   name: 'cell_handlers_c',
-  describe: 'Where SCIM and MS-KKDCP requests are answered in a service ' +
-            'deployed as cells (#98): a person\'s home, a create\'s named ' +
-            'cell, writes spanning cells refused whole, lists served here, ' +
-            'and a Kerberos client relayed to its home',
+  describe: 'Where SCIM, MS-KKDCP and TCP/UDP 88 requests are answered ' +
+            'in a service deployed as cells (#98, #588): a person\'s home, ' +
+            'a create\'s named cell, writes spanning cells refused whole, ' +
+            'lists served here, and a Kerberos client relayed to its home ' +
+            'over either door',
   run: run
 };

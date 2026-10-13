@@ -209,7 +209,7 @@ presents its credential again (*Sessions that are not a browser's*, below):
 | GNAP | an interaction that meets a live sign-on session and approves without a new authentication | `GNAP` |
 | OpenID Connect CIBA | a person **approving** a backchannel request on `/portal/ciba`: the client is issued tokens on the strength of the session's `acr`, `amr` and `auth_time`, and the tokens are issued ON that session. A denial honours nothing and sends nothing | `OpenID Connect CIBA` |
 | OpenID Connect Native SSO | a second app's token exchange at `/oauth2/token`: it is issued tokens on the sign-on session the first app's ID Token names, with no new authentication. Sent after the tokens are issued, so a refused exchange sends nothing | `OpenID Connect Native SSO` |
-| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer made for the signed-in person, where the test controls are closed: the pre-authorized code is the authorization for a credential about them, made on the session's authority. A same-device offer carries no authorization, and development mints the pre-authorized offer for a fixed test person without reading any session, so neither sends it | `OpenID4VCI` |
+| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer a person makes for their own wallet on `/portal/wallet` (`POST /account-api/credentials/offers`, #589; `/issuer/offer` until then), in both modes: the pre-authorized code is the authorization for a credential about them, made on the authority of the sign-on session the portal's token was issued on. A same-device offer carries no authorization, so it sends nothing | `OpenID4VCI` |
 
 All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.
@@ -455,7 +455,7 @@ rather than a language map.
 
 Two things are **carried with a warning** rather than refused, and both are
 deliberate: an **open** enum's unlisted value, because refusing would make this
-service unable to carry a vendor's own type — precisely what a mock is for — and
+service unable to carry a vendor's own type — precisely what a test service is for — and
 a member the event does not define, because an event vocabulary extends and a
 receiver is expected to ignore what it does not know.
 
@@ -802,9 +802,9 @@ None of these is the subject of a session event:
 - **SPIFFE**'s Workload API, **OpenID4VCI** and **OpenID4VP** requests — a
   presentation at the Verifier's own pages included. There are two
   exceptions. A wallet sign-in at `/authn/wallet` ends in a browser sign-on
-  session like any other door. A pre-authorized OpenID4VCI offer made for the
-  signed-in person is `session-presented` (above), because it is made on that
-  session's authority;
+  session like any other door. A pre-authorized OpenID4VCI offer a person makes
+  on `/portal/wallet` is `session-presented` (above), because it is made on
+  the authority of the sign-on session the portal's token was issued on;
 - the **token, refresh, introspection and UserInfo** endpoints. A revoked
   grant is the exception: it is `session-revoked` about the GRANT (above),
   never about a sign-on session;
@@ -843,7 +843,9 @@ do*.
   means no stream asked for that type.
 - **`GET /admin-api/caep`** and **`GET /admin-api/caep/sessions`** — the same,
   without a browser; the per-receiver rows are the `applications` member of
-  both, searched with `appq` and paged with `applicationsPage`.
+  both, searched with `appq` and paged with `applicationsPage`. On
+  `/admin/caep-sessions` and `GET /admin-api/caep/sessions` the streams table
+  is paged as well, with `streamsPage`; `streamCounts` counts the whole list.
 
 ## The settings
 

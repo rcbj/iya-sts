@@ -96,7 +96,6 @@ const log = bunyan.createLogger({ name: 'service',
 const PORT_VARS = [
   'STS_PORT',
   'KRB5_KDC_PORT',
-  'KRB5_SERVICE_PORT',
   'LDAP_PORT',
   'LDAPS_PORT',
   'STS_SPIFFE_WORKLOAD_PORT',
@@ -157,7 +156,7 @@ async function findPortBlock(preferredBase, log) {
     bases.push(Number(preferredBase));
   }
   // A spread of candidates well above the service's own defaults (8081, 8082,
-  // 88, 8888, 389, 636, 8092, 8181) so a plain local stack is never touched.
+  // 88, 389, 636, 8092, 8181) so a plain local stack is never touched.
   for (let i = 0; i < 40; i++) {
     bases.push(18100 + require('crypto').randomInt(400) * 10);
   }

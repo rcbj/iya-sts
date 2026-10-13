@@ -1,0 +1,194 @@
+{
+  "realms.support.oauth-2-0-oidc.family": {
+    "en": "b91523811462ec54",
+    "text": "OAuth 2.0 / OIDC"
+  },
+  "realms.support.oauth-2-0-oidc.note": {
+    "en": "ca6a3e0c45f09554",
+    "text": "拥有自己的颁发者、签名密钥、授权码、访问令牌和刷新令牌、刷新令牌族、DPoP 重放和 nonce 状态、客户端断言重放状态以及命名的授权服务器。自 2026-08-25 起，客户端注册也是按领域的，因为目录是按领域的：在一个领域下注册的客户端位于该领域的 ou=applications 中，其他领域都不认识它。在此之前这一行说的正好相反。RFC 9700 模式也是按领域的——`oauth2.rfc9700` 以及隐含它的 `oauth2.oauth21` 对进程而言仅在重启时生效，但可以在领域上设置，因为领域不绑定套接字——因此一个进程可以在 /oauth2/authorize 宽松地应答，而在某个领域的对应端点强制执行 BCP。领域无法自带的是协议方案：主端口要么是 https，要么不是，对所有领域同时适用，GET /oauth2/rfc9700 会报告是哪一种。"
+  },
+  "realms.support.authentication-service.family": {
+    "en": "72f0c79fe76b583e",
+    "text": "身份验证服务"
+  },
+  "realms.support.authentication-service.note": {
+    "en": "9a873e6d5aa52ccb",
+    "text": "拥有自己的会话和第二因素——WebAuthn 凭据、TOTP 密钥和恢复码——因此登录一个领域只会让您登录该领域。这正是领域的意义所在，而不是它的局限。您可以以谁的身份登录，仅在本服务任何地方都不检查密码这个意义上是共享的——人员是领域自己目录中的一个条目。管理控制台是唯一跨越这条界线的读取方：它通过被访问的领域让人员登录，并将自己的会话保存在默认领域中，以便从每个领域都能找到同一个控制台会话。下面一行说明该会话可以管理谁。"
+  },
+  "realms.support.saml-2-0-saml-1-1.family": {
+    "en": "e56ec33fb3bd7bd5",
+    "text": "SAML 2.0 / SAML 1.1"
+  },
+  "realms.support.saml-2-0-saml-1-1.note": {
+    "en": "7e9175bdd8dd3808",
+    "text": "拥有自己的 entityID 和 providerID（创建领域时植入不同的值）、自己的签名密钥、请求状态、工件以及按服务提供方区分的元数据——因此其 URL 既带有领域，也带有 SP 摘要。服务提供方条目是按领域的，原因与 OAuth 客户端相同：它们是领域自己目录中的应用。"
+  },
+  "realms.support.ws-trust.family": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "realms.support.ws-trust.note": {
+    "en": "bcd3a33cadffbf2f",
+    "text": "拥有自己的令牌颁发者和签名密钥。"
+  },
+  "realms.support.ws-federation.family": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "realms.support.ws-federation.note": {
+    "en": "30e2050715958d86",
+    "text": "拥有自己的 entityID 和签名密钥。与 OAuth 的单点登录在领域内部保留，但不跨领域，因为它所依赖的会话不跨领域。"
+  },
+  "realms.support.openid4vci-openid4vp-did.family": {
+    "en": "e544a89450409208",
+    "text": "OpenID4VCI / OpenID4VP / DID"
+  },
+  "realms.support.openid4vci-openid4vp-did.note": {
+    "en": "7c25e8039a79a632",
+    "text": "拥有自己的凭证要约、预授权码、延迟事务、签发 nonce 和出示事务——以及自己对凭证声明什么、验证方要求什么的回答。did:web 标识符带有领域段，这正是使两个领域的 DID 文档彼此分开的方式。"
+  },
+  "realms.support.gnap.family": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "realms.support.gnap.note": {
+    "en": "fe3bcb6ce4779bc4",
+    "text": "每个领域一个授权服务器（RFC 9635），拥有自己的授权、续接、交互、用户码、令牌、管理句柄、密钥证明重放状态以及资源服务器连接（RFC 9767）——十二个存储，每个都按领域并随领域一同删除。GNAP 客户端是领域自己目录中的应用，`gnap.enabled` 是领域的设置，因此一个领域可以在 /gnap 应答，而另一个领域拒绝。"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.family": {
+    "en": "6420ea91cc8c6f7f",
+    "text": "共享信号（SSF、CAEP、RISC）"
+  },
+  "realms.support.shared-signals-ssf-caep-risc.note": {
+    "en": "fa36979b00dee444",
+    "text": "拥有自己的发送方：流、流的主体、队列和死信，以及 CAEP 的会话登记簿和 RISC 的账户登记簿都是按领域的。事件在其发生的领域中发出，本服务自己的控制台和门户在每个领域中都植入为接收方，因此各自只接收自己领域的事件。"
+  },
+  "realms.support.xacml-3-0-alfa.family": {
+    "en": "d6e8ac2f943bbdd6",
+    "text": "XACML 3.0 / ALFA"
+  },
+  "realms.support.xacml-3-0-alfa.note": {
+    "en": "6965ae9cced8a957",
+    "text": "拥有自己的策略存储库（ou=policies）和远程 PEP 登记簿（ou=peps），两者都在领域的目录中。新领域的存储库一开始为空，并且永远不会回退到默认领域的存储库，否则会把两个领域耦合起来：本服务用来决定自身签发和访问的两项策略是内置并被调用的，因此在每个领域中都起决定作用，而某个领域中的存储库条目只在该领域覆盖它们。远程 PEP 属于其注册所在的领域，其 HTTPS 监听器证书由该领域的 pep-tls 签发 CA 签发。"
+  },
+  "realms.support.federation.family": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "联合"
+  },
+  "realms.support.federation.note": {
+    "en": "abe4d8cd1ff6af78",
+    "text": "拥有自己的关系——ou=federations 位于领域的目录中——以及自己进行中的登录，按领域设上限，以免一个领域的洪泛挤掉另一个领域的登录。在一个领域中开始的流程无法在另一个领域的 /federation/acs/{id} 完成：断言会对照其到达领域中某个关系的证书进行验证。"
+  },
+  "realms.support.user-portal.family": {
+    "en": "00cf214ba77e7497",
+    "text": "用户门户"
+  },
+  "realms.support.user-portal.note": {
+    "en": "f4b474a8d20ad298",
+    "text": "人员在其所在领域中自己的账户：门户作为在每个领域中植入的客户端，通过领域自己的授权服务器登录，每个页面都读写此人在该领域目录中的条目，并遵守该领域的密码策略。"
+  },
+  "realms.support.global-logout.family": {
+    "en": "1b4192fb739d93e9",
+    "text": "全局注销"
+  },
+  "realms.support.global-logout.note": {
+    "en": "d3320c4e59424581",
+    "text": "它自己不保存任何状态：/logout、/admin/logout 和 /admin/sessions 读取被访问领域的存储，因此注销会结束该领域的会话及依附于它的内容，而不影响其他领域中的任何内容。"
+  },
+  "realms.support.statistics-and-the-audit-log.family": {
+    "en": "8f2960c701e2a7ec",
+    "text": "统计信息和审计日志"
+  },
+  "realms.support.statistics-and-the-audit-log.note": {
+    "en": "a4e6e9e283c25d0b",
+    "text": "每个领域在自己的前缀下统计和记录所发生的事情。审计序列号也是按领域的，因此一个领域的各行是连续的。"
+  },
+  "realms.support.scim-2-0.family": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "realms.support.scim-2-0.note": {
+    "en": "d506e39413c1c9d6",
+    "text": "端点和存储都是按领域的。通过一个领域的 /scim/v2 创建的用户是该领域 ou=users 中的一个条目，在其他任何地方都不存在——直到 2026-08-25 目录变为按领域之前，这一行写着 `partial`，说的正好相反。SCIM 对此仍不作任何自己的决定：它向目录预配，而被分区的是目录。"
+  },
+  "realms.support.admin-console-and-management-api.family": {
+    "en": "9aa33ceabfd73434",
+    "text": "管理控制台和管理 API"
+  },
+  "realms.support.admin-console-and-management-api.note": {
+    "en": "2d1b64bdd91feaba",
+    "text": "每个页面和每个操作都是按领域的——/admin/config 读写被访问的领域，/admin/users 列出该领域自己的人员。自 2026-09-14（#32）起，管理员角色被有意地持有两份：默认领域的 cn=admin-read 和 cn=admin-write 是服务名单，管理所有领域；其他每个领域在自己的 ou=groups 中都有同样的两个组，植入一个 `admin` 账户，其成员只管理该领域——关于整个进程的每个页面和操作（存储、数据库、机密存储、监听器、调试器、浏览器）、创建或移除领域、替换服务根 CA 以及按进程的设置都对他们拒绝。因此，领域自己的名单不授予领域之外的任何权限，这正是添加它是安全的原因。控制台通过被访问的领域让人员登录，在定义了领域时，纯 /admin 和 /portal 会先询问是哪个领域。/admin-api 在任何地方都接受默认领域的令牌，而领域自己的 sts-management-api 令牌只在该领域内有效。"
+  },
+  "realms.support.ldap-389-636.family": {
+    "en": "651360794c5f87fc",
+    "text": "LDAP（389 / 636）"
+  },
+  "realms.support.ldap-389-636.note": {
+    "en": "1e061e6f4bab09ac",
+    "text": "一个套接字背后每个领域一个目录——自 2026-08-25 起是独立的存储，而不是共享存储中的子树。DN 布局就是客户端所看到的：每个领域都是自己的一棵树，以领域的域的 RFC 2247 映射为根（自 2026-09-18 起）——默认领域以 global.domain 的映射为根（dc=example,dc=com），域为 iyasec.io 的领域以 dc=iyasec,dc=io 为根，未指定域而创建的领域以 <id>.<global.domain> 为根，也就是此前每个领域都使用的、位于默认领域基准之下的 dc=<id>。位于另一领域域内的域是允许的，它是一个独立的命名上下文。因此 ou=users、ou=groups、ou=applications、ou=federations 以及两个 SPIFFE 容器在每个领域中各存在一份，互不共享——直到 2026-08-25 之前，这一行写着 `none`，说每个领域看到的是同样的人员。领域位于 DN 中而不是分区存储中，是因为套接字没有可以放置路径段的地方：ldapsearch 到达时只带有一个基准 DN，别无其他，因此 `-b dc=acme,dc=example,dc=com` 是客户端唯一能够指明领域的方式，而且行之有效。自 2026-08-25 起，应 rcbj 的要求，每个操作都从 DN 所指明的存储中应答——这一行曾说从命名上下文进行的子树搜索会返回每个领域的条目，理由是命名上下文就是整棵树。那使得端口 389 成为一个领域能看到另一个领域的人员、组和应用的唯一入口，而控制台、/scim/v2 和组声明都只向每个领域显示它自己的内容。所以 `-b dc=example,dc=com` 是默认领域的目录，`-b dc=acme,dc=example,dc=com` 是 acme 的目录，根 DSE 为每个领域发布一个 namingContexts 值，以便客户端发现它们。添加、修改、删除、比较或基准范围的搜索在其 DN 所指明的领域中应答，因为写出 DN 正是客户端在一个别无他处可放领域的套接字上指明领域的方式；会跨越领域的 modifyDN 以 LDAP_AFFECTS_MULTIPLE_DSAS（71）拒绝，因为这里的两个领域就是两个目录。"
+  },
+  "realms.support.kerberos-v5.family": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "realms.support.kerberos-v5.note": {
+    "en": "42fe03497278a0e3",
+    "text": "每个信任领域一个 KDC，位于共享端口 88 上，通过每个请求中的 Kerberos 领域名称加以区分——这是协议本身已经携带的区分依据。领域创建时 krb5.enabled 为关闭；为其设置自己的 krb5.realm（两个领域不能应答同一个名称）并开启，该领域就会根据自己的设置构建自己的主体数据库、长期密钥和 krbtgt。它的人员就是其自己目录子树中的人员。原始 UDP/TCP 88 和不带前缀的 /KdcProxy 按名称路由；领域自己的 /realm/<id>/KdcProxy 固定于该领域，会以 KDC_ERR_WRONG_REALM 拒绝其他领域的名称。仍属于进程的是：两个套接字，以及开发模式下与 krb5.trustedRealm 的信任——信任领域之间不信任彼此的 Kerberos。在 2026-09-15 之前，整个进程只有一个 KDC、一个主体数据库和一个领域名称。SPNEGO 通过 HTTP 承载同样的票据，因此其路由与其他路由一样在每个领域的路径前缀下应答。"
+  },
+  "realms.support.certificate-authority-crl-ocsp.family": {
+    "en": "1a5d99f237a9a182",
+    "text": "证书颁发机构（CRL、OCSP）"
+  },
+  "realms.support.certificate-authority-crl-ocsp.note": {
+    "en": "23dc7902c5fa2e83",
+    "text": "服务只有一个根 CA，每个领域一个中间 CA，每个中间 CA 之下每个用例一个签发 CA，因此一个领域签发的证书不会链接到另一个领域的中间 CA。共享的是不属于任何领域的根 CA。CRL、OCSP 响应方和证书链由 /pki/... 中的 {scope} 段命名，而不是由领域前缀命名，因为这些地址会写进证书，由对本服务的领域一无所知的客户端获取——而且根 CA 不属于任何领域，因此无法用领域来表示。"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.family": {
+    "en": "915e2b4c1add7b8d",
+    "text": "证书注册（ACME、EST、SCEP）"
+  },
+  "realms.support.certificate-enrollment-acme-est-scep.note": {
+    "en": "8eb76fc39d2c3029",
+    "text": "三者各自在每个领域的中间 CA 之下拥有自己的签发 CA，并在每个领域拥有自己的存储——ACME 的账户、订单、授权和 nonce（nonce 是对领域计算的 MAC，因此一个领域的 nonce 会被另一个领域拒绝），SCEP 的 RA 证书和事务。谁可以获得证书依据领域自己的目录决定：ACME External Account Binding 密钥、EST 凭据和 SCEP 质询各自绑定到一个领域中的条目，另一个领域签发的证书无法通过中间 CA 检查。EST 可以通过路径前缀访问，也可以在 EST 标签位置指明领域，即 /.well-known/est/<realm>/...，因为 EST 客户端无法在 well-known URI 前面加路径（#251）。共享的是 EST 的按地址速率限制，它以客户端地址而非领域为键。"
+  },
+  "realms.support.openid-federation.family": {
+    "en": "8b43178a5f8b801e",
+    "text": "OpenID Federation"
+  },
+  "realms.support.openid-federation.note": {
+    "en": "afd1986b1784cb9c",
+    "text": "每个领域都是自己的联合实体：其 Entity Identifier 就是其颁发者，其 Federation Entity Key、下级实体、Trust Anchor 和 Trust Mark 都是它自己 ou=oidfed 中的条目，其端点位于它自己的前缀之下。跨领域的部分是有意为之且经过签名的：开启 oidfed.realmsAreSubordinates 时，默认领域为其他每个领域担保，它们也信任默认领域，每条链都与其他链一样经过验证——在进程内解析，而不是通过 HTTP。"
+  },
+  "realms.support.tls-certificate.family": {
+    "en": "da0469bf71710144",
+    "text": "TLS 证书"
+  },
+  "realms.support.tls-certificate.note": {
+    "en": "ae9138672494fb4a",
+    "text": "进程只有一张证书，由主端口、LDAPS 636 和嵌入式调试器的监听器出示。套接字出示什么是套接字的属性，而不是领域的属性，而前两者承载所有领域。直到 2026-09-16 删除那两个监听器之前，这一行写着 `TLS (8443 / 9443)`：客户端证书的价值在其被使用之处决定，也就是在请求到达的领域中决定。"
+  },
+  "realms.support.spiffe.family": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "realms.support.spiffe.note": {
+    "en": "713aeaa8ddb6320e",
+    "text": "自 2026-09-12 起，每个领域拥有一个信任域、一个颁发机构、一个注册表和一对 gRPC 套接字——在此之前这一行写着 `none`，说只有一个信任域、一个签名颁发机构和四个共享套接字。**区分依据是端点地址，而且不可能是别的东西**：gRPC 有路径，但路径就是方法——`/SpiffeWorkloadAPI/FetchX509SVID` 由该规范固定，SPIRE API 由其各自的规范固定——因此其中的领域段将成为任何符合规范的客户端都不会调用的方法。领域创建时 `spiffe.trustDomain` 设为其域（自 2026-09-18 起；在领域拥有域之前为 `<realm>.<the process's>`），且 SPIFFE 关闭；开启后会构建该领域的颁发机构，并在创建领域时植入的 Unix 套接字路径上绑定它自己的 Workload API 和 SPIRE Server API——只有在有人为其指定地址（`spiffe.grpcHost`）和端口之后才会在 TCP 上绑定，而领域创建时并没有这些，因为它会继承的那些属于默认领域且已被绑定。加入令牌也是按领域的，因为加入令牌是加入信任域的凭据。**仍然共享的是进程自己的四个套接字**，它们属于默认领域，无论 `spiffe.enabled` 如何设置都保持绑定——套接字消失会被理解为服务已停止。自 2026-09-12 起，联合信任包归领域自己所有，不得在本服务任何领域所服务的信任域下注册联合信任包。"
+  },
+  "realms.support.embedded-debugger.family": {
+    "en": "13158755ebc78c86",
+    "text": "嵌入式调试器"
+  },
+  "realms.support.embedded-debugger.note": {
+    "en": "6e1c9e3c0274c058",
+    "text": "进程只有一个监听器（`debugger.port`），通过默认领域的授权服务器登录，只对该领域的控制台管理员开放。领域自己的管理员会被拒绝，因为它是进程的界面，而不是任何领域的界面。"
+  },
+  "realms.support.persistence-and-cluster.family": {
+    "en": "7fedc81f18af1420",
+    "text": "持久化和集群"
+  },
+  "realms.support.persistence-and-cluster.note": {
+    "en": "568ad713451c3e0b",
+    "text": "进程只有一个存储——内存、每个领域一个 LDIF 文件，或一个 postgres 数据库——以及一个集群成员资格、租约和隔离令牌。上述每个按领域的存储都将其行保存在该存储中其领域之下，并随领域一同删除；共享的是存储本身、与它的连接以及共享它的节点。"
+  }
+}

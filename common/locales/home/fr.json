@@ -1,6 +1,6 @@
 {
   "logoAlt": "IYA STS — service de jetons de sécurité",
-  "sub": "Un service d’identité fictif et permissif qui parle seize familles de protocoles. Il existe pour mettre à l’épreuve les CLIENTS.",
+  "sub": "Un service d’identité qui parle seize familles de protocoles. Il existe pour mettre à l’épreuve les CLIENTS.",
   "version": "version {version}",
   "warn": "Il ne vérifie aucun mot de passe, ne valide aucun jeton d’accès et n’atteste aucune charge de travail. N’exposez pas ce port sur une adresse publique.",
   "repoLabel": "Le projet sur GitHub",

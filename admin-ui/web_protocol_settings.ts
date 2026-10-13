@@ -105,6 +105,9 @@ class ProtocolSettingsPage {
    */
   static render(view: Json, ctx?: Json, statusHtml?: string): string {
     const t = ProtocolSettingsPage.translator(ctx && ctx.t);
+    if (view.page === '/admin/oauth2') {
+      return ProtocolSettingsPage.oauthSettings(view, t, statusHtml);
+    }
     return kit.note(view.leadHtml) +
       (view.alsoHtml || []).map(function (text) { return kit.warn(text); })
         .join('') +
@@ -121,14 +124,68 @@ class ProtocolSettingsPage {
       // therefore FOLD it — and the summary of that fold is a truncation of
       // the first two link texts, so the only controls in the row end up
       // behind a summary made of their own words. Every other link row in
-      // this console is a `<p class="sub">` for the same reason.
-      '<p class="sub">' + (view.links || []).map(function (link) {
+      // this console is a `<p class="sub">` for the same reason. Metadata's,
+      // on a page drawn as tabs (`data-metadata`, 2026-10-12).
+      '<p class="sub" data-metadata>' + (view.links || []).map(
+        function (link) {
         return '<a href="' + kit.esc(link.href) + '">' + kit.esc(link.what) +
                '</a>';
       }).concat(['<a href="' + kit.esc(view.page) +
                  '?format=json">' +
                  t.html('consoleProtocolSettings.asJson') + '</a>',
                  '<a href="/admin/sts-metadata">' +
+                 t.html('consoleProtocolSettings.everyEndpoint') +
+                 '</a>']).join(' &middot; ') + '</p>';
+  }
+
+  /**
+   * Draws the OAuth authorization server's global settings.
+   *
+   * @param view - the OAuth settings page's JSON
+   * @param t - the page's translator
+   * @param statusHtml - optional; the page's status block
+   * @returns the global settings body as HTML
+   */
+  static oauthSettings(view: Json, t: Json,
+                       statusHtml?: string): string {
+    const links = view.links || [];
+    const globalLinks = links.filter(function (link) {
+      return link.href !== '/.well-known/openid-configuration';
+    });
+    return (statusHtml || (view.status &&
+      ProtocolSettingsPage.STATUS[view.page]
+      ? ProtocolSettingsPage.STATUS[view.page](view.status, t) : '')) +
+      SettingsForms.forms(view.settings, view.page, undefined, t) +
+      '<p class="sub">' + globalLinks.map(function (link) {
+        return '<a href="' + kit.esc(link.href) + '">' +
+               kit.esc(link.what) + '</a>';
+      }).concat(['<a href="' + kit.esc(view.page) +
+                 '?format=json">' +
+                 t.html('consoleProtocolSettings.asJson') + '</a>'])
+        .join(' &middot; ') + '</p>';
+  }
+
+  /**
+   * Draws the OAuth page's explanatory notes and metadata references.
+   *
+   * @param view - the OAuth settings page's JSON
+   * @param t - the page's translator
+   * @returns the metadata body as HTML
+   */
+  static oauthMetadata(view: Json, t: Json): string {
+    const discovery = (view.links || []).filter(function (link) {
+      return link.href === '/.well-known/openid-configuration';
+    });
+    return kit.note(view.leadHtml) +
+      (view.alsoHtml || []).map(function (text) { return kit.warn(text); })
+        .join('') +
+      '<h2>' +
+      t.html('consoleProtocolSettings.metadataHeading') + '</h2>' +
+      kit.note(t.html('consoleProtocolSettings.metadataDescription')) +
+      '<p class="sub">' + discovery.map(function (link) {
+        return '<a href="' + kit.esc(link.href) + '">' +
+               kit.esc(link.what) + '</a>';
+      }).concat(['<a href="/admin/sts-metadata">' +
                  t.html('consoleProtocolSettings.everyEndpoint') +
                  '</a>']).join(' &middot; ') + '</p>';
   }
@@ -678,7 +735,14 @@ class ProtocolSettingsPage {
         : (info.database
             ? (info.database.encrypted
                 ? '<strong>TLS</strong> &mdash; ' +
-                  kit.esc(String(info.database.tls))
+                  // An unauthenticated server is said in the page's red
+                  // (2026-10-12): encrypted and not authenticated is an
+                  // operator's choice since verification became the
+                  // default, and the sentence says what it costs.
+                  (info.database.verifyCertificate
+                    ? kit.esc(String(info.database.tls))
+                    : '<strong class="bad">' +
+                      kit.esc(String(info.database.tls)) + '</strong>')
                 : '<strong class="bad">' +
                   t.html('consoleProtocolSettings.perNotTls') +
                   '</strong> &mdash; ' +

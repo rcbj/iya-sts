@@ -134,6 +134,9 @@
 // tests/vendored/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+// A policy save's or reset's message is filled from `policy_kinds.ts`'s
+// templates, so the server can translate it (#543).
+import serverProse = require('../common/server_prose');
 import config = require('../common/config');
 // The store's own status, for what a settings write's reply says about
 // whether the override is kept across a restart (rcbj, 2026-10-07). A
@@ -398,8 +401,12 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // (2026-10-01).
                        'update-fields',
                        // A service account (#221, 2026-10-06), and its
-                       // password rotated now.
-                       'set-service-account', 'rotate-password'];
+                       // password rotated now; one owner added or taken
+                       // off, at once (#602).
+                       'set-service-account', 'rotate-password',
+                       'add-service-account-owner',
+                       'remove-service-account-owner',
+                       'set-service-account-destination'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -475,15 +482,25 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // person answers.
   'answer-ciba-request',
   // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
-  // person one (`serviceAccount` true, the default), changes its `owner`,
-  // `destination` and `secretName`, or makes it a person again
+  // person one (`serviceAccount` true, the default), changes its `owners`
+  // (#600: the whole list), `destination` and `secretName`, or makes it a
+  // person again
   // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
   // it; where the realm's policy refuses a service account every browser
   // sign-in, becoming one ends the person's sessions. `rotate-password`
   // QUEUES a rotation of a service account's password on the scheduler's
   // leader (`common/service_account_rotation.ts`): pushed first, committed
   // after; the answer is the run's id, never a password.
-  'set-service-account', 'rotate-password'];
+  'set-service-account', 'rotate-password',
+  // ONE OWNER AT A TIME (#602, rcbj: the owners table is saved the moment
+  // an owner is added): `add-service-account-owner` and
+  // `remove-service-account-owner` (`owner`) write at once and keep the
+  // destination; the last owner cannot go while the policy requires one.
+  'add-service-account-owner', 'remove-service-account-owner',
+  // And `set-service-account-destination` (`destination`, `secretName`,
+  // both or neither) writes the push destination at once and keeps the
+  // owners.
+  'set-service-account-destination'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -559,7 +576,8 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'inherit-claim-attributes', 'set-access-type',
                              'remove-access-type', 'set-permission-claims',
                              'clear-permission-claims', 'export-ldif',
-                             'import-ldif', 'forget'];
+                             'import-ldif', 'forget', 'add-owner',
+                             'remove-owner'];
 
 // ---------------------------------------------------------------------------
 // GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
@@ -670,7 +688,8 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
                       'remove-permission', 'add-conferring-client',
-                      'remove-conferring-client'];
+                      'remove-conferring-client', 'add-owner',
+                      'remove-owner'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -694,6 +713,28 @@ const ROLE_MEMBER_KINDS = [
           'at all, and it is the reason an application is a first-class ' +
           'member of a role here.' }
 ];
+
+// THE ROLES NAMESPACE'S PART OF THIS MODULE (#543 phase 2b): the member
+// kinds' labels and sentences, which `/admin-api/roles` carries as
+// `memberKinds`. A label ('a person') is also substituted into the console's
+// own catalog messages by `web_roles.ts`; it is translated here all the same,
+// so the substituted word is the reader's language too.
+/** The routes whose answers carry this module's roles prose. */
+const PROSE_ROUTES = ['/admin-api/roles'];
+
+/**
+ * Extracts this module's part of the roles namespace (#543): the member
+ * kinds' `label` and `what`.
+ *
+ * @returns key → English
+ */
+function prose(): Record<string, string> {
+  helpers.log.debug("Entering prose().");
+  const out = serverProse.harvest('roles.memberKinds', ROLE_MEMBER_KINDS,
+                                  ['label', 'what']);
+  helpers.log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // THE POLICIES' WRITES (2026-09-12; every kind since #64), behind
@@ -813,7 +854,8 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 // slot — and what it adds is the vocabulary, the audit row and the sentences.
 //
 // **THERE IS NO `clear`, AND THAT IS A REFUSAL RATHER THAN AN OMISSION.**
-// `POST /tls/trust/clear` exists and is a development test control; a bulk
+// `POST /tls/trust/clear` was a development test control until #597 deleted
+// it; a bulk
 // clear on a GATED door is the one operation here whose blast radius is every
 // client certificate every other caller relies on — `tests/CLAUDE.md` records
 // a single unguarded clear costing a remote PEP its identity for the rest of a
@@ -2783,6 +2825,77 @@ class AdminActions {
       return this.serviceAccountAction(who, body, ctx, audited);
     }
 
+    if (action === 'set-service-account-destination') {
+      const { serviceAccounts } = this.deps;
+      const destination = String(body.destination == null ? ''
+                                                         : body.destination)
+        .trim();
+      const secretName = String(body.secretName == null ? ''
+                                                       : body.secretName)
+        .trim();
+      const result: any = serviceAccounts.setDestination(who, destination,
+                                                         secretName);
+      audited('admin.service-account.destination-set',
+              (result.ok ? '' : 'could not ') +
+              (destination ? 'set ' + who + '\'s push destination to ' +
+                destination : 'clear ' + who + '\'s push destination'),
+              { destination: destination, secretName: secretName,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "Destination refused.");
+        return this.refusedBy('STS-SVCACCT-0027', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "Destination set.");
+      return { ok: true, username: who, account: result.account,
+               changed: !!result.changed,
+               message: destination
+                 ? who + '\'s rotated password is pushed to ' + destination +
+                   ', secret "' + secretName + '".'
+                 : who + ' has no push destination now; its password is ' +
+                   'not rotated.' };
+    }
+
+    if (action === 'add-service-account-owner' ||
+        action === 'remove-service-account-owner') {
+      const { serviceAccounts } = this.deps;
+      const adding = action === 'add-service-account-owner';
+      const owner = String(body.owner == null ? '' : body.owner).trim();
+      const result: any = adding ? serviceAccounts.addOwner(who, owner)
+                                 : serviceAccounts.removeOwner(who, owner);
+      audited(adding ? 'admin.service-account.owner-added'
+                     : 'admin.service-account.owner-removed',
+              (result.ok ? '' : 'could not ') +
+              (adding ? 'add ' + owner + ' to ' : 'take ' + owner +
+                ' off ') + who + '\'s owners',
+              { owner: owner,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). Owner " +
+                  "refused.");
+        return this.refusedBy('STS-SVCACCT-0027', result);
+      }
+      const named = ((result.account && result.account.owners) || [])
+        .filter(function (one) {
+          return one.dn.toLowerCase() === owner.toLowerCase() ||
+                 String(one.name).toLowerCase() === owner.toLowerCase();
+        })[0];
+      log.debug("Leaving AdminActions.credentialAdminAction(). Owner " +
+                (adding ? 'added.' : 'removed.'));
+      return { ok: true, username: who, account: result.account,
+               changed: !!result.changed,
+               message: adding
+                 ? (result.changed
+                   ? (named ? named.name || named.dn : owner) +
+                     ' is now an owner of ' + who + '.'
+                   : (named ? named.name || named.dn : owner) +
+                     ' was already an owner of ' + who + '.')
+                 : owner + ' is no longer an owner of ' + who + '.' };
+    }
+
     if (action === 'rotate-password') {
       const { serviceAccountRotation } = this.deps;
       const queued = serviceAccountRotation.requestRotation(
@@ -2858,16 +2971,26 @@ class AdminActions {
       : this.truthy(body.serviceAccount);
     const result = serviceAccounts.set(who, {
       serviceAccount: wanted,
-      owner: body.owner,
+      owners: body.owners,
       destination: body.destination,
       secretName: body.secretName
     });
+    const ownersOf = function (account) {
+      log.debug("Entering ownersOf().");
+      log.debug("Leaving ownersOf().");
+      return ((account && account.owners) || []).map(function (one) {
+        return one.dn;
+      });
+    };
     audited(wanted ? 'admin.service-account.set'
                    : 'admin.service-account.cleared',
             (result.ok ? '' : 'could not ') +
             (wanted ? 'make ' + who + ' a service account'
                     : 'make ' + who + ' an ordinary person again'),
-            { owner: String(body.owner || ''),
+            { owners: result.ok ? ownersOf((result as any).account)
+                                : [].concat(body.owners == null ? []
+                                                               : body.owners)
+                                    .map(String),
               destination: String(body.destination || ''),
               secretName: String(body.secretName || ''),
               errors: result.ok ? undefined
@@ -2890,8 +3013,9 @@ class AdminActions {
              signedOut: signedOut,
              message: wanted
                ? who + ' is ' + (done.changed ? 'now' : 'still') + ' a ' +
-                 'service account' + (done.account && done.account.owner
-                   ? ', owned by ' + done.account.owner : '') + '.' +
+                 'service account' + (ownersOf(done.account).length
+                   ? ', owned by ' + ownersOf(done.account).join('; ')
+                   : '') + '.' +
                  (signedOut ? ' This realm refuses a service account every ' +
                    'browser sign-in, so their sessions were ended.' : '')
                : who + ' is an ordinary person' +
@@ -3647,7 +3771,7 @@ class AdminActions {
       if (asServiceAccount) {
         const { serviceAccounts } = this.deps;
         const flagged = serviceAccounts.set(result.username, {
-          serviceAccount: true, owner: body.owner,
+          serviceAccount: true, owners: body.owners,
           destination: body.destination, secretName: body.secretName });
         answer.serviceAccount = !!flagged.ok;
         if (!flagged.ok) {
@@ -3659,7 +3783,10 @@ class AdminActions {
             actor: (body.actor || ''), target: result.username,
             outcome: 'success',
             summary: result.username + ' was created as a service account',
-            detail: { owner: String(body.owner || ''),
+            detail: { owners: (((flagged as any).account || {}).owners ||
+                               []).map(function (one) {
+                        return one.dn;
+                      }),
                       destination: String(body.destination || ''),
                       via: ctx.via }
           });
@@ -3919,10 +4046,34 @@ class AdminActions {
       return result;
     }
 
+    // A GROUP'S OWNERS (#603): one added or taken off at a time, written at
+    // once — the group page's Owners tab, and its two operations. Who may
+    // be an owner and every refusal are ldap_server.js's.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const adding = action === 'add-owner';
+      const group = String(body.group || '').trim();
+      const owner = String(body.owner || '').trim();
+      const options = { origin: 'console', channel: 'console',
+                        actor: String(body.actor || '') };
+      const result: any = adding
+        ? groupWriter.addGroupOwner(group, owner, options)
+        : groupWriter.removeGroupOwner(group, owner, options);
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). " + action +
+                  " refused.");
+        return this.refusedBy(adding ? 'STS-ADMIN-0852' : 'STS-ADMIN-0853',
+                              result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). " + action + ": " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The two are: create, add-member. Removing ' +
+                                 'The four are: create, add-member, ' +
+                                 'add-owner, remove-owner. Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +
                                  'PATCH ' +
@@ -4638,6 +4789,7 @@ class AdminActions {
     const action = String(body.action || '');
     const identifier = String(body.application || '').trim();
     const needsOne = ['set', 'add', 'remove', 'update-fields',
+                      'add-owner', 'remove-owner',
                       'confirm-address',
                       'discard-address', 'regenerate-secret',
                       'rotate-secret', 'add-secret', 'remove-secret',
@@ -4818,6 +4970,31 @@ class AdminActions {
     // redirects with the MESSAGE only: the new value is on the page it lands
     // on, behind the same fold the old one was, and a secret in a query string
     // would be a secret in the browser history and every log on the way.
+    // AN APPLICATION'S OWNERS (#604): one added or taken off at a time,
+    // written at once — the application page's Owners tab, and its two
+    // operations. Who may be an owner and every refusal are applications.js's.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const { auditLog } = this.deps;
+      const adding = action === 'add-owner';
+      const owner = String(body.owner || '').trim();
+      const result: any = adding ? applications.addOwner(identifier, owner)
+                                 : applications.removeOwner(identifier, owner);
+      if (result.ok && result.changed) {
+        auditLog.audit({
+          action: adding ? 'application.add-owner'
+                         : 'application.remove-owner',
+          actor: String(body.actor || ''), target: identifier,
+          channel: 'http',
+          detail: (adding ? 'made ' : 'took ') + result.owner +
+                  (adding ? ' an owner of ' : ' off the owners of ') +
+                  identifier });
+      }
+      log.debug("Leaving AdminActions.applicationsAction(). " + action +
+                (result.ok ? ' ok.' : ' refused.'));
+      return this.refusedBy(adding ? 'STS-ADMIN-0856' : 'STS-ADMIN-0857',
+                            result);
+    }
+
     if (action === 'regenerate-secret') {
       const result = applications.regenerateClientSecret(identifier,
         { actor: body.actor || '' });
@@ -5864,16 +6041,24 @@ class AdminActions {
     // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
     // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
     // document; `file` is what the console's file input carries, as text.
+    // `family` makes the SAML 1.1/SAML 2.0 sub-tab authoritative when one
+    // application is declared for both protocols.
     if (action === 'upload-metadata') {
-      const text = String(body.document || '') ||
-                   (typeof body.file === 'string' ? body.file :
-                     String((body.file && body.file.text) || ''));
+      const document = body.document;
+      const documentText = typeof document === 'string' ? document :
+        (document && typeof document.text === 'string'
+          ? document.text : '');
+      const fileText = typeof body.file === 'string' ? body.file :
+        (body.file && typeof body.file.text === 'string'
+          ? body.file.text : '');
+      const text = documentText || fileText;
       if (!text.trim()) {
         log.debug("Leaving AdminActions.saml2Action(). No document.");
         return this.refused('STS-ADMIN-0791', { ok: false, errors: ['Send ' +
                             'the metadata document in `document`.'] });
       }
-      const result = spMetadata.upload(identifier, text, body.actor || '');
+      const result = spMetadata.upload(identifier, text, body.actor || '',
+                                       body.family || '');
       log.debug("Leaving AdminActions.saml2Action(). upload-metadata " +
                 (result.ok ? 'ok' : 'refused') + ".");
       return this.refusedBy('STS-ADMIN-0791', result);
@@ -6003,10 +6188,19 @@ class AdminActions {
     }
 
     if (action === 'register') {
+      const shire = String(body.shire || '').trim();
+      if (!shire) {
+        log.debug("Leaving AdminActions.saml11Action(). No shire named.");
+        return this.refused('STS-ADMIN-0851', { ok: false, errors: [
+          'Name the relying party\'s assertion consumer service URL in ' +
+          '`shire`.'
+        ] });
+      }
       const result = applications.createApplication({
         identifier: identifier, kind: SAML11_RP_KIND, protocol: 'SAML 1.1',
         note: 'registered as a SAML 1.1 relying party from the admin console',
-        fields: { samlEntityId: identifier }
+        fields: { samlEntityId: identifier,
+                  samlAssertionConsumerService: shire }
       });
       log.debug("Leaving AdminActions.saml11Action(). register " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -6417,13 +6611,13 @@ class AdminActions {
       }
       if (!member) {
         log.debug("Leaving AdminActions.rolesAction(). No member named.");
+        // A kind's label carries its article ("a person", "an
+        // application"), so the sentence takes it as it is.
         return this.refused('STS-ADMIN-0545', { ok: false,
-                                                errors: ['`member` ' +
-            'names the ' + kindRow.label +
-                                          ' being ' + (action === 'add-member'
-                                            ? 'added to' : 'removed from') +
-                                     ' the role, and it is required. `role` ' +
-                                          'is the role\'s own name.'] });
+          errors: ['`member` names ' + kindRow.label + ' being ' +
+                   (action === 'add-member' ? 'added to' : 'removed from') +
+                   ' the role, and it is required. `role` is the role\'s ' +
+                   'own name.'] });
       }
       const row = roles.read(name);
       if (!row) {
@@ -6711,6 +6905,35 @@ class AdminActions {
                  : '"' + client + '" no longer confers "' + name + '".' };
     }
 
+    // A ROLE'S OWNERS (#604): one added or taken off at a time, written at
+    // once — the role page's Owners tab, and its two operations. Who may be
+    // an owner and every refusal are `roles.js`'s.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const adding = action === 'add-owner';
+      const owner = String(body.owner || '').trim();
+      const result: any = adding ? roles.addOwner(name, owner)
+                                 : roles.removeOwner(name, owner);
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " + action +
+                  " refused.");
+        return this.refused(this.innerCode(result) ||
+                            (adding ? 'STS-ADMIN-0854' : 'STS-ADMIN-0855'),
+                            { ok: false, errors: [result.why] });
+      }
+      if (result.changed) {
+        auditLog.audit({
+          action: adding ? 'roles.add-owner' : 'roles.remove-owner',
+          actor: actor, target: result.role, protocol: 'XACML',
+          channel: 'http',
+          detail: (adding ? 'made ' : 'took ') + result.owner +
+                  (adding ? ' an owner of' : ' off the owners of') +
+                  ' the role "' + result.role + '"' });
+      }
+      log.debug("Leaving AdminActions.rolesAction(). " + action + ": " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
@@ -6748,7 +6971,11 @@ class AdminActions {
     }
     const kind = found.kind;
     const module = kind.module;
-    const noun = kind.label.toLowerCase() + ' profile';
+    const noun = policyKinds.nounOf(kind);
+    // The messages are `policy_kinds.ts`'s templates (#543), so the server
+    // can refill them in the reader's language.
+    const fill = serverProse.fill;
+    const MESSAGES = policyKinds.MESSAGES;
     const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
     // The profile the act is about (#535: a named passkey profile too).
     const before = module.read(profileName || module.DEFAULT_PROFILE);
@@ -6784,12 +7011,10 @@ class AdminActions {
       return { ok: true, kind: kind.id, profile: result.profile,
                rules: module.describe(result.profile),
                enforced: result.profile.enforced,
-               message: 'The ' + noun + ' "' + result.profile.name +
-                        '" is saved at ' + result.profile.dn + '. It applies ' +
-                        'to ' + kind.appliesTo +
-                        (result.profile.enforced ? '.'
-                          : ' — and it is not enforced here until this realm ' +
-                            'is in product mode.') };
+               message: fill(result.profile.enforced
+                 ? MESSAGES.saved : MESSAGES.savedNotEnforced,
+               { noun: noun, name: result.profile.name,
+                 dn: result.profile.dn, appliesTo: kind.appliesTo }) };
     }
 
     const result = module.reset(profileName);
@@ -6813,11 +7038,11 @@ class AdminActions {
              profile: result.profile,
              rules: module.describe(result.profile),
              message: result.removed
-               ? 'The stored profile is gone, and this realm follows ' +
-                 kind.fallsBackTo + ': ' +
-                 module.describe(result.profile).join(', ') + '.'
-               : 'Nothing was stored in this realm, so it already followed ' +
-                 kind.fallsBackTo + '.' };
+               ? fill(MESSAGES.removed, {
+                 fallsBackTo: kind.fallsBackTo,
+                 rules: module.describe(result.profile).join(', ') })
+               : fill(MESSAGES.nothingStored,
+                      { fallsBackTo: kind.fallsBackTo }) };
   }
 
   // ---------------------------------------------------------------------------
@@ -7234,7 +7459,7 @@ class AdminActions {
   //
   // WHAT THE BAR DOOR ASKS FOR — the other end of the page above. /admin/vc
   // decides what an issued credential CARRIES; this decides what the Verifier
-  // at /oid4vp/verifier ASKS FOR, and the two are deliberately separate
+  // ASKS FOR, and the two are deliberately separate
   // settings because the interesting states are the ones where they disagree. A
   // Verifier asking for a claim the issuer is not minting is the negative that
   // exercises a wallet's "I cannot satisfy this request" path, and there is no
@@ -9303,6 +9528,9 @@ export = {
   consentAction: slot.forward('consentAction'),
   ROLE_ACTIONS: ROLE_ACTIONS,
   ROLE_MEMBER_KINDS: ROLE_MEMBER_KINDS,
+  // #543: the roles namespace's routes and English, this module's part.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   roleMemberKindOf: slot.forward('roleMemberKindOf'),
   rolesAction: slot.forward('rolesAction'),
   policiesAction: slot.forward('policiesAction'),

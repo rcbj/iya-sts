@@ -1,0 +1,130 @@
+{
+  "pki.tiers.root.what": {
+    "en": "d3b9a79ec853e6d9",
+    "text": "L’ancre de confiance. Auto-signée, la plus durable des trois, et le seul certificat de la hiérarchie qu’il faut remettre hors bande à une partie de confiance — tout ce qui se trouve en dessous circule dans la chaîne."
+  },
+  "pki.tiers.intermediate.what": {
+    "en": "064ff6bd043cbe53",
+    "text": "Signée par la racine. Elle existe pour que la clé de la racine puisse être utilisée une fois puis laissée de côté : une compromission à ce niveau se répare en réémettant ce niveau, alors qu’une compromission de la racine ne se répare pas du tout. pathLen vaut 1 : elle peut donc signer une AC de plus et pas au-delà."
+  },
+  "pki.tiers.issuing.what": {
+    "en": "d7dedc1376dafa20",
+    "text": "Signée par l’intermédiaire, et seul niveau qui signe quoi que ce soit de ce que ce service délivre. pathLen vaut 0 — elle signe des certificats FEUILLES et aucune autre AC, ce qui fait de « un certificat d’application ne peut pas servir à en produire un autre » une propriété de l’encodage plutôt que des bonnes manières de ce service."
+  },
+  "pki.useCases.jose.what": {
+    "en": "ec6f7e78016f2a84",
+    "text": "Les clés avec lesquelles ce domaine signe les JWT — la clé RSA derrière RS256, les quatre courbes ECDSA, les deux courbes d’Edwards, et les onze clés post-quantiques lorsqu’elles sont créées. Ce qu’un client vérifie au moyen de /oauth2/jwks."
+  },
+  "pki.useCases.xml.what": {
+    "en": "465884d059de6f91",
+    "text": "Ce qui signe un document XML : les assertions et réponses SAML 2.0 et 1.1, WS-Federation, WS-Trust et les métadonnées par fournisseur de services. C’est une autorité DISTINCTE de celle ci-dessus, même si une seule clé RSA remplit les deux rôles aujourd’hui — une partie de confiance qui fait confiance à ce service pour SAML n’a rien dit pour autant de ses jetons OAuth, et deux AC émettrices permettent de l’exprimer."
+  },
+  "pki.useCases.assertions.what": {
+    "en": "d6943f0dbaa03982",
+    "text": "Les paires de clés de signature émises pour les APPLICATIONS au titre de RFC 7521 et RFC 7523 — une assertion client, ou un grant d’autorisation JWT bearer. C’est l’AC émettrice que possédait ce module avant que la hiérarchie n’accueille les autres, sous un nom qui indique laquelle des cinq elle est."
+  },
+  "pki.useCases.tls.what": {
+    "en": "e7f68465ad94a1a4",
+    "text": "Le certificat servi sur LDAPS 636, sur le port principal lorsque global.https est activé, et sur l’écouteur du débogueur intégré — les écouteurs 8443 et 9443 dont ce cas d’usage porte encore le nom ont été supprimés le 2026-09-16. De portée PROCESSUS parce que ces sockets le sont : un seul certificat répond pour tous les domaines, si bien que le faire signer par l’intermédiaire d’un domaine ferait se porter garant un domaine pour la porte d’entrée de tous les autres."
+  },
+  "pki.useCases.cell.what": {
+    "en": "6ea9ce404b74101b",
+    "text": "Les certificats que les nœuds d’un service déployé en cellules se présentent mutuellement sur le canal inter-cellules (cells.port), en tant que serveur et en tant que client, chacun nommant sa cellule dans un subjectAltName urn:sts:cell:. De courte durée, reproduits par chaque nœud et jamais consignés. Un pair n’est accepté qu’avec un certificat feuille de cette autorité. Inutilisé en mode à cellule unique."
+  },
+  "pki.useCases.spiffe.what": {
+    "en": "980d1687ef429d40",
+    "text": "L’autorité X.509 qui signe chaque X509-SVID produit dans ce domaine. De portée DOMAINE depuis le 2026-09-11 — auparavant, elle se trouvait sous l’intermédiaire du processus, auto-signée et entièrement hors de cette arborescence. L’ANCRE de confiance n’est pas affectée par ce déplacement, et c’est tout l’intérêt : le bundle publie la racine du service, que partagent tous les domaines, si bien qu’un SVID signé par l’autorité de n’importe quel domaine vérifie par rapport à une seule ancre, tandis que sa chaîne indique toujours quel domaine l’a émis."
+  },
+  "pki.useCases.pep-tls.what": {
+    "en": "2cc1533100cf8089",
+    "text": "Les certificats qu’un Policy Enforcement Point XACML distant sert sur son écouteur HTTPS. De portée DOMAINE parce qu’un PEP distant s’enregistre auprès d’un domaine et applique la politique de ce domaine ; l’autorité qui se porte garante de sa porte d’entrée est donc celle de ce domaine. Émis pour un PEP ENREGISTRÉ depuis /admin/xacml/peps ou POST /admin-api/xacml/issue-pep-certificate ; la clé privée est remise une seule fois et ce service n’en conserve aucune copie."
+  },
+  "pki.useCases.realm-tls.what": {
+    "en": "fc795fc96445b5c0",
+    "text": "Les certificats qu’un écouteur HTTPS personnalisé présente (#472 : listeners.custom pour ceux du service, listeners.realm pour ceux propres à un domaine) lorsque sa définition ne nomme aucun fichier de certificat, pour ses noms d’hôte. De portée DOMAINE parce qu’un écouteur appartient à un domaine — le domaine par défaut, pour ceux du service. Un par écouteur et par nœud ; la clé privée ne quitte jamais le nœud qui la sert."
+  },
+  "pki.useCases.kdc.what": {
+    "en": "6c38964d23084a64",
+    "text": "Le certificat avec lequel le KDC de ce domaine signe ses réponses PKINIT (RFC 4556) : id-pkinit-KPKdc dans son usage étendu de clé et le service d’octroi de tickets du domaine, krbtgt/REALM@REALM, dans un id-pkinit-san. Un par processus, créé lors de la première utilisation de PKINIT ; la clé privée ne quitte jamais le processus qui l’a créée."
+  },
+  "pki.useCases.acme.what": {
+    "en": "85c88fe668bcb64d",
+    "text": "Certificats émis via ACME (RFC 8555) sur /enroll/acme, pour une entrée de personne ou d’application pour laquelle une clé External Account Binding a été émise. Chaque certificat feuille nomme cette entrée dans un subjectAltName urn:sts:person: ou urn:sts:application:."
+  },
+  "pki.useCases.est.what": {
+    "en": "20925fe97c792b47",
+    "text": "Certificats émis via EST (RFC 7030) sur /.well-known/est, pour l’entrée qu’un mot de passe, un secret client ou un certificat client émis par le domaine a authentifiée, ou — pour un administrateur — pour l’entrée que nomme la requête. Le seul chemin d’inscription sur lequel ce service peut générer la paire de clés (/serverkeygen)."
+  },
+  "pki.useCases.scep.what": {
+    "en": "bbd8c5da9ecc9982",
+    "text": "Certificats émis via SCEP (RFC 8894) sur /enroll/scep, pour l’entrée pour laquelle un mot de passe de défi à usage unique a été émis. Le certificat de RA pour lequel SCEP chiffre les requêtes est lui aussi un certificat feuille de cette AC, avec une clé RSA car le transport de clé de SCEP est RSA."
+  },
+  "pki.useCases.tls-client.what": {
+    "en": "903e048677f8ab58",
+    "text": "Les certificats client TLS que les personnes s’émettent elles-mêmes sur le portail utilisateur : clientAuth, le nom urn:sts:person: de la personne, et une clé privée remise une seule fois sous forme de PKCS#12. Un certificat de cette autorité connecte son titulaire sur GET /tls/sign-in sur le port principal, dans ce domaine ; un certificat de toute autre autorité de ce service ne le fait pas, bien que tous remontent jusqu’à la même racine."
+  },
+  "pki.subjectKinds.application.what": {
+    "en": "52037236b4cfff5f",
+    "text": "Un client OAuth ou une partie de confiance enregistré. Sa paire de clés est écrite sur sa propre entrée dans ou=applications."
+  },
+  "pki.subjectKinds.person.what": {
+    "en": "1f2cc5cf53e071de",
+    "text": "Quelqu’un dans ou=users. Sa paire de clés signe une assertion RFC 7523 section 2.1 À SON PROPRE SUJET et au sujet de personne d’autre — voir common/person_assertions.js, où le refus est argumenté."
+  },
+  "pki.purposes.jwt.what": {
+    "en": "2032fd197c3ec5dc",
+    "text": "Une clé de signature JWS. Sa moitié publique est écrite sur l’application sous forme de JWKS (oauthAssertionJwks) portant la chaîne de certificats dans x5c, ce qui est la façon dont RFC 7523 enregistre une clé."
+  },
+  "pki.purposes.saml.what": {
+    "en": "dfc27a7edcecb724",
+    "text": "Une clé XML Signature. Son certificat est écrit sur l’application sous forme de PEM (oauthSamlAssertionCertificate), car SAML n’a pas de JWKS et ce qu’une partie enregistre pour ce profil EST un certificat."
+  },
+  "pki.report.encoder": {
+    "en": "e62315ba46619e60",
+    "text": "common/vendored/x509.js — le code PKI propre au projet parent, identique octet pour octet, sur pkijs et asn1js. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
+  },
+  "pki.report.residencyPersisted": {
+    "en": "f0cab37351af3948",
+    "text": "Les clés privées des AC se trouvent dans le stockage persistant, scellées sous la même clé de chiffrement de clés que les clés de signature, et survivent à un redémarrage."
+  },
+  "pki.report.residencyMemory": {
+    "en": "4b64a414cc7a232b",
+    "text": "Les clés privées des AC ne sont conservées qu’en mémoire. Ce service est en mode développement, où le matériel de clé est généré à chaque démarrage — une hiérarchie construite maintenant disparaîtra à la fin de ce processus."
+  },
+  "revocation.reasons.unspecified.what": {
+    "en": "8533e2cd14062648",
+    "text": "Aucun motif indiqué. RFC 5280 section 5.3.1 indique que l’extension de code de motif SHOULD être omise pour cette valeur ; une entrée révoquée de cette façon ne porte donc aucun motif — c’est ce que signifie « unspecified » sur le réseau."
+  },
+  "revocation.reasons.keyCompromise.what": {
+    "en": "d3d30f54c816aaac",
+    "text": "La clé privée est connue ou soupçonnée d’être entre les mains de quelqu’un d’autre. Le seul motif qui indique que le certificat n’a jamais été sûr, plutôt que simplement plus voulu."
+  },
+  "revocation.reasons.cACompromise.what": {
+    "en": "9cbe4efd15bcf347",
+    "text": "La clé propre de l’AC est compromise. Utilisé sur une AC intermédiaire ou émettrice, et tout ce qui se trouve en dessous doit aussi être considéré comme compromis."
+  },
+  "revocation.reasons.affiliationChanged.what": {
+    "en": "bfe35ec20df10454",
+    "text": "Le nom ou l’affiliation du sujet a changé, si bien que le certificat n’affirme plus quelque chose de vrai."
+  },
+  "revocation.reasons.superseded.what": {
+    "en": "2193fffd5b8b0e7e",
+    "text": "Un remplaçant a été émis. **C’est ce qu’utilise ce service lorsqu’un certificat fait l’objet d’une rotation ou d’une réémission**, ce qui est l’entrée la plus courante sur chacune de ces listes."
+  },
+  "revocation.reasons.cessationOfOperation.what": {
+    "en": "f70d9cd7cdaae1b3",
+    "text": "Le sujet a cessé l’activité pour laquelle le certificat existait."
+  },
+  "revocation.reasons.certificateHold.what": {
+    "en": "b3f34d2a6fd5033b",
+    "text": "Suspendu temporairement. **Le seul motif qui peut être ANNULÉ** — tous les autres sont définitifs, et un validateur a le droit de mettre en cache une révocation définitive aussi longtemps que la CRL indique qu’elle est à jour."
+  },
+  "revocation.reasons.privilegeWithdrawn.what": {
+    "en": "68e9b6f92f423e5f",
+    "text": "Le sujet n’a plus droit à ce qu’affirme le certificat."
+  },
+  "revocation.reasons.aACompromise.what": {
+    "en": "4689cd1f43e80f58",
+    "text": "La clé d’une autorité d’attributs est compromise. Présent par souci d’exhaustivité : ce service n’émet aucun certificat d’attributs."
+  }
+}

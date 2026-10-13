@@ -58,6 +58,9 @@ import InstanceSlot = require('../common/instance_slot');
 import schedulerModule = require('../cluster/scheduler');
 // The page's renderer (#446): a `web_` module, loadable in a browser.
 import SchedulerPage = require('./web_scheduler');
+// Safe at the top: this module is built at 18i, long after everything
+// `server_prose.ts` requires, and none of that requires this module.
+import serverProse = require('../common/server_prose');
 
 type Req = any;
 type Res = any;
@@ -67,6 +70,28 @@ type Json = any;
  * The console path of Monitoring → Scheduler.
  */
 const PAGE = '/admin/scheduler';
+
+// ---------------------------------------------------------------------------
+// WHAT AN ACTION SAYS WHEN IT IS ACCEPTED (#543 phase 2c), as templates the
+// console's notice is matched against and refilled in the reader's
+// language; `{{job}}` is a job's id. A REFUSAL's `errors` are not here:
+// errors stay English (#539). The report's own sentences are
+// `cluster/scheduler.ts`'s `SENTENCES`.
+// ---------------------------------------------------------------------------
+const MESSAGES = Object.freeze({
+  steppedDown: 'The scheduler\'s leader was asked to stand down. It does ' +
+    'so at its next tick, and another node takes the lead at its next ' +
+    'heartbeat.',
+  // Two templates rather than a sentence with a parenthesis spliced in: a
+  // translation may not have a place for it where English does.
+  queued: 'A run of {{job}} is queued. The scheduler\'s leader starts it ' +
+    'at its next tick.',
+  queuedAgain: 'A run of {{job}} is queued (one already was; this is it). ' +
+    'The scheduler\'s leader starts it at its next tick.'
+});
+
+// The routes whose answers carry this module's prose (#543): an action's.
+const PROSE_ROUTES = ['/admin-api/scheduler/:action'];
 
 interface SchedulerAdminDeps {
   log: typeof helpers.log;
@@ -86,6 +111,27 @@ class SchedulerAdmin {
    * See the module's `PAGE`.
    */
   static readonly PAGE = PAGE;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's share of the scheduler namespace (#543 phase
+   * 2c): what an accepted action says. The jobs and the report's sentences
+   * are `cluster/scheduler.ts`'s `prose()`.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SchedulerAdmin.prose().");
+    const out = serverProse.harvest('schedAdmin.message', MESSAGES,
+                                    Object.keys(MESSAGES));
+    helpers.log.debug("Leaving SchedulerAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds an instance over the modules it depends on.
@@ -276,9 +322,7 @@ class SchedulerAdmin {
       return answer.ok
         ? { ok: true, accepted: true, command: answer.command,
             leaderAtRequest: answer.leaderAtRequest,
-            message: 'The scheduler\'s leader was asked to stand down. It ' +
-                     'does so at its next tick, and another node takes the ' +
-                     'lead at its next heartbeat.' }
+            message: MESSAGES.steppedDown }
         : { ok: false, errorCode: answer.errorCode, errors: [answer.why] };
     }
     if (action !== 'run') {
@@ -327,10 +371,8 @@ class SchedulerAdmin {
       ? { ok: true, accepted: true, runId: answer.runId,
           alreadyQueued: !!answer.alreadyQueued, run: answer.run,
           href: PAGE + '?run=' + encodeURIComponent(answer.runId),
-          message: 'A run of ' + jobId + ' is queued' +
-                   (answer.alreadyQueued ? ' (one already was; this is it)'
-                     : '') + '. The scheduler\'s leader starts it at its ' +
-                   'next tick.' }
+          message: serverProse.fill(answer.alreadyQueued
+            ? MESSAGES.queuedAgain : MESSAGES.queued, { job: jobId }) }
       : { ok: false, errorCode: answer.errorCode, status: answer.status,
           errors: [answer.why] };
   }
@@ -380,6 +422,14 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  PROSE_ROUTES: PROSE_ROUTES,
+  /**
+   * What an accepted action says, by key (#543).
+   */
+  prose: SchedulerAdmin.prose,
   // For `mgmt-api/admin_api.ts` (rule 7): the page's own JSON and action.
   schedulerView: slot.forward('schedulerView'),
   schedulerAction: slot.forward('schedulerAction')

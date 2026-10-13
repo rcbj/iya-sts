@@ -7,51 +7,58 @@
 //
 // ---------------------------------------------------------------------------
 // THE PORTAL'S REFRESH BUTTON (#538), beside Sign out on every signed-in page.
-// The portal runs no script, so it is a GET form, and `refreshForm()` decides
-// what it reloads:
-//
-//   1. A GET OF THE PAGE'S OWN PATH reloads that path with its paging
-//      parameters, so a paged list comes back on the same page.
-//   2. LESS `done`, the one-time message a redirect after a write carries.
-//   3. A PAGE DRAWN IN ANSWER TO A POST loads its own path afresh, carrying
-//      nothing of the request: repeating a write is what a Refresh button
-//      must not do.
-//   4. A REQUEST FOR ANOTHER PATH (a page drawn under a different name) and
-//      NO REQUEST AT ALL load the page's path, with nothing carried.
+// Since #568 the frame is drawn in the browser (`portal/web_portal_shell.ts`)
+// and Refresh is a GET form the runtime answers by asking the page's
+// operation again. What it carries is still decided by one rule:
+//   1. THE PAGE'S OWN PATH with its paging parameters, so a paged list comes
+//      back on the same page.
+//   2. LESS `done` — and there is no `done` any more: a write's message is
+//      held by the runtime and drawn once, never on the URL.
+//   3. (A page drawn in answer to a POST no longer exists: an act's answer is
+//      drawn in place, and the page's own query is what Refresh carries.)
 //   5. A VALUE IS ESCAPED: a query a link put on the page cannot break out of
 //      the attribute it is drawn into.
-//   6. THE SHELL DRAWS IT beside Sign out, as a GET form and not a script.
+//   6. THE FRAME DRAWS IT beside Sign out, as a GET form, with no script.
 //   7. ONLY THE PARAMETERS A PAGE READS are carried — paging and the step
 //      markers — so `?user=somebody` on the URL is not drawn back
 //      (sts_portal_sessions' cross-account check).
 //   8. THE LANGUAGE CHOOSER (#539) RETURNS WITH THE SAME PARAMETERS, not the
-//      request's whole URL.
-//
-// In process, through the portal's instance and `audit.withSource()`, which is
-// how the request is ambient when a page is drawn.
+//      URL's whole query.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
 
-const audit = require('../common/audit');
-const portal = require('../portal/portal');
+const PortalShell = require('../portal/web_portal_shell');
 
 const log = require('bunyan').createLogger({ name: 'portal_refresh',
   level: process.env.LOG_LEVEL || 'info' });
 
-const PAGE = portal.BASE + '/consents';
+const PAGE = '/portal/consents';
 
-function drawn(method, url, active) {
-  log.debug('Entering drawn(). ' + method + ' ' + url);
-  const instance = new portal.Portal(portal.Portal.defaultDeps());
-  const draw = function () {
-    return instance.refreshForm(active || PAGE);
-  };
-  const html = method
-    ? audit.withSource({ req: { method: method, url: url } }, draw)
-    : draw();
-  log.debug('Leaving drawn().');
-  return html;
+// A translator that answers each key as itself, and English for the two
+// words the assertions read.
+const T = {
+  html: function (key) {
+    return key === 'portal.shell.refresh' ? 'Refresh'
+      : (key === 'portal.shell.signOut' ? 'Sign out' : key);
+  },
+  text: function (key) {
+    return key;
+  },
+  has: function () {
+    return true;
+  },
+  locale: 'en', lang: 'en', dir: 'ltr'
+};
+
+function queryOf(search) {
+  log.debug('Entering queryOf().');
+  const out = {};
+  new URLSearchParams(search).forEach(function (value, name) {
+    out[name] = value;
+  });
+  log.debug('Leaving queryOf().');
+  return out;
 }
 
 function hidden(html) {
@@ -68,69 +75,52 @@ function hidden(html) {
 
 function run(t) {
   log.debug('Entering run().');
-  const paged = drawn('GET', PAGE + '?page=3');
+  const paged = PortalShell.refreshForm(PAGE, queryOf('page=3'), T);
   t.check(/<form method="get" action="\/portal\/consents">/.test(paged) &&
           hidden(paged).page === '3' &&
           />Refresh<\/button><\/form>$/.test(paged),
-          '1. a GET of the page reloads it with the same query', paged);
-  const done = drawn('GET', PAGE + '?page=2&done=Withdrawn%3A%20x');
+          '1. Refresh reloads the page with its paging query', paged);
+  const done = PortalShell.refreshForm(PAGE,
+    queryOf('page=2&done=Withdrawn%3A%20x'), T);
   t.check(hidden(done).page === '2' && !('done' in hidden(done)),
-          '2. less done, the one-time message after a write', done);
-  const post = drawn('POST', PAGE + '?page=4');
-  t.check(Object.keys(hidden(post)).length === 0 &&
-          /action="\/portal\/consents"/.test(post),
-          '3. a page drawn for a POST loads its own path afresh', post);
-  const other = drawn('GET', portal.BASE + '/keys?page=9');
-  const none = drawn(null, '');
-  t.check(Object.keys(hidden(other)).length === 0 &&
-          Object.keys(hidden(none)).length === 0 &&
-          /action="\/portal\/consents"/.test(none),
-          '4. another path, or no request, loads the page\'s path with ' +
-          'nothing carried', JSON.stringify([other, none]));
-  const hostile = drawn('GET', PAGE + '?stepup=%22%3E%3Cscript%3E');
+          '2. a `done` on the URL is not carried', done);
+  const hostile = PortalShell.refreshForm(PAGE,
+    queryOf('stepup=%22%3E%3Cscript%3E'), T);
   t.check(hidden(hostile).stepup === '&quot;&gt;&lt;script&gt;' &&
           !/<script>/.test(hostile),
           '5. a value from the query is escaped', hostile);
-  const foreign = drawn('GET', PAGE + '?page=2&user=somebody-else' +
-                        '&q=x&grantsPage=4');
+  const foreign = PortalShell.refreshForm(PAGE,
+    queryOf('page=2&user=somebody-else&q=x&grantsPage=4'), T);
   t.check(hidden(foreign).page === '2' &&
           hidden(foreign).grantsPage === '4' &&
           !('user' in hidden(foreign)) && !('q' in hidden(foreign)) &&
           foreign.indexOf('somebody-else') < 0,
           '7. a parameter no portal page reads is not carried, so a name ' +
           'a link put on the URL is not drawn back', foreign);
-  const chooser = audit.withSource({ req: { method: 'GET',
-    url: PAGE + '?page=2&user=somebody-else', originalUrl:
-      PAGE + '?page=2&user=somebody-else' } }, function () {
-    const one = new portal.Portal(portal.Portal.defaultDeps());
-    return one.shell(PAGE, { id: 'portal-refresh-test',
-                             user: { username: 'refresh-tester' } },
-                     null, null, '<div class="card"></div>');
-  });
-  const back = (/name="return" value="([^"]*)"/.exec(chooser) || [])[1];
-  t.check(back === PAGE + '?page=2' && chooser.indexOf('somebody-else') < 0,
+  const me = { user: { username: 'refresh-tester' },
+               locale: { offered: [{ tag: 'en', name: 'English' }] },
+               version: { version: '0.0.0', buildInfo: '' } };
+  const page = PortalShell.frame(me, { active: PAGE,
+    query: queryOf('page=2&user=somebody-else'), message: '', error: '',
+    cards: '<div class="card"></div>', prefix: '', t: T });
+  const back = (/name="return" value="([^"]*)"/.exec(page) || [])[1];
+  t.check(back === PAGE + '?page=2' && page.indexOf('somebody-else') < 0,
           '8. the language chooser returns with the same parameters, and ' +
           'never with one no page reads', String(back));
-  const instance = new portal.Portal(portal.Portal.defaultDeps());
-  const page = audit.withSource({ req: { method: 'GET', url: PAGE } },
-    function () {
-      return instance.shell(PAGE, { id: 'portal-refresh-test',
-                                    user: { username: 'refresh-tester' } },
-                            null, null, '<div class="card"></div>');
-    });
   t.check(/<div class="acts"><form method="get"[^]*Refresh<\/button><\/form>/
             .test(page) &&
           /Refresh<\/button><\/form><form method="post"[^>]*\/signout"/
             .test(page) &&
           !/<script/i.test(page),
-          '6. the shell draws Refresh beside Sign out, with no script',
+          '6. the frame draws Refresh beside Sign out, with no script',
           page.slice(0, 600));
   log.debug('Leaving run().');
 }
 
 module.exports = {
   name: 'portal_refresh',
-  describe: 'the portal\'s Refresh button (#538): a GET form reloading the ' +
-            'page with its query, less done, and never repeating a POST',
+  describe: 'the portal\'s Refresh button (#538, #568): a GET form ' +
+            'reloading the page with the parameters it reads, and nothing ' +
+            'else',
   run: run
 };

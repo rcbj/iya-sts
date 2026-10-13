@@ -1,7 +1,7 @@
 # ws-federation/
 
-WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
-`/wsfed/rp` that verifies a sign-in response check by check. One file.
+WS-Federation 1.2, the passive requestor profile. One file. The mock relying
+party at `/wsfed/rp` was deleted by #592 (see the last section).
 
 4. **`wsfed.ts` must stay after `authn/authn.ts` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
@@ -113,14 +113,6 @@ for byte what that handler redirected to once it had a session — so there is o
 less store to make per realm, and the realm-isolation hole that store had in
 2026-08-25 cannot recur in it.
 
-## `rpContexts` is per trust realm
-
-`/wsfed/rp` answers under every realm prefix, so there is one mock relying party
-per realm, and a `wctx` minted by one being recognised by another would make the
-check that Map exists for — did my own value come back? — answer yes across a
-boundary the rest of the profile does not cross. `realmSupport()` publishes this
-family as `full` and says single sign-on with OAuth "does not cross realms".
-
 ## The autopost page is one of the seven scripted pages
 
 Section 13.2.1's sign-in response is a self-submitting form, so
@@ -132,10 +124,12 @@ is the whole mechanism. See the root `CLAUDE.md`.
 
 * **`wreply` must be registered in product mode** (`mode.acceptsUnregisteredAddresses()`):
   one of the `wsfedReplyUrl` values on the `wtrealm`'s entry, exact match, with
-  none sent meaning the registered one and NO fallback to `/wsfed/rp`. The rule is
-  `../saml/return_address.ts`, shared with both SAML profiles. Development passes
-  no registration to it at all, so a request with no `wreply` still goes to the
-  mock relying party even when the entry recorded one — byte for byte what it did.
+  none sent meaning the registered one. The rule is
+  `../saml/return_address.ts`, shared with both SAML profiles. Development
+  passed no registration to it at all until #592, so a request with no `wreply`
+  went to the mock relying party even when the entry recorded one; with the
+  mock deleted it passes the entry's, so such a request goes to the registered
+  `wsfedReplyUrl`, and is refused (`STS-WSFED-0003`) when there is none.
   **Which `wsfedReplyUrl` values count is `applications.returnAddressesOf()`'s
   answer** (the same day): a `wreply` a development sighting wrote is marked
   OBSERVED on `appReturnAddressObserved`, and product refuses it with
@@ -151,8 +145,8 @@ is the whole mechanism. See the root `CLAUDE.md`.
   `username@sts.example` in a product deployment's signed document.
 * ~~`wsfed.entityId` and `saml.issuer` differing is reported~~ — both retired
   by #523, and `issuerDisagreement()` with them: there is one name.
-* `wsfed.mockRpContextTtlMin` (30) replaced the constant; the metadata signer
-  reads `saml.signatureAlgorithm`.
+* The metadata signer reads `saml.signatureAlgorithm`. (`wsfed.mockRpContextTtlMin`
+  replaced a constant that day, and went with the mock relying party, #592.)
 
 `tests/saml_family_hardcoded.js` sections A, H and I pin these.
 
@@ -187,7 +181,6 @@ with no override. It replaced #494's per-application name
   configured per application: the segment is the identifier or
   `saml2_sso.slugOf()`'s slug, and **a 404 in BOTH modes for anything
   unregistered** (`STS-WSFED-0019`).
-* **The mock relying party checks against that one name.**
 * **ONE ENTITY, TWO VIEWS (#524, rcbj: "Address #1", then "Two views, one
   entity").** With one entityID, a WS-Federation document of its own was a
   second `<EntityDescriptor>` for an entity the SAML document already
@@ -224,9 +217,6 @@ whose `wtrealm` is not a registered relying party is **a 404 page,
   rule already refused most of these (an unregistered realm has no
   confirmed `wsfedReplyUrl`), with a message about the wrong thing and only
   after the realm had been looked at; this says what is wrong.
-* **The mock relying party at `/wsfed/rp` names its own URL as `wtrealm`**,
-  which nobody registers, so in product it is refused here — as it already
-  was by the `wreply` rule.
 * **Development is unchanged**: any `wtrealm`, the realm's one issuer, and
   `seen()` files it.
 * **An entry an LDAP add made is not registered either**: the add writes no
@@ -256,8 +246,9 @@ second factor, a forged marker refused
 `STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
 the marker ignored, so every unmet demand is refused as before — turned eight
 of its assertions red. Nothing else here is
-tested. The mock relying party makes the rest look covered — but a person has
-to click it and read the page. What a test would add is the other negatives:
+tested but by `tests/vendored/sts_saml11.js`, which posts a sign-in response to
+the test peer's relying party (the mock relying party that made the rest look
+covered was deleted, #592). What a test would add is the other negatives:
 an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
 signature whose reference does not resolve because `AssertionID` was not
 named, A passive requestor that issues a good token to a
@@ -270,3 +261,15 @@ SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
 published WS-Federation 1.2, WS-Trust and SAML schemas by
 `tests/vendored/sts_xml_schema_validation.js`, in a development and a product
 realm. Both were valid on the first run.
+
+## The mock relying party — deleted (#592, 2026-10-12)
+
+`/wsfed/rp` was a development-only demonstration (#585) whose pages #581 had
+made a static surface. #592 deleted it — its routes, its start view, the
+verifier that existed only to show a verdict (`verifySignInResponse()`), the
+`wctx` store (`wsfed.rpContexts`) and its lifetime setting — because the
+runtime ships no demonstration code (#591). `verifyAssertionSignature()`
+stays: `tests/saml_signature_algorithms.js` and `tests/issuer_names.js` ask
+it whether an assertion this service signed verifies. The relying party a
+test needs is the test peer's (`tests/peer/peer_saml.js`, #586).
+`STS-WSFED-0016` is retired. `common/CLAUDE.md` 3cm has the whole record.

@@ -7,7 +7,6 @@
   "inventory.globalButton": "Déconnexion globale — tout terminer ci-dessous",
   "inventory.globalNote": "Le choix par défaut. Un POST vers <code>/logout</code> sans rien de sélectionné fait exactement ceci.",
   "inventory.selectedButton": "Terminer les éléments cochés",
-  "inventory.selectedNote": "Cochez-les dans les tableaux ci-dessous. Si rien n’est coché, rien n’est terminé.",
   "inventory.liveCount": "<strong>{total} élément(s) actif(s)</strong> dans {families, plural, one {# famille} other {# familles}}. Certains ne peuvent être terminés par personne — ils sont indiqués avec la raison, car une déconnexion qui les masquerait paraîtrait complète alors qu’elle ne l’est pas.",
   "inventory.anyUserOpen": "Ce service ne vérifie aucun mot de passe, nulle part : <code>?username=</code> désigne donc n’importe qui et n’accorde rien qui ne soit déjà possible — se connecter sous son nom ne demande qu’une requête. <code>logout.anyUser</code> désactive cela.",
   "inventory.anyUserOff": "<code>logout.anyUser</code> est désactivé : ce point de terminaison n’agit donc que sur la session que vous détenez.",
@@ -31,5 +30,13 @@
   "result.remain": "Il reste {total} élément(s).",
   "result.lookAgain": "Vérifier à nouveau",
   "result.lookAgainEnd": ".",
-  "result.nothingLeft": "Rien. Ce service ne détient plus aucune session ni aucun justificatif actif pour {key} qu’il puisse encore voir."
+  "result.nothingLeft": "Rien. Ce service ne détient plus aucune session ni aucun justificatif actif pour {key} qu’il puisse encore voir.",
+  "result.toPortal": "Aller à votre compte dans le portail utilisateur",
+  "result.brief": "Vous êtes déconnecté.",
+  "result.seeDetails": "Ce qui a été fermé, ce qui ne l’a pas été et ce qui reste actif figurent dans l’onglet Détails.",
+  "tab.signOut": "Se déconnecter",
+  "tab.details": "Détails",
+  "list.colProtocol": "Protocole",
+  "inventory.listNote": "Cochez-les dans la liste ci-dessus. Rien de coché ne termine rien.",
+  "inventory.detailsNote": "Cochez les jetons et les identifiants dans les tableaux ci-dessus. Rien de coché ne termine rien."
 }

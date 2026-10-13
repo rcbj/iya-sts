@@ -18,7 +18,8 @@
 //      called a certificate, a Kerberos ticket, a federated sign-in and the
 //      unauthenticated session a PASSWORD, in every mode;
 //   B. where a response may be delivered — any address in development, only a
-//      registered one in product, and never a built-in mock;
+//      registered one in product, and with neither a refusal in both (the
+//      built-in mocks were deleted, #592);
 //   C. the configured signature algorithm reaching a signature that verifies;
 //   D. the two builders' defaults and the SAML 1.1 AttributeQuery shape;
 //   E. WS-Trust: no credential, an unverified assertion, a delegation with no
@@ -275,7 +276,6 @@ function run(t) {
     log.debug("Entering spec().");
     log.debug("Leaving spec().");
     return { requested: requested, registered: registered,
-             fallback: 'https://idp.test/saml2/sp',
              attribute: 'samlAssertionConsumerService',
              parameter: 'AssertionConsumerServiceURL',
              application: 'sp-1' };
@@ -288,9 +288,12 @@ function run(t) {
             'https://a/2',
             'development: with none named, the LAST registered value, as ' +
             'both SAML modules took');
-    t.equal(returnAddress.resolve(spec('', [])).url,
-            'https://idp.test/saml2/sp',
-            'development: with nothing at all, the built-in mock');
+    const nowhere = returnAddress.resolve(spec('', []));
+    t.check(nowhere.ok === false &&
+            /samlAssertionConsumerService/.test(String(nowhere.why)),
+            'development: with nothing at all, a refusal naming the ' +
+            'attribute — there is no built-in mock (#592)',
+            String(nowhere.why));
   });
   withMode(config, 'product', function () {
     const refused = returnAddress.resolve(spec('https://evil.test/acs',
@@ -310,8 +313,7 @@ function run(t) {
             'https://sp.test/acs',
             'with none named, the registered one');
     t.equal(returnAddress.resolve(spec('', [])).ok, false,
-            'PRODUCT: with nothing registered there is NO fallback to the ' +
-            'built-in mock');
+            'PRODUCT: with nothing registered it is refused');
   });
 
   // -------------------------------------------------------------------------

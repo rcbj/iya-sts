@@ -38,7 +38,7 @@
   "specs.heading": "已实现的规范",
   "specs.thSpec": "规范",
   "specs.thWhere": "发布方",
-  "specs.thCoverage": "在此模拟服务中的覆盖范围",
+  "specs.thCoverage": "在本服务中的覆盖范围",
   "machineReadable": "机器可读：<code>{base}/admin/sts-metadata?format=json</code>，也就是顶部按钮以文件形式提供的内容。它与本页一样位于控制台门禁之后，因此获取它的程序需要先在 <code>/authn/login</code> 登录，或者通过不受门禁限制的 <code>/admin-api</code> 读取同一服务。本文档不是由规范定义的发现文档 &mdash; 此类文档请参见 <code>/.well-known/openid-configuration</code>、<code>/.well-known/oauth-authorization-server</code>、<code>/.well-known/openid-credential-issuer</code>、<code>/.well-known/jwt-vc-issuer</code>、<code>/.well-known/did.json</code> 和 <code>/.well-known/did-configuration.json</code>。",
   "reason.only": "仅 {method}",
   "reason.noGet": "无 GET（{methods}）",

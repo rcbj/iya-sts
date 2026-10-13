@@ -17,6 +17,12 @@
 // opt-in on /portal/mfa needs. Its mail transport starts OFF, which is what
 // section 0 is about.
 //
+// SINCE #568 the portal is a static application over `/account-api`: a
+// sign-in starts at the portal's own authorization request (the public
+// client `sts-user-portal`, PKCE), and the opt-in is `POST /account-api/mfa`
+// with the portal's token, taken through the sign-on session the walk set
+// (`portal_signin.js`).
+//
 //   0. THE POLICIES PAGE: both policies on one resource; a realm with no
 //      authentication policy of its own follows the default realm's; in a
 //      realm that cannot send mail the email rows are DISABLED and a save
@@ -35,9 +41,13 @@
 // 1–3 SKIP and say so; section 0 runs everywhere.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const nodeCrypto = require("crypto");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -237,20 +247,6 @@ function browser(name) {
   return self;
 }
 
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-function hiddenValue(html, name) {
-  log.debug("Entering hiddenValue().");
-  const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(html);
-  log.debug("Leaving hiddenValue().");
-  return m ? m[1].replace(/&amp;/g, "&") : "";
-}
-
 async function person(who) {
   log.debug("Entering person().");
   await ok(realmBase() + "/admin-api/users/create",
@@ -264,11 +260,36 @@ async function person(who) {
   return who + "@" + DOMAIN;
 }
 
-// To the realm's sign-in screen through its portal, as a browser arrives:
+function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buffer).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// The realm portal's authorization request, as its runtime sends it (#568).
+function portalAuthorizeUrl() {
+  log.debug("Entering portalAuthorizeUrl().");
+  const verifier = b64u(nodeCrypto.randomBytes(32));
+  const url = realmBase() + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: realmBase() + "/portal/callback",
+    scope: "openid account:manage", state: b64u(nodeCrypto.randomBytes(16)),
+    code_challenge: b64u(nodeCrypto.createHash("sha256").update(verifier)
+      .digest()),
+    code_challenge_method: "S256", resource: realmBase() + "/account-api" })
+    .toString();
+  log.debug("Leaving portalAuthorizeUrl().");
+  return url;
+}
+
+// To the realm's sign-in screen through its portal, as a browser arrives —
+// the portal's page loads, and its runtime sends the authorization request:
 // answers the browser and the screen.
 async function toSignIn(b) {
   log.debug("Entering toSignIn().");
-  let r = await b.go("GET", realmBase() + "/portal");
+  await b.go("GET", realmBase() + "/portal");
+  let r = await b.go("GET", portalAuthorizeUrl());
   for (let hop = 0; hop < 4 && r.location &&
        !/\/authn\/login\?authn=/.test(r.location); hop++) {
     r = await b.go("GET", r.location);
@@ -276,9 +297,80 @@ async function toSignIn(b) {
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
             "the portal did not lead to the sign-in screen: " + r.status +
             " -> " + r.location);
-  r = await b.go("GET", r.location);
-  assert.ok(hiddenValue(r.text, "authn_id"), "no authn_id on the screen");
+  // THE SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571: what it
+  // offers is its view, opened with this browser's cookies.
+  const at = new URL(r.location, base).toString();
+  const opened = await authnSignin.screen(realmBase(), at,
+    { cookie: b.cookieHeader(), headers: { "User-Agent": AGENT } });
+  opened.setCookies.forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    b.jar[pair.slice(0, pair.indexOf("="))] =
+      pair.slice(pair.indexOf("=") + 1);
+  });
+  assert.ok(opened.view, "no sign-in screen: " + opened.status + " " +
+            JSON.stringify(opened.json));
   log.debug("Leaving toSignIn().");
+  return { status: opened.status, url: at, view: opened.view };
+}
+
+// Set-cookie lines into a browser's jar, an emptied one removed.
+function keep(b, lines) {
+  log.debug("Entering keep().");
+  (lines || []).forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    const at = pair.indexOf("=");
+    if (at <= 0) {
+      return;
+    }
+    const value = pair.slice(at + 1);
+    if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(line))) {
+      delete b.jar[pair.slice(0, at)];
+    } else {
+      b.jar[pair.slice(0, at)] = value;
+    }
+  });
+  log.debug("Leaving keep().");
+}
+
+// A step's page (#573: the emailed factor's pages are the sign-in surface's)
+// opened in a browser: the shell, then its view — `{ status, step, view,
+// text }`.
+async function openStep(b, location) {
+  log.debug("Entering openStep().");
+  const opened = await authnSignin.step(new URL(location, base).toString(),
+    { cookie: b.cookieHeader(), headers: { "User-Agent": AGENT } });
+  keep(b, opened.setCookies);
+  log.debug("Leaving openStep(). " + opened.status);
+  return { status: opened.status, step: opened, view: opened.view || {},
+           text: opened.text };
+}
+
+// One act on a step's page over `/authn-api` (#573), with this browser's
+// jar: read as the form's answer was — `redirect` as its 303.
+async function stepAct(b, page, op, body) {
+  log.debug("Entering stepAct(). " + op);
+  const r = await authnSignin.stepAct(page.step, op, body,
+    { cookie: b.cookieHeader(), headers: { "User-Agent": AGENT } });
+  keep(b, r.headers.getSetCookie());
+  log.debug("Leaving stepAct(). " + r.next);
+  return { status: r.next === "redirect" ? 303 : r.status,
+           location: r.location, text: r.text, json: r.json,
+           errors: r.errors, next: r.next };
+}
+
+// One act at the screen `toSignIn()` opened, over `/authn-api` (#571) with
+// this browser's jar: read as the form's 303 was, except that an act
+// answering a second-factor step — an emailed code or link — opens that
+// step's page as the sign-in surface does (#573).
+async function screenAct(b, screen, fields) {
+  log.debug("Entering screenAct(). " + fields.action);
+  const r = await authnSignin.signInWithJar(realmBase(), screen.url, fields,
+    b.jar, { headers: { "User-Agent": AGENT } });
+  if (r.answer.next === "mfa") {
+    log.debug("Leaving screenAct(). The step's page.");
+    return openStep(b, r.location);
+  }
+  log.debug("Leaving screenAct(). " + r.answer.next);
   return r;
 }
 
@@ -397,33 +489,35 @@ async function aCodeAsTheSecondFactor(fields) {
   // Opted in from the portal, signed in on a password alone the first time.
   const b = browser(who);
   let r = await toSignIn(b);
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           password: PASSWORD, action: "login" }));
+  r = await screenAct(b, r,
+    { action: "login", username: who, password: PASSWORD });
   r = await finish(b, r);
-  r = await b.go("GET", realmBase() + "/portal/mfa");
+  // THE PORTAL'S OWN TOKEN, through the sign-on session just set (#568).
+  const p = await portal.signInToThePortal(realmBase(), who, null,
+                                           { cookie: b.cookieHeader() });
+  const drawn = await p.draw("/portal/mfa");
   check("1. /portal/mfa offers email as a second factor", function () {
-    assert.strictEqual(r.status, 200, r.text.slice(0, 200));
-    assert.ok(/id="email-factor-code"/.test(r.text), "no email option");
+    assert.strictEqual(drawn.status, 200,
+                       JSON.stringify(drawn.json).slice(0, 200));
+    assert.ok(/id="email-factor-code"/.test(drawn.html), "no email option");
   });
-  r = await b.go("POST", realmBase() + "/portal/mfa",
-    form({ action: "email-factor-on", kind: "code",
-           csrf_token: csrfOf(r.text) }));
+  r = await p.act("/portal/mfa", { action: "email-factor-on", kind: "code" });
   check("1. and the person turns it on", function () {
-    assert.strictEqual(r.status, 303, r.text.slice(0, 300));
+    assert.ok(r.status === 200 && r.json && r.json.ok === true,
+              String(r.text).slice(0, 300));
   });
   const seen = (await inbox(address)).map(function (m) {
     return m.ID;
   });
   const c = browser(who + "-2");
   r = await toSignIn(c);
-  r = await c.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           password: PASSWORD, action: "login" }));
-  const mfaId = hiddenValue(r.text, "mfa_id");
+  r = await screenAct(c, r,
+    { action: "login", username: who, password: PASSWORD });
+  const step1 = r;
   check("1. the next sign-in mails a code and asks for it", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/Check your email/.test(r.text) && mfaId, r.text.slice(0, 300));
+    assert.ok(r.view.state === "code" && r.view.kind === "code" &&
+              r.step.id, r.text.slice(0, 300));
   });
   const got = await arrived(address, /sign-in code/, seen);
   const code = codeIn(got.message);
@@ -432,15 +526,13 @@ async function aCodeAsTheSecondFactor(fields) {
     assert.ok(/^\d{6}$/.test(code), String(got.message.Text).slice(0, 200));
     assert.ok(/You received this because/.test(String(got.message.Text)));
   });
-  r = await c.go("POST", realmBase() + "/authn/email-code",
-    form({ mfa_id: mfaId, action: "verify",
-           code: code === "000000" ? "111111" : "000000" }));
+  r = await stepAct(c, step1, "email/code",
+                    { code: code === "000000" ? "111111" : "000000" });
   check("1. a wrong code keeps the step and counts down", function () {
-    assert.strictEqual(r.status, 200);
-    assert.ok(/more attempt/.test(r.text), r.text.slice(0, 300));
+    assert.strictEqual(r.status, 400);
+    assert.ok(/more attempt/.test(r.errors.join(" ")), r.text.slice(0, 300));
   });
-  r = await c.go("POST", realmBase() + "/authn/email-code",
-    form({ mfa_id: mfaId, action: "verify", code: code }));
+  r = await stepAct(c, step1, "email/code", { code: code });
   check("1. the right code signs in", function () {
     assert.ok(r.status === 302 || r.status === 303,
               r.status + " " + r.text.slice(0, 300));
@@ -469,23 +561,24 @@ async function aCodeAsTheFirstFactor() {
   let r = await toSignIn(b);
   check("2. the sign-in screen offers \"Email me a sign-in code\"",
         function () {
-    assert.ok(/id="kc-email-code"/.test(r.text), r.text.slice(0, 300));
+    assert.ok(r.view.email && r.view.email.code === true,
+              JSON.stringify(r.view));
   });
   const seen = (await inbox(address)).map(function (m) {
     return m.ID;
   });
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           action: "email-code" }));
-  // Every per-request identifier, a bare value or one inside a return path
-  // (since #539 the language chooser's `return` carries the step's id).
-  const page = r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, "ID")
-    .replace(/=[A-Za-z0-9_-]{20,}"/g, '=ID"')
-    .replace(new RegExp(who, "g"), "WHO");
-  const mfaId = hiddenValue(r.text, "mfa_id");
+  r = await screenAct(b, r, { action: "email-code", username: who });
+  // THE PAGE IS ITS VIEW (#573): the step's id and the name typed are the
+  // only per-request values in it.
+  const sameness = function (view, name) {
+    return JSON.stringify(Object.assign({}, view, { id: "ID",
+                                                    username: "WHO" }))
+      .replace(new RegExp(name, "g"), "WHO");
+  };
+  const page = sameness(r.view, who);
+  const step2 = r;
   const got = await arrived(address, /sign-in code/, seen);
-  r = await b.go("POST", realmBase() + "/authn/email-code",
-    form({ mfa_id: mfaId, action: "verify", code: codeIn(got.message) }));
+  r = await stepAct(b, step2, "email/code", { code: codeIn(got.message) });
   await finish(b, r);
   const session = await until("the session", function () {
     return sessionOf(who);
@@ -499,14 +592,10 @@ async function aCodeAsTheFirstFactor() {
   const nobody = "nobody" + who;
   const d = browser(nobody);
   r = await toSignIn(d);
-  r = await d.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: nobody,
-           action: "email-code" }));
+  r = await screenAct(d, r, { action: "email-code", username: nobody });
   check("2. an unknown name gets the SAME page — no enumeration", function () {
     assert.strictEqual(r.status, 200);
-    assert.strictEqual(r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, "ID")
-      .replace(/=[A-Za-z0-9_-]{20,}"/g, '=ID"')
-      .replace(new RegExp(nobody, "g"), "WHO"), page);
+    assert.strictEqual(sameness(r.view, nobody), page);
   });
   log.debug("Leaving aCodeAsTheFirstFactor().");
 }
@@ -521,14 +610,13 @@ async function aLink() {
   const seen = (await inbox(address)).map(function (m) {
     return m.ID;
   });
-  r = await b.go("POST", realmBase() + "/authn/login",
-    form({ authn_id: hiddenValue(r.text, "authn_id"), username: who,
-           action: "email-link" }));
-  const mfaId = hiddenValue(r.text, "mfa_id");
-  check("3. the waiting page, which refreshes itself", function () {
+  r = await screenAct(b, r, { action: "email-link", username: who });
+  const mfaId = r.step ? r.step.id : "";
+  check("3. the waiting page, which asks again every few seconds (its " +
+        "<meta> refresh, a poll in the browser since #573)", function () {
     assert.strictEqual(r.status, 200);
-    assert.ok(/Open it in this browser/.test(r.text) &&
-              /http-equiv="refresh"/.test(r.text), r.text.slice(0, 300));
+    assert.ok(r.view.state === "wait" && r.view.seconds > 0,
+              r.text.slice(0, 300));
     assert.ok(b.jar.sts_email_binding, "no binding cookie");
   });
   const got = await arrived(address, /sign-in link/, seen);
@@ -539,29 +627,30 @@ async function aLink() {
                            "/authn/email-link/open?") === 0, link);
   });
   const other = browser("elsewhere");
-  r = await other.go("GET", link);
+  r = await openStep(other, link);
   check("3. opened in ANOTHER browser it signs nobody in", function () {
     assert.strictEqual(r.status, 400, r.text.slice(0, 300));
-    assert.ok(/where you started/.test(r.text));
+    assert.ok(r.view.state === "end" &&
+              /where you started/.test(r.view.title), r.text.slice(0, 300));
   });
   // The browser already holds the portal's ARRIVAL session, so what the
   // GET must not do is CHANGE it — and the waiting step must still be there.
   const before = b.jar.sts_session || "";
-  r = await b.go("GET", link);
-  const t = hiddenValue(r.text, "t");
-  const waiting = await b.go("GET", realmBase() + "/authn/email-link?mfa=" +
-                             encodeURIComponent(mfaId));
-  check("3. in the browser that started it the GET draws Continue and " +
-        "spends nothing", function () {
+  r = await openStep(b, link);
+  const opened = r;
+  const t = r.step ? r.step.t : "";
+  const waiting = await openStep(b, realmBase() + "/authn/email-link?mfa=" +
+                                 encodeURIComponent(mfaId));
+  check("3. in the browser that started it the link's page draws Continue " +
+        "and spends nothing", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/Continue/.test(r.text) && t);
+    assert.ok(r.view.state === "open" && t, r.text.slice(0, 300));
     assert.strictEqual(b.jar.sts_session || "", before,
                        "the GET changed the session");
-    assert.ok(/Open it in this browser/.test(waiting.text),
+    assert.strictEqual(waiting.view.state, "wait",
               "the step is gone after a GET: " + waiting.text.slice(0, 200));
   });
-  r = await b.go("POST", realmBase() + "/authn/email-link/open",
-    form({ mfa_id: mfaId, t: t }));
+  r = await stepAct(b, opened, "email-link/open", { t: t });
   check("3. and Continue signs in", function () {
     assert.ok(r.status === 302 || r.status === 303,
               r.status + " " + r.text.slice(0, 300));

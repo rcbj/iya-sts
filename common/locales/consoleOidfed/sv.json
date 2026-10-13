@@ -48,6 +48,7 @@
   "registerSubordinate": "Registrera den underordnade",
   "information": "information",
   "historyCount": "Historik ({n})",
+  "historyLatest": "De {shown} senaste; hela historiken publiceras på /oidfed/subordinate-events.",
   "realmDeleted": "sfär <code>{realm}</code>, borttagen",
   "revoked": "återkallad",
   "formerHeading": "Tidigare underordnade",

@@ -56,8 +56,6 @@
   "intro": "<strong>ACME（RFC 8555），每個信任領域一個伺服器。</strong>用戶端使用為某個人或應用程式簽發的 External Account Binding 註冊帳戶，為該項目擁有的識別碼訂購憑證，並以 CSR 完成訂單。目錄為",
   "turnedOff": "<strong>此領域已關閉 ACME。</strong>",
   "noDialOut": "<strong>沒有任何挑戰會向外連線。</strong>對於繫結項目所擁有的識別碼（已註冊的主機名稱、個人的電子郵件、項目本身），授權在建立時即為有效，帶有一個 <code>{challenge}</code> 挑戰；項目不擁有的識別碼會在 newOrder 時以 rejectedIdentifier 被拒絕。EAB MAC 在所有模式下都會驗證。",
-  "hDirectory": "目錄",
-  "hEndpoints": "端點",
   "hIssuingCa": "ACME 簽發 CA",
   "hProfiles": "設定檔",
   "hEab": "External Account Binding 金鑰",

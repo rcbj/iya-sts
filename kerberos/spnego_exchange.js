@@ -22,6 +22,15 @@
 // would be a page that describes a check the sign-in does not make, or the
 // reverse, and neither would show up as a failure anywhere.
 //
+// **ONE DOOR AGAIN SINCE #595.** `/spnego/protected` left the runtime for the
+// development companion (`companion/demo_kerberos.js`), where a Kerberos
+// service with its own keytab and MIT Kerberos's acceptor plays it; the
+// sign-in is the one caller here. The options that page alone passed
+// (`supported`, `wantMic`, `mutualOff`) stay, as the library's, for the
+// in-process tests that drive the negotiation's every outcome through them;
+// what this header and the comments below say of `/spnego/protected` is its
+// history.
+//
 // So the split is the same one `krb5_service.js` already made one layer down
 // and for the same reason, which that module's header stated as a promise when
 // it was written: *"the acceptor logic here is written as its own function so
@@ -216,7 +225,12 @@ const OUTCOMES = {
 function volunteerTheSpn(res) {
   log.debug('Entering volunteerTheSpn().');
   res.set('X-Krb5-Service-Principal', spn() + '@' + principals.REALM);
-  res.set('X-Krb5-Accepts-Spn-Hosts', principals.SERVICE_DOMAINS.join(','));
+  // Only the hosts the KDC will issue an SPN for: none in product mode,
+  // where the one SPN above is all there is (2026-10-12).
+  const hosts = principals.ADVERTISED_SERVICE_HOSTS;
+  if (hosts.length) {
+    res.set('X-Krb5-Accepts-Spn-Hosts', hosts.join(','));
+  }
   log.debug('Leaving volunteerTheSpn().');
 }
 
@@ -415,7 +429,8 @@ function prunePending(nowMs) {
 }
 
 // ---------------------------------------------------------------------------
-// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view.
+// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view until #595 moved
+// that page to the development companion; no route reads it now.
 //
 // It lives here rather than in `spnego.js` now that there are two doors, and
 // it carries the DOOR — so a person reading that page can tell an exchange

@@ -1,0 +1,54 @@
+{
+  "workerpools.s.surfaceOff": {
+    "en": "89db9dc12a565277",
+    "text": "Av: {{setting}} är 0, så /admin och /portal går dit resten av workers.dispatch går — till begärandepoolen, eller besvaras här av frontprocessen."
+  },
+  "workerpools.s.requestOffByDefault": {
+    "en": "8d2e889154ed3266",
+    "text": "Av: {{setting}} har sitt standardvärde {{value}}, vilket betyder inga där lagret inte kan samordna (persistence.mode är inte postgres, eller persistence.coordinate är av), så varje begäran besvaras av frontprocessen själv, på en tråd."
+  },
+  "workerpools.s.requestOff": {
+    "en": "8cd5b7da234116fb",
+    "text": "Av: {{setting}} är 0, så varje begäran besvaras av frontprocessen själv, på en tråd."
+  },
+  "workerpools.s.givenUpSurface": {
+    "en": "db7b7ee1f099024a",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. De värdade ytorna går till begärandepoolen."
+  },
+  "workerpools.s.givenUpRequest": {
+    "en": "ced50089d8744adc",
+    "text": "Uppgiven: {{failed}} arbetstråd(ar) kunde inte starta och poolen slutade starta dem. Varje begäran besvaras av frontprocessen."
+  },
+  "workerpools.s.notStarted": {
+    "en": "62c83c1852ddfcd4",
+    "text": "Inte startad: {{setting}} är {{configured}}, och den här processen startade ingen arbetstråd — den startades inte som frontprocess för en tjänst, eller så försattes poolen i viloläge vid start."
+  },
+  "workerpools.s.notStartedWhy": {
+    "en": "21c3b07178851dd0",
+    "text": "Inte startad: {{setting}} är {{configured}}, och den här processen startade ingen arbetstråd — den startades inte som frontprocess för en tjänst, eller så försattes poolen i viloläge vid start. {{why}}"
+  },
+  "workerpools.s.notDispatching": {
+    "en": "93ee662a7d76b08e",
+    "text": "Körs, och vilande genom konfiguration: workers.dispatch namnger ingenting, så ingen begäran skickas till de här arbetstrådarna."
+  },
+  "workerpools.s.running": {
+    "en": "742f55125a4f9bfa",
+    "text": "{{ready}} av {{configured}} arbetstråd(ar) betjänar."
+  },
+  "workerpools.s.surfaceTitle": {
+    "en": "e1b28d262c05bf45",
+    "text": "Pool för värdade ytor (/admin och /portal)"
+  },
+  "workerpools.s.requestTitle": {
+    "en": "a93d7fece665e6d4",
+    "text": "Begärandepool"
+  },
+  "workerpools.s.scope": {
+    "en": "e553a4af2d93d7e2",
+    "text": "Det här är poolerna för noden {{node}}, som hålls av dess frontprocess, pid {{pid}}. Varje arbetare är en tråd i den processen (#364), namngiven efter sitt tråd-id, med en egen V8-heap och processens minne och CPU. Varje nod i ett kluster har egna pooler. Postkvantsignering och scrypt har inte haft någon pool av processer sedan #363: de körs på libuvs trådpool, inuti den process som bad om dem."
+  },
+  "workerpools.s.clusterTotals": {
+    "en": "c7214064fa26397e",
+    "text": "Över de {{count}} nod(er) som inte är borta och har en ögonblicksbild, inaktuella inräknade och markerade."
+  }
+}

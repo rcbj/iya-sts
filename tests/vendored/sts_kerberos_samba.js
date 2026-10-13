@@ -252,12 +252,26 @@ async function call(method, url, body) {
 // ---------------------------------------------------------------------------
 // 0. THE REALM, ITS PRINCIPALS AND THEIR KEYS.
 // ---------------------------------------------------------------------------
+// THE KDC'S DATABASE, THROUGH /admin-api SINCE #595: the demonstration
+// document `GET /krb5/principals` was deleted, and the operation lists the
+// same rows — principal, salt, kvno, enctypes — as `database`, a page at a
+// time.
 async function principalRows(prefix) {
   log.debug("Entering principalRows().");
-  const r = await call("GET", prefix + "/krb5/principals");
-  assert.strictEqual(r.status, 200, "GET /krb5/principals: " + r.status);
-  log.debug("Leaving principalRows().");
-  return r.json.principals || [];
+  let rows = [];
+  for (let page = 1; ; page++) {
+    const r = await call("GET", prefix + "/admin-api/kerberos/principals" +
+                         "?per=100&databasePage=" + page);
+    assert.strictEqual(r.status, 200, "GET /admin-api/kerberos/principals: " +
+                       r.status + " " + r.text.slice(0, 200));
+    rows = rows.concat(r.json.database || []);
+    const paging = r.json.databasePaging || {};
+    if (!paging.pages || page >= paging.pages) {
+      break;
+    }
+  }
+  log.debug("Leaving principalRows(). " + rows.length);
+  return rows;
 }
 
 function rowFor(rows, principal) {
@@ -265,7 +279,7 @@ function rowFor(rows, principal) {
   const row = rows.filter(function (one) {
     return one.principal === principal;
   })[0];
-  assert.ok(row, principal + " is not in /krb5/principals");
+  assert.ok(row, principal + " is not in the KDC's database");
   log.debug("Leaving rowFor().");
   return row;
 }

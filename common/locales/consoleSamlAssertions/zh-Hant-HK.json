@@ -1,0 +1,5 @@
+{
+  "leadAfter": " 頁面上各一個，時鐘偏差則兩頁都有。此頁是前往相同設定列的捷徑，也是唯一能同時看到這三項的地方——它透過同一個函數寫入，因此在這裡做的變更與在那裡做的變更是同一個變更。",
+  "four": "<strong>四種。</strong>WS-Trust 與 WS-Federation 建構斷言時使用的，正是瀏覽器設定檔所用的那兩個函數，因此上述兩項設定都會影響它們，而這兩個模組都不必知道這些設定存在。WS-Federation 登入攜帶的是 SAML 1.1 斷言，因此管轄它的是 <code>saml11.assertionLifetimeMin</code>。這兩者包裹斷言的外層——WS-Trust 的 <code>wsu:Lifetime</code> 以及 WS-Federation 回應中的對應元素——陳述的是不含時鐘偏差的「有效期」，這是保守的解讀，也是刻意的：外層描述的是當初請求的內容，斷言則陳述它實際有效的期間。",
+  "twoThings": "<strong>SAML artifact</strong> 的有效期為 <code>saml2.artifactTtlS</code>，這是完全不同的時鐘——它決定 artifact 能被「解析」多久，而非其解析出的斷言有效多久。此外，斷言背後的<strong>工作階段</strong>有自己的有效期：斷言過期並不會結束產生它的單一登入工作階段，這就是為什麼拒絕過期斷言的信賴方可以直接把用戶送回這裡，不需經過登入畫面就取得新的斷言。"
+}

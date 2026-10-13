@@ -37,7 +37,7 @@
   "ianTip": "Alternative names for the issuer. Same syntax as subjectAltName.",
   "ianCriticalTip": "Should not normally be critical.",
   "ianSyntax": "The same syntax as subjectAltName above.",
-  "cdpTip": "Where to fetch the CRL that would revoke this certificate. NOTE that this service publishes none: the extension is a URL you are asserting, not a promise this mock keeps.",
+  "cdpTip": "Where to fetch the CRL that would revoke this certificate. NOTE that this service publishes none: the extension is a URL you are asserting, not a promise this service keeps.",
   "rarelyCritical": "Rarely critical.",
   "urlsPerLine": "URLs, one per line",
   "cdpUrlsTip": "Where the CRL that would revoke this certificate is published.",

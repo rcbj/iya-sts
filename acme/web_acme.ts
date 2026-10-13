@@ -105,20 +105,6 @@ class AcmePage {
   // THE SECTIONS OF /admin/acme.
   // ---------------------------------------------------------------------------
   /**
-   * Draws the realm's ACME endpoints.
-   *
-   * @param json - the view model's answer
-   * @returns the markup
-   */
-  static endpointsHtml(json) {
-    return '<table class="kv">' + Object.keys(json.endpoints).map(
-      function (name) {
-        return '<tr><th>' + esc(name) + '</th><td><code>' +
-               esc(json.endpoints[name]) + '</code></td></tr>';
-      }).join('') + '</table>';
-  }
-
-  /**
    * Draws the ACME Issuing CA.
    *
    * @param json - the view model's answer
@@ -380,8 +366,11 @@ class AcmePage {
    * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static countsTable(title, rows, t) {
-    return '<h2>' + esc(title) + '</h2><table><thead><tr><th>' +
+  static countsTable(title, rows, t, tab?) {
+    // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
+    // table of counts (`WebPages.protocolTabs()`).
+    return '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
+      esc(title) + '</h2><table><thead><tr><th>' +
       t.html('consoleAcme.thName') + '</th><th>' +
       t.html('consoleAcme.thCount') + '</th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (r) {
@@ -413,31 +402,35 @@ class AcmePage {
         (json.enabled ? '' : ' ' + t.html('consoleAcme.turnedOff'))) +
       kit.warn(t.html('consoleAcme.noDialOut',
                       { challenge: json.challengeType })) +
-      '<h2>' + t.html('consoleAcme.hDirectory') + '</h2><p><code>' +
-      esc(json.directory) + '</code></p>' +
-      '<h2>' + t.html('consoleAcme.hEndpoints') + '</h2>' +
-      self.endpointsHtml(json) +
-      '<h2>' + t.html('consoleAcme.hIssuingCa') + '</h2>' +
-      self.authorityHtml(json, t) +
-      '<h2>' + t.html('consoleAcme.hProfiles') + '</h2>' +
-      self.profilesHtml(json, t) +
-      '<h2 id="eab">' + t.html('consoleAcme.hEab') + '</h2>' +
-      self.eabHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hAccounts') + '</h2>' +
-      self.accountsHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hCertificates') + '</h2>' +
-      self.certificatesHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hHostNames') + '</h2>' +
-      self.hostNamesHtml(ctx, json) +
-      '<h2>' + t.html('consoleAcme.hMode') + '</h2>' +
-      kit.note('<strong>' + esc(json.mode.current) +
-        '</strong>: ' + esc(json.mode.inForce) + '<div class="sub">' +
-        t.html('consoleAcme.development') + ' ' +
-        esc(json.mode.development) + '</div><div ' +
-        'class="sub">' + t.html('consoleAcme.product') + ' ' +
-        esc(json.mode.product) + '</div>') +
-      '<h2>' + t.html('consoleAcme.hSettings') + '</h2>' +
-      SettingsForms.forms(json.settings, '/admin/acme', undefined, t) +
+      // EACH SECTION A SUB-TAB (2026-10-12): the ACME tab of Protocols →
+      // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
+      // CERT_SUB_TAB_IDS.
+      kit.subTabbedPanels(t.text('console.nav.acme'), [
+        { id: 'cert-acme-ca', label: t.text('consoleAcme.hIssuingCa'),
+          html: self.authorityHtml(json, t) },
+        { id: 'cert-acme-profiles', label: t.text('consoleAcme.hProfiles'),
+          html: self.profilesHtml(json, t) },
+        { id: 'cert-acme-eab', label: t.text('consoleAcme.hEab'),
+          html: self.eabHtml(ctx, json) },
+        { id: 'cert-acme-accounts', label: t.text('consoleAcme.hAccounts'),
+          html: self.accountsHtml(ctx, json) },
+        { id: 'cert-acme-certificates',
+          label: t.text('consoleAcme.hCertificates'),
+          html: self.certificatesHtml(ctx, json) },
+        { id: 'cert-acme-host-names', label: t.text('consoleAcme.hHostNames'),
+          html: self.hostNamesHtml(ctx, json) },
+        { id: 'cert-acme-mode', label: t.text('consoleAcme.hMode'),
+          html: kit.note('<strong>' + esc(json.mode.current) +
+            '</strong>: ' + esc(json.mode.inForce) + '<div class="sub">' +
+            t.html('consoleAcme.development') + ' ' +
+            esc(json.mode.development) + '</div><div ' +
+            'class="sub">' + t.html('consoleAcme.product') + ' ' +
+            esc(json.mode.product) + '</div>') },
+        { id: 'cert-acme-settings', label: t.text('consoleAcme.hSettings'),
+          html: SettingsForms.forms(json.settings,
+                                    '/admin/cert-issuance#cert-acme-settings',
+                                    undefined, t) }
+      ]) +
       '<p class="links"><a href="/admin/acme?format=json">JSON</a> · ' +
       '<code>GET /admin-api/acme</code> · <a ' +
       'href="/admin/acme/monitor">' + t.html('consoleAcme.linkMonitor') +
@@ -488,13 +481,17 @@ class AcmePage {
       kit.tile(totals.certificatesHeld,
                t.text('consoleAcme.tileCertificates')) + '</div>' +
       self.countsTable(t.text('consoleAcme.byOperation'), json.operations,
-                       t) +
-      self.countsTable(t.text('consoleAcme.byProfile'), json.profiles, t) +
+                       t, 'operations') +
+      self.countsTable(t.text('consoleAcme.byProfile'), json.profiles, t,
+                       'profiles') +
       self.countsTable(t.text('consoleAcme.byErrorCode'), json.errorCodes,
-                       t) +
-      self.countsTable(t.text('consoleAcme.byStatus'), json.statuses, t) +
-      self.countsTable(t.text('consoleAcme.whoAsked'), json.principals, t) +
-      '<h2 id="list-page">' + t.html('consoleAcme.recent') + '</h2>' +
+                       t, 'codes') +
+      self.countsTable(t.text('consoleAcme.byStatus'), json.statuses, t,
+                       'statuses') +
+      self.countsTable(t.text('consoleAcme.whoAsked'), json.principals, t,
+                       'principals') +
+      '<h2 id="list-page" data-tab="recent">' + t.html('consoleAcme.recent') +
+      '</h2>' +
       pager.head +
       '<table><thead><tr><th>' + t.html('consoleAcme.thAt') + '</th><th>' +
       t.html('consoleAcme.thOperation') + '</th><th>' +
@@ -508,10 +505,12 @@ class AcmePage {
       '</th></tr></thead><tbody>' + recent +
       '</tbody></table>' +
       pager.foot +
+      '<div data-metadata>' +
       kit.note(t.html('consoleAcme.noReset') +
                  ' <a href="/admin/audit">' + t.html('consoleAcme.auditLog') +
-                 '</a>.') +
-      '<p class="links"><a href="/admin/acme/monitor?format=json">JSON</a> ' +
+                 '</a>.') + '</div>' +
+      '<p class="links" data-metadata>' +
+      '<a href="/admin/acme/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/acme/monitor</code> · <a ' +
       'href="/admin/acme">ACME</a></p>';
     return inner;

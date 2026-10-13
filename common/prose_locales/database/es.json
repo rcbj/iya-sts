@@ -1,0 +1,158 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "Todo lo que PostgreSQL le dirá a este servicio sobre sí mismo, y el estado del esquema que este servicio posee en él."
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode es \"{{mode}}\", así que este servicio no tiene ninguna base de datos sobre la que informar. `memory` no escribe nada en absoluto y `ldif` escribe archivos RFC 2849 — ninguno tiene conexión, grupo de conexiones ni catálogo. Establezca persistence.mode en `postgres` (solo se aplica al reiniciar: el almacén se abre antes de que se enlace la escucha)."
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "persistence.mode es \"postgres\" y este proceso NO TIENE NINGÚN ALMACÉN ABIERTO. Es un fallo y no una configuración: el almacén se abre desde persistence.start() antes de que se enlace la escucha, y un fallo ahí es fatal — así que un servicio en ejecución en este estado ha tenido su almacén detenido bajo sus pies. El registro de arranque indica qué ocurrió."
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "el controlador abierto no informa ninguna función de métricas, lo que significa una compilación de persistence_postgres.js anterior al 2026-09-11."
+  },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "Los procesos que usan este almacén se COORDINAN: cada cambio se escribe en un log monótono dentro de la transacción que lo hizo, y cada proceso aplica lo que los demás confirmaron. El aviso de LISTEN/NOTIFY solo lo hace inmediato — el log es el contrato, así que una notificación perdida cuesta latencia y nunca un cambio. Lo que NO se comparte son los sockets: el KDC, las escuchas LDAP, los puertos TLS y los cuatro de SPIFFE son por proceso, y las cachés de repetición convergen en lugar de sincronizarse. Lo que este servicio GENERA — sesiones, tokens, códigos, artefactos, tickets de Kerberos, los contadores y el registro de auditoría — se persiste en modo PRODUCTO en un almacén postgres, cifrado bajo la misma clave de cifrado de claves que las claves de firma, y en ninguna otra configuración: el modo desarrollo regenera la clave de firma en cada arranque, así que un token restaurado no se verificaría contra nada."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "En esta configuración la persistencia no es coordinación. Dos procesos que apuntan a un mismo almacén mantienen cada uno su propia copia en memoria y no verán las escrituras del otro hasta que se reinicien. Active persistence.coordinate en un almacén postgres para cambiarlo. Lo que este servicio GENERA — sesiones, tokens, códigos, artefactos, tickets de Kerberos, los contadores y el registro de auditoría — se persiste en modo PRODUCTO en un almacén postgres, cifrado bajo la misma clave de cifrado de claves que las claves de firma, y en ninguna otra configuración: el modo desarrollo regenera la clave de firma en cada arranque, así que un token restaurado no se verificaría contra nada."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}}; el certificado del servidor se verifica contra los anclajes de confianza de este proceso."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "72f7138134696ef9",
+    "text": "ADVERTENCIA — TLS, sslmode={{sslmode}}, pero el certificado del servidor NO SE VERIFICA (persistence.databaseTlsRejectUnauthorized está desactivado), así que el servidor de base de datos NO ESTÁ AUTENTICADO: cualquier cosa que pueda responder en su dirección puede suplantarlo y leer y escribir cada fila que guarda este servicio. La conexión está cifrada, y eso es todo. Vuelva a activar el ajuste, con persistence.databaseTlsCaFile nombrando la CA del servidor cuando node no confíe ya en ella."
+  },
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS — la cadena de conexión no establece ningún sslmode, y este servicio se conecta a toda base de datos por TLS; el certificado del servidor se verifica contra los anclajes de confianza de este proceso."
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "67a6b00f57bdfed8",
+    "text": "ADVERTENCIA — TLS (la cadena de conexión no establece ningún sslmode, y este servicio se conecta a toda base de datos por TLS), pero el certificado del servidor NO SE VERIFICA (persistence.databaseTlsRejectUnauthorized está desactivado), así que el servidor de base de datos NO ESTÁ AUTENTICADO: cualquier cosa que pueda responder en su dirección puede suplantarlo y leer y escribir cada fila que guarda este servicio. La conexión está cifrada, y eso es todo. Vuelva a activar el ajuste, con persistence.databaseTlsCaFile nombrando la CA del servidor cuando node no confíe ya en ella."
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS, sslmode=prefer — conexión solo por TLS: con prefer, libpq recurriría a una conexión en claro, y este servicio nunca lo hace; el certificado del servidor se verifica contra los anclajes de confianza de este proceso."
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "2a65ebb396c30cb4",
+    "text": "ADVERTENCIA — TLS, sslmode=prefer, conexión solo por TLS (con prefer, libpq recurriría a una conexión en claro, y este servicio nunca lo hace), pero el certificado del servidor NO SE VERIFICA (persistence.databaseTlsRejectUnauthorized está desactivado), así que el servidor de base de datos NO ESTÁ AUTENTICADO: cualquier cosa que pueda responder en su dirección puede suplantarlo y leer y escribir cada fila que guarda este servicio. La conexión está cifrada, y eso es todo. Vuelva a activar el ajuste, con persistence.databaseTlsCaFile nombrando la CA del servidor cuando node no confíe ya en ella."
+  },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS, sslmode=verify-full; el certificado del servidor se verifica contra los anclajes de confianza de este proceso y se comprueba su nombre de host, como pide el sslmode, diga lo que diga persistence.databaseTlsRejectUnauthorized."
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS, sslmode=verify-ca; el certificado del servidor se verifica contra los anclajes de confianza de este proceso, como pide el sslmode, diga lo que diga persistence.databaseTlsRejectUnauthorized — pero su nombre de host NO se comprueba: verify-ca, tal como lo lee libpq, confía en cualquier certificado que haya emitido una autoridad de confianza. Use verify-full para comprobar también el nombre."
+  },
+  "persistence.status.trustCaFile": {
+    "en": "2e641ceb50a4206c",
+    "text": "Los anclajes de confianza de esta conexión son los certificados de {{file}} (persistence.databaseTlsCaFile), en lugar del almacén de confianza predeterminado de este proceso."
+  },
+  "persistence.status.caFileUnusable": {
+    "en": "ce51e3182e53d854",
+    "text": "SIN CONEXIÓN — persistence.databaseTlsCaFile nombra {{file}}, que no se puede leer o no contiene ningún certificado, así que este servicio no arranca con él."
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "SIN CONEXIÓN — sslmode={{sslmode}} pide una conexión en claro, que este servicio nunca abre, así que no arranca con esta cadena de conexión."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7c0ce538219125e3",
+    "text": "SIN CONEXIÓN — la cadena de conexión no es una URL postgres://, así que no se puede saber si la conexión se haría en claro, y este servicio no arranca con ella."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "la cadena de conexión no es una URL; no se muestra nada de ella, porque lleva una contraseña."
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "Qué PostgreSQL es este, COMO quién está conectado este servicio y cuánto tiempo lleva activo el servidor."
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "Cuánto disco ocupa esta base de datos."
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "Todos los contadores que PostgreSQL mantiene para esta base de datos: confirmaciones y reversiones, bloques leídos frente a bloques encontrados en caché, tuplas en todas las direcciones, interbloqueos, archivos temporales, y los tiempos de E/S y de sesión cuando el servidor los recopila."
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "Consultas canceladas por conflictos de recuperación. Todo en cero en un servidor que no es standby, que es el caso habitual aquí."
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "Cuántos backends tiene esta base de datos, frente al límite del servidor."
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "Una fila por backend en esta base de datos. Un backend que pertenece a otro rol aparece como una fila con su estado y su consulta ocultos, que es lo que se muestra a un rol sin permisos de supervisión."
+  },
+  "postgres.probes.locks.what": {
+    "en": "b7988c9a1fc05949",
+    "text": "Bloqueos mantenidos y esperados, por modo. Un bloqueo en espera aquí es casi siempre este servicio compitiendo consigo mismo a través del grupo de workers de solicitudes."
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "El escritor en segundo plano. ONCE columnas antes de PostgreSQL 17 y CUATRO desde la 17, cuando los contadores de checkpoint salieron de él — por eso esto pide todas ellas en lugar de nombrar alguna."
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "El checkpointer. Tiene una vista propia desde PostgreSQL 17; antes, estos contadores son la cola de pg_stat_bgwriter, más arriba."
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "Generación del registro de escritura anticipada (WAL). PostgreSQL 14 y posteriores."
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "Archivado del WAL. Todo en cero salvo que archive_mode esté activado, y no lo está en ninguna pila que distribuya este repositorio."
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "Servidores standby que transmiten desde este servidor. VACÍO es la respuesta habitual, y también es lo que se muestra a un rol sin pg_monitor cuando SÍ hay servidores standby — así que una tabla vacía aquí son dos hechos distintos, y la página dice cuál de ellos no puede distinguir."
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "Todos los contadores que PostgreSQL mantiene por tabla: exploraciones secuenciales y por índice, tuplas en todas las direcciones, filas vivas y muertas, y cuándo se hizo el último vacuum y el último analyze de cada una."
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "E/S de bloques por tabla: cuánto salió de la caché de búferes y cuánto del disco, para el heap, sus índices y su TOAST."
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "Cuánto disco ocupa cada tabla, dividido entre el heap, sus índices y su TOAST, con la estimación de filas del planificador."
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "Cada índice, con qué frecuencia se ha explorado, qué tamaño tiene y si es una clave primaria o único."
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "Cada columna de cada tabla que posee este servicio, con su tipo, si admite nulos y su valor predeterminado."
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "Claves primarias, restricciones de unicidad, claves foráneas y restricciones check."
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "Cada parámetro que un operador ha cambiado respecto de su valor predeterminado integrado, y dónde se estableció — más el puñado que importa lo haya tocado alguien o no."
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "Extensiones instaladas en esta base de datos."
+  }
+}

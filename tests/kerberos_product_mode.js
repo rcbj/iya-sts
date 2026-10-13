@@ -118,7 +118,8 @@ const SUMMARY = 'return { demo: p.seedsDemoPrincipals, served: ' +
   'p.krbtgtUnavailableReason(), etypes: p.KDC_ETYPES, all: ' +
   'p.all().map(function (x) { return { name: x.name.join("/") + "@" + ' +
   'x.realm, password: x.password, salt: x.salt, kvno: x.kvno, etypes: ' +
-  'p.supportedEtypes(x) }; }), seeds: p.delegationSeeds() };';
+  'p.supportedEtypes(x) }; }), seeds: p.delegationSeeds(), ' +
+  'advertised: p.ADVERTISED_SERVICE_HOSTS, domains: p.SERVICE_DOMAINS };';
 
 function names(report) {
   log.debug("Entering names().");
@@ -183,6 +184,16 @@ function productModeHoldsNoFixtures(t) {
           'with both set it holds krbtgt and the configured service account, ' +
           'and nothing else',
           JSON.stringify(names(configured.report)));
+  // THE HOSTS A PAGE OR HEADER ADVERTISES (2026-10-12): none in product,
+  // where the KDC registers no `HTTP/<host>` on first sight, although the
+  // configured list is still there to be advertised in development.
+  t.check(Array.isArray(configured.report.advertised) &&
+          configured.report.advertised.length === 0 &&
+          (configured.report.domains || []).length > 0,
+          'product mode advertises no host whose SPN the KDC would not ' +
+          'issue (ADVERTISED_SERVICE_HOSTS is empty, SERVICE_DOMAINS is not)',
+          JSON.stringify({ advertised: configured.report.advertised,
+                           domains: configured.report.domains }));
   t.check((configured.report.all[0] || {}).password === null,
           'and a KRB5_KRBTGT_PASSWORD set in product is IGNORED: the krbtgt ' +
           'still carries no password (#169, the onlyWhile marker)',
@@ -230,6 +241,12 @@ function theServiceAccountFollowsTheSetting(t) {
           'the account the acceptor looks for EXISTS under the configured ' +
           'name — it was always HTTP/web.<domain> whatever the setting said',
           JSON.stringify(account || null));
+  t.check(JSON.stringify(moved.report.advertised) ===
+          JSON.stringify(moved.report.domains) &&
+          (moved.report.advertised || []).length > 0,
+          'development mode advertises every host it registers an SPN for',
+          JSON.stringify({ advertised: moved.report.advertised,
+                           domains: moved.report.domains }));
   t.check(names(moved.report).indexOf('HTTP/web.example.com@' +
                                       principals.REALM) >= 0,
           'and the fixture HTTP/web account is still there in development, ' +

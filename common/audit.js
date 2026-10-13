@@ -385,6 +385,8 @@ const ACTIONS = [
     label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
     label: 'Somebody set up a required second factor at sign-in' },
+  { action: 'authn.sign-in.started-over', category: 'authentication',
+    label: 'Somebody left a sign-in step and started the sign-in over' },
 
   // ---------------------------------------------------------------------
   // THE AUTHENTICATOR APP (RFC 6238), 2026-09-10. Five rows for what is one
@@ -654,6 +656,10 @@ const ACTIONS = [
     label: 'An application was exported to an LDIF file' },
   { action: 'application.import', category: 'application',
     label: 'An application was imported from an LDIF file' },
+  { action: 'application.add-owner', category: 'application',
+    label: 'An owner was added to an application' },
+  { action: 'application.remove-owner', category: 'application',
+    label: 'An owner was taken off an application' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes
@@ -819,8 +825,8 @@ const ACTIONS = [
   // `claims.change`'s reason: the `admin.change` / `api.change` row says a form
   // or an operation was used, and this says whose certificates this service
   // believes from then on — the subject and the fingerprint, which are public.
-  // `POST /tls/trust` writes no row, deliberately: it is a development test
-  // control that answers anybody, and product mode refuses it.
+  // (The open `POST /tls/trust`, which wrote no row, was deleted by #597:
+  // every truststore change is one of these.)
   { action: 'admin.truststore.change', category: 'admin',
     label: 'A client-certificate trust anchor was added or removed' },
 
@@ -1091,6 +1097,14 @@ const ACTIONS = [
   { action: 'admin.service-account.cleared', category: 'admin',
     label: 'An administrator made a service account an ordinary person ' +
            'again' },
+  // #602: one owner added or taken off, at once.
+  { action: 'admin.service-account.owner-added', category: 'admin',
+    label: 'An administrator added an owner to a service account' },
+  { action: 'admin.service-account.owner-removed', category: 'admin',
+    label: 'An administrator took an owner off a service account' },
+  { action: 'admin.service-account.destination-set', category: 'admin',
+    label: 'An administrator set or cleared a service account\'s push ' +
+           'destination' },
   { action: 'admin.service-account.rotate', category: 'admin',
     label: 'An administrator asked for a service account\'s password to be ' +
            'rotated' },
@@ -1180,6 +1194,10 @@ const ACTIONS = [
     label: 'A federation link was removed from a person' },
   { action: 'group.add-member', category: 'directory',
     label: 'A member was added to a group' },
+  { action: 'group.add-owner', category: 'directory',
+    label: 'An owner was added to a group' },
+  { action: 'group.remove-owner', category: 'directory',
+    label: 'An owner was taken off a group' },
   { action: 'krb5.keytab.person', category: 'authentication',
     label: 'A person\'s keytab was made from a password in hand' },
   { action: 'logout.backchannel.retry', category: 'session',
@@ -1190,6 +1208,9 @@ const ACTIONS = [
     label: 'A CIBA ping or push notification was delivered or failed' },
   { action: 'oauth2.claim-source-linked', category: 'authentication',
     label: 'A person linked a Claims Provider' },
+  { action: 'oauth2.claim-source-link-refused', category: 'authentication',
+    label: 'A Claims Provider\'s callback was refused: the link was ' +
+           'unknown, or arrived in another sign-on session (#568)' },
   { action: 'oauth2.claims-providers.add-provider', category: 'admin',
     label: 'A Claims Provider was registered' },
   { action: 'oauth2.claims-providers.update-provider', category: 'admin',
@@ -1260,6 +1281,8 @@ const ACTIONS = [
     label: 'A signing key form was refused for its CSRF token' },
   { action: 'portal.siop.remove', category: 'authentication',
     label: 'A person removed a self-issued subject' },
+  { action: 'portal.vc.offer', category: 'protocol',
+    label: 'A person made a Credential Offer for their own wallet' },
   { action: 'risk.feedback', category: 'authentication',
     label: 'Feedback on a risk assessment was recorded' },
   { action: 'risk.response', category: 'authentication',
@@ -1274,12 +1297,28 @@ const ACTIONS = [
     label: 'An attribute source was removed' },
   { action: 'attribute-sources.refresh', category: 'admin',
     label: 'People were read from an attribute source by hand' },
+  // THE OUTBOUND SCIM CLIENT (#552): its configuration, an operator's acts on
+  // its queues and a reconciliation, and each delivery that finished (one row
+  // per finished delivery, never per attempt).
+  { action: 'scim-client.change', category: 'admin',
+    label: 'An outbound SCIM client was added, changed or removed' },
+  { action: 'scim-client.delivery', category: 'admin',
+    label: 'A change was delivered to a SCIM service provider, or ' +
+           'dead-lettered' },
+  { action: 'scim-client.reconcile', category: 'admin',
+    label: 'An outbound SCIM client reconciled its service provider' },
+  { action: 'scim-client.queue', category: 'admin',
+    label: 'A dead letter of an outbound SCIM client was retried or purged' },
   { action: 'secret-destination.push', category: 'admin',
     label: 'A service account\'s password was pushed to a secret ' +
            'destination' },
   { action: 'secret-destination.test-push', category: 'admin',
     label: 'A canary version was pushed to a secret destination\'s test ' +
            'secret' },
+  { action: 'roles.add-owner', category: 'admin',
+    label: 'An owner was added to a role' },
+  { action: 'roles.remove-owner', category: 'admin',
+    label: 'An owner was taken off a role' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',
@@ -1688,9 +1727,18 @@ function record(event) {
     // something nobody sent.
     address: trimmed(info.address ? addressText(info.address)
       : ambientAddress(), 64),
+    // A DETAIL GIVEN AS A SENTENCE IS THE SUMMARY (2026-10-12). Several
+    // callers pass `detail: '<what happened>'`, and detailOf() reads its
+    // argument's keys — so a string became {"0":"a","1":"d",…} and the row's
+    // summary was empty. Without a summary of its own the sentence IS the
+    // summary; beside one it is kept as `note`.
     summary: trimmed((errorCode ? errorCodes.tag(errorCode) : '') +
-                     (info.summary || ''), MAX_SUMMARY_LENGTH),
-    detail: detailOf(info.detail)
+                     (info.summary ||
+                      (typeof info.detail === 'string' ? info.detail : '')),
+                     MAX_SUMMARY_LENGTH),
+    detail: typeof info.detail === 'string'
+      ? (info.summary ? detailOf({ note: info.detail }) : {})
+      : detailOf(info.detail)
   };
   events.push(row);
   trimToCap();
@@ -1939,7 +1987,7 @@ function recordHttp(req, res, detail) {
   // The URL WITHOUT its query string. The query is on the row as a detail where
   // it is interesting, and a path that carried it would make every distinct
   // ?page= a different-looking row for the same page view.
-  const path = String(req.originalUrl || '/').split('?')[0];
+  const path = redactedPath(String(req.originalUrl || '/').split('?')[0]);
   if (isQuietProbe(req, res, path)) {
     log.debug("Leaving recordHttp(). A successful liveness probe; not " +
               "recorded.");
@@ -2010,9 +2058,63 @@ function recordHttp(req, res, detail) {
 // than secrets — with the one exception below, which is not a rule that can be
 // relaxed: an OAuth 2.0 authorization CODE and an id_token_hint travel in a
 // query string, and both are credentials.
+// AND A CAPABILITY IN A PATH (#571): `/authn-api` is keyed by the pending
+// sign-in's id and a forced password change's step id, each a bearer
+// capability over that sign-in, and the operation's path carries it. The row
+// keeps the operation and drops the id. A second-factor or emailed-factor
+// step's id since #572 and #573 (`/authn-api/mfa/{id}`) is another, the same
+// capability `?mfa=` always was.
+// THE WALLET SIGN-IN'S TRANSACTION (#574) is another: `/authn-api/wallet/
+// {state}`. And the same capabilities travel in the QUERY of the pages they
+// open — `/authn/login?authn=`, `/authn/wallet/wait?authn=&state=&mfa=`, a
+// wallet's same-device return with its `response_code` — so a full URL a
+// line records has those values replaced too (`REDACTED_CAPABILITIES`).
+// THE PENDING CONSENT'S ID (#576) is one more: `/authn-api/consent/{id}`,
+// the capability `/oauth2/consent?consent=` always carried.
+const REDACTED_PATHS =
+  /(\/authn-api\/(?:pending|password-change|wallet|mfa|consent)\/)[^/?#]+/g;
+// And a mailed sign-in link's token (#573, `/authn/email-link/open?t=`),
+// which is a credential rather than a capability over a step.
+const REDACTED_CAPABILITIES = ['authn', 'mfa', 'state', 'response_code',
+                               'change', 't', 'consent'];
+const REDACTED_QUERY_VALUES = new RegExp('([?&](?:' +
+  REDACTED_CAPABILITIES.join('|') + ')=)[^&#]*', 'g');
+
+/**
+ * A request path with any capability it carries replaced by `(redacted)`.
+ *
+ * @param path - the path, without its query
+ * @returns the path a row or a log line may carry
+ */
+function redactedPath(path) {
+  log.debug("Entering redactedPath().");
+  log.debug("Leaving redactedPath().");
+  return String(path || '').replace(REDACTED_PATHS, '$1(redacted)')
+    .replace(REDACTED_QUERY_VALUES, '$1(redacted)');
+}
+
+/**
+ * A parsed query with every capability's value replaced by `(redacted)`, for
+ * the call log (#574).
+ *
+ * @param query - the query, name → value
+ * @returns a copy a log line may carry
+ */
+function redactedQuery(query) {
+  log.debug("Entering redactedQuery().");
+  const out = {};
+  Object.keys(query || {}).forEach(function (key) {
+    out[key] = REDACTED_CAPABILITIES.indexOf(String(key).toLowerCase()) >= 0
+      ? '(redacted)' : query[key];
+  });
+  log.debug("Leaving redactedQuery().");
+  return out;
+}
+
 const REDACTED_QUERY_KEYS = ['code', 'id_token_hint', 'access_token', 'token',
                              'assertion', 'client_secret', 'password',
-                             'credential', 'vp_token', 'response'];
+                             'credential', 'vp_token', 'response']
+  .concat(REDACTED_CAPABILITIES);
 
 function queryText(query) {
   log.debug("Entering queryText().");
@@ -2270,6 +2372,49 @@ log.info('The audit log is running: every authentication, session, directory ' +
          'GET /admin-api/audit, holds at most ' + maxEvents() + ' events in ' +
          'memory, and carries no credential of any kind.');
 
+// ---------------------------------------------------------------------------
+// THE AUDIT NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b): the vocabulary's
+// labels and sentences, which `GET /admin-api/audit` carries as `categories`
+// and `actions`. The EVENTS are not harvested: a row's summary and detail
+// are records, written when something happened, and an id (`category`,
+// `action`, `outcome`) is a value the filters send back. A row is keyed by
+// its own id here rather than by `harvest()`'s choice of one, because an
+// action carries a `category` too, and that is the id `harvest()` would
+// reach first.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/audit'];
+
+/**
+ * Extracts the audit namespace (#543 phase 2b): each category's label and
+ * sentence and each action's label.
+ *
+ * `server_prose` is required here, LAZILY, which is safe however early this
+ * file is loaded: `server_prose` requires `helpers.js`, which this file
+ * requires too, and only this function needs it.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const categories = {};
+  CATEGORIES.forEach(function (one) {
+    categories[one.category] = { label: one.label, what: one.what };
+  });
+  const actions = {};
+  ACTIONS.forEach(function (one) {
+    actions[one.action] = { label: one.label };
+  });
+  const out = Object.assign(
+    harvest('audit.categories', categories, ['label', 'what']),
+    harvest('audit.actions', actions, ['label']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The audit log: what happened here, in the order it happened, as discrete
  * events.
@@ -2281,6 +2426,8 @@ log.info('The audit log is running: every authentication, session, directory ' +
  */
 module.exports = {
   CATEGORIES: CATEGORIES,
+  redactedPath: redactedPath,
+  redactedQuery: redactedQuery,
   ACTIONS: ACTIONS,
   OUTCOMES: OUTCOMES,
   audit: audit,
@@ -2295,5 +2442,7 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
-  summary: summary
+  summary: summary,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

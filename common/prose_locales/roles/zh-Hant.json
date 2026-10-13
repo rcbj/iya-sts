@@ -1,0 +1,138 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "一個「角色」。項目以角色名稱命名（`cn=staff`），其上的一切都是「成員資格」——誰持有此角色。角色是「哪些事物所需要的」則位於需要它的應用程式項目上，即 `appRequiredRole`，因為那是關於應用程式而非關於角色的事實。"
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "角色名稱，同時也是 `cn`。另外明確攜帶，讓只有屬性的讀取者也能取得名稱。"
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "持有此角色的使用者名稱。多值。該人不必已經存在——本服務會在首次見到任何名稱時為其建立目錄項目，因此可以在持有者從未登入之前就授予角色。"
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "其每位成員都持有此角色的群組。多值。在「決策時」解析，而不是在寫入時展開，因此將某人加入群組的 `ldapmodify` 會改變緊接著的下一個權杖。"
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "以「其自身」持有此角色的應用程式——在沒有人的情況下，client_credentials 授權據以決定的依據。多值。與應用程式項目上的 `appRequiredRole` 「不是」同一種關係，後者是該應用程式對他人的「要求」。"
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "此角色的持有者可被「簽發」的權限（#303）。多值。依用戶端請求時的方式命名：一般應用程式權限以其完整範圍值命名——資源應用程式的 `oauthPermissionBaseUri` 後接名稱——本服務的原生權限則以其自己的名稱命名（`admin:read`、`admin:write`）。它只對其資源應用程式「設閘」（`oauthRoleGatedPermission`）的權限有意義；設閘的權限只簽發給持有指名它之角色的主體，未設閘的則照舊簽發。"
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "「授予」此角色的用戶端（#454）：每個透過該用戶端登入的人，都在簽發給該用戶端的存取權杖上持有此角色，而不在其他任何權杖上。多值，為此領域中應用程式的 client_id。以此方式持有的角色是關於「權杖」而非關於人的事實，因此在每次呼叫時都會與該人自己持有的角色合併，而從中移除某個用戶端會立即將該角色從該用戶端的權杖上移除。絕不套用於用戶端自己的 client_credentials 權杖，其角色是其成員資格。ADMIN_CONSOLE 植入時由 `sts-admin-console` 授予。"
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "此角色所屬的「那一個」應用程式（#310），以其在 ou=applications 中的識別碼表示；未設定時，角色適用於整個領域。應用程式的角色在登錄簿中命名為 `<role>@<application>`，因此兩個應用程式可以各自擁有一個 `reader`；該應用程式的權杖或斷言以 `<role>` 攜帶它，其他應用程式的權杖則完全不攜帶。應用程式的 `appRequiredRole` 可以用 `<role>` 指名它。"
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "「誰可以持有」此角色（#93）：`user`（人，直接或透過群組）與 `application`（以其自身的應用程式）。多值；未設定時兩者皆可——在它之前寫入的每個角色都是如此。角色不允許之類型的成員會在寫入角色時被拒絕。兩個主控台角色無法限制：名冊授予其人員，植入資料授予其應用程式。"
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "供人閱讀的選用名稱（#93）。權杖攜帶的、需求所指名的、登錄簿所依據的鍵，仍然是角色的「名稱」；這只是它在主控台與 API 上的標籤。其穩定 id 是項目的 `entryUUID`，在每次編輯中保持不變。"
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "此角色的用途，供下一個人參考。"
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "對該角色負責的本領域人員或群組（#604），以 DN 表示——RFC 4519 第 2.23 節的屬性，與群組的擁有者相同（#603）。多值，最多 25 個。擁有者不授予任何權限：此服務中沒有任何部分讀取它來做決定。使用者入口網站列出一個人所擁有的內容。"
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "任何人，無論是否已驗證，無論是人或應用程式。「這是預設需求」：未指名所需角色的應用程式就需要這個角色，每個人都持有它，不會拒絕任何東西——這正是本服務在角色出現之前的行為方式。"
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "在做出此決策的安全內容中，擁有有效已驗證工作階段的人。"
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "「未」驗證的人。就原則而言，它並非上一個角色的否定——它是目標可以比對的名稱，而 XACML 目標無法表示「非」。"
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "任何用戶端，無論其以何種方式出現。"
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "「證明」了自己身分的用戶端——密碼、private_key_jwt 斷言或已驗證的用戶端憑證。只傳送 client_id 的公開用戶端不屬於此。"
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "未證明任何東西的公開用戶端。"
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "遠端 XACML 原則執行點：`roles.remotePepGroup`（預設為 \"remote-peps\"）所指名之群組的任何成員。這是 `/xacml/pep/register`、`/xacml/pep/policies` 與 `/xacml/pep/heartbeat` 所要求的，而持有它的一方通常是用戶端憑證 DN 而不是人——憑證說明「是誰」，而此群組說明他們是否可以。"
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "XACML 介面本身的呼叫方：由 `roles.xacmlUserGroup`（預設 \"xacml-users\"）指明之群組的任何成員。`GET /xacml`、`POST /xacml/pdp` 與 `GET /xacml/policies` 要求的就是它，持有它的一方通常是用戶端憑證 DN——憑證說明是誰，該群組說明他們是否可以。它刻意不是 REMOTE_PEPS：那個角色可存取三個 /xacml/pep 端點，它們分發本服務用來執行自身存取控制的文件；若一個群組同時授予兩者，那麼允許呼叫方存取XACML 介面本身就會悄悄地允許它存取那些端點。"
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "7d6481dffa0d517c",
+    "text": "Admin Read：/admin-api 上的每個「讀取」。由主控台的 Admin Read 與 Admin Write 群組（Admin Write 隱含 Admin Read）以及此處列出的應用程式持有。授權 admin:read 權限。"
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin Write：每個會「變更」任何東西的 /admin-api 操作。由主控台的 Admin Write 群組以及此處列出的應用程式持有。授權 admin:write 權限。在權杖上它不隱含 Admin Read：權杖可以攜帶任一範圍，而原則會要求操作所需的那一個。"
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "管理主控台：/admin-api/console 之下僅為繪製主控台而存在的操作——其框架、其圖表與其表單輔助功能。授權 admin:console 權限。由主控台自己的用戶端 sts-admin-console 授予每個登入主控台的人，沒有任何人以成員身分持有。它不授予其他任何東西：顯示領域資料的頁面還會要求 ADMIN_READ。"
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "裝置合規性摘要：透過 POST /admin-api/device-compliance 回報裝置合規性的 MDM 或態勢摘要，且不涉及 /admin-api 上的其他任何東西。授權 device:compliance 權限。植入時沒有成員：請加入摘要的應用程式。"
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "一個人"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "使用者名稱。該人不必已經存在：本服務會在首次見到任何名稱時為其建立目錄項目，因此可以在持有者從未登入之前就授予角色。"
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "一個群組"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "ou=groups 中的群組。其每位成員都持有此角色，在「決策時」解析，而不是在寫入時展開——因此將某人加入群組的 ldapmodify 會改變緊接著的下一個權杖。"
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "一個應用程式"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "以「其自身」持有此角色的應用程式。這是在完全沒有人的情況下 client_credentials 授權據以決定的依據，也是應用程式在此成為角色一級成員的原因。"
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin Read"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "檢視此主控台的每個頁面，以及任何頁面的每個 ?format=json 檢視。它不會變更任何東西：讀取者可以看到哪些權杖已撤銷，但無法撤銷權杖。"
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin Write"
+  },
+  "roles.console.write.what": {
+    "en": "476b1b61c16b02e4",
+    "text": "提交此主控台上的每個表單——撤銷權杖、新增自訂宣告、變更設定、建立人員、授予角色。「它包含讀取」，因此僅屬於此角色的成員就能使用整個主控台。"
+  }
+}

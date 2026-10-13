@@ -9,9 +9,9 @@
 // THE CLIENT-CERTIFICATE TRUSTSTORE'S GATED DOORS (2026-09-12).
 //
 // `/admin/tls/trust` and `/admin-api/tls/trust/{add,remove}` are the runtime
-// door product mode did not have: `POST /tls/trust` needs no credential, so
-// product mode refuses it, and until these existed an anchor could only come
-// from `tls.trustAnchorsFile` at startup. `common/mode.js`'s `truststore-door`
+// door product mode did not have: `POST /tls/trust` needed no credential, so
+// product mode refused it (and since #597 no mode has it), and until these
+// existed an anchor could only come from `tls.trustAnchorsFile` at startup. `common/mode.js`'s `truststore-door`
 // row recorded exactly that gap.
 //
 // ---------------------------------------------------------------------------
@@ -36,7 +36,8 @@
 //   4. **THE ROUTING PIN.** Both doors are answered by the process holding the
 //      listeners; `/admin/tls` beside them and `/admin-api/tlsx` are not
 //      caught by the pin.
-//   5. **PRODUCT MODE'S REFUSAL NAMES THE NEW DOORS**, as a real request.
+//   5. **THERE IS NO OPEN DOOR**, as a real request: `POST /tls/trust` is
+//      unrouted in a development process too (#597).
 //
 // Claims 2, 3 and 5 run in a CHILD PROCESS. Requiring `admin-ui/admin.ts`
 // registers the whole console on the shared app and pulls the authorization
@@ -481,12 +482,11 @@ function theRoutingPin(t) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. PRODUCT MODE'S REFUSAL NAMES THE NEW DOORS, AS A REQUEST.
+// 5. THERE IS NO OPEN DOOR, AS A REQUEST — IN DEVELOPMENT, SINCE #597.
 // ---------------------------------------------------------------------------
 function theProductRefusal(t) {
   log.debug("Entering theProductRefusal().");
-  t.log.info('=== 5. product mode refuses /tls/trust and names the gated ' +
-             'doors ===');
+  t.log.info('=== 5. no process has /tls/trust (#585, #597) ===');
   const script =
     'delete process.env.CONFIG_FILE;' +
     'const app = require(' + JSON.stringify(path.join(ROOT, 'common', 'app')) +
@@ -509,7 +509,7 @@ function theProductRefusal(t) {
     }
   });
   const result = childProcess.spawnSync(process.execPath, ['-e', script], {
-    env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_MODE: 'product' }),
+    env: Object.assign(clean, { LOG_LEVEL: 'fatal' }),
     encoding: 'utf8', timeout: 120000 });
   const line = String(result.stdout || '').split('\n').filter(function (one) {
     return one.indexOf('REPORT') === 0;
@@ -522,24 +522,15 @@ function theProductRefusal(t) {
     // Unparseable — reported as the check failing below, with the output.
     report = null;
   }
-  // THE SENTENCE, not the whole body: the JSON reply also carries `console` and
-  // `api` members naming the two paths, and a check over the body passed with
-  // the paths taken out of the sentence a person actually reads.
-  let body = '';
-  try {
-    body = report ? (JSON.parse(report.body).errors || []).join(' ') : '';
-  } catch (e) {
-    log.debug("Caught in theProductRefusal(): " + ((e && e.message) || e));
-    // Not JSON — the check below fails on the empty sentence and prints the
-    // reply.
-    body = '';
-  }
-  t.check(!!report && report.status === 403 &&
-          body.indexOf('/admin/tls/trust') >= 0 &&
-          body.indexOf('POST /admin-api/tls/trust/add') >= 0 &&
-          /tls\.trustAnchorsFile/.test(body),
-          'a product service refuses POST /tls/trust with a 403 naming the ' +
-          'console page, the management-API operation AND tls.trustAnchorsFile',
+  // NOT A REFUSAL: a product process has had no POST /tls/trust since #585,
+  // and since #597 a development one has none either — it answers as for a
+  // path nothing is registered on, Express's own 404. The gated doors (the
+  // console page and /admin-api/tls/trust) are the only ones, and sections
+  // 1 to 4 drive them.
+  t.check(!!report && report.status === 404 &&
+          /Cannot POST \/tls\/trust/.test(String(report.body || '')),
+          'a development service has no POST /tls/trust: it answers as an ' +
+          'unrouted path',
           report ? JSON.stringify(report).slice(0, 500)
                  : String(result.stderr || result.stdout || '').slice(-500));
   log.debug("Leaving theProductRefusal().");

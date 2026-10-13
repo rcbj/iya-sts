@@ -70,6 +70,28 @@ async function run(t) {
               JSON.stringify(ui && ui.redirect_uris));
       log.debug("Leaving run() default-realm seed.");
     });
+    // A START WHOSE STORE PREDATES THE ENTRIES (2026-10-10): the require-time
+    // seed writes them, the restore replaces the directory with what the
+    // store holds and they are gone; `reseedAfterRestore()`, run by the start
+    // once the store is restored, puts them back — and leaves the console's
+    // entry, which the store did hold, as it was.
+    inDefault(function () {
+      log.debug("Entering run() reseed after restore.");
+      DEBUGGER_ENTRIES.forEach(function (id) {
+        applications.deleteApplication(id);
+      });
+      const consoleBefore = JSON.stringify(
+        applications.get('sts-admin-console'));
+      require('../common/service_state').reseedAfterRestore();
+      t.check(DEBUGGER_ENTRIES.every(function (id) {
+        return !!applications.get(id);
+      }), 'a start re-seeds the entries a restore from an older store ' +
+          'dropped');
+      t.check(JSON.stringify(applications.get('sts-admin-console')) ===
+              consoleBefore,
+              'and leaves an entry the store held untouched');
+      log.debug("Leaving run() reseed after restore.");
+    });
   } finally {
     config.clearOverride('global.mode');
   }

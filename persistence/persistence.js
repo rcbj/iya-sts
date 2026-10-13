@@ -1800,6 +1800,107 @@ function verifiesDatabaseTls() {
 }
 
 // ---------------------------------------------------------------------------
+// THE DATABASE'S OWN TRUST ANCHORS (2026-10-12): the setting
+// `persistence.databaseTlsCaFile` read, checked and handed to every dialler
+// as PEM text — the pools and the LISTEN client this process opens, the
+// global tier's, the directory bridge's thread (text crosses to a thread
+// where a file handle would not), and the two processes that are not the
+// service (`databaseConnection()`, `globalDatabaseConnection()`).
+// `persistence_postgres.dialOptions()` puts it on the `ssl` option as `ca`,
+// which REPLACES node's default trust store for that connection and for no
+// other.
+//
+// **A FILE NAMED AND UNUSABLE STOPS THE START** (STS-STORE-0079), rather
+// than falling back to the default store: the operator said what to trust,
+// and dialling with something else — which, for the compose stack's
+// self-signed certificate, would then fail with "self-signed certificate"
+// and point at the wrong thing — is the answer to a question nobody asked.
+// "Holds no certificate" is checked by parsing every PEM block, so a key
+// file or a truncated copy named by mistake is refused here and not at the
+// handshake.
+//
+// **IT MAY NAME A DIRECTORY**, and then every `.crt` and `.pem` file in it
+// (not hidden, not below it, in name order) is read: the cells stack's
+// three databases each share their certificate in one directory as
+// `<CN>.crt` (`postgres/generate-tls.sh`), and a cell dials two of them
+// with the one setting. A directory with no such file is refused like a
+// file with no certificate.
+//
+// Read on every call: it is called at start, by a status report and by a
+// tool, never on a request path, and a cached copy would be one more thing
+// that could disagree with the file.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the PEM text of `persistence.databaseTlsCaFile`'s certificates —
+ * the file's, or every `.crt` and `.pem` file's in the directory it names —
+ * or '' when the setting is empty.
+ *
+ * @returns the certificates, PEM
+ * @throws {Error} tagged STS-STORE-0079 when the file cannot be read or
+ * holds no certificate
+ */
+function databaseTlsCa() {
+  log.debug("Entering databaseTlsCa().");
+  const file = String(config.value('persistence.databaseTlsCaFile') || '')
+    .trim();
+  if (!file) {
+    log.debug("Leaving databaseTlsCa(). None named.");
+    return '';
+  }
+  const fs = require('fs');
+  let text = '';
+  try {
+    if (fs.statSync(file).isDirectory()) {
+      text = fs.readdirSync(file).filter(function (name) {
+        return /^[^.].*\.(crt|pem)$/i.test(name) &&
+          fs.statSync(require('path').join(file, name)).isFile();
+      }).sort().map(function (name) {
+        return fs.readFileSync(require('path').join(file, name), 'utf8');
+      }).join('\n');
+    } else {
+      text = fs.readFileSync(file, 'utf8');
+    }
+  } catch (e) {
+    log.debug("Caught in databaseTlsCa(): " + ((e && e.message) || e));
+    log.debug("Leaving databaseTlsCa(). Unreadable.");
+    throw new Error(errorCodes.tag('STS-STORE-0079') +
+                    'persistence: persistence.databaseTlsCaFile names ' +
+                    file + ', which cannot be read (' +
+                    ((e && e.code) || (e && e.message) || e) + '), so the ' +
+                    'database connection has no trust anchor anybody ' +
+                    'chose. Fix the path, or empty the setting to use the ' +
+                    'default trust store.');
+  }
+  const blocks = text.match(
+    /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+  // Parsed through common/crypto.js, the one place this service reads a
+  // certificate (rule 3r); lazily, because persistence.js is required before
+  // anything else that configures and crypto.js need not be loaded yet.
+  const stsCrypto = require('../common/crypto');
+  const good = blocks.filter(function (pem) {
+    try {
+      return !!stsCrypto.parseCertificate(pem);
+    } catch (e) {
+      // A block that does not parse is not a trust anchor; it is left out
+      // here, and a file with none left is refused below.
+      log.debug("Caught in databaseTlsCa(): " + ((e && e.message) || e));
+      return false;
+    }
+  });
+  if (!good.length) {
+    log.debug("Leaving databaseTlsCa(). No certificate.");
+    throw new Error(errorCodes.tag('STS-STORE-0079') +
+                    'persistence: persistence.databaseTlsCaFile names ' +
+                    file + ', which holds no PEM certificate (' +
+                    blocks.length + ' block(s) found, none parsed), so the ' +
+                    'database connection has no trust anchor anybody ' +
+                    'chose.');
+  }
+  log.debug("Leaving databaseTlsCa().");
+  return good.join('\n') + '\n';
+}
+
+// ---------------------------------------------------------------------------
 // EVERYTHING `persistence_postgres.create()` IS GIVEN TO DIAL THE DATABASE
 // THE WAY THIS SERVICE DOES (#213, 2026-09-26): the connection string with
 // the configured provider's password put back into it (`resolveDatabaseUrl()`
@@ -1826,14 +1927,16 @@ function verifiesDatabaseTls() {
  *
  * For an out-of-process tool such as the risk dataset loader, so the two
  * cannot disagree about how a connection is made.
- * @returns a promise of `{ url, verifyTls }`; rejects as `resolveDatabaseUrl()`
- * does
+ * @returns a promise of `{ url, verifyTls, tlsCa }`; rejects as
+ * `resolveDatabaseUrl()` does, and with STS-STORE-0079 for an unusable
+ * `persistence.databaseTlsCaFile`
  */
 function databaseConnection() {
   log.debug("Entering databaseConnection().");
   log.debug("Leaving databaseConnection().");
   return resolveDatabaseUrl().then(function (url) {
-    return { url: url, verifyTls: verifiesDatabaseTls() };
+    return { url: url, verifyTls: verifiesDatabaseTls(),
+             tlsCa: databaseTlsCa() };
   });
 }
 
@@ -2081,14 +2184,14 @@ function resolveGlobalUrls() {
  * Returns what a process needs to dial the global tier's database the way a
  * cell does.
  *
- * @returns a promise of `{ url, readUrl, verifyTls }`
+ * @returns a promise of `{ url, readUrl, verifyTls, tlsCa }`
  */
 function globalDatabaseConnection() {
   log.debug("Entering globalDatabaseConnection().");
   log.debug("Leaving globalDatabaseConnection().");
   return resolveGlobalUrls().then(function (urls) {
     return { url: urls.url, readUrl: urls.readUrl,
-             verifyTls: verifiesDatabaseTls() };
+             verifyTls: verifiesDatabaseTls(), tlsCa: databaseTlsCa() };
   });
 }
 
@@ -2405,6 +2508,10 @@ function originId() {
 function openStore(chosen, resolvedUrl, globalUrls) {
   log.debug('Entering openStore(). mode=' + chosen);
   try {
+    // The database's own trust anchors, read once for both tiers; inside
+    // this `try`, so an unusable file is the fatal refusal its message is
+    // written for (STS-STORE-0079) rather than an exception from nowhere.
+    const tlsCa = chosen === 'postgres' ? databaseTlsCa() : '';
     driver = chosen === 'postgres'
       // `verifyTls` is READ HERE AND PASSED IN, rather than read in the
       // driver: that module takes its url and its logger as options and
@@ -2412,6 +2519,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
+          tlsCa: tlsCa,
           poolMax: require('./persistence_postgres').poolMax(workerCount())
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
@@ -2428,6 +2536,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         // phase 6).
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
+        tlsCa: tlsCa,
         poolMax: require('./persistence_postgres').poolMax(workerCount())
       });
       driver = tiered.create({
@@ -3622,6 +3731,127 @@ function coordinate() {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT `status()` SAYS IN WORDS, as a table (#543 phase 2c), so that the
+// database namespace can carry it and `common/server_prose.ts` refill an
+// answer to `GET /admin-api/ldap/service`, `GET /admin-api/persistence` and
+// `GET /admin-api/database` (whose `target` is `describeDatabase()`) in a
+// console reader's language. Each is what `status()` and `describeDatabase()`
+// wrote inline until #543, byte for byte: the two notes are each the whole
+// sentence the concatenation made, the shared tail about what this service
+// mints included. The TLS sentences were rewritten after it (see below);
+// those with a placeholder fill the connection string's own `sslmode`.
+// ---------------------------------------------------------------------------
+const MINTED_TAIL = 'What this service MINTS — sessions, tokens, codes, ' +
+  'artifacts, Kerberos tickets, the counters and the audit log — is ' +
+  'persisted in PRODUCT mode on a postgres store, encrypted under the same ' +
+  'key-encryption key as the signing keys, and in no other configuration: ' +
+  'development mode regenerates the signing key on every start, so a ' +
+  'restored token would verify against nothing.';
+const STATUS_PROSE = Object.freeze({
+  coordinating: 'Processes against this store COORDINATE: every change is ' +
+    'written to a monotonic log inside the transaction that made it, and ' +
+    'each process applies what the others committed. The LISTEN/NOTIFY ' +
+    'nudge only makes that prompt — the log is the contract, so a missed ' +
+    'notification costs latency and never a change. What is NOT shared is ' +
+    'sockets: the KDC, the LDAP listeners, the TLS ports and SPIFFE\'s four ' +
+    'are per process, and the replay caches converge rather than ' +
+    'synchronise. ' + MINTED_TAIL,
+  notCoordinating: 'Persistence is not coordination in this configuration. ' +
+    'Two processes pointed at one store each hold their own copy in memory ' +
+    'and will not see each other\'s writes until they restart. Set ' +
+    'persistence.coordinate on a postgres store to change that. ' +
+    MINTED_TAIL,
+  // WHAT THE CONNECTION IS, SAID THE WAY `persistence_postgres.dialOptions()`
+  // DIALS IT (#543 follow-up). Until then this table described libpq's
+  // reading of `sslmode` rather than this service's: a string with no
+  // `sslmode` was "NOT TLS", and `prefer` was TLS with nothing said about
+  // libpq's fallback to plaintext. Since #273 the `sslmode` parameter is
+  // STRIPPED and every string that is dialled at all is dialled over TLS, so
+  // no sslmode, `prefer` and `require` are the same connection, and whether
+  // its certificate is believed is `persistence.databaseTlsRejectUnauthorized`.
+  // Each sentence says which of those it is, because "encrypted" and
+  // "authenticated" are two answers.
+  //
+  // `verify-ca` AND `verify-full` VERIFY, WHATEVER THE SETTING SAYS (rcbj,
+  // #543 round 2): libpq's meaning, the chain for both and the host name
+  // for `verify-full` only. Until then they verified nothing by themselves
+  // and two sentences here said so, one of them that the server was not
+  // authenticated though the string asked for it; that case no longer
+  // exists, and `verify-ca`'s sentence says the host name is not checked,
+  // because an operator who reads only "verified" would believe it was.
+  //
+  // **THE UNVERIFIED SENTENCES ARE A WARNING (2026-10-12).** Verification
+  // is on by default since that day, so an unverified connection is an
+  // operator's choice, and the sentence says what it costs rather than
+  // calling it "the honest setting" for a stack that no longer needs it.
+  // `trustCaFile` is appended where the database's own trust anchors are in
+  // force (`databaseTlsCa()`), and `caFileUnusable` where they would stop
+  // the start.
+  tlsVerified: 'TLS, sslmode={{sslmode}}; the server certificate is ' +
+    'verified against this process\'s trust anchors.',
+  tlsUnverified: 'WARNING — TLS, sslmode={{sslmode}}, but the server ' +
+    'certificate is NOT VERIFIED (persistence.databaseTlsRejectUnauthorized ' +
+    'is off), so the database ' +
+    'server is UNAUTHENTICATED: anything that can answer at its ' +
+    'address can impersonate it and read and write every row this ' +
+    'service keeps. ' +
+    'The connection is encrypted, and that is all. Turn the setting back ' +
+    'on, with persistence.databaseTlsCaFile naming the server\'s CA where ' +
+    'node does not already trust it.',
+  tlsDefaultVerified: 'TLS — the connection string sets no sslmode, and ' +
+    'this service dials every database over TLS; the server certificate ' +
+    'is verified against this process\'s trust anchors.',
+  tlsDefaultUnverified: 'WARNING — TLS (the connection string sets no ' +
+    'sslmode, and this service dials every database over TLS), but the ' +
+    'server certificate is NOT VERIFIED ' +
+    '(persistence.databaseTlsRejectUnauthorized is off), so the database ' +
+    'server is UNAUTHENTICATED: anything that can answer at its ' +
+    'address can impersonate it and read and write every row this ' +
+    'service keeps. ' +
+    'The connection is encrypted, and that is all. Turn the setting back ' +
+    'on, with persistence.databaseTlsCaFile naming the server\'s CA where ' +
+    'node does not already trust it.',
+  tlsPreferVerified: 'TLS, sslmode=prefer — dialled over TLS only: libpq ' +
+    'would fall back to a connection in the clear for prefer, and this ' +
+    'service never does; the server certificate is verified against this ' +
+    'process\'s trust anchors.',
+  tlsPreferUnverified: 'WARNING — TLS, sslmode=prefer, dialled over TLS ' +
+    'only (libpq would fall back to a connection in the clear for prefer, ' +
+    'and this service never does), but the server certificate is NOT ' +
+    'VERIFIED (persistence.databaseTlsRejectUnauthorized is off), so the ' +
+    'database server is UNAUTHENTICATED: anything that can answer at its ' +
+    'address can impersonate it and read and write every row this ' +
+    'service keeps. ' +
+    'The connection is encrypted, and that is all. Turn the setting back ' +
+    'on, with persistence.databaseTlsCaFile naming the server\'s CA where ' +
+    'node does not already trust it.',
+  tlsVerifyFull: 'TLS, sslmode=verify-full; the server certificate is ' +
+    'verified against this process\'s trust anchors and its host name is ' +
+    'checked, as the sslmode asks, whatever ' +
+    'persistence.databaseTlsRejectUnauthorized says.',
+  tlsVerifyCa: 'TLS, sslmode=verify-ca; the server certificate is ' +
+    'verified against this process\'s trust anchors, as the sslmode asks, ' +
+    'whatever persistence.databaseTlsRejectUnauthorized says — but its ' +
+    'host name is NOT checked: verify-ca, as libpq reads it, trusts any ' +
+    'certificate a trusted authority issued. Use verify-full to check the ' +
+    'name as well.',
+  trustCaFile: 'The trust anchors for this connection are the ' +
+    'certificates in {{file}} (persistence.databaseTlsCaFile), in place of ' +
+    'this process\'s default trust store.',
+  caFileUnusable: 'NOT DIALLED — persistence.databaseTlsCaFile names ' +
+    '{{file}}, which cannot be read or holds no certificate, so this ' +
+    'service does not start on it.',
+  refusedClear: 'NOT DIALLED — sslmode={{sslmode}} asks for a connection ' +
+    'in the clear, which this service never opens, so it does not start ' +
+    'on this connection string.',
+  tlsUnknown: 'NOT DIALLED — the connection string is not a postgres:// ' +
+    'URL, so whether it would be dialled in the clear cannot be told, and ' +
+    'this service does not start on it.',
+  notAUrl: 'the connection string is not a URL; nothing about it is shown, ' +
+    'because it carries a password.'
+});
+
+// ---------------------------------------------------------------------------
 // WHAT THIS MODULE SAYS ABOUT ITSELF. One shape, read by GET
 // /admin/ldap/service, by /admin/persistence and by GET /admin-api/persistence
 // — for the reason config.js's describe() is one shape: a console and an API
@@ -3699,26 +3929,8 @@ function status() {
     eventLoop: lagHistogram ? { lastReport: lagReport,
                                 sinceReport: lagSample(false),
                                 warnAboveMs: LAG_WARN_MS } : null,
-    note: (replication.status().coordinating
-            ? 'Processes against this store COORDINATE: every change is ' +
-              'written to a monotonic log inside the transaction that made ' +
-              'it, and each process applies what the others committed. The ' +
-              'LISTEN/NOTIFY nudge only makes that prompt — the log is the ' +
-              'contract, so a missed notification costs latency and never a ' +
-              'change. What is NOT shared is sockets: the KDC, the LDAP ' +
-              'listeners, the TLS ports and SPIFFE\'s four are per process, ' +
-              'and the replay caches converge rather than synchronise. '
-            : 'Persistence is not coordination in this configuration. Two ' +
-              'processes pointed at one store each hold their own copy in ' +
-              'memory and will not see each other\'s writes until they ' +
-              'restart. Set persistence.coordinate on a postgres store to ' +
-              'change that. ') +
-          'What this service MINTS — sessions, tokens, codes, artifacts, ' +
-          'Kerberos tickets, the counters and the audit log — is persisted ' +
-          'in PRODUCT mode on a postgres store, encrypted under the same ' +
-          'key-encryption key as the signing keys, and in no other ' +
-          'configuration: development mode regenerates the signing key on ' +
-          'every start, so a restored token would verify against nothing.'
+    note: replication.status().coordinating ? STATUS_PROSE.coordinating
+                                            : STATUS_PROSE.notCoordinating
   };
   shadow.forEach(function (rows) { out.entriesTracked += rows.size; });
   log.debug('Leaving status().');
@@ -3754,14 +3966,59 @@ function describeDatabase() {
     const parsed = new URL(raw);
     // THE TLS STATE, out of the two places it actually lives. `sslmode` is
     // postgres's own spelling and rides in the connection string; whether the
-    // certificate is BELIEVED is a setting, because `pg` takes that as a TLS
-    // option and not as a URL parameter. Both are reported, because "encrypted"
-    // and "authenticated" are two different answers and a page that gave one
-    // number for them would be the misleading half of a true sentence.
+    // certificate is BELIEVED is the setting, unless the sslmode is a verify
+    // mode, which verifies whatever the setting says (dialOptions()). Both
+    // are reported, because "encrypted" and "authenticated" are two
+    // different answers and a page that gave one number for them would be
+    // the misleading half of a true sentence.
     const sslmode = String(parsed.searchParams.get('sslmode') || '')
       .toLowerCase();
-    const encrypted = ['require', 'verify-ca', 'verify-full', 'prefer']
-      .indexOf(sslmode) >= 0;
+    // WHETHER IT IS ENCRYPTED is whether the driver would DIAL it, asked of
+    // the one function that decides (#273) rather than of a second list of
+    // sslmodes here: everything it dials is TLS, and everything it refuses
+    // is never dialled at all. Lazily, like the driver's other requires in
+    // this file; dialOptions() is pure and opens nothing.
+    const verify = verifiesDatabaseTls();
+    // The database's own trust anchors, asked of the one reading of them;
+    // a file that would stop the start is said so, never thrown from a
+    // status report.
+    const caFile = String(config.value('persistence.databaseTlsCaFile') ||
+                          '').trim();
+    let caUsable = true;
+    try {
+      databaseTlsCa();
+    } catch (e) {
+      log.debug("Caught in describeDatabase(): " + ((e && e.message) || e));
+      caUsable = false;
+    }
+    const dial = require('./persistence_postgres').dialOptions(raw, verify);
+    const encrypted = !dial.refused && caUsable;
+    const fill = require('../common/server_prose').fill;
+    let tls;
+    if (!caUsable) {
+      tls = fill(STATUS_PROSE.caFileUnusable, { file: caFile });
+    } else if (!encrypted) {
+      tls = sslmode === 'disable' || sslmode === 'allow'
+        ? fill(STATUS_PROSE.refusedClear, { sslmode: sslmode })
+        : STATUS_PROSE.tlsUnknown;
+    } else if (!sslmode) {
+      tls = verify ? STATUS_PROSE.tlsDefaultVerified
+                   : STATUS_PROSE.tlsDefaultUnverified;
+    } else if (sslmode === 'prefer') {
+      tls = verify ? STATUS_PROSE.tlsPreferVerified
+                   : STATUS_PROSE.tlsPreferUnverified;
+    } else if (sslmode === 'verify-full') {
+      tls = STATUS_PROSE.tlsVerifyFull;
+    } else if (sslmode === 'verify-ca') {
+      tls = STATUS_PROSE.tlsVerifyCa;
+    } else {
+      tls = fill(verify ? STATUS_PROSE.tlsVerified
+                        : STATUS_PROSE.tlsUnverified,
+                 { sslmode: sslmode });
+    }
+    if (encrypted && dial.verifyChain && caFile) {
+      tls += ' ' + fill(STATUS_PROSE.trustCaFile, { file: caFile });
+    }
     // WHERE THE PASSWORD COMES FROM (2026-09-12) — never what it is. A
     // deployment that moved the password into a secret store has no other way
     // to see that this process agreed: the connection string on the page
@@ -3774,29 +4031,19 @@ function describeDatabase() {
       port: parsed.port || '5432',
       database: String(parsed.pathname || '').replace(/^\//, ''),
       user: parsed.username || null,
-      passwordFrom: password.configured
-        ? (password.label +
-           (password.where && password.where.from
-             ? ' (' + password.where.from + ')' : '') +
-           (password.shared ? ', shared with the key-encryption key' : ''))
-        : 'the connection string',
+      // The phrase is `secrets.js`'s, beside the labels it holds (#543).
+      passwordFrom: secrets.passwordFromText(password),
       passwordProvider: password.provider,
       passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
-      verifyCertificate: verifiesDatabaseTls(),
-      tls: encrypted
-        ? ('TLS, sslmode=' + sslmode + '; the server certificate is ' +
-           (verifiesDatabaseTls()
-             ? 'verified against this process\'s trust anchors.'
-             : 'NOT verified (persistence.databaseTlsRejectUnauthorized is ' +
-               'off), which is the honest setting for the self-signed pair ' +
-               'the compose stack generates. The connection is encrypted ' +
-               'either way.'))
-        : ('NOT TLS — the connection string does not ask for it. The compose ' +
-           'stack\'s database REFUSES a plaintext connection, because every ' +
-           'host rule in its pg_hba.conf is hostssl, so this configuration ' +
-           'will not connect there.')
+      // What the driver checks, out of the same dialOptions() it dials
+      // with, so a verify-mode sslmode counts whatever the setting says.
+      verifyCertificate: encrypted && dial.verifyChain,
+      // The file the trust anchors come from, or null for the default
+      // store (2026-10-12).
+      caFile: caFile || null,
+      tls: tls
     };
   } catch (err) {
     log.debug("Caught in describeDatabase(): " + ((err && err.message) || err));
@@ -3806,10 +4053,8 @@ function describeDatabase() {
     // password is in there somewhere and we do not know where.
     return { host: null, port: null, database: null, user: null,
              sslmode: 'unknown', encrypted: false, verifyCertificate: false,
-             tls: 'unknown — the connection string is not a URL, so the ' +
-                  'sslmode cannot be read out of it.',
-             note: 'the connection string is not a URL; nothing about it is ' +
-                   'shown, because it carries a password.' };
+             tls: STATUS_PROSE.tlsUnknown,
+             note: STATUS_PROSE.notAUrl };
   }
 }
 
@@ -3956,6 +4201,55 @@ function dematerializeEntry(realmId, key) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// WHY THERE IS NO DATABASE TO REPORT ON — `databaseMetrics()`'s three "no"
+// answers, as a table (#543 phase 2b), so that the database namespace can
+// carry them and `common/server_prose.ts` refill an answer to
+// `GET /admin-api/database` in a console reader's language. Each is what
+// `databaseMetrics()` wrote inline until #543, byte for byte. `notPostgres`
+// is a template: its `mode` is the configured value, carried over as data.
+// ---------------------------------------------------------------------------
+const DATABASE_WHY = Object.freeze({
+  notPostgres: 'persistence.mode is "{{mode}}", so this service has no ' +
+    'database to report on. `memory` writes nothing at all and `ldif` ' +
+    'writes RFC 2849 files — neither has a connection, a pool or a catalog. ' +
+    'Set persistence.mode to `postgres` (it is restart-only: the store is ' +
+    'opened before the listener binds).',
+  noStore: 'persistence.mode is "postgres" and this process has NO OPEN ' +
+    'STORE. That is a fault rather than a configuration: the store is ' +
+    'opened from persistence.start() before the listener binds, and a ' +
+    'failure there is fatal — so a running service in this state has had ' +
+    'its store stopped underneath it. The startup log names what happened.',
+  noMetrics: 'the open driver reports no metrics function, which means a ' +
+    'build of persistence_postgres.js older than 2026-09-11.'
+});
+
+// The routes whose answers carry the database namespace's prose (#543): the
+// database page, and since phase 2c the two that carry `status()` whole.
+const PROSE_ROUTES = ['/admin-api/database', '/admin-api/ldap/service',
+                      '/admin-api/persistence'];
+
+/**
+ * Extracts this module's part of the database namespace (#543 phase 2b):
+ * why there is no database to report on — and since phase 2c what
+ * `status()` and `describeDatabase()` say in words.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY, like the require in `databaseMetrics()`: this module is
+  // required at 4a, while config.js's neighbours may still be loading.
+  const serverProse = require('../common/server_prose');
+  const out = Object.assign({},
+    serverProse.harvest('persistence.why', DATABASE_WHY,
+                        Object.keys(DATABASE_WHY)),
+    serverProse.harvest('persistence.status', STATUS_PROSE,
+                        Object.keys(STATUS_PROSE)));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 // THE STORE ITSELF, for a module that asks a question of a driver method no
 // wrapper here exposes — the routing index (`common/cell_routing.ts`) and
 // `/admin/cells` (#98). Null until `start()` has opened one.
@@ -3966,6 +4260,8 @@ function currentDriver() {
 }
 
 module.exports = {
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   originId: originId,
   currentDriver: currentDriver,
   materializeEntry: materializeEntry,
@@ -3986,6 +4282,8 @@ module.exports = {
   globalDatabaseConnection: globalDatabaseConnection,
   routingDigest: routingDigest,
   verifiesDatabaseTls: verifiesDatabaseTls,
+  // The database's own trust anchors, PEM, or '' (STS-STORE-0079).
+  databaseTlsCa: databaseTlsCa,
   MODES: MODES,
   mode: mode,
   /**
@@ -4240,31 +4538,22 @@ module.exports = {
       log.debug('Leaving databaseMetrics(). Not a database mode.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
-        why: 'persistence.mode is "' + configured + '", so this service has ' +
-             'no database to report on. `memory` writes nothing at all and ' +
-             '`ldif` writes RFC 2849 files — neither has a connection, a ' +
-             'pool or a catalog. Set persistence.mode to `postgres` (it is ' +
-             'restart-only: the store is opened before the listener binds).'
+        why: require('../common/server_prose').fill(DATABASE_WHY.notPostgres,
+                                                     { mode: configured })
       });
     }
     if (!driver || !enabled()) {
       log.debug('Leaving databaseMetrics(). No open driver.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
-        why: 'persistence.mode is "postgres" and this process has NO OPEN ' +
-             'STORE. That is a fault rather than a configuration: the store ' +
-             'is opened from persistence.start() before the listener binds, ' +
-             'and a failure there is fatal — so a running service in this ' +
-             'state has had its store stopped underneath it. The startup log ' +
-             'names what happened.'
+        why: DATABASE_WHY.noStore
       });
     }
     if (typeof driver.metrics !== 'function') {
       log.debug('Leaving databaseMetrics(). The driver has none.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
-        why: 'the open driver reports no metrics function, which means a ' +
-             'build of persistence_postgres.js older than 2026-09-11.'
+        why: DATABASE_WHY.noMetrics
       });
     }
     log.debug("Leaving databaseMetrics().");

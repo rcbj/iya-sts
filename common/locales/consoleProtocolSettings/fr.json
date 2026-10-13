@@ -1,6 +1,10 @@
 {
   "asJson": "cette page en JSON",
   "everyEndpoint": "tous les points de terminaison que ce service enregistre",
+  "globalSettings": "Paramètres généraux",
+  "metadataHeading": "Métadonnées",
+  "sharedProfileSettings": "Paramètres partagés entre profils",
+  "metadataDescription": "Le document de découverte OpenID Connect publie les points de terminaison et les fonctionnalités de ce serveur d’autorisation.",
   "thWhat": "Quoi",
   "thAnswer": "Réponse",
   "period": ".",

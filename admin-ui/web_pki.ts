@@ -101,9 +101,13 @@ class PkiPage {
     if (!chain) {
       return '';
     }
-    // A tier's label and what it is for are the view's. The tip's second
-    // argument is what it always was: the tip takes a length there, and a
-    // string in it changes nothing a reader sees.
+    // A tier's label and what it is for are the view's. What it is for is
+    // drawn as a note under the row (folded when longer than a line, its
+    // first sentence the summary). It was `kit.tip(tier.what, 'What the …
+    // is for')` until the #543 follow-up: a tip is a ` title="…"` ATTRIBUTE,
+    // and placed as the cell's content it showed as text; and its second
+    // argument is a length, so the string there cut the description to
+    // nothing but an ellipsis. Nothing is said only in a tooltip anyway.
     const rows = chain.tiers.map(function (tier) {
       return '<tr>' +
         '<td><strong>' + esc(tier.label) + '</strong></td>' +
@@ -120,9 +124,8 @@ class PkiPage {
         '&hellip;</code><br>' +
         CertificateDialogView.link('/admin/pki', tier.thumbprint, 'pki-chain',
                                    undefined, t) +
-        '</td></tr><tr><td ' +
-        'colspan="6">' + kit.tip(tier.what,
-          'What the ' + tier.label + ' is for') + '</td></tr>';
+        '</td></tr><tr><td colspan="6">' + kit.note(esc(tier.what)) +
+        '</td></tr>';
     }).join('');
     return '<table><thead><tr><th>' + t.html('consolePki.thTier') +
            '</th><th>' + t.html('consolePki.thSubject') + '</th><th>' +
@@ -855,7 +858,8 @@ class PkiPage {
     const self = this;
     const wb = json.workbench;
     const html =
-      '<h3 id="workbench">' + t.html('consolePki.paneHeading') + '</h3>' +
+      '<h3 id="workbench" data-tab="workbench">' +
+      t.html('consolePki.paneHeading') + '</h3>' +
       kit.note(t.html('consolePki.paneIntro') + '<p>' +
                t.html('consolePki.paneWhere') + '</p><p>' +
                t.html('consolePki.paneAsserting') + '</p>',
@@ -1048,7 +1052,8 @@ class PkiPage {
           '>' + t.html('consolePki.unpin') + '</button></form>') +
         '</td></tr>';
     }).join('');
-    return '<h3 id="pki-pinned">' + t.html('consolePki.pinnedHeading') +
+    return '<h3 id="pki-pinned" data-tab="pinned">' +
+      t.html('consolePki.pinnedHeading') +
       '</h3>' +
       kit.note(model.on
         ? t.html('consolePki.pinnedOn', { n: model.leadMinutes })
@@ -1277,7 +1282,8 @@ class PkiPage {
       t.html('consolePki.coverageEvery') + '<p>' +
       t.html('consolePki.coverageOutside') + '</p><p>' +
       t.html('consolePki.coverageSpiffe') +
-      ' <a href="/admin/spiffe">' + t.html('consolePki.spiffePage') + '</a> ' +
+      ' <a href="/admin/cert-issuance#cert-spiffe-overview">' +
+      t.html('consolePki.spiffePage') + '</a> ' +
       t.html('consolePki.coverageSpiffeAfter') + '</p>',
       t.html('consolePki.coverageTitle'));
   }
@@ -1442,7 +1448,8 @@ class PkiPage {
     const self = this;
     const model = json.revocation;
     if (!model.authorities.length) {
-      return '<h3>' + t.html('consolePki.revokingHeading') + '</h3>' +
+      return '<h3 data-tab="revocation">' +
+        t.html('consolePki.revokingHeading') + '</h3>' +
         kit.note(t.html('consolePki.noAuthorityToRevoke',
                         { realm: json.realm }));
     }
@@ -1472,7 +1479,8 @@ class PkiPage {
       }).join('') + '</ul>',
       t.html('consolePki.reasonsTitle'));
 
-    return '<h3>' + t.html('consolePki.revokingHeading') + '</h3>' + what +
+    return '<h3 data-tab="revocation">' +
+      t.html('consolePki.revokingHeading') + '</h3>' + what +
       rotation + reasons +
       model.authorities.map(function (authority) {
         return self.authorityBlock(authority, listView, model.reasons, t);
@@ -1571,7 +1579,7 @@ class PkiPage {
     // A tier's label is the view's. The years placeholder's callback names
     // its tier `x`, so the translator `t` stays reachable inside it.
     const buildForm =
-      '<h3>' + (chain ? t.html('consolePki.rebuildHierarchy')
+      '<h3 data-tab="build">' + (chain ? t.html('consolePki.rebuildHierarchy')
                       : t.html('consolePki.buildHierarchy')) + '</h3>' +
       (chain ? kit.warn(t.html('consolePki.replacesWarn'),
                         t.html('consolePki.replacesWarnTitle')) : '') +
@@ -1620,7 +1628,8 @@ class PkiPage {
     // standing in the page; its second argument is the tip's length and is
     // left as it was.
     const issueForm = chain
-      ? '<h3>' + t.html('consolePki.issueToApplication') + '</h3>' +
+      ? '<h3 data-tab="applications">' +
+        t.html('consolePki.issueToApplication') + '</h3>' +
         kit.tip(t.text('consolePki.issueWritesTip'),
           'What issuing writes, and where') +
         '<form method="post" action="/admin/pki">' +
@@ -1664,7 +1673,8 @@ class PkiPage {
     // second operation invented for it.
     // -------------------------------------------------------------------------
     const personForm = chain
-      ? '<h3>' + t.html('consolePki.issueToPerson') + '</h3>' +
+      ? '<h3 data-tab="people">' + t.html('consolePki.issueToPerson') +
+        '</h3>' +
         kit.tip(t.text('consolePki.personKeyTip'),
           'What a person’s key pair is for') +
         kit.warn('<p>' + t.html('consolePki.personOnlyThemselves') +
@@ -1822,7 +1832,8 @@ class PkiPage {
       t.html('consolePki.twoActsTitle'));
 
     return tiles + what + limits + PqcBadgeView.legend(t) +
-                  '<h3 id="pki-tree">' + t.html('consolePki.hierarchy') +
+                  '<h3 id="pki-tree" data-tab="hierarchy">' +
+                  t.html('consolePki.hierarchy') +
                   '</h3>' +
                   kit.note(
                     t.html('consolePki.treeOneRoot') + '<p>' +
@@ -1833,18 +1844,19 @@ class PkiPage {
                   self.treeSection(json, t) +
                   self.coverageNote(json, t) +
                   self.pinnedSection(json, t) +
-                  '<h3>' + t.html('consolePki.editHierarchy') + '</h3>' +
+                  '<h3 data-tab="edit">' +
+                  t.html('consolePki.editHierarchy') + '</h3>' +
                   self.rootControls(json, t) +
                   (json.tree.scopes || []).map(function (scope) {
                     return self.scopeControls(json, scope, t);
                   }).join('') +
-                  (chain ? '<h3 id="pki-chain">' +
+                  (chain ? '<h3 id="pki-chain" data-tab="hierarchy">' +
                            t.html('consolePki.threeTierView') + '</h3>' +
                            kit.note(t.html('consolePki.threeTierNote')) +
                            self.chainTable(chain, t) +
                            self.pemBlocks(chain, t) : '') +
                   buildForm + issueForm +
-                  '<h3 id="pki-applications">' +
+                  '<h3 id="pki-applications" data-tab="applications">' +
                   t.html('consolePki.applications') + '</h3>' + twoActs +
                   // NO *Rows per table* CONTROL (2026-09-30). Every size it
                   // offered is above this page's ceiling of five and would be
@@ -1853,7 +1865,8 @@ class PkiPage {
                   // still shortens every list, by hand.
                   issuedRows +
                   personForm +
-                  '<h3 id="pki-people">' + t.html('consolePki.people') +
+                  '<h3 id="pki-people" data-tab="people">' +
+                  t.html('consolePki.people') +
                   '</h3>' + personRows +
                   self.revocationPane(json, listView, t) +
                   self.certificatePane(json, json.workbench.draft, t) +

@@ -38,6 +38,9 @@ import authnPolicy = require('../common/authn_policy');
 import serviceAccountPolicy = require('../common/service_account_policy');
 import passkeyPolicy = require('../common/passkey_policy');
 import localePolicy = require('../common/locale_policy');
+// The page's sentences, in the reader's language (#543): the templates the
+// messages below are filled with, and the namespace `prose()` extracts.
+import serverProse = require('../common/server_prose');
 
 const { log } = helpers;
 
@@ -87,7 +90,156 @@ const KINDS: PolicyKind[] = [];
  * rules, implementing `password_policy.ts`'s interface; a future policy costs a
  * module and a row here. A library that registers no route.
  */
+// ---------------------------------------------------------------------------
+// WHAT A SAVE OR A RESET ANSWERS, as templates (#543 phase 2). One copy:
+// `admin-core/admin_actions.ts` fills them with `ServerProse.fill()`, and
+// `common/server_prose.ts` matches the answer's `message` against them to
+// refill it in the reader's language — the noun and the kind's sentences
+// translated inside it, the profile's name and DN carried over.
+// ---------------------------------------------------------------------------
+const MESSAGES: Readonly<Record<string, string>> = Object.freeze({
+  saved: 'The {{noun}} "{{name}}" is saved at {{dn}}. It applies to ' +
+    '{{appliesTo}}.',
+  savedNotEnforced: 'The {{noun}} "{{name}}" is saved at {{dn}}. It ' +
+    'applies to {{appliesTo}} — and it is not enforced here until this ' +
+    'realm is in product mode.',
+  removed: 'The stored profile is gone, and this realm follows ' +
+    '{{fallsBackTo}}: {{rules}}.',
+  nothingStored: 'Nothing was stored in this realm, so it already ' +
+    'followed {{fallsBackTo}}.'
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE PAGE SAYS BESIDES EACH KIND'S OWN TABLES (#543 phase 2): the
+// password policy's enforcement, generator and doors, and why the email
+// mechanisms cannot be on. Here, beside the kinds, rather than inline in
+// `admin-core/admin_views.ts`, so the policies namespace can be extracted
+// without loading the console's views; that module reads them from here.
+// ---------------------------------------------------------------------------
+const VIEW_PROSE = Object.freeze({
+  enforced: 'ENFORCED. This realm is in product mode, so every password ' +
+    'set here — at every door below — must meet the profile, and a new ' +
+    'password may not repeat a remembered one.',
+  notEnforced: 'NOT ENFORCED. This realm is in development mode, where no ' +
+    'password is checked at any door, so a rule about one would be a rule ' +
+    'about a credential nothing reads. The history is still RECORDED, so a ' +
+    'realm switched to product mode starts with one. A GENERATED password ' +
+    'meets the profile in both modes.',
+  generatorSource: 'node\'s crypto.randomInt, rejection-sampled so that no ' +
+    'character of the pool is likelier than another',
+  generatorPools: Object.freeze(['lowercase letters', 'uppercase letters',
+                                 'digits', 'symbols']),
+  generatorDrawsUntil: 'the password satisfies the profile, so every ' +
+    'generated password is uniform over the passwords the profile accepts',
+  doors: Object.freeze([
+    Object.freeze({ door: '/admin/users/new and /admin/users (Set password)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: 'POST /admin-api/users/create and ' +
+                          '/admin-api/users/set-password',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/password',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: '/portal/activate (the first password a person ' +
+                          'sets)',
+                    via: 'credentials.setPassword()' }),
+    Object.freeze({ door: 'an LDAP add or modify of userPassword on 389 or ' +
+                          '636',
+                    via: 'credentials.preparePassword()' })
+  ]),
+  notDoors: 'SCIM carries no password (this service advertises ' +
+    'changePassword: false), and a password is never set by signing in. ' +
+    'Passwords stored BEFORE a rule changed are not re-checked: nothing ' +
+    'here holds a password in a form that could be, and the rule applies ' +
+    'from the next change.',
+  mailWhy: 'This realm cannot send mail, so the two email mechanisms cannot ' +
+    'be turned on and are never offered. Configure a transport on Server ' +
+    'configuration > Mail.'
+});
+
+// The routes whose answers carry the policies namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/policies', '/admin-api/policies/:action'];
+
 class PolicyKinds {
+  /**
+   * What a save or a reset answers, as templates (#543).
+   */
+  static readonly MESSAGES = MESSAGES;
+  /**
+   * What the page says besides each kind's own tables (#543).
+   */
+  static readonly VIEW_PROSE = VIEW_PROSE;
+  /**
+   * The routes whose answers carry the policies namespace's prose.
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the policies namespace (#543 phase 2): every kind's label and
+   * sentences and the noun a message names it by, each kind module's
+   * field table, schema, mechanism, door and selector prose and its
+   * `describe()` templates, and the page's own sentences and messages.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    log.debug("Entering PolicyKinds.prose().");
+    const harvest = serverProse.harvest;
+    // `door` is prose only on the page's list; a field's `door` is an id.
+    const MEMBERS = ['label', 'what', 'unit', 'governs', 'appliesTo',
+                     'fallsBackTo'];
+    const out: Record<string, string> = {};
+    KINDS.forEach(function (kind) {
+      const mod = kind.module as unknown as Record<string, unknown>;
+      Object.assign(out, harvest('kinds.' + kind.id, {
+        label: kind.label, governs: kind.governs, appliesTo: kind.appliesTo,
+        fallsBackTo: kind.fallsBackTo }, MEMBERS));
+      out['kinds.' + kind.id + '.param.noun'] = PolicyKinds.nounOf(kind);
+      ['FIELDS', 'SCHEMA', 'MECHANISMS', 'DOORS', 'SELECTORS']
+        .forEach(function (name) {
+          if (mod[name]) {
+            Object.assign(out, harvest(kind.id + '.' + name, mod[name],
+                                       MEMBERS));
+          }
+        });
+      if (typeof mod.NIST_EMAIL_WARNING === 'string') {
+        out[kind.id + '.nistWarning'] = mod.NIST_EMAIL_WARNING;
+      }
+      const sentences = (mod.SENTENCES || {}) as Record<string, string>;
+      Object.keys(sentences).forEach(function (key) {
+        out[kind.id + '.sentences.' + key] = sentences[key];
+      });
+    });
+    Object.keys(MESSAGES).forEach(function (key) {
+      out['messages.' + key] = MESSAGES[key];
+    });
+    Object.assign(out, harvest('page', {
+      enforced: VIEW_PROSE.enforced, notEnforced: VIEW_PROSE.notEnforced,
+      source: VIEW_PROSE.generatorSource,
+      drawsUntil: VIEW_PROSE.generatorDrawsUntil,
+      notDoors: VIEW_PROSE.notDoors, mailWhy: VIEW_PROSE.mailWhy,
+      doors: VIEW_PROSE.doors },
+      MEMBERS.concat(['door', 'enforced', 'notEnforced', 'source',
+                      'drawsUntil', 'notDoors', 'mailWhy'])));
+    VIEW_PROSE.generatorPools.forEach(function (pool, i) {
+      out['page.pools.' + i] = pool;
+    });
+    log.debug("Leaving PolicyKinds.prose(). " + Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * The noun a message names a kind's profile by: its label, lower-cased,
+   * and "profile".
+   *
+   * @param kind - the kind
+   * @returns the noun
+   */
+  static nounOf(kind: PolicyKind): string {
+    log.debug("Entering PolicyKinds.nounOf().");
+    log.debug("Leaving PolicyKinds.nounOf().");
+    return kind.label.toLowerCase() + ' profile';
+  }
+
   /**
    * Adds a kind to the list; a second registration of the same id is ignored.
    *

@@ -74,10 +74,18 @@
 //      of this file's own. In product mode the credential endpoint refuses it
 //      (`invalid_token`); in development it issues on it as it always has, and
 //      that credential VERIFIES at the sign-in and signs nobody in.
-//   7. THE VERIFIER AT `/oid4vp/start` (the bar door): a request by
-//      reference for the configured claims, answered with the Disclosures it
-//      asks for — accepted, reported on `/oid4vp/result`, and no session — and
-//      the same answer for another nonce, refused.
+//   7. THE VERIFIER (the bar door): a request by reference for the
+//      configured claims, started by an administrator at `POST
+//      /admin-api/verifications/start` (#587) and answered with the
+//      Disclosures it asks for — accepted, reported on `GET
+//      /admin-api/verifications?state=`, and no session — and the same answer
+//      for another nonce, refused. The Response Endpoint names the page the
+//      START named as `redirect_uri` (#594) — any absolute URL in
+//      development, and in product only the calling client's registered
+//      redirect URIs, so an unregistered one is refused there — and names
+//      none for a start that named none. The demonstration's own
+//      `/oid4vp/start`, `/oid4vp/result/:state` and `/oid4vp/done` left for
+//      the development companion on #594.
 //
 // THE WALLET IS INDEPENDENT. Every key, signature, hash and Disclosure below
 // is made with node's own `crypto`, and nothing is borrowed from the
@@ -95,6 +103,9 @@ const { usernameFor } = require("./random_username.js");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
 const consentScreen = require("./consent_screen.js");
+// THE WALLET'S PAGES OVER `/authn-api/wallet` (#574): the start, the wait
+// page's view, the collection — bound as the pages bind them.
+const walletSignin = require("./wallet_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -560,20 +571,26 @@ function queryIdFor(requestObject, format) {
 }
 
 // POST the wallet's answer to the request's response_uri (OpenID4VP section
-// 8.2, `direct_post`). The wallet has no cookie for this service.
+// 8.2): `direct_post`, or — where the request asked for it, as a sign-in
+// does by default since 2026-10-12 — `direct_post.jwt`, encrypted to the
+// request's key (`wallet_signin.js`'s `answerForm()`). The wallet has no
+// cookie for this service.
 async function respond(requestObject, format, presentation) {
   log.debug("Entering respond(). " + format);
   const vpToken = {};
   vpToken[queryIdFor(requestObject, format)] = [presentation];
-  const r = await hop(null, "POST", requestObject.response_uri, { form: {
-    state: requestObject.state, vp_token: JSON.stringify(vpToken) } });
+  const r = await hop(null, "POST", requestObject.response_uri, {
+    form: walletSignin.answerForm(requestObject, {
+      state: requestObject.state, vp_token: JSON.stringify(vpToken) }) });
   log.debug("Leaving respond(). " + r.status);
   return r;
 }
 
+// What the Verifier decided: `GET /admin-api/verifications?state=` (#587),
+// the administrator's read.
 async function verdictOf(state) {
   log.debug("Entering verdictOf().");
-  const r = await hop(null, "GET", base + "/oid4vp/result/" +
+  const r = await hop(null, "GET", api + "/verifications?state=" +
                       encodeURIComponent(state));
   log.debug("Leaving verdictOf(). " + r.status);
   return (r.json && r.json.verdict) || null;
@@ -595,23 +612,28 @@ async function startSignIn(who) {
                                authorizeUrl("openid", pair, state));
   const authnId = new URL(authorized.location || base, base).searchParams
     .get("authn") || "";
+  // THE SCREEN IS A STATIC SURFACE (#571): its shell, then its view, whose
+  // `wallet` member is the button.
   const screen = await hop(who, "GET", authorized.location || base);
-  const link = /id="wallet-signin" href="([^"]+)"/.exec(screen.text);
+  const screenView = authnId ? await hop(who, "GET", base +
+    "/authn-api/pending/" + encodeURIComponent(authnId)) : null;
+  const wallet = screenView && screenView.json && screenView.json.view &&
+                 screenView.json.view.wallet;
   const out = { pair: pair, oauthState: state, authnId: authnId,
                 authorized: authorized, screen: screen,
-                walletLink: link ? unescapeHtml(link[1]) : "" };
-  out.door = await hop(who, "GET", base + "/authn/wallet?authn=" +
-                       encodeURIComponent(authnId));
+                walletLink: (wallet && wallet.href) || "" };
+  // THE WALLET'S PAGES ARE ROUTES OF THE SIGN-IN SURFACE (#574): the start
+  // page's view and its act, read as the 303 the door used to answer.
+  out.started = await walletSignin.start(base, who, { authn: authnId });
+  out.door = out.started.door;
   if (out.door.status !== 303) {
     log.debug("Leaving startSignIn(). The door did not open.");
     return out;
   }
-  out.waitUrl = out.door.location;
-  out.waiting = await hop(who, "GET", out.waitUrl);
-  const open = /id="wallet-open" href="([^"]+)"/.exec(out.waiting.text);
-  out.walletUrl = open ? new URL(unescapeHtml(open[1])) : null;
-  out.requestUri = out.walletUrl ?
-    out.walletUrl.searchParams.get("request_uri") : "";
+  out.waitUrl = out.started.waitUrl;
+  out.waiting = out.started.waiting;
+  out.walletUrl = out.started.walletUrl;
+  out.requestUri = out.started.requestUri;
   if (out.requestUri) {
     const ro = await hop(null, "GET", out.requestUri);
     out.requestObjectResponse = ro;
@@ -673,7 +695,7 @@ async function refused(label, format, build, expect) {
   const answered = await respond(s.requestObject, format,
                                  build(s.requestObject));
   const verdict = await verdictOf(s.requestObject.state);
-  const page = await hop(who, "GET", s.waitUrl);
+  const page = await walletSignin.collect(base, who, s.started);
   const landed = await sessionAnswer(who);
   check(label, function () {
     assert.strictEqual(answered.status, expect.response,
@@ -686,9 +708,11 @@ async function refused(label, format, build, expect) {
     }
     assert.strictEqual(!!(verdict && verdict.ok), expect.verified,
       "the verdict: " + JSON.stringify(verdict).slice(0, 600));
-    assert.strictEqual(page.status, 403, "the wait page answered " +
-      page.status + " " + page.text.replace(/\s+/g, " ").slice(0, 300));
-    assert.ok(/id="wallet-reason"/.test(page.text),
+    assert.strictEqual(page.status, 403, "the wait page's collection " +
+      "answered " + page.status + " " + page.text.slice(0, 300));
+    assert.ok(page.json && page.json.next === "refused" &&
+              (page.json.errors || []).length > 0 && page.json.view &&
+              page.json.view.wallet === "refused",
       "and says why nobody was signed in");
     assert.ok(!setsSession(page), "the wait page set a session cookie");
     assert.ok(nobodyIn(landed), "and nobody is signed in in that " +
@@ -887,7 +911,7 @@ async function test() {
   }
 
   // ==== 7. THE VERIFIER (THE BAR DOOR) =====================================
-  await barDoor(sd, sdKey);
+  await barDoor(sd, sdKey, product);
 
   const floor = signInOn ? 30 : 9;
   assert.ok(checks >= floor, "only " + checks + " checks ran (the floor " +
@@ -967,7 +991,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
 
   // Another browser, before any answer, is not this sign-in's.
   const stranger = jar();
-  let r = await hop(stranger, "GET", s.waitUrl);
+  let r = await walletSignin.collect(base, stranger, s.started);
   check("another browser asking the wait page is refused, 403, and given " +
         "no session", function () {
           assert.strictEqual(r.status, 403, r.text.slice(0, 200));
@@ -1000,20 +1024,20 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.strictEqual(r.json && r.json.error, "invalid_request");
         });
 
-  r = await hop(stranger, "GET", redirect);
+  r = await walletSignin.collect(base, stranger, redirect);
   check("the response_code does not let another browser collect it: 403, " +
         "no session", function () {
           assert.strictEqual(r.status, 403, r.text.slice(0, 200));
           assert.ok(!setsSession(r) && !stranger.cookies.sts_session,
                     JSON.stringify(r.setCookie));
         });
-  r = await hop(null, "GET", redirect);
+  r = await walletSignin.collect(base, null, redirect);
   check("nor a request carrying no cookie at all", function () {
     assert.strictEqual(r.status, 403, r.text.slice(0, 200));
     assert.ok(!setsSession(r));
   });
-  r = await hop(browser, "GET", redirect.replace(/response_code=[^&]+/,
-                                                 "response_code=wrong"));
+  r = await walletSignin.collect(base, browser, redirect,
+                               { responseCode: "wrong" });
   const stillNobody = await sessionAnswer(browser);
   check("a wrong response_code is refused in the right browser too, 403, " +
         "and that browser is still signed in as nobody", function () {
@@ -1026,7 +1050,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   // The arrival cookie the authorization endpoint set, which a sign-in must
   // REPLACE rather than upgrade in place (session fixation, authn/CLAUDE.md).
   const arrival = browser.cookies.sts_session || "";
-  r = await hop(browser, "GET", redirect);
+  r = await walletSignin.collect(base, browser, redirect);
   check("the browser that started it collects: a NEW session cookie, and " +
         "back to the authorization request that was waiting", function () {
           assert.strictEqual(r.status, 303, r.text.slice(0, 300));
@@ -1047,7 +1071,14 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.strictEqual(finished.idToken.sub, holderSub);
           assert.deepStrictEqual(finished.idToken.amr, ["pop"]);
         });
-  r = await hop(browser, "GET", redirect);
+  // The sign-in replaced the browser's session, and the page's token is the
+  // session's: a fresh one, from a sign-in that is pending again.
+  const relogin = await hop(browser, "GET", authorizeUrl("openid", pkce(),
+                                                         "again") +
+                            "&prompt=login");
+  await walletSignin.refreshCsrf(base, browser, new URL(relogin.location ||
+    base, base).searchParams.get("authn") || "");
+  r = await walletSignin.collect(base, browser, redirect);
   check("the sign-in is collected once: asked again it is refused, 400, " +
         "and starts no second session", function () {
           assert.strictEqual(r.status, 400, r.text.slice(0, 200));
@@ -1139,7 +1170,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.strictEqual(r.status, 200, r.text.slice(0, 400));
           assert.ok(/[?&]response_code=/.test(redirect2), redirect2);
         });
-  r = await hop(second, "GET", redirect2);
+  r = await walletSignin.collect(base, second, redirect2);
   const finished2 = r.status === 303 ?
     await finishAuthorization(second, r.location, s2.pair) : null;
   check("and the browser that started it is signed in as the same person",
@@ -1182,17 +1213,24 @@ function sdPayloadVct(sd) {
   return payloadOf(String(sd.credential).split("~")[0]).vct;
 }
 
-// Section 7: the Verifier at /oid4vp/start, which asks for the configured
-// claims and signs nobody in whatever it decides.
-async function barDoor(sd, sdKey) {
-  log.debug("Entering barDoor().");
-  log.info("=== 7. the Verifier at /oid4vp/start ===");
-  const visitor = jar();
-  async function begin() {
+// Section 7: the Verifier, which asks for the configured claims and signs
+// nobody in whatever it decides. Started through `/admin-api` in every mode
+// (#587); in development the demonstration page is driven once more.
+async function barDoor(sd, sdKey, product) {
+  log.debug("Entering barDoor(). product=" + !!product);
+  log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
+  // A start at the operation, naming `completion` as the page the wallet is
+  // sent to afterwards (#594) when one is given.
+  async function begin(completion) {
     log.debug("Entering begin().");
-    const started = await hop(visitor, "GET", base +
-      "/oid4vp/start?by=reference&format=" + encodeURIComponent("dc+sd-jwt"));
-    const walletUrl = started.location ? new URL(started.location) : null;
+    const body = { by: "reference", format: "dc+sd-jwt" };
+    if (completion) {
+      body.redirect_uri = completion;
+    }
+    const started = await hop(null, "POST", api + "/verifications/start",
+                              { json: body });
+    const address = (started.json || {}).walletUrl || "";
+    const walletUrl = address ? new URL(address) : null;
     const requestUri = walletUrl ? walletUrl.searchParams.get("request_uri") :
       "";
     const got = requestUri ? await hop(null, "GET", requestUri) : null;
@@ -1200,17 +1238,32 @@ async function barDoor(sd, sdKey) {
     return { started: started, jwt: got ? got.text : "",
              ro: got ? payloadOf(got.text) : null };
   }
-  const one = await begin();
+  // THE STARTER'S PAGE (#594): development accepts any absolute URL; a
+  // product realm only the calling client's registered redirect URIs, and
+  // this job's token is the management client's, which registers none.
+  const COMPLETION = "https://verifier.example/verified";
+  const refusedStart = product ? await begin(COMPLETION) : null;
+  if (product) {
+    check("in product, a start naming a page the calling client has not " +
+          "registered is refused (STS-VC-0123)", function () {
+            assert.strictEqual(refusedStart.started.status, 400,
+                               refusedStart.started.text.slice(0, 200));
+          });
+  }
+  const one = await begin(product ? "" : COMPLETION);
   const key = one.jwt ? await realmKeyFor(one.jwt) : null;
   const claimQuery = ((((one.ro || {}).dcql_query || {}).credentials ||
                        [])[0] || {});
   const asked = (claimQuery.claims || []).map(function (c) {
     return c.path[0];
   });
-  check("a request by reference is handed to the wallet, signed by the " +
-        "realm, asking for a dc+sd-jwt by direct_post", function () {
-          assert.strictEqual(one.started.status, 302,
+  check("a request by reference, started at POST " +
+        "/admin-api/verifications/start, is handed to the wallet, signed by " +
+        "the realm, asking for a dc+sd-jwt by direct_post", function () {
+          assert.strictEqual(one.started.status, 200,
                              one.started.text.slice(0, 200));
+          assert.strictEqual((one.started.json || {}).state,
+                             (one.ro || {}).state);
           assert.ok(one.ro, "no request object");
           assert.ok(key && verifyJws(one.jwt, key), "signature");
           assert.strictEqual(one.ro.response_mode, "direct_post");
@@ -1221,11 +1274,16 @@ async function barDoor(sd, sdKey) {
                                      one.ro.client_id, { disclose: asked }));
   const verdict = await verdictOf(one.ro.state);
   check("the holder's credential, disclosing exactly the claims asked for (" +
-        asked.join(", ") + "), is accepted and sent to the thank-you page, " +
-        "and no session is started", function () {
+        asked.join(", ") + "), is accepted, the wallet is sent to the " +
+        "page the start named (or to none), and no session is started",
+        function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 500));
-          assert.ok(/\/oid4vp\/done\?/.test((r.json || {}).redirect_uri),
-                    r.text);
+          if (product) {
+            assert.deepStrictEqual(r.json, {}, r.text);
+          } else {
+            assert.strictEqual((r.json || {}).redirect_uri, COMPLETION,
+                               r.text);
+          }
           assert.ok(verdict && verdict.ok, JSON.stringify(verdict));
           asked.forEach(function (name) {
             assert.ok(verdict.claims && name in verdict.claims,
@@ -1234,12 +1292,6 @@ async function barDoor(sd, sdKey) {
           });
           assert.ok(!setsSession(r));
         });
-  r = await hop(visitor, "GET", r.json.redirect_uri);
-  check("and its thank-you page signs nobody in either", function () {
-    assert.strictEqual(r.status, 200);
-    assert.ok(/id="verdict"/.test(r.text));
-    assert.ok(!setsSession(r) && !visitor.cookies.sts_session);
-  });
   const two = await begin();
   r = await respond(two.ro, "dc+sd-jwt",
                     presentSdJwt(sd.credential, sdKey, "not-" + two.ro.nonce,
@@ -1262,7 +1314,8 @@ program
     "holder-bound credential issued on a real access token signs its " +
     "person in at /authn/wallet in the browser that asked, once; wrong " +
     "nonces, audiences, keys, issuers, browsers and replays sign nobody in; " +
-    "and the Verifier at /oid4vp/start accepts and refuses.")
+    "and the Verifier, started at /admin-api/verifications/start, accepts " +
+    "and refuses.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

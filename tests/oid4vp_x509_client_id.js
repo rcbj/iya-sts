@@ -129,7 +129,8 @@ async function run(t) {
   try {
     await body(t);
   } finally {
-    ['oid4vp.clientIdPrefix', 'oid4vp.x509DnsName', 'global.mode',
+    ['oid4vp.clientIdPrefix', 'oid4vp.signInClientIdPrefix',
+     'oid4vp.x509DnsName', 'global.mode',
      'global.publicBaseUrl'].forEach(function (key) {
       config.clearOverride(key);
     });
@@ -300,7 +301,8 @@ async function body(t) {
           'dNSName', renewed && renewed.subjectAltName);
 
   t.log.info('=== 8. the Digital Credentials API request ===');
-  config.setOverride('oid4vp.clientIdPrefix', 'x509_san_dns');
+  // A sign-in's prefix is `oid4vp.signInClientIdPrefix` since 2026-10-12.
+  config.setOverride('oid4vp.signInClientIdPrefix', 'x509_san_dns');
   const signIn = verifier.buildVpRequest(fakeReq(), {
     signIn: { authnId: 'x509-test', bindingHash: 'h', completePath: '/x',
               ttlMs: 60000, crossDevice: false, issuerDids: [],

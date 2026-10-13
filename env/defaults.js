@@ -134,7 +134,6 @@ var config = {
     pushTimeoutMs: 5000,                                                   // Push timeout (ms)
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
     accessTokenCertificateHeader: "x5u",                                   // JWT access token certificate header
-    demoResourceServer: true,                                              // Run the demonstration resource server
     ownerLookupCacheS: 60,                                                 // Owner lookup cache (seconds)
     caepEvents: true,                                                      // Emit CAEP for grants and tokens
     scopedSignals: true                                                    // Scope a GNAP web application's streams
@@ -146,7 +145,6 @@ var config = {
     accessPolicy: "access-control",          // Access policy name
     enabled: true,                           // XACML enabled
     maxPolicies: 200,                        // Policies the repository may hold
-    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate
@@ -300,7 +298,7 @@ var config = {
     heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
     startConcurrency: 1,                                           // Request workers starting at once; restart to apply
     dispatch: "*",                                                 // Handled in a request worker; restart to apply
-    fanout: "/scim,/xacml,/admin-api",                             // Dispatched paths with no session affinity; restart to apply
+    fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
     surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
     batch: "/scim,/admin/signals/receive,/portal/signals/receive", // Batch traffic paths
@@ -662,13 +660,13 @@ var config = {
 
   // --- SAML ------------------------------------------------------------
   saml: {
-    clockSkewS: 0,                                          // Assertion clock skew (s)
-    signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
-    canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
-    allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
-    organizationName: "sts",                                // Metadata OrganizationName
-    organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
-    organizationUrl: ""                                     // Metadata OrganizationURL
+    clockSkewS: 0,                                     // Assertion clock skew (s)
+    signatureAlgorithm: "rsa-sha256",                  // XML signature algorithm
+    canonicalizationAlgorithm: "exclusive",            // XML canonicalization
+    allowSha1Signatures: false,                        // Accept SHA-1 XML signatures
+    organizationName: "sts",                           // Metadata OrganizationName
+    organizationDisplayName: "Security token service", // Metadata OrganizationDisplayName
+    organizationUrl: ""                                // Metadata OrganizationURL
   },
 
   // --- SAML 2.0 assertions ---------------------------------------------
@@ -687,7 +685,6 @@ var config = {
     unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
-    mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
     spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
@@ -721,8 +718,7 @@ var config = {
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
-    assertionLifetimeMin: 60, // Assertion lifetime (minutes)
-    mockRpContextTtlMin: 30   // Mock relying party wctx lifetime (minutes)
+    assertionLifetimeMin: 60  // Assertion lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------
@@ -773,70 +769,72 @@ var config = {
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",                    // Wallet URL
-    authorizationServer: "",                               // Authorization server
-    batchSize: 4,                                          // Batch size
-    deferredReadyMs: 4000,                                 // Deferred: ready after (ms)
-    deferredIntervalS: 2,                                  // Deferred: poll interval (s)
-    offerUsername: "diploma.student",                      // Offer username
-    requestEncryptionRequired: false,                      // Require encrypted credential requests
-    txCodeLength: 5,                                       // Transaction Code length (digits)
-    txCodeMaxAttempts: 5,                                  // Wrong Transaction Codes before the code is spent (product)
-    offerTtlS: 600,                                        // Credential Offer lifetime (s)
-    walletIssuancePath: "/vc-issuance-1.html",             // Wallet issuance page
-    allowedWalletUrls: "",                                 // Other wallet URLs an offer link may name (product)
-    requestEncryptionKeyBits: 2048,                        // Request encryption key size (bits)
-    requestEncryptionEncValues: "A128GCM,A256GCM",         // Request encryption: enc values
-    responseEncryptionEncValues: "A128GCM,A256GCM",        // Response encryption: enc values
-    responseEncryptionRequired: false,                     // Require encrypted credential responses
-    credentialLifetimeS: 2592000,                          // Issued credential lifetime (s)
-    credentialSigningAlgorithm: "RS256",                   // Algorithm credentials are signed with
-    credentialCertificateHeader: "x5u",                    // Credential certificate header
-    signedMetadataCertificateHeader: "x5u",                // Issuer signed_metadata certificate header
-    proofIatWindowS: 600,                                  // Proof of possession iat window (s)
-    cNonceTtlS: 300,                                       // c_nonce lifetime (s)
-    cNonceCacheSize: 10000,                                // c_nonce values held (per realm)
-    issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
-    domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
-    generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
-    sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false,                                 // Name the ldp_vc issuer by DID; restart to apply
-    statusListTtlS: 300,                                   // Status list time to live (s)
-    statusListLifetimeS: 86400,                            // Status list lifetime (s)
-    keyAttestationRequired: false,                         // Require a key attestation
-    keyAttestationTrustedCertificates: ""                  // Trusted key attesters (PEM)
+    walletUrl: "",                                    // Web wallet URL
+    walletInvocation: "openid-credential-offer",      // How a wallet app is handed an offer
+    authorizationServer: "",                          // Authorization server
+    batchSize: 4,                                     // Batch size
+    deferredReadyMs: 4000,                            // Deferred: ready after (ms)
+    deferredIntervalS: 2,                             // Deferred: poll interval (s)
+    offerUsername: "diploma.student",                 // Offer username
+    requestEncryptionRequired: false,                 // Require encrypted credential requests
+    txCodeLength: 5,                                  // Transaction Code length (digits)
+    txCodeMaxAttempts: 5,                             // Wrong Transaction Codes before the code is spent (product)
+    offerTtlS: 600,                                   // Credential Offer lifetime (s)
+    walletIssuancePath: "",                           // Web wallet issuance page
+    requestEncryptionKeyBits: 2048,                   // Request encryption key size (bits)
+    requestEncryptionEncValues: "A128GCM,A256GCM",    // Request encryption: enc values
+    responseEncryptionEncValues: "A128GCM,A256GCM",   // Response encryption: enc values
+    responseEncryptionRequired: false,                // Require encrypted credential responses
+    credentialLifetimeS: 2592000,                     // Issued credential lifetime (s)
+    credentialSigningAlgorithm: "RS256",              // Algorithm credentials are signed with
+    credentialCertificateHeader: "x5u",               // Credential certificate header
+    signedMetadataCertificateHeader: "x5u",           // Issuer signed_metadata certificate header
+    proofIatWindowS: 600,                             // Proof of possession iat window (s)
+    cNonceTtlS: 300,                                  // c_nonce lifetime (s)
+    cNonceCacheSize: 10000,                           // c_nonce values held (per realm)
+    issuerDisplayName: "IdP Tools Credential Issuer", // Issuer display name
+    domainLinkageLifetimeS: 31536000,                 // Domain Linkage Credential lifetime (s)
+    sdJwtIssuerDid: false,                            // Name the SD-JWT VC issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                            // Name the ldp_vc issuer by DID; restart to apply
+    statusListTtlS: 300,                              // Status list time to live (s)
+    statusListLifetimeS: 86400,                       // Status list lifetime (s)
+    keyAttestationRequired: false,                    // Require a key attestation
+    keyAttestationTrustedCertificates: ""             // Trusted key attesters (PEM)
   },
 
   // --- OID4VP ----------------------------------------------------------
   oid4vp: {
-    clientId: "sts-verifier",                          // Verifier client ID
-    requestObjectCertificateHeader: "x5u",             // Request Object certificate header
-    kbMaxAgeS: 600,                                    // Key Binding max age (s)
-    signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
-    siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
-    clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
-    x509DnsName: "",                                   // DNS name of the x509_san_dns Client Identifier
-    x509SigningAlgorithm: "ES256",                     // Signing algorithm of an x509 Client Identifier request
-    verifierAttestation: "",                           // Verifier Attestation JWT
-    claims: "given_name,family_name",                  // Requested claims
-    presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
-    maxTransactions: 5000,                             // Presentation requests waiting (per realm)
-    signInRegisterMaxEntries: 10000,                   // Wallet sign-in register size (per realm)
-    walletPresentationPath: "/vc-presentation-1.html", // Wallet presentation page
-    allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
-    trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
-    expectedVct: "urn:idptools:sd-jwt-vc:identity",    // Expected SD-JWT VC type (vct)
-    maxRequestedClaims: 40,                            // Claims one request may ask for
-    signIn: true,                                      // Sign in with a wallet
-    signInTtlS: 300,                                   // Wallet sign-in lifetime (s)
-    signInPollS: 3,                                    // Wallet sign-in page refresh (s)
-    signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
-    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
-    signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
-    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES",   // Encrypted response: key algorithms offered
-    statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
-    requireStatusReference: "all",                     // Require a status reference on every presented credential
-    statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
+    clientId: "sts-verifier",                        // Verifier client ID
+    walletInvocation: "openid4vp",                   // How a wallet app is handed a request
+    requestObjectCertificateHeader: "x5u",           // Request Object certificate header
+    kbMaxAgeS: 600,                                  // Key Binding max age (s)
+    signInSelfIssued: false,                         // Sign in with a self-issued ID (SIOPv2)
+    siopIdTokenMaxAgeS: 300,                         // Self-issued ID Token max age (s)
+    clientIdPrefix: "pre-registered",                // Client Identifier prefix of a signed request
+    x509DnsName: "",                                 // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                   // Signing algorithm of an x509 Client Identifier request
+    verifierAttestation: "",                         // Verifier Attestation JWT
+    claims: "given_name,family_name",                // Requested claims
+    presentationRequestTtlS: 600,                    // Presentation request lifetime (s)
+    maxTransactions: 5000,                           // Presentation requests waiting (per realm)
+    signInRegisterMaxEntries: 10000,                 // Wallet sign-in register size (per realm)
+    walletPresentationPath: "",                      // Web wallet presentation page
+    allowedWalletUrls: "",                           // Other wallet URLs a request link may name (product)
+    trustedIssuerCertificates: "",                   // Other trusted credential issuers (PEM)
+    expectedVct: "urn:idptools:sd-jwt-vc:identity",  // Expected SD-JWT VC type (vct)
+    maxRequestedClaims: 40,                          // Claims one request may ask for
+    signIn: true,                                    // Sign in with a wallet
+    signInClientIdPrefix: "x509_hash",               // Wallet sign-in: Client Identifier prefix
+    signInResponseMode: "direct_post.jwt",           // Wallet sign-in: response mode
+    signInTtlS: 300,                                 // Wallet sign-in lifetime (s)
+    signInPollS: 3,                                  // Wallet sign-in page refresh (s)
+    signInCrossDevice: false,                        // Wallet sign-in QR code (cross-device, relayable)
+    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",   // Wallet sign-in credential formats
+    signInDcApiResponseMode: "dc_api.jwt",           // Digital Credentials API response mode
+    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES", // Encrypted response: key algorithms offered
+    statusListMaxCacheS: 3600,                       // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                   // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                        // Trusted issuers exempt from the status reference
   },
 
   // --- OpenID Federation -----------------------------------------------
@@ -871,12 +869,17 @@ var config = {
     collectionCacheS: 300                          // In-process collection kept for (s)
   },
 
+  // --- W3C VC API ------------------------------------------------------
+  vcApi: {
+    enabled: false,    // Serve the W3C VC API
+    maxPerWindow: 600  // VC API calls one client may make per rate-limit window
+  },
+
   // --- Kerberos --------------------------------------------------------
   krb5: {
     enabled: true,                                                 // Enable Kerberos
     realm: "EXAMPLE.COM",                                          // Realm; restart to apply
     kdcPort: 88,                                                   // KDC port; restart to apply
-    servicePort: 8888,                                             // Test service port; restart to apply
     servicePrincipal: "HTTP/web.example.com",                      // Service principal; restart to apply
     servicePassword: "service-account-password",                   // Service principal password; restart to apply
     serviceSalt: "",                                               // Service principal salt; restart to apply
@@ -943,6 +946,26 @@ var config = {
     authClientCert: true         // Offer TLS client certificates
   },
 
+  // --- SCIM client -----------------------------------------------------
+  scimClient: {
+    attempts: 8,                // Delivery attempts
+    timeoutMs: 15000,           // Request timeout (ms)
+    backoffMs: 10000,           // Retry backoff (ms)
+    maxBackoffMs: 3600000,      // Longest backoff (ms)
+    leaseMs: 300000,            // Delivery lease (ms)
+    sweepS: 15,                 // Delivery sweep (seconds)
+    retentionS: 604800,         // Retention (seconds)
+    maxRows: 200000,            // Deliveries kept per realm
+    concurrency: 4,             // Concurrent deliveries
+    summaryS: 300,              // Summary interval (seconds)
+    reconcileCheckS: 60,        // Reconciliation check (seconds)
+    pageSize: 100,              // Reconciliation page size
+    etagRetries: 3,             // ETag re-reads
+    allowHttp: false,           // Allow http:// to a service provider (development only)
+    skipTlsVerification: false, // Skip TLS verification to a service provider (development only)
+    caFile: ""                  // CA certificates file
+  },
+
   // --- SSF -------------------------------------------------------------
   ssf: {
     enabled: true,                                                                                                                                        // SSF enabled
@@ -986,9 +1009,6 @@ var config = {
     maxStreamLogEntries: 200,                                                                                                                             // Log lines per stream
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
-    receiveEnabled: true,                                                                                                                                 // Accept pushed events
-    receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
-    receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
     foreignPollS: 30,                                                                                                                                     // Partner signals poll interval (s)
     foreignPollMaxEvents: 50,                                                                                                                             // Events asked per partner poll
@@ -1258,7 +1278,8 @@ var config = {
     databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
     databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
     databasePasswordToken: "",                             // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: false,                  // Verify the database certificate; restart to apply
+    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
+    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
     globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
     globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
     globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply

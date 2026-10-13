@@ -80,9 +80,9 @@ function childMain() {
       w.provision();
       m.ldap.createUser('st-alice', { invent: false });
     });
-    const aud = await w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const aud = await w.signInAudience();
 
     // ==================================================================
     // 1. THE LISTS
@@ -257,8 +257,10 @@ function childMain() {
     // 4. THE VERIFIER REFUSES IT
     // ==================================================================
     const barBrowser = w.browser();
-    const started = await w.request('GET', '/oid4vp/start?by=reference',
-                                    { browser: barBrowser });
+    // A verification, started as POST /admin-api/verifications/start
+    // starts one (#594), read as the bar door's 302 was.
+    const started = await w.verificationStart('by=reference',
+                                              { browser: barBrowser });
     const barUrl = started.headers.location
       ? new URL(started.headers.location) : null;
     const barRo = barUrl ? w.decode((await w.request('GET',
@@ -338,8 +340,8 @@ function childMain() {
 
     async function presentToBarDoor(credential) {
       const who = w.browser();
-      const begun = await w.request('GET', '/oid4vp/start?by=reference',
-                                    { browser: who });
+      const begun = await w.verificationStart('by=reference',
+                                              { browser: who });
       const url = new URL(begun.headers.location);
       const ro = w.decode((await w.request('GET',
         w.pathOf(url.searchParams.get('request_uri')))).text);
@@ -474,8 +476,8 @@ function childMain() {
                       header: { alg: 'RS256', typ: 'JWT' } });
     }
     async function presentJwtVcToBarDoor(credential) {
-      const begun = await w.request('GET',
-        '/oid4vp/start?by=reference&format=jwt_vc_json',
+      const begun = await w.verificationStart(
+        'by=reference&format=jwt_vc_json',
         { browser: w.browser() });
       const url = new URL(begun.headers.location);
       const ro = w.decode((await w.request('GET',
@@ -529,13 +531,20 @@ function childMain() {
 
     // The ldp_vc that WITHHOLDS its status, at the bar door.
     const ldpIdx = Number(ldpEntries[0].statusListIndex);
-    async function presentLdpToBarDoor(pick) {
-      const begun = await w.request('GET',
-        '/oid4vp/start?by=reference&format=ldp_vc',
+    // THE BAR DOOR'S START IS A DEMONSTRATION (#585), so a request is begun
+    // in development — `beginAtBarDoor()` — and a product section answers
+    // one it began before the realm changed mode; the response endpoint is
+    // the protocol's, served in both.
+    async function beginAtBarDoor() {
+      const begun = await w.verificationStart(
+        'by=reference&format=ldp_vc',
         { browser: w.browser() });
       const url = new URL(begun.headers.location);
-      const ro = w.decode((await w.request('GET',
+      return w.decode((await w.request('GET',
         w.pathOf(url.searchParams.get('request_uri')))).text);
+    }
+    async function presentLdpToBarDoor(pick, begunAlready) {
+      const ro = begunAlready || await beginAtBarDoor();
       await w.inRealm(function () {
         const tx = m.verifier.transactionFor(ro.state);
         tx.requested = [];
@@ -603,6 +612,7 @@ function childMain() {
     // ==================================================================
     // 7. PRODUCT: off IS REFUSED ON WRITE AND IGNORED ON READ
     // ==================================================================
+    const begunForProduct = await beginAtBarDoor();
     await w.inRealm(function () {
       m.config.setOverride('global.mode', 'product');
     });
@@ -630,7 +640,8 @@ function childMain() {
            set: refusedOff.set, code: m.errorCodes.codeOf(refusedOff.set),
            check: refusedOff.check, ownOnly: refusedOff.ownOnly,
            inForce: refusedOff.inForce }));
-    const productWithheld = await presentLdpToBarDoor(withholding);
+    const productWithheld = await presentLdpToBarDoor(withholding,
+                                                      begunForProduct);
     note(productWithheld.status === 400 &&
          productWithheld.code === 'STS-VC-0089',
          '7b. product, off still stored: the withheld ldp_vc is refused, ' +

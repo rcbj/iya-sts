@@ -97,6 +97,7 @@ function childMain() {
     const mail = require(ROOT + '/common/mail');
     const mailFactor = require(ROOT + '/common/mail_factor');
     const authnPolicy = require(ROOT + '/common/authn_policy');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
@@ -137,9 +138,54 @@ function childMain() {
                  one.split('=')[1];
         })[0] || '';
       };
+      // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+      // act, in a browser of its own; where the act names a step's page
+      // (`next: mfa`), that page is opened as the sign-in surface opens it
+      // (#573): its shell and its view, in the same jar (`jar`), with the
+      // act's cookies (`headers`). A refusal is the act's own JSON answer.
+      const screenAct = async function (id, fields) {
+        const jar = {};
+        const answer = await authnScreen.submit({ port: port, jar: jar,
+          at: '/authn/login?authn=' + id, fields: fields });
+        if (answer.next !== 'mfa') {
+          return { status: answer.apiStatus || answer.status,
+                   headers: answer.headers, text: answer.text,
+                   answer: answer };
+        }
+        const page = await authnScreen.openStep({ port: port, jar: jar,
+                                                  at: answer.location });
+        page.jar = jar;
+        page.headers = { 'set-cookie': [].concat(
+          answer.headers['set-cookie'] || []) };
+        page.answer = answer;
+        return page;
+      };
+      // An act on a step's page (#573), in its jar or another browser's.
+      const stepAct = function (page, op, body, jar) {
+        return authnScreen.stepAct({ port: port, jar: jar || page.jar,
+                                     opened: page, op: op, body: body });
+      };
+      // A step's page opened at `at`, in `jar`.
+      const openAt = async function (at, jar) {
+        const page = await authnScreen.openStep({ port: port, jar: jar,
+                                                  at: at });
+        page.jar = jar;
+        return page;
+      };
+      // A view with its per-request values masked: the step's id, and the
+      // name typed.
+      const sameness = function (page, who) {
+        return JSON.stringify(Object.assign({}, page.view || {},
+                                            { id: 'ID' }))
+          .replace(new RegExp(who, 'g'), 'WHO');
+      };
+      const viewOf = async function (id) {
+        const opened = await authnScreen.open({ port: port, jar: {},
+          at: '/authn/login?authn=' + id });
+        return opened.view || {};
+      };
       const mfaIdOf = function (res) {
-        return (res.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1] ||
-          '';
+        return String(res.id || '');
       };
       // The newest captured message to `who` with `subject` matching.
       const mailed = async function (who, subject, after) {
@@ -169,14 +215,15 @@ function childMain() {
       // 1. OFF BY DEFAULT
       // ==================================================================
       let authnId = await startSignIn();
-      let r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-      note(r.status === 200 && !/kc-email-code/.test(r.text) &&
-           !/kc-email-link/.test(r.text),
+      let view = await viewOf(authnId);
+      note(view.email && view.email.code === false &&
+           view.email.link === false,
            '1a. the built-in policy offers no emailed first factor',
-           r.status);
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-bo', action: 'email-code' });
-      note(r.status === 200 && /does not offer an emailed code/.test(r.text) &&
+           JSON.stringify(view.email));
+      let r = null;
+      r = await screenAct(authnId,
+        { username: 'ef-bo', action: 'email-code' });
+      note(r.status === 400 && /does not offer an emailed code/.test(r.text) &&
            !cookieOf(r),
            '1b. a hand-made POST asking for one is refused at the door',
            r.status + ' ' + r.text.slice(0, 200));
@@ -207,11 +254,11 @@ function childMain() {
       // ==================================================================
       let before = idsFor('ef-amy');
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-amy',
+      r = await screenAct(authnId,
+        { username: 'ef-amy',
           password: 'Email-Factor-1!', action: 'login' });
       let mfaId = mfaIdOf(r);
-      note(r.status === 200 && /Check your email/.test(r.text) && mfaId &&
+      note(r.status === 200 && r.view && r.view.state === 'code' && mfaId &&
            !cookieOf(r),
            '3a. the password step mails a code and asks for it, and starts ' +
            'no session', r.status + ' ' + r.text.slice(0, 160));
@@ -228,13 +275,13 @@ function childMain() {
            '3c. to the verified address, in the standard layout',
            message && message.to);
       const wrong = code === '000000' ? '111111' : '000000';
-      r = await request(port, 'POST', '/authn/email-code',
-        { mfa_id: mfaId, action: 'verify', code: wrong });
-      note(r.status === 200 && /2 more attempt/.test(r.text) && !cookieOf(r),
-           '3d. a wrong code keeps the step and counts down', r.status);
-      r = await request(port, 'POST', '/authn/email-code',
-        { mfa_id: mfaId, action: 'verify',
-          code: code.slice(0, 3) + ' ' + code.slice(3) });
+      const amyPage = r;
+      r = await stepAct(amyPage, 'email/code', { code: wrong });
+      note(r.apiStatus === 400 && /2 more attempt/.test(r.errors.join(' ')) &&
+           !cookieOf(r),
+           '3d. a wrong code keeps the step and counts down', r.apiStatus);
+      r = await stepAct(amyPage, 'email/code',
+                        { code: code.slice(0, 3) + ' ' + code.slice(3) });
       const amySession = authn.sessionsOf('ef-amy')[0];
       const lastEvent = amySession && amySession.events &&
         amySession.events[amySession.events.length - 1];
@@ -247,51 +294,51 @@ function childMain() {
            '["pwd","otp"], acr "mfa", credential kind email-code',
            r.status + ' ' + JSON.stringify(amySession && {
              amr: amySession.amr, acr: amySession.acr }));
-      r = await request(port, 'POST', '/authn/email-code',
-        { mfa_id: mfaId, action: 'verify', code: code });
-      note(r.status === 400 && !cookieOf(r),
-           '3f. and it works once: the step is spent', r.status);
+      r = await stepAct(amyPage, 'email/code', { code: code });
+      note(r.apiStatus === 400 && !cookieOf(r),
+           '3f. and it works once: the step is spent', r.apiStatus);
 
       // ==================================================================
       // 4. THE STEP ENDS, AND A RESEND TOO SOON IS REFUSED
       // ==================================================================
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-amy',
+      r = await screenAct(authnId,
+        { username: 'ef-amy',
           password: 'Email-Factor-1!', action: 'login' });
       mfaId = mfaIdOf(r);
-      r = await request(port, 'POST', '/authn/email-code',
-        { mfa_id: mfaId, action: 'send' });
-      note(r.status === 200 && /seconds ago/.test(r.text),
-           '4a. another code sooner than emailResendS is refused', r.status);
+      const endPage = r;
+      r = await stepAct(endPage, 'email/send', { kind: 'code' });
+      note(r.apiStatus === 400 && /seconds ago/.test(r.errors.join(' ')),
+           '4a. another code sooner than emailResendS is refused',
+           r.apiStatus);
       for (let i = 0; i < 3; i += 1) {
-        r = await request(port, 'POST', '/authn/email-code',
-          { mfa_id: mfaId, action: 'verify', code: '999999' });
+        r = await stepAct(endPage, 'email/code', { code: '999999' });
       }
-      note(r.status === 400 && /Too many wrong codes/.test(r.text) &&
+      note(r.apiStatus === 400 && r.json && r.json.end &&
+           /Too many wrong codes/.test(r.json.end.title) &&
            !authn.mfaStepFor(mfaId),
-           '4b. at emailCodeAttempts wrong codes the step ENDS',
-           r.status + ' ' + r.text.slice(0, 120));
+           '4b. at emailCodeAttempts wrong codes the step ENDS — the page ' +
+           'ends there (#573)', r.apiStatus + ' ' + r.text.slice(0, 120));
 
       // ==================================================================
       // 5. A CODE AS THE FIRST FACTOR, AND THE DECOY
       // ==================================================================
       before = idsFor('ef-bo');
       authnId = await startSignIn();
-      r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-      note(/kc-email-code/.test(r.text) && /kc-email-link/.test(r.text),
-           '5a. with the policy on, the sign-in screen offers both');
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-bo', action: 'email-code' });
+      view = await viewOf(authnId);
+      note(view.email && view.email.code === true && view.email.link === true,
+           '5a. with the policy on, the sign-in screen offers both',
+           JSON.stringify(view.email));
+      r = await screenAct(authnId,
+        { username: 'ef-bo', action: 'email-code' });
       mfaId = mfaIdOf(r);
-      // The language chooser's return path (#539) carries the step's own
-      // random id (`?mfa=`), as the hidden field does: masked the same way.
-      const realPage = r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, 'ID')
-        .replace(/mfa=[A-Za-z0-9_-]{20,}/g, 'mfa=ID');
+      // THE PAGE IS ITS VIEW (#573): the step's id and the name typed are
+      // its only per-request values, masked.
+      const realPage = sameness(r, 'ef-bo');
+      const boPage = r;
       message = await mailed('ef-bo', /sign-in code/, before);
       code = codeIn(message);
-      r = await request(port, 'POST', '/authn/email-code',
-        { mfa_id: mfaId, action: 'verify', code: code });
+      r = await stepAct(boPage, 'email/code', { code: code });
       const boSession = authn.sessionsOf('ef-bo')[0];
       note((r.status === 302 || r.status === 303) && boSession &&
            JSON.stringify(boSession.amr) === '["otp"]' &&
@@ -303,17 +350,14 @@ function childMain() {
       for (const who of ['ef-nobody-here', 'ef-dee']) {
         const beforeWho = idsFor(who);
         authnId = await startSignIn();
-        r = await request(port, 'POST', '/authn/login',
-          { authn_id: authnId, username: who, action: 'email-code' });
-        pages.push(r.text.replace(/value="[A-Za-z0-9_-]{20,}"/g, 'ID')
-          .replace(/mfa=[A-Za-z0-9_-]{20,}/g, 'mfa=ID')
-          .replace(new RegExp(who, 'g'), 'WHO'));
+        r = await screenAct(authnId,
+          { username: who, action: 'email-code' });
+        pages.push(sameness(r, who));
         await sleep(100);
         note(idsFor(who).length === beforeWho.length,
              '5c. nothing is mailed for ' + who);
       }
-      note(pages[0] === pages[1] &&
-           pages[0] === realPage.replace(/ef-bo/g, 'WHO'),
+      note(pages[0] === pages[1] && pages[0] === realPage,
            '5d. and the page is the SAME for an unknown account, one with no ' +
            'verified address, and a real one — no enumeration');
 
@@ -324,14 +368,16 @@ function childMain() {
            '6a. ef-cy opts in to a link');
       before = idsFor('ef-cy');
       authnId = await startSignIn();
-      r = await request(port, 'POST', '/authn/login',
-        { authn_id: authnId, username: 'ef-cy',
+      r = await screenAct(authnId,
+        { username: 'ef-cy',
           password: 'Email-Factor-1!', action: 'login' });
       mfaId = mfaIdOf(r);
       const binding = cookieOf(r, 'sts_email_binding');
-      note(r.status === 200 && /Open it in this browser/.test(r.text) &&
-           /http-equiv="refresh"/.test(r.text) && binding,
-           '6b. the waiting page, refreshed by a meta tag, and a binding ' +
+      const cyPage = r;
+      note(r.status === 200 && r.view && r.view.state === 'wait' &&
+           r.view.seconds > 0 && binding,
+           '6b. the waiting page, which asks again every few seconds (its ' +
+           'meta refresh, a poll in the browser since #573), and a binding ' +
            'cookie', r.status);
       message = await mailed('ef-cy', /sign-in link/, before);
       const link = ((message && message.text || '')
@@ -340,29 +386,33 @@ function childMain() {
       const linkPath = link.replace(/^http:\/\/127\.0\.0\.1:\d+/, '');
       note(link && message.to === 'cy@example.com',
            '6c. the link is mailed on the pinned origin', link);
-      r = await request(port, 'GET', linkPath);
-      note(r.status === 400 && /where you started/.test(r.text) &&
-           !cookieOf(r) && authn.mfaStepFor(mfaId),
+      const otherJar = {};
+      const elsewhere = await openAt(linkPath, otherJar);
+      note(elsewhere.status === 400 && elsewhere.view &&
+           elsewhere.view.state === 'end' &&
+           /where you started/.test(elsewhere.view.title) &&
+           !authn.sessionsOf('ef-cy').length && authn.mfaStepFor(mfaId),
            '6d. opened in ANOTHER browser it signs nobody in and spends ' +
-           'nothing', r.status);
-      r = await request(port, 'GET', linkPath, null, binding);
-      const t = (r.text.match(/name="t" value="([^"]+)"/) || [])[1] || '';
-      note(r.status === 200 && /Continue/.test(r.text) && t &&
-           authn.mfaStepFor(mfaId) && !cookieOf(r),
-           '6e. in the right one the GET draws Continue and spends nothing — ' +
-           'a mail scanner fetching it signs nobody in', r.status);
-      r = await request(port, 'POST', '/authn/email-link/open',
-        { mfa_id: mfaId, t: t });
-      note(r.status === 400 && !cookieOf(r),
-           '6f. a POST without the binding cookie is refused too', r.status);
-      r = await request(port, 'POST', '/authn/email-link/open',
-        { mfa_id: mfaId, t: t }, binding);
+           'nothing', elsewhere.status);
+      const landed = await openAt(linkPath, cyPage.jar);
+      const t = landed.t;
+      note(landed.shell.status === 200 && landed.status === 200 &&
+           landed.view && landed.view.state === 'open' && t &&
+           authn.mfaStepFor(mfaId) && !authn.sessionsOf('ef-cy').length,
+           '6e. in the right one the link\'s page draws Continue and spends ' +
+           'nothing — a mail scanner fetching it signs nobody in',
+           landed.status);
+      r = await stepAct(elsewhere, 'email-link/open', { t: t });
+      note(r.apiStatus === 400 && !cookieOf(r),
+           '6f. an act without the binding cookie is refused too',
+           r.apiStatus);
+      r = await stepAct(landed, 'email-link/open', { t: t });
       const cySession = authn.sessionsOf('ef-cy')[0];
       note((r.status === 302 || r.status === 303) && cySession &&
            JSON.stringify(cySession.amr) === '["pwd","otp"]',
            '6g. with it, Continue signs in', r.status);
-      r = await request(port, 'GET', '/authn/email-link?mfa=' + mfaId);
-      note(/continued in the tab/.test(r.text),
+      r = await openAt('/authn/email-link?mfa=' + mfaId, cyPage.jar);
+      note(r.status === 200 && r.view && r.view.state === 'elsewhere',
            '6h. and the waiting page says the sign-in went on in the tab ' +
            'the link opened');
 
@@ -373,13 +423,12 @@ function childMain() {
            '7a. ef-eve opts in');
       for (let round = 0; round < 2; round += 1) {
         authnId = await startSignIn();
-        r = await request(port, 'POST', '/authn/login',
-          { authn_id: authnId, username: 'ef-eve',
+        r = await screenAct(authnId,
+          { username: 'ef-eve',
             password: 'Email-Factor-1!', action: 'login' });
-        mfaId = mfaIdOf(r);
+        const evePage = r;
         for (let i = 0; i < 3; i += 1) {
-          await request(port, 'POST', '/authn/email-code',
-            { mfa_id: mfaId, action: 'verify', code: '999999' });
+          await stepAct(evePage, 'email/code', { code: '999999' });
         }
       }
       const eve = mailFactor.status('ef-eve');
@@ -394,8 +443,8 @@ function childMain() {
       config.setOverride('mail.transport', 'off');
       try {
         authnId = await startSignIn();
-        r = await request(port, 'GET', '/authn/login?authn=' + authnId);
-        note(!/kc-email-code/.test(r.text) && !/kc-email-link/.test(r.text) &&
+        view = await viewOf(authnId);
+        note(view.email && !view.email.code && !view.email.link &&
              !credentials.mechanismsFor('ef-amy').mailFactor.held,
              '8a. where mail is not working nothing emailed is offered, and ' +
              'nobody holds an emailed factor');

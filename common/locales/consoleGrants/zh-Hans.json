@@ -13,5 +13,8 @@
   "colGeneration": "代次",
   "colCreated": "创建 / 更新",
   "colExpires": "过期",
-  "colTokens": "持有的令牌"
+  "colTokens": "持有的令牌",
+  "noMatch": "没有与 <code>{wanted}</code> 匹配的授权。",
+  "searchLabel": "筛选授权",
+  "searchPlaceholder": "grant_id、客户端或主体"
 }

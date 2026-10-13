@@ -1078,7 +1078,7 @@ class SpiffeGrpc {
                              SECURITY_HEADER + ': true" (SPIFFE Workload ' +
                              'Endpoint specification). This one did not. ' +
                              'Every conforming Workload API will refuse it, ' +
-                             'which is why this mock does too; ' +
+                             'which is why this service does too; ' +
                              'spiffe.requireSecurityHeader turns the check ' +
                              'off if you are deliberately testing something ' +
                              'else.') };

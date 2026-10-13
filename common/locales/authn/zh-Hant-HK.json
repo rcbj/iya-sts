@@ -5,5 +5,18 @@
   "backupCode.sub": "代替{factor, select, passkey {您的密碼金鑰} code {以電郵傳送的驗證碼} link {以電郵傳送的連結} other {您的驗證器應用程式}}，用於 <code>{name}</code>",
   "backupCode.back": "返回，仍然使用{factor, select, passkey {您的密碼金鑰} code {以電郵傳送的驗證碼} link {以電郵傳送的連結} other {您的驗證器應用程式}}",
   "secondFactor.emailCodeInstead": "改以電郵傳送驗證碼",
-  "secondFactor.emailLinkInstead": "改以電郵傳送登入連結"
+  "secondFactor.emailLinkInstead": "改以電郵傳送登入連結",
+  "login.at": "身分驗證服務，地址 <code>{base}</code>",
+  "login.username": "用戶名稱",
+  "login.metaUnchecked": "不檢查任何密碼。您輸入的用戶名稱就是所核發權杖描述的身分。",
+  "login.metaPasswordlessUnchecked": "無密碼：完全不讀取密碼欄位，密碼金鑰成為唯一因素——密碼金鑰會在首次使用時為該用戶名稱註冊，因此第一個在此認領某個名稱的人將取得它。本服務不驗證任何人的身分；這與上一行是同一陳述，並非較弱的說法。",
+  "login.metaPasskey": "使用密碼金鑰登入：不需用戶名稱——密碼金鑰會指明您的帳戶，且必須以其 PIN 或生物辨識驗證您，因此權杖顯示兩個因素（amr [\"hwk\",\"user\"]，acr \"mfa\"）。",
+  "options.federatedOwnMany": "此應用程式透過以下其中一個聯合身分提供者讓用戶登入。請選擇您擁有帳戶的那一個。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
+  "options.federatedOwnOne": "此應用程式透過一個聯合身分提供者讓用戶登入。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
+  "selectIdp.at": "身分驗證服務，地址 <code>{base}</code>",
+  "selectIdp.blurbNamed": "<code>{application}</code> 透過以下其中一個聯合身分提供者讓用戶登入。請選擇您擁有帳戶的那一個。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
+  "selectIdp.blurb": "此應用程式透過以下其中一個聯合身分提供者讓用戶登入。請選擇您擁有帳戶的那一個。這裡不需輸入密碼，就本服務所知，對方那裡也不檢查密碼 — 本服務檢查的是合作夥伴的簽章。",
+  "webauthn.uvChecked": "（此處會檢查 — 未驗證用戶的驗證器會被拒絕）",
+  "webauthn.modeCreate": "此用戶尚未註冊密碼金鑰，因此此步驟會註冊一個。",
+  "webauthn.modeGet": "此用戶已註冊密碼金鑰，因此此步驟是一次斷言。"
 }

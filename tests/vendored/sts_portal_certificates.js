@@ -7,7 +7,7 @@
 //
 // ===========================================================================
 // /portal/certificates (2026-09-13): A PERSON'S OWN ENROLLMENT CREDENTIALS AND
-// CERTIFICATES, OVER HTTP, WITH TWO REAL SIGNED-IN BROWSERS.
+// CERTIFICATES, OVER HTTP, WITH TWO REAL SIGNED-IN PEOPLE.
 //
 // `tests/cert_enrollment.js` holds the core in process and the three protocol
 // jobs hold ACME, EST and SCEP. What is here is the PAGE, and most of it is the
@@ -16,13 +16,22 @@
 // to the OTHER person's credential and then reading the other person's own
 // page back.
 //
+// **SINCE #568 THE PAGE IS DRAWN IN THE BROWSER** from `/account-api`, and
+// each person signs in as the static portal does (`portal_signin.js`: PKCE,
+// a DPoP-bound token): the view is `GET /account-api/certificates`, the form
+// is `POST /account-api/certificates`, and the page's markup is the portal's
+// own renderer drawing that answer. A secret made is the answer's
+// `view.fresh`, shown once. The identity is the TOKEN's now, and section 4 —
+// a post with no CSRF token until #568 — asks the same question of the
+// token: a post with none is refused and makes nothing.
+//
 //   0. two people, with passwords, in the default realm;
 //   1. the page is drawn, `no-store`, with the three protocol cards;
 //   2. an ACME account binding key is made, shown ONCE, named for the owner
 //      whatever the body says, and never shown again;
 //   3. a SCEP challenge is made for a chosen profile, a refused profile is
 //      refused, and the admin view lists it as the owner's;
-//   4. no CSRF token: refused, nothing made;
+//   4. no token: refused, nothing made;
 //   5. the OTHER person's key cannot be deleted by the owner — answered as not
 //      found — and is still on the other person's page;
 //   6. a certificate enrolled over EST for each: the owner cannot revoke the
@@ -37,6 +46,7 @@ const path = require("path");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const est = require("./est_client.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -82,74 +92,6 @@ function check(what, fn) {
   log.debug("Leaving check().");
 }
 
-function formBody(o) {
-  log.debug("Entering formBody().");
-  log.debug("Leaving formBody().");
-  return new URLSearchParams(o).toString();
-}
-
-function absolute(location) {
-  log.debug("Entering absolute().");
-  log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-function browser(name) {
-  log.debug("Entering browser().");
-  const self = {
-    name: name,
-    cookie: "",
-    jar: {},
-    cookieHeader: function () {
-      log.debug("Entering cookieHeader().");
-      log.debug("Leaving cookieHeader().");
-      return Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-    },
-    async go(method, where, body) {
-      log.debug("Entering go().");
-      const headers = {};
-      if (self.cookie) {
-        headers.cookie = self.cookie;
-      }
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const r = await fetch(absolute(where),
-                            { method: method, redirect: "manual",
-                              headers: headers, body: body });
-      // KEYED BY NAME, for `sts_portal_backup_keys.js`'s reason: a browser
-      // signed in to the portal holds two cookies.
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const key = pair.split("=")[0];
-        const value = pair.slice(key.length + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete self.jar[key];
-        } else {
-          self.jar[key] = value;
-        }
-        self.cookie = self.cookieHeader();
-      });
-      log.debug("Leaving go().");
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text(), headers: r.headers };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
 async function apiPost(where, body) {
   log.debug("Entering apiPost().");
   const r = await fetch(api + where, {
@@ -184,37 +126,54 @@ async function apiGet(where) {
   return { status: r.status, body: parsed, raw: raw };
 }
 
+// SIGNED IN AS THE STATIC PORTAL SIGNS IN (#568): the code flow with PKCE as
+// `sts-user-portal`, a DPoP-bound token for `/account-api`.
 async function signIn(who) {
   log.debug("Entering signIn(). who=" + who);
-  const b = browser(who);
-  let r = await b.go("GET", "/portal/certificates");
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    "an unauthenticated browser should be sent to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  r = await b.go("POST", "/authn/login",
-                 formBody({ authn_id: authnId, username: who,
-                            password: PASSWORD, action: "login",
-                            csrf_token: csrfOf(r.text) }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in should end in a redirect; got " + r.status);
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
-  assert.ok(b.cookie, "completing the flow should establish a session.");
+  const c = await portal.signInToThePortal(base, who, null,
+                                           { password: PASSWORD });
+  assert.ok(c.token, "signing in as the portal should issue a token.");
   log.debug("Leaving signIn().");
-  return b;
+  return c;
 }
 
-async function post(b, fields) {
+// THE PAGE AS THE PORTAL DRAWS IT, from a view — the GET's, or the one a
+// form's answer carries (a secret shown once): the portal's own renderer,
+// in the person's language.
+async function drawn(c, view) {
+  log.debug("Entering drawn().");
+  const table = portal.portalBundle();
+  if (c.meJson === undefined) {
+    c.meJson = (await c.api("GET", "/account-api/me")).json;
+  }
+  const me = c.meJson || {};
+  const t = table.messages.WebTranslator.fromData(me.locale);
+  const html = view ? table.render("/portal/certificates", view,
+    { t: t, query: {}, prefix: "", origin: base, me: me,
+      locale: me.locale, version: me.version,
+      here: "/portal/certificates" }) : "";
+  log.debug("Leaving drawn().");
+  return html;
+}
+
+// The page: its view, and the markup drawn from it.
+async function page(c) {
+  log.debug("Entering page().");
+  const r = await c.page("/portal/certificates");
+  const html = await drawn(c, r.status === 200 ? r.json : null);
+  log.debug("Leaving page().");
+  return { status: r.status, json: r.json, headers: r.headers, text: html };
+}
+
+// The form, sent to the operation that mirrors it; `text` is the page drawn
+// from the view the answer carries, where it carries one.
+async function post(c, fields) {
   log.debug("Entering post().");
-  const page = await b.go("GET", "/portal/certificates");
-  const answer = await b.go("POST", "/portal/certificates",
-    formBody(Object.assign({ csrf_token: csrfOf(page.text) }, fields)));
+  const r = await c.act("/portal/certificates", fields);
+  const view = r.json && r.json.view;
+  const html = await drawn(c, view || null);
   log.debug("Leaving post().");
-  return answer;
+  return { status: r.status, json: r.json, headers: r.headers, text: html };
 }
 
 function kidsOn(text) {
@@ -271,32 +230,43 @@ async function test() {
 
   log.info("=== 1. the page ===");
   const owner = await signIn(OWNER);
-  const page = await owner.go("GET", "/portal/certificates");
+  const first = await page(owner);
   check("the page is drawn for the signed-in person, not cached", function () {
-    assert.strictEqual(page.status, 200, "answered " + page.status);
-    assert.ok(/no-store/.test(page.headers.get("cache-control") || ""),
+    assert.strictEqual(first.status, 200, "answered " + first.status);
+    assert.ok(/no-store/.test(first.headers.get("cache-control") || ""),
               "no Cache-Control: no-store");
-    assert.ok(/Your enrolled certificates/.test(page.text) &&
-              /<h2>ACME<\/h2>/.test(page.text) &&
-              /<h2>EST<\/h2>/.test(page.text) &&
-              /<h2>SCEP<\/h2>/.test(page.text),
+    assert.ok(/Your enrolled certificates/.test(first.text) &&
+              /<h2>ACME<\/h2>/.test(first.text) &&
+              /<h2>EST<\/h2>/.test(first.text) &&
+              /<h2>SCEP<\/h2>/.test(first.text),
               "the three protocol cards are not all drawn");
-    assert.ok(page.text.indexOf('name="username"') < 0,
+    assert.ok(first.text.indexOf('name="username"') < 0,
               "a form on this page names a person");
   });
 
   log.info("=== 2. an ACME account binding key, shown once ===");
-  const made = await post(owner, { action: "create-eab", username: OTHER,
-                                   kid: "ignored" });
+  // A01 (#568, and /account-api's strict bodies since 87142740): a body
+  // naming somebody else is REFUSED — `username` is no field of this
+  // operation — and makes nothing. The key is then made with a `kid` the
+  // operation ignores, and is named for the OWNER.
+  const named = await post(owner, { action: "create-eab", username: OTHER });
+  check("a body naming somebody else is refused, not honoured", function () {
+    assert.strictEqual(named.status, 400, "answered " + named.status);
+    assert.ok(!(named.json && named.json.view && named.json.view.fresh),
+              "a key was made for a body naming somebody else");
+  });
+  const made = await post(owner, { action: "create-eab", kid: "ignored" });
   const expectedPrefix = "eab-p-" + Buffer.from(OWNER).toString("base64url");
-  const kid = kidsOn(made.text)[0] || "";
-  const hmac = (made.text.match(/HMAC key \(HS256\)<\/th><td><code>([^<]+)</) ||
-                [])[1] || "";
-  check("it is made, named for the OWNER though the body named the other " +
-        "person, and its HMAC key is on the page", function () {
+  const fresh = (made.json && made.json.view && made.json.view.fresh) || {};
+  const kid = String(fresh.kid || "");
+  const hmac = String(fresh.hmacKey || "");
+  check("it is made, named for the OWNER whatever `kid` the body named, " +
+        "and its HMAC key is on the page", function () {
     assert.strictEqual(made.status, 200, "answered " + made.status);
     assert.ok(kid.indexOf(expectedPrefix + "-") === 0,
               "the key id " + kid + " does not name " + OWNER);
+    assert.ok(made.text.indexOf(hmac) >= 0 && made.text.indexOf(kid) >= 0,
+              "the page drawn from the answer does not show the key");
     assert.strictEqual(Buffer.from(hmac, "base64url").length, 32,
                        "the HMAC key is not 32 bytes");
     assert.ok(/no-store/.test(made.headers.get("cache-control") || ""),
@@ -305,18 +275,21 @@ async function test() {
       "\\$&") + "/enroll/acme/directory").test(made.text),
               "no certbot line naming this service's ACME directory");
   });
-  const again = await owner.go("GET", "/portal/certificates");
+  const again = await page(owner);
   check("and never again: the key id is listed, the HMAC key is not",
         function () {
     assert.ok(again.text.indexOf(kid) >= 0, "the key is not listed");
-    assert.ok(again.text.indexOf(hmac) < 0, "the HMAC key is shown again");
+    assert.ok(again.text.indexOf(hmac) < 0 &&
+              JSON.stringify(again.json).indexOf(hmac) < 0,
+              "the HMAC key is shown again");
   });
 
   log.info("=== 3. a SCEP challenge for a profile ===");
   const challenge = await post(owner, { action: "create-challenge",
                                         profile: "email" });
-  const secret = (challenge.text.match(
-    /Challenge password<\/th><td><code>([^<]+)</) || [])[1] || "";
+  const secret = String((challenge.json && challenge.json.view &&
+                         challenge.json.view.fresh &&
+                         challenge.json.view.fresh.challenge) || "");
   check("it is made for the chosen profile and shown once", function () {
     assert.strictEqual(challenge.status, 200, "answered " + challenge.status);
     assert.ok(/^scep-p-[A-Za-z0-9_-]+-[0-9a-f]{16}\.[A-Za-z0-9_-]+$/
@@ -324,8 +297,9 @@ async function test() {
     assert.ok(secret.indexOf("scep-p-" +
       Buffer.from(OWNER).toString("base64url") + "-") === 0,
               "the challenge does not name the owner");
-    assert.ok(/<code>email<\/code>/.test(challenge.text),
-              "the profile is not shown");
+    assert.ok(/<code>email<\/code>/.test(challenge.text) &&
+              challenge.text.indexOf(secret) >= 0,
+              "the challenge and its profile are not shown");
   });
   const refusedProfile = await post(owner, { action: "create-challenge",
                                              profile: "kdc" });
@@ -343,13 +317,17 @@ async function test() {
               "the challenge secret is in the admin view");
   });
 
-  log.info("=== 4. no CSRF token ===");
-  const before = kidsOn((await owner.go("GET", "/portal/certificates")).text);
-  const noCsrf = await owner.go("POST", "/portal/certificates",
-                                formBody({ action: "create-eab" }));
-  const after = kidsOn((await owner.go("GET", "/portal/certificates")).text);
-  check("a post with no CSRF token is refused and makes nothing", function () {
-    assert.strictEqual(noCsrf.status, 403, "answered " + noCsrf.status);
+  // A CSRF TOKEN UNTIL #568, A DPoP-BOUND TOKEN SINCE: the same question
+  // asked of the credential that replaced it — a post that carries none is
+  // refused before anything is made.
+  log.info("=== 4. no token ===");
+  const before = kidsOn((await page(owner)).text);
+  const noToken = await fetch(base + "/account-api/certificates", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "create-eab" }) });
+  const after = kidsOn((await page(owner)).text);
+  check("a post with no token is refused and makes nothing", function () {
+    assert.strictEqual(noToken.status, 401, "answered " + noToken.status);
     assert.strictEqual(after.length, before.length,
                        "a key was made anyway");
   });
@@ -357,13 +335,15 @@ async function test() {
   log.info("=== 5. the other person's key ===");
   const other = await signIn(OTHER);
   const theirs = await post(other, { action: "create-eab" });
-  const theirKid = kidsOn(theirs.text)[0] || "";
+  const theirKid = String((theirs.json && theirs.json.view &&
+                           theirs.json.view.fresh &&
+                           theirs.json.view.fresh.kid) || "");
   check("the other person makes a key of their own", function () {
     assert.ok(theirKid.indexOf("eab-p-" +
       Buffer.from(OTHER).toString("base64url")) === 0, "no key: " + theirKid);
   });
   const stolen = await post(owner, { action: "delete-eab", kid: theirKid });
-  const stillThere = await other.go("GET", "/portal/certificates");
+  const stillThere = await page(other);
   check("the owner cannot delete it — answered as not found — and it is " +
         "still on the other person's own page", function () {
     assert.strictEqual(stolen.status, 404, "answered " + stolen.status);
@@ -372,7 +352,9 @@ async function test() {
   });
   const mineGone = await post(owner, { action: "delete-eab", kid: kid });
   check("and deletes their own", function () {
-    assert.strictEqual(mineGone.status, 303, "answered " + mineGone.status);
+    assert.strictEqual(mineGone.status, 200, "answered " + mineGone.status);
+    assert.ok(mineGone.json && mineGone.json.ok && mineGone.json.message,
+              "the answer says what was done");
   });
 
   log.info("=== 6. certificates enrolled over EST ===");
@@ -385,9 +367,9 @@ async function test() {
           assert.strictEqual(theirEst.status, 200, "other: " +
                              theirEst.status);
         });
-  const otherPage = await other.go("GET", "/portal/certificates");
+  const otherPage = await page(other);
   const theirSerial = serialsOn(otherPage.text)[0] || "";
-  const ownerPage = await owner.go("GET", "/portal/certificates");
+  const ownerPage = await page(owner);
   const ownSerial = serialsOn(ownerPage.text)[0] || "";
   check("each sees their own certificate and not the other's", function () {
     assert.ok(theirSerial && ownSerial && theirSerial !== ownSerial,
@@ -398,7 +380,7 @@ async function test() {
   const wrongRevoke = await post(owner, { action: "revoke",
                                           serial: theirSerial,
                                           reason: "keyCompromise" });
-  const otherAfter = await other.go("GET", "/portal/certificates");
+  const otherAfter = await page(other);
   check("the owner cannot revoke the other's — not found — and it is still " +
         "valid and revocable on the other's page", function () {
     assert.strictEqual(wrongRevoke.status, 404,
@@ -409,9 +391,9 @@ async function test() {
   const rightRevoke = await post(owner, { action: "revoke",
                                           serial: ownSerial,
                                           reason: "cessationOfOperation" });
-  const ownerAfter = await owner.go("GET", "/portal/certificates");
+  const ownerAfter = await page(owner);
   check("the owner revokes their own", function () {
-    assert.strictEqual(rightRevoke.status, 303,
+    assert.strictEqual(rightRevoke.status, 200,
                        "answered " + rightRevoke.status);
     assert.ok(serialsOn(ownerAfter.text).indexOf(ownSerial) < 0 &&
               /revoked/.test(ownerAfter.text),
@@ -425,10 +407,11 @@ async function test() {
     check("ACME is turned off", function () {
       assert.strictEqual(off.status, 200, JSON.stringify(off.body));
     });
-    const hidden = await owner.go("GET", "/portal/certificates");
+    const hidden = await page(owner);
     const door = await post(owner, { action: "create-eab" });
     check("the ACME card is gone and the door refuses", function () {
       assert.ok(!/<h2>ACME<\/h2>/.test(hidden.text), "the card is still drawn");
+      assert.ok(!hidden.json.acme, "the view still carries the ACME card");
       assert.strictEqual(door.status, 403, "answered " + door.status);
     });
   } finally {

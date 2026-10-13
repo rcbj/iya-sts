@@ -13,5 +13,8 @@
   "colGeneration": "Generation",
   "colCreated": "Created / updated",
   "colExpires": "Expires",
-  "colTokens": "Tokens held"
+  "colTokens": "Tokens held",
+  "noMatch": "No grant matches <code>{wanted}</code>.",
+  "searchLabel": "Narrow the grants",
+  "searchPlaceholder": "a grant_id, a client or a subject"
 }

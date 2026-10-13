@@ -103,6 +103,7 @@ function childMain() {
   (async function () {
     require(ROOT_DIR + '/common/protocol_stack');
     const app = require(ROOT_DIR + '/common/app');
+    const screen = require(ROOT_DIR + '/tests/tools/authn_screen');
     const applications = require(ROOT_DIR + '/common/applications');
     const config = require(ROOT_DIR + '/common/config');
     const audit = require(ROOT_DIR + '/common/audit');
@@ -141,22 +142,11 @@ function childMain() {
                             new URLSearchParams(params).toString());
       const to = String(r.headers.location || '');
       if (/\/authn\/login/.test(to)) {
-        const page = await request(port, 'GET',
-                                   to.replace(/^https?:\/\/[^/]+/, ''));
-        const form = {};
-        (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-          function (tag) {
-            const name = /name="([^"]+)"/.exec(tag);
-            const value = /value="([^"]*)"/.exec(tag);
-            if (name) {
-              form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-            }
-          });
-        form.username = 'aco-alice';
-        form.password = 'anything';
-        form.action = 'login';
-        const posted = await request(port, 'POST', '/authn/login',
-                                     { form: form });
+        // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+        // act, this test's jar kept; the act's answer names where to go.
+        const posted = await screen.submit({ port: port, jar: jar, at: to,
+          fields: { action: 'login', username: 'aco-alice',
+                    password: 'anything' } });
         r = await request(port, 'GET', String(posted.headers.location || '')
           .replace(/^https?:\/\/[^/]+/, ''));
       }

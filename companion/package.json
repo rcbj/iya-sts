@@ -1,0 +1,16 @@
+{
+  "name": "iya-sts-companion",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The development-only companion: click-through demonstrations in front of iya-sts (#594, #595); companion/CLAUDE.md.",
+  "main": "companion.js",
+  "license": "BUSL-1.1",
+  "scripts": {
+    "start": "node companion.js"
+  },
+  "dependencies": {
+    "bunyan": "1.8.15",
+    "kerberos": "7.0.0",
+    "qrcode": "1.5.4"
+  }
+}

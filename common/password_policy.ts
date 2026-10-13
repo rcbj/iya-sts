@@ -132,6 +132,9 @@ import stsCrypto = require('./crypto');
 // nothing that serialises the answer can send it anywhere.
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The sentences `describe()` makes are filled from SENTENCES below, so the
+// server can translate them into a console reader's language (#543).
+import serverProse = require('./server_prose');
 
 const { log } = helpers;
 
@@ -369,6 +372,24 @@ const SCHEMA = {
   ]
 };
 
+// ---------------------------------------------------------------------------
+// THE SENTENCES `describe()` MAKES, as templates (#543 phase 2). One copy:
+// `describe()` fills them with `ServerProse.fill()`, and
+// `common/server_prose.ts` matches a console answer's sentences against
+// them to refill them in the reader's language — so a sentence edited here
+// is the one translated, and one edited only in `describe()` cannot exist.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  minLength: 'at least {{n}} characters',
+  minSymbolsOne: 'at least {{n}} symbol (a character that is not a ' +
+    'letter, a number or a space)',
+  minSymbolsMany: 'at least {{n}} symbols (a character that is not a ' +
+    'letter, a number or a space)',
+  uppercase: 'an uppercase letter',
+  digit: 'a number',
+  history: 'not your current password or any of the {{n}} before it'
+});
+
 // The syntax OID the draft's pwdHistory form names for the data half: Octet
 // String, RFC 4517 section 3.3.25.
 const OCTET_STRING_OID = '1.3.6.1.4.1.1466.115.121.1.40';
@@ -403,6 +424,10 @@ class PasswordPolicy {
    * classes, its attributes and the two a person's entry carries.
    */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The sentences `describe()` makes, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
   /**
    * The syntax OID `pwdHistory`'s data half is named by: Octet String.
    */
@@ -921,21 +946,21 @@ class PasswordPolicy {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.describe().");
     const rules = profile || this.read(DEFAULT_PROFILE);
-    const out = ['at least ' + rules.minLength + ' characters'];
+    const fill = serverProse.fill;
+    const out = [fill(SENTENCES.minLength, { n: rules.minLength })];
     if (rules.minSymbols > 0) {
-      out.push('at least ' + rules.minSymbols + ' symbol' +
-               (rules.minSymbols === 1 ? '' : 's') +
-               ' (a character that is not a letter, a number or a space)');
+      out.push(fill(rules.minSymbols === 1 ? SENTENCES.minSymbolsOne
+                                           : SENTENCES.minSymbolsMany,
+                    { n: rules.minSymbols }));
     }
     if (rules.requireUppercase) {
-      out.push('an uppercase letter');
+      out.push(SENTENCES.uppercase);
     }
     if (rules.requireDigit) {
-      out.push('a number');
+      out.push(SENTENCES.digit);
     }
     if (rules.history > 0) {
-      out.push('not your current password or any of the ' + rules.history +
-               ' before it');
+      out.push(fill(SENTENCES.history, { n: rules.history }));
     }
     log.debug("Leaving PasswordPolicy.describe().");
     return out;
@@ -1103,6 +1128,7 @@ export = {
   FIELDS: PasswordPolicy.FIELDS,
   FIELD_BY_KEY: PasswordPolicy.FIELD_BY_KEY,
   SCHEMA: PasswordPolicy.SCHEMA,
+  SENTENCES: PasswordPolicy.SENTENCES,
   OCTET_STRING_OID: PasswordPolicy.OCTET_STRING_OID,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),

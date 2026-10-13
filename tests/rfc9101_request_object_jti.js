@@ -229,17 +229,6 @@ function childMain() {
       req.end(body);
     });
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
   const local = function (location) {
     return String(location || '').replace(/^https?:\/\/[^/]+/, '');
   };
@@ -247,6 +236,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const usedAssertions = require(ROOT + '/common/used_assertions');
@@ -327,14 +317,11 @@ function childMain() {
     // The sign-in screen, posted; answers the return URL and the response to
     // it WITHOUT following it, so a test can hold a flow half way.
     const signIn = async function (first, username) {
-      const page = await request(port, 'GET', local(first.headers.location),
-                                 { cookies: true });
-      const form = hiddenFields(page.text);
-      form.username = username || 'jti-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await request(port, 'POST', '/authn/login',
-                                   { form: form, cookies: true });
+      // THE SCREEN OVER `/authn-api` (#571), this test's jar kept.
+      const posted = await screen.submit({ port: port, jar: jar,
+        at: local(first.headers.location),
+        fields: { action: 'login', username: username || 'jti-alice',
+                  password: 'anything' } });
       return String(posted.headers.location || '');
     };
     const complete = async function (first, username) {
@@ -423,11 +410,10 @@ function childMain() {
       r = await byValue('jti-consent', asked);
       const toConsent = await complete(r, 'jti-consenter');
       const consentPage = local(toConsent.headers.location);
-      const drawn = await request(port, 'GET', consentPage, { cookies: true });
-      const form = hiddenFields(drawn.text);
-      form.action = 'allow';
-      const allowed = await request(port, 'POST', '/oauth2/consent',
-                                    { form: form, cookies: true });
+      // THE CONSENT SCREEN OVER `/authn-api/consent` (#576), this test's
+      // jar kept; its answer is read as the 303 the form was answered with.
+      const allowed = await screen.answerConsent({ port: port, jar: jar,
+                                                   at: consentPage });
       final = await request(port, 'GET', local(allowed.headers.location),
                             { cookies: true });
       note(/\/oauth2\/consent/.test(consentPage) &&

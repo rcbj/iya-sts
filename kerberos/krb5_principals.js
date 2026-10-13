@@ -43,7 +43,8 @@
 //
 // **Anybody can authenticate, and everybody's password is the same.** See
 // USER_PASSWORD below for why Kerberos cannot simply check no password the way
-// the rest of this service does not, and findOrCreateUser() for the accounts
+// the rest of this service does not in development mode, and
+// findOrCreateUser() for the accounts
 // that are not in the table until somebody asks for one.
 //
 // **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture
@@ -404,7 +405,8 @@ function serviceDomainsFor() {
 // (`ctx.AUTO_SERVICE_PASSWORD`), and it is PUBLISHED by GET /krb5/principals
 // for the same reason USER_PASSWORD is: a debugger whose accounts are unusable
 // without reading the source is worse than one that says what they are. It is
-// what lets a reader decrypt a service ticket this mock issued — the ticket's
+// what lets a reader decrypt a service ticket this service issued — the
+// ticket's
 // own EncTicketPart, the PAC inside it, the four signatures — which is
 // otherwise the one thing a client can never see. The CONFIGURED service
 // accounts keep their own separate passwords, so nothing about this weakens an
@@ -1656,6 +1658,12 @@ function configuredServiceDefinition(ctx) {
   }
   const password = String(config.value('krb5.servicePassword') || '');
   if (!password) {
+    // `passwordRefused`, in both refusals below (2026-10-12): the SPN is
+    // usable and only the PASSWORD is missing or published, which is the case
+    // a product key source answers with a random key of its own
+    // (`krb5_person_keys.ts`, `acceptorKeyMissing()`). The mode is asked
+    // there, not here.
+    account.passwordRefused = true;
     account.reason = 'krb5.servicePassword (KRB5_SERVICE_PASSWORD) ' +
       'is empty, so the ' +
       'account ' + spn + '@' + REALM + ' was not created and ' +
@@ -1666,14 +1674,17 @@ function configuredServiceDefinition(ctx) {
   }
   if (!ctx.SEEDS_DEMO &&
       password === publishedDefault('krb5.servicePassword')) {
+    account.passwordRefused = true;
     account.reason = 'product mode refuses the published default ' +
       'krb5.servicePassword: that value is written in this service\'s ' +
       'source, so a key derived from it would let anybody mint a ticket this ' +
       'acceptor accepts. The ' +
       'account ' + spn + '@' + REALM + ' was NOT created, so ' +
-      'the acceptor on krb5.servicePort and /authn/spnego accept no ticket. ' +
+      'the acceptor at /authn/spnego accepts no ticket. ' +
       'Set KRB5_SERVICE_PASSWORD to the password of that SPN\'s account in ' +
-      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt).';
+      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt), ' +
+      'or leave it and let this KDC key the SPN at random, which a product ' +
+      'service does by itself where it can store the key.';
     log.warn(errorCodes.tag('STS-KRB-0061') + 'krb5: ' + account.reason);
     log.debug('Leaving configuredServiceDefinition(). Published default ' +
               'refused.');
@@ -1907,7 +1918,8 @@ function inactiveContext(id, reason) {
     KDC_ETYPES: [], KVNO: null, USER_PASSWORD: null,
     AUTO_SERVICE_PASSWORD: null, SERVICE_DOMAINS: [], DOMAIN_SID: '',
     KRBTGT_PASSWORD: null, KRBTGT_FROM_PASSWORD: false,
-    serviceAccount: { spn: '', available: false, reason: reason },
+    serviceAccount: { spn: '', available: false, reason: reason,
+                      passwordRefused: false },
     krbtgtReason: reason, configuredKeys: new Set(),
     signature: builtFromSignature(realms.get(id))
   };
@@ -1941,7 +1953,8 @@ function buildContext(realm) {
       KRBTGT_PASSWORD: fromPassword ?
         mode.valueInForce('krb5.krbtgtPassword') : null,
       KRBTGT_FROM_PASSWORD: fromPassword,
-      serviceAccount: { spn: '', available: false, reason: '' },
+      serviceAccount: { spn: '', available: false, reason: '',
+                        passwordRefused: false },
       krbtgtReason: '',
       configuredKeys: new Set(),
       signature: builtFromSignature(isDefault ? null : realm)
@@ -4082,13 +4095,52 @@ module.exports = {
     // for this SPN at /admin/kerberos/principals, which the acceptor prefers
     // over the password-derived account. An account refused for its published
     // password is then keyed anyway, which is the way out that refusal names.
-    const stored = !!ctx.serviceAccount.spn &&
+    let stored = !!ctx.serviceAccount.spn &&
       !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+    // THE KEY SOURCE MAY KEY THE ACCEPTOR ITSELF (2026-10-12): where the
+    // account was refused only for its password, a product key source makes
+    // a random key for the SPN — at once where it is the store's only writer,
+    // under a claim otherwise — so a trust realm that turned Kerberos on after
+    // the start has an acceptor without a restart. The source asks the mode;
+    // an older source without the member leaves this as it was.
+    if (!stored && ctx.serviceAccount.passwordRefused && keySource &&
+        typeof keySource.acceptorKeyMissing === 'function') {
+      try {
+        stored = !!keySource.acceptorKeyMissing(ctx.serviceAccount.spn) &&
+          !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+      } catch (e) {
+        // Reported and treated as no key: the acceptor refuses and says why,
+        // which is what it did before the source could make one.
+        log.error(errorCodes.tag('STS-KRB-0210') + 'krb5: making a key for ' +
+                  'the acceptor\'s SPN ' + ctx.serviceAccount.spn +
+                  ' threw: ' + ((e && e.message) || e));
+        stored = false;
+      }
+    }
     log.debug("Leaving serviceAccount().");
     return { spn: ctx.serviceAccount.spn,
              available: ctx.serviceAccount.available || stored,
              storedKey: stored,
              reason: stored ? '' : ctx.serviceAccount.reason };
+  },
+  // The acceptor's CONFIGURED account in the ambient realm, without asking
+  // the key source (2026-10-12): whether `krb5.servicePassword` built it, and
+  // whether it was refused only for its password. The key source reads it to
+  // decide whether to key the SPN itself, and whether a key it made earlier
+  // still answers — an operator's own password wins over it.
+  /**
+   * Returns the acceptor's configured account in the ambient realm, without
+   * consulting the key source.
+   *
+   * @returns `{ spn, configured, passwordRefused }`
+   */
+  acceptorAccount: function () {
+    log.debug("Entering acceptorAccount().");
+    const ctx = current();
+    log.debug("Leaving acceptorAccount().");
+    return { spn: String(ctx.serviceAccount.spn || ''),
+             configured: !!ctx.serviceAccount.available,
+             passwordRefused: !!ctx.serviceAccount.passwordRefused };
   },
   // The SPN the acceptor holds in the AMBIENT realm, as components — what
   // `krb5_service.js` read once from `krb5.servicePrincipal` until that became
@@ -4208,6 +4260,48 @@ module.exports = {
     log.debug("Leaving all().");
     return Array.from(principals.values());
   },
+  /**
+   * Every principal in the ambient realm's database, described by its PUBLIC
+   * fields only: the name, the name type, the salt, the enctypes and kvno,
+   * and the flags — what a client can learn from PA-ETYPE-INFO2 and the
+   * replies anyway, and never a key or a password. What the demonstration
+   * document `GET /krb5/principals` listed until #595; `GET
+   * /admin-api/kerberos/principals` lists it now, as `database`, behind the
+   * API's token. Sorted by name, so a page of it is stable.
+   *
+   * @returns the rows
+   */
+  describeAll: function () {
+    log.debug("Entering describeAll().");
+    const rows = module.exports.all().map(function (p) {
+      return {
+        principal: p.name.join('/') + '@' + p.realm,
+        nameType: p.type,
+        salt: p.salt,
+        etypes: supportedEtypes(p).map(function (id) {
+          return { etype: id, name: kcrypto.etypeName(id) };
+        }),
+        requiresPreAuth: !!p.requiresPreAuth,
+        revoked: !!p.revoked,
+        passwordExpired: !!p.passwordExpired,
+        okAsDelegate: !!p.okAsDelegate,
+        kvno: p.kvno,
+        // Created on first sight (development): somebody authenticated as a
+        // name nobody configured.
+        autoCreated: !!p.autoCreated,
+        // A person keyed from their own password: says only where the keys
+        // come from, which are never on the record.
+        directoryKeys: !!p.directoryKeys,
+        description: p.description || ''
+      };
+    });
+    rows.sort(function (a, b) {
+      return a.principal < b.principal ? -1 : a.principal > b.principal ? 1
+        : 0;
+    });
+    log.debug("Leaving describeAll(). " + rows.length);
+    return rows;
+  },
   // The RID an account made at runtime under this name would be given, and
   // the range it is drawn from — see autoRidFor(). Exported so a test can ask
   // two processes the same question without creating anything.
@@ -4293,5 +4387,25 @@ module.exports = {
       ? function () { return offeredEtypes(current()); }
       : function () { return current()[pair[1]]; }
   });
+});
+
+// THE HOSTS A CLIENT'S OWN SPN GUESS IS HONOURED FOR, as a page or a header
+// may ADVERTISE them (2026-10-12). `SERVICE_DOMAINS` is the list the KDC
+// registers an `HTTP/<host>` principal for on first sight — and it does that
+// only where `mode.autoCreates()` (see the S_PRINCIPAL_UNKNOWN branch and
+// `krb5_kdc.js`'s `serviceHosts`). In product mode the KDC knows exactly the
+// one SPN `krb5.servicePrincipal` names, so advertising the list there sent a
+// browser at `https://localhost` to ask for `HTTP/localhost`, which it was
+// refused with nothing on the page saying why. A getter rather than a
+// require of `common/mode` in `spnego.js` and `spnego_exchange.js`, which are
+// in the parent project's COPY closure: this module already asks the mode.
+// Named through a variable, as the properties above are, so the type checker
+// reads it as the same kind of computed property rather than a second export.
+const ADVERTISED_HOSTS_KEY = 'ADVERTISED_SERVICE_HOSTS';
+Object.defineProperty(module.exports, ADVERTISED_HOSTS_KEY, {
+  enumerable: true,
+  get: function () {
+    return mode.autoCreates() ? current().SERVICE_DOMAINS.slice() : [];
+  }
 });
 

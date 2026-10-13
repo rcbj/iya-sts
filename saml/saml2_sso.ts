@@ -37,10 +37,10 @@
 //            interesting
 //                                   half of this feature — see below.
 //   GET      /saml2/autopost.js     the one script an HTTP POST response runs.
-//   GET|POST /saml2/sp              a mock SERVICE PROVIDER. NON-SPEC, the
-//                                   default assertion consumer service, and
-//                                   where a response can be verified check by
-//                                   check without a second service.
+//
+//   There is NO mock service provider (#592): `/saml2/sp` was deleted with
+//   the other two mock relying parties, and the test peer (`tests/peer/`)
+//   plays the service provider a test needs.
 //   GET      /saml2                 what all of that is, for somebody who
 //                                   clicked the link.
 //
@@ -229,6 +229,8 @@ import personAttributes = require('./person_attributes');
 // no route and closes no cycle. Only the pages a PERSON passes through use it
 // — the hand-off pages and the sign-out pages; refusals stay English.
 import PageLocale = require('../common/page_locale');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
 // through, so that two nodes against one store cannot both resolve it. A
 // LIBRARY that registers no route and requires persistence lazily, so it
@@ -358,8 +360,6 @@ const ARS_PATH = BASE_PATH + '/ars';
 
 const METADATA_PATH = BASE_PATH + '/metadata';
 
-const SP_PATH = BASE_PATH + '/sp';
-
 // Identity-provider-initiated SSO (#189): an unsolicited Response,
 // saml-profiles-2.0-os section 4.1.5.
 const UNSOLICITED_PATH = BASE_PATH + '/unsolicited';
@@ -389,15 +389,6 @@ const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
 const artifacts = realms.map({ persist: 'saml2_sso.artifacts', retain: 'age',
                                // #333: the artifact's `expires`, ms.
                                expiresAt: realms.expiryField('expires', 1) });
-
-// PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
-// realm and hands out the ambient realm's — so every reader below is
-// unchanged and every one of them is now realm-correct. In the default realm,
-// and in a service with no realms defined, there is exactly one partition and
-// this behaves as the plain Map it replaced. See common/realms.js.
-const spContexts = realms.map({ persist: 'saml2_sso.spContexts',
-                                // #333: the context's `expires`, ms.
-                                expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // WHICH SERVICE PROVIDER A PATH NAMES.
@@ -600,7 +591,7 @@ class Saml2Sso {
    * @param app - the shared express app
    */
   registerRoutes(app: typeof import('../common/app')): void {
-    const { baseUrlOf, iso, log, randomId, xmlEscape } = this.deps.helpers;
+    const { baseUrlOf, iso, log, xmlEscape } = this.deps.helpers;
     const self = this;
     const serveMetadata = this.serveMetadata.bind(this);
     const singleSignOn = this.singleSignOn.bind(this);
@@ -637,76 +628,31 @@ class Saml2Sso {
          .send(AUTOPOST_SCRIPT);
     });
 
+    // THE DESCRIPTION PAGE (#584): a path no specification defines, this
+    // service's own documentation for a person, drawn in the browser from
+    // the view its shell carries (`common/description_pages.ts`). Its JSON
+    // form is new with #584 — `?format=json`, or an Accept preferring
+    // JSON — and is that view. `GET /saml2/sso` and `GET /saml2/ars` below
+    // are a specification's endpoints and are not converted.
     app.get(BASE_PATH, function (req, res) {
       log.debug("Entering the SAML 2.0 description page.");
-      const base = baseUrlOf(req);
-      const where = self.endpointsFor(base, '');
-      self.sendPage(res, 200, 'SAML 2.0 — Web Browser SSO',
-             '<h1>SAML 2.0 — Web Browser SSO, all four bindings</h1>' +
-             '<p class="sub">Identity provider <code>' +
-               xmlEscape(self.idpEntityId()) +
-             '</code> ' +
-             'at <code>' + xmlEscape(base) + '</code></p><p>A full SAML 2.0 ' +
-             'identity provider: HTTP Redirect, HTTP POST and HTTP POST ' +
-             'SimpleSign for the request, and HTTP POST, HTTP Redirect, HTTP ' +
-             'POST SimpleSign or HTTP Artifact for the response, with a SOAP ' +
-             'artifact resolution service behind the last. In development ' +
-             'mode it accepts ANY entityID — a service provider does not ' +
-             'have to be provisioned here before it can be pointed at this ' +
-             'service, and the first valid AuthnRequest from an entityID ' +
-             'creates its application entry in the embedded directory. In ' +
-             'product mode only a REGISTERED service provider is served ' +
-             '(#496).</p><h2>The ' +
-             'endpoints</h2><table><thead><tr><th>Endpoint</th><th>What it ' +
-             'is</th></tr></thead><tbody><tr><td><a href="' + SSO_PATH + '">' +
-               SSO_PATH + '</a></td><td>Single ' +
-               'Sign-On. ' +
-               '<code>' + SSO_PATH + '/{sp}</code> is the same service ' +
-               'scoped to one service ' +
-               'provider.</td></tr><tr><td><code>' + ARS_PATH +
-             '</code></td><td>Artifact ' +
-               'Resolution, SOAP over HTTP. A browser never touches it — the ' +
-               'service provider calls it directly, which is the whole point ' +
-               'of the artifact profile.</td></tr><tr><td><a ' +
-               'href="' + SLO_PATH + '">' + SLO_PATH + '</a></td><td>Single ' +
-               'Logout, both directions.</td></tr><tr><td><code>' +
-               UNSOLICITED_PATH + '</code></td><td>Identity-provider-' +
-               'initiated sign-in: an unsolicited Response to the service ' +
-               'provider <code>providerId</code> names ' +
-               '(<code>saml2.unsolicitedSso</code>).</td></tr><tr><td><code>' +
-               AA_PATH + '</code></td><td>The attribute authority: a SOAP ' +
-               '<code>&lt;samlp:AttributeQuery&gt;</code>, the Assertion ' +
-               'Query and Request profile.</td></tr><tr><td><a ' +
-               'href="' + METADATA_PATH + '">' + METADATA_PATH +
-                 '</a></td><td>The ' +
-               'signed identity provider metadata. ' +
-               '<code>' + METADATA_PATH + '/{sp}</code> ' +
-               'is a document of its OWN for that service provider — a ' +
-               'different entityID and different endpoints — and it is ' +
-               'minted for any {sp} asked for.</td></tr><tr><td><a ' +
-               'href="' + SP_PATH + '">' + SP_PATH + '</a></td><td>A mock ' +
-               'service provider. NON-SPEC, the default assertion consumer ' +
-               'service, and where a response can be verified check by check ' +
-               'without a second ' +
-               'service.</td></tr></tbody></table><h2>Per-service-provider ' +
-               'metadata</h2><p>Every service provider gets its own ' +
-               'endpoints under its own path, with this identity provider\'s ' +
-               'one entityID, the realm\'s OAuth issuer. Ask for <code>' +
-                 METADATA_PATH + '/{anything}</code> and ' +
-             'it is minted — the entityID may be a percent-encoded URL or a ' +
-             'plain name:</p><ul><li><a ' +
-             'href="' + METADATA_PATH + '/example-sp">' + METADATA_PATH +
-             '/example-sp</a></li><li><code>' + METADATA_PATH + '/' +
-             encodeURIComponent('https://sp.example.com/saml') +
-             '</code></li></ul><div class="meta"><div>The generic ' +
-             'endpoints are <code>' + xmlEscape(where.sso) +
-             '</code>, <code>' + xmlEscape(where.slo) + '</code> and <code>' +
-             xmlEscape(where.ars) +
-             '</code>. They behave identically — the scope in the path ' +
-             'decides which identity provider names itself in the answer, ' +
-             'and the AuthnRequest\'s own Issuer decides who the assertion ' +
-             'is for either way.</div></div>');
+      const view = self.descriptionView(req);
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
+        res.status(200).set('Cache-Control', 'no-store').json(view);
+        log.debug("Leaving the SAML 2.0 description page. JSON.");
+        return;
+      }
+      DescriptionPages.send(req, res, { base: BASE_PATH,
+        title: 'SAML 2.0 — Web Browser SSO', view: view });
       log.debug("Leaving the SAML 2.0 description page.");
+    });
+    // Its script (#584): the description pages' one bundle, on this
+    // application's own path so a listener of its own serves it (#472).
+    app.get(DescriptionPages.scriptPath(BASE_PATH), function (req, res) {
+      log.debug("Entering the SAML 2.0 description page's script.");
+      DescriptionPages.script(req, res);
+      log.debug("Leaving the SAML 2.0 description page's script.");
     });
 
     app.get(METADATA_PATH, serveMetadata);
@@ -777,108 +723,6 @@ class Saml2Sso {
     app.post(SLO_PATH, singleLogout);
     app.post(SLO_PATH + '/:sp', singleLogout);
 
-    app.get(SP_PATH, function (req, res) {
-      log.debug("Entering the mock service provider (GET).");
-      const base = baseUrlOf(req);
-      const spEntityId = base + SP_PATH;
-      const acsUrl = base + SP_PATH;
-      const destination = base + SSO_PATH;
-
-      // A response can also arrive HERE by GET — the HTTP Redirect binding for
-      // a response, and the artifact binding's SAMLart. Both are answered by
-      // the same verification the POST below runs, because what arrived is the
-      // same document.
-      const params: any = self.paramsOf(req);
-      if (params.SAMLResponse || params.SAMLart) {
-        log.debug("Leaving the mock service provider (GET). A response " +
-                  "arrived on a GET binding.");
-        return self.receiveAtMockSp(req, res, params, base, spEntityId, acsUrl);
-      }
-
-      // THE REQUESTS ARE SIGNED (#37), on the Redirect binding's query
-      // string, with THIS SERVICE'S key — which the SSO service trusts for
-      // this one entityID and no other (implicitCertificatesFor()). The last
-      // link is deliberately UNSIGNED, which is accepted or refused depending
-      // on saml2.requireSignedAuthnRequests: both answers are worth seeing.
-      const kinds = [
-        { binding: BINDING_POST, sign: true },
-        { binding: BINDING_REDIRECT, sign: true },
-        { binding: BINDING_ARTIFACT, sign: true },
-        { binding: BINDING_POST, sign: false }
-      ];
-      const links = kinds.map(function (kind) {
-        const binding = kind.binding;
-        const built = self.spAuthnRequest(base, spEntityId, acsUrl, binding,
-                                          destination);
-        // 128 bits (#65), section 13's floor for a value that looks up state.
-        const relayState = 'sp-' + randomId(16);
-        spContexts.set(relayState, { requestId: built.id, binding: binding,
-                                     expires: Date.now() +
-                                       self.spContextTtlMs() });
-        spContexts.forEach(function (v, k) {
-          if (v.expires < Date.now()) spContexts.delete(k);
-        });
-        let query = 'SAMLRequest=' +
-          encodeURIComponent(self.encodeRedirect(built.xml)) +
-          '&RelayState=' + encodeURIComponent(relayState);
-        if (kind.sign) {
-          const sigAlg = self.deps.documentSettings.signatureOptions().sigAlg;
-          query += '&SigAlg=' + encodeURIComponent(sigAlg);
-          query += '&Signature=' +
-            encodeURIComponent(self.signQueryString(query, sigAlg));
-        }
-        const url = destination + '?' + query;
-        const label = binding === BINDING_POST ? 'HTTP POST' :
-          (binding === BINDING_REDIRECT ? 'HTTP Redirect' : 'HTTP Artifact');
-        return '<li><a href="' + xmlEscape(url) + '">Response over ' + label +
-          (kind.sign ? '' : ', from an UNSIGNED request') + '</a> ' +
-          '— the request goes on the Redirect binding' +
-          (kind.sign ? ', signed' : ' with no signature') + ', and ' +
-          '<code>ProtocolBinding</code> asks for the answer on ' +
-          label + '.' + (binding === BINDING_ARTIFACT
-            ? ' The browser will carry a <code>SAMLart</code> back here and ' +
-              'this page resolves it.' : '') +
-          (kind.sign ? '' : ' ' + (self.deps.requestSignature
-            .wantsSignedRequests({})
-            ? 'This realm requires signed requests, so it is REFUSED.'
-            : 'This realm accepts unsigned requests, so it is answered.')) +
-          '</li>';
-      }).join('');
-
-      const inner = '<h1>Mock service provider</h1><p class="sub">NON-SPEC. ' +
-        'A service provider is not part of an identity provider — this one ' +
-        'exists so the Web Browser SSO profile can be exercised, and ' +
-        'verified, without a second service.</p><p>Its entityID is ' +
-        '<code>' + xmlEscape(spEntityId) + '</code>, and it ' +
-        'is also the default <code>AssertionConsumerServiceURL</code>: an ' +
-        'AuthnRequest that names none is answered here.</p><h2>Start a ' +
-        'sign-in</h2><ul>' + links + '</ul>' +
-        '<h2>Then</h2><ul>' +
-        '<li><a href="' + SLO_PATH + '">Single Logout</a> — ends the session ' +
-        'and names every service provider it signed into.</li><li><a ' +
-        'href="' + METADATA_PATH + '/' +
-          encodeURIComponent(self.slugOf(spEntityId)) +
-        '">This ' +
-        'service provider\'s own identity provider metadata</a> — a distinct ' +
-        'entityID and its own endpoints, which is what makes the metadata ' +
-        'unique per application.</li></ul><div class="meta"><div>The first ' +
-        'three AuthnRequests are SIGNED on the Redirect binding\'s query ' +
-        'string (section 3.4.4.1) with this service\'s own key, and the ' +
-        'Single Sign-On service VERIFIES them — the one entityID it trusts ' +
-        'that key for is this page\'s. The fourth is unsigned, and whether ' +
-        'it is answered is saml2.requireSignedAuthnRequests: off in ' +
-        'development, on in product.</div></div>';
-      self.sendPage(res, 200, 'Mock service provider — SAML 2.0', inner);
-      log.debug("Leaving the mock service provider (GET).");
-    });
-
-    app.post(SP_PATH, function (req, res) {
-      log.debug("Entering the mock service provider (POST).");
-      const base = baseUrlOf(req);
-      self.receiveAtMockSp(req, res, self.paramsOf(req), base, base + SP_PATH,
-                           base + SP_PATH);
-      log.debug("Leaving the mock service provider (POST).");
-    });
     log.debug("Leaving Saml2Sso.registerRoutes().");
   }
 
@@ -896,18 +740,6 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.requestTtlMs().");
     log.debug("Leaving Saml2Sso.requestTtlMs().");
     return Number(config.value('saml2.requestTtlMin')) * 60 * 1000;
-  }
-
-  // The RelayState values the mock service provider below has minted, so it can
-  // check the round trip. Its own state and nobody else's, exactly as
-  // /wsfed/rp's rpContexts is. `saml2.mockSpContextTtlMin` since 2026-09-12; it
-  // was a thirty-minute constant.
-  private spContextTtlMs() {
-    const { config } = this.deps;
-    const { log } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.spContextTtlMs().");
-    log.debug("Leaving Saml2Sso.spContextTtlMs().");
-    return Number(config.value('saml2.mockSpContextTtlMin')) * 60 * 1000;
   }
 
   /**
@@ -1031,6 +863,31 @@ class Saml2Sso {
   // 1), both retired with no override (rcbj). There is always a name, so
   // nothing here refuses for want of one (STS-SAML-0004 is retired).
   /**
+   * The SAML 2.0 description page's view (#584): the identity provider,
+   * its endpoints' paths and the generic endpoints at the base this request
+   * reached. It is the page's JSON form too.
+   *
+   * @param req - the request
+   * @returns the view
+   */
+  descriptionView(req) {
+    const { baseUrlOf, log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.descriptionView().");
+    const base = baseUrlOf(req);
+    const where = this.endpointsFor(base, '');
+    log.debug("Leaving Saml2Sso.descriptionView().");
+    return {
+      kind: 'saml2',
+      idpEntityId: this.idpEntityId(),
+      base: base,
+      paths: { sso: SSO_PATH, ars: ARS_PATH, slo: SLO_PATH,
+               unsolicited: UNSOLICITED_PATH, aa: AA_PATH,
+               metadata: METADATA_PATH },
+      generic: { sso: where.sso, slo: where.slo, ars: where.ars }
+    };
+  }
+
+  /**
    * Answers this identity provider's entityID: the realm's OAuth issuer at
    * the ambient request's base (#523).
    *
@@ -1132,26 +989,6 @@ class Saml2Sso {
     return at < 0 ? '' : url.slice(at + 1);
   }
 
-  // THE ONE IMPLICIT TRUST ANCHOR: this service's own certificate, for its own
-  // mock service provider, which signs its AuthnRequests with this service's
-  // key. Only this process holds that key, so trusting it for that entityID —
-  // and no other — lets nothing in that this process did not sign; and it is
-  // not written onto the entry, because the key changes on every start in
-  // development and a stored copy would go stale.
-  private implicitCertificatesFor(base, spEntityId): string[] {
-    const { STS, log } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.implicitCertificatesFor().");
-    const mine = String(spEntityId) === base + SP_PATH;
-    log.debug("Leaving Saml2Sso.implicitCertificatesFor(). mock SP=" + mine);
-    // The XML key's certificate, in EVERY live generation (#42): the mock
-    // SP signs with the current one, and a request signed a moment before a
-    // rotation still verifies.
-    return mine ? this.deps.helpers.ownRsaCertificates('xml')
-      .map(function (one: any): string {
-        return stsCrypto.stripPem(one.certPem);
-      }) : [];
-  }
-
   // Assess one message's signature, write the audit row, and say whether to
   // refuse. `what` is the root element's local name.
   private checkSignature(req, base, opts): any {
@@ -1170,8 +1007,7 @@ class Saml2Sso {
     // and registers only an answer that verifies against one (#112).
     const fresh = spMetadata.freshness(fields);
     if (fresh.state === 'none' && opts.spEntityId &&
-        !fields.samlSpMetadataUrl &&
-        !this.implicitCertificatesFor(base, opts.spEntityId).length) {
+        !fields.samlSpMetadataUrl) {
       spMetadata.queueMdqLookup(opts.spEntityId);
     }
     if (fresh.state === 'expired') {
@@ -1211,9 +1047,7 @@ class Saml2Sso {
       xml: opts.xml,
       rootLocalName: opts.what,
       messageField: opts.field,
-      fields: fields,
-      implicitCertificates: this.implicitCertificatesFor(base,
-                                                         opts.spEntityId)
+      fields: fields
     });
     const refusal = requestSignature.refusal(assessment, fields);
     const registered = requestSignature.registeredCertificates(fields);
@@ -1221,9 +1055,7 @@ class Saml2Sso {
     // already trusted. Written onto the entry by the sighting at step 3, never
     // onto samlSigningCertificate.
     const observed = assessment.keyInfoCertificate &&
-      registered.indexOf(assessment.keyInfoCertificate) < 0 &&
-      this.implicitCertificatesFor(base, opts.spEntityId)
-        .indexOf(assessment.keyInfoCertificate) < 0
+      registered.indexOf(assessment.keyInfoCertificate) < 0
       ? assessment.keyInfoCertificate : '';
     audit.audit({
       action: 'saml2.request.signature',
@@ -3017,9 +2849,7 @@ class Saml2Sso {
         'A <saml:Issuer> is what says which service provider this request is ' +
         'from, and it becomes the assertion\'s audience restriction. An ' +
         'assertion with no audience is one any service provider would be ' +
-        'entitled to accept.',
-        '<p>There is a mock service provider here that sends a complete ' +
-        'request: <a href="' + SP_PATH + '">' + SP_PATH + '</a>.</p>');
+        'entitled to accept.');
     }
     const idpEntityId = this.idpEntityId();
     const known = this.fieldsOf(spEntityId);
@@ -3030,13 +2860,15 @@ class Saml2Sso {
     // **WHETHER IT IS VALIDATED DEPENDS ON THE MODE (2026-09-12).** In
     // development it is not, exactly as WS-Federation's wreply is not and for
     // the same stated reason: that mode accepts arbitrary return URLs on
-    // purpose, and a request naming none goes to the registered value or to
-    // this service's own mock service provider. In PRODUCT
+    // purpose, and a request naming none goes to the registered value, or is
+    // refused when there is none (there is no mock to fall back on since
+    // #592). In PRODUCT
     // (`mode.acceptsUnregisteredAddresses()` false) the URL must be one of the
     // `samlAssertionConsumerService` values on this service provider's entry, a
     // request naming another is REFUSED on a page — not delivered a failure
     // Response, because the address that Response would go to is the one in
-    // question — and there is no mock fallback. `saml/return_address.ts` is the
+    // question — and there is no demonstration fallback.
+    // `saml/return_address.ts` is the
     // rule, shared with the other two profiles.
     //
     // Either way it must be an absolute http(s) URL, because a form action that
@@ -3072,7 +2904,6 @@ class Saml2Sso {
       requested: consumedAcs.consumed ? consumedAcs.url : request.acsUrl,
       registered: acsKnown.registered,
       unconfirmed: acsKnown.unconfirmed,
-      fallback: base + SP_PATH,
       attribute: 'samlAssertionConsumerService',
       parameter: 'AssertionConsumerServiceURL',
       application: spEntityId
@@ -3651,7 +3482,6 @@ class Saml2Sso {
       requested: consumed.consumed ? consumed.url : shire,
       registered: acsKnown.registered,
       unconfirmed: acsKnown.unconfirmed,
-      fallback: '',
       attribute: 'samlAssertionConsumerService',
       parameter: 'shire',
       application: spEntityId
@@ -4041,9 +3871,7 @@ class Saml2Sso {
       xml: new XMLSerializer().serializeToString(query),
       rootLocalName: 'AttributeQuery', fields: fields,
       tlsCertificate: peer && !revoked
-        ? Buffer.from(peer.raw).toString('base64') : '',
-      implicitCertificates: this.implicitCertificatesFor(baseUrlOf(req),
-                                                         spEntityId)
+        ? Buffer.from(peer.raw).toString('base64') : ''
     });
     log.debug("Leaving Saml2Sso.authenticateQueryCaller(). " +
               (caller.refuse ? caller.errorCode : 'via ' + caller.via));
@@ -4444,9 +4272,6 @@ class Saml2Sso {
   //      ArtifactResolve or its registered certificate as the TLS client
   //      certificate — under the request policy
   //      (`request_signature.ts`'s `authenticateSoapCaller()`).
-  //
-  // This service's own mock service provider resolves in process
-  // (`resolveForMockSp()`) and never reaches here.
   // ---------------------------------------------------------------------------
   private authenticateArtifactCaller(req, resolve, spEntityId, held): any {
     const { audit, mtls, requestSignature, spMetadata } = this.deps;
@@ -4490,9 +4315,7 @@ class Saml2Sso {
       xml: new XMLSerializer().serializeToString(resolve),
       rootLocalName: 'ArtifactResolve', fields: fields,
       tlsCertificate: peer && !revoked
-        ? Buffer.from(peer.raw).toString('base64') : '',
-      implicitCertificates: this.implicitCertificatesFor(baseUrlOf(req),
-                                                         spEntityId)
+        ? Buffer.from(peer.raw).toString('base64') : ''
     });
     if (caller.refuse) {
       log.debug("Leaving Saml2Sso.authenticateArtifactCaller(). " +
@@ -5578,12 +5401,9 @@ class Saml2Sso {
         : 'This realm is in development mode, so it checks no password: ' +
           'the username typed at the sign-in screen becomes the subject of ' +
           'the assertion.') +
-      '</p><h2>Try it</h2><ul><li><a ' +
-      'href="' + SP_PATH + '">' + SP_PATH + '</a> — a mock service ' +
-      'provider here that sends a complete AuthnRequest asking for the ' +
-      'response on HTTP POST, HTTP Redirect and HTTP Artifact, and then ' +
-      'verifies the response check by ' +
-      'check.</li><li><a href="' + xmlEscape(where.metadata) + '">' +
+      '</p><h2>Try it</h2><ul>' +
+      '<li><a href="' + xmlEscape(where.metadata) +
+      '">' +
         xmlEscape(where.metadata) +
       '</a> ' +
       '— the signed identity provider metadata, which is what a service ' +
@@ -5620,12 +5440,12 @@ class Saml2Sso {
            'return URL here, UNLESS the service provider\'s metadata has ' +
            'been consumed, when it must be one of the endpoints that ' +
            'registered; with none the response goes to the registered ' +
-           'default or this service\'s own mock service provider at ' +
-           SP_PATH + '.'
+           'default, and with no registered default the request is ' +
+           'refused.'
          : 'Where the response goes. This realm is in PRODUCT mode, so it ' +
            'must be one of the samlAssertionConsumerService values ' +
            'registered on the service provider\'s entry, compared exactly; ' +
-           'with none, the registered one is used; and there is no mock ' +
+           'with none, the registered one is used; and there is no ' +
            'fallback.'],
        ['NameIDPolicy/@Format', 'Answered with the format it asks for, ' +
                                 'whatever it is — unless the service ' +
@@ -5689,378 +5509,6 @@ class Saml2Sso {
       'Request profile\'s AuthnQuery and AuthzDecisionQuery.</div></div>';
   }
 
-  // ===========================================================================
-  // THE MOCK SERVICE PROVIDER. NON-SPEC, and it earns its place the same two
-  // ways /wsfed/rp does:
-  //
-  //   * it is the default AssertionConsumerServiceURL, so an AuthnRequest that
-  //     names no return address has somewhere real to go instead of nowhere;
-  //   * it makes the profile testable from one service. Everything else here is
-  //     verified by the client under test; a Response POSTed into the void
-  //     could not be checked at all without standing up a second service, and
-  //     the checks below are the ones that catch the mistakes this profile
-  //     makes — an unresolvable signature reference, a mangled RelayState, an
-  //     audience naming the wrong service provider, a SubjectConfirmationData
-  //     whose InResponseTo does not match the request.
-  // ===========================================================================
-  private verifyResponseSignature(xml, wanted) {
-    const { stsCrypto } = this.deps;
-    const { STS, log } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.verifyResponseSignature(). wanted=" + wanted);
-    // **THE `element` ARGUMENT IS THE WHOLE POINT AND IT IS NOT A
-    // CONVENIENCE.** A Response carrying a signed assertion has TWO signatures,
-    // and asking a verifier "is this signed by us" without saying WHICH element
-    // gets an answer about whichever it found first. The shared verifier
-    // selects the element by name, takes the signature that is its own DIRECT
-    // CHILD, and additionally refuses a signature whose reference names
-    // something else — the last of which none of the four implementations this
-    // replaced ever checked.
-    //
-    // The `idAttribute` dance is gone with them: the shared signer resolves
-    // `ID`, `AssertionID`, `ResponseID` and `RequestID` natively, so there is
-    // no list to add a name to and no duplicate to unshift onto it. That is
-    // what removed the hazard this function used to carry a paragraph about.
-    // Any generation of this realm's XML key (#42): helpers.verifyOwnXml().
-    const result = this.deps.helpers.verifyOwnXml(xml, { element: wanted });
-    log.debug("Leaving Saml2Sso.verifyResponseSignature(). ok=" + result.ok);
-    return result;
-  }
-
-  // Every check, in the order a service provider would apply them, each with
-  // its own verdict. One boolean for the whole response would say "it failed"
-  // and nothing anybody could act on — the same argument /wsfed/rp and the
-  // OID4VP verifier both make.
-  /**
-   * Verifies a SAML Response as a service provider would, each check with its
-   * own verdict; the mock service provider's reading.
-   *
-   * @param xml - the Response
-   * @param spEntityId - the service provider's entityID
-   * @param acsUrl - the assertion consumer service URL it was sent to
-   * @param relayState - the RelayState that came with it
-   * @returns `ok`, every check, and the subject, attributes, session index and
-   * status
-   */
-  verifyResponse(xml, spEntityId, acsUrl, relayState): any {
-    const { firstByLocal, log, textByLocal } = this.deps.helpers;
-    const { DOMParser } = this.deps.xmldom;
-    log.debug("Entering Saml2Sso.verifyResponse().");
-    const checks = [];
-    const add = function (name, ok, detail) {
-      log.debug("Entering add().");
-      checks.push({ name: name, ok: !!ok, detail: detail });
-      log.debug("Leaving add().");
-    };
-    const result: any = { checks: checks, subject: '', attributes: [],
-                     sessionIndex: '', status: '' };
-
-    let doc = null;
-    try {
-      doc = new DOMParser().parseFromString(xml, 'text/xml');
-    } catch (e) {
-      log.debug("Caught in Saml2Sso.verifyResponse(): " +
-                ((e && e.message) || e));
-      add('the response parses as XML', false, e.message);
-      log.debug("Leaving Saml2Sso.verifyResponse(). Not XML.");
-      return result;
-    }
-    const root = doc.documentElement;
-    add('it is a samlp:Response', !!root && root.localName === 'Response',
-        root ? '<' + root.localName + '> in ' + (root.namespaceURI || '(no ' +
-            'namespace)')
-             : 'nothing parsed');
-    if (!root || root.localName !== 'Response') {
-      log.debug("Leaving Saml2Sso.verifyResponse(). Not a Response.");
-      return result;
-    }
-
-    const statusEl = firstByLocal(root, 'StatusCode');
-    const status = statusEl ? (statusEl.getAttribute('Value') || '') : '';
-    result.status = status;
-    const statusMessage = textByLocal(root, 'StatusMessage');
-    add('the status is Success', status === STATUS_SUCCESS,
-        (status || '(no StatusCode)') + (statusMessage ? ' — ' + statusMessage :
-                                         ''));
-
-    const issuer = textByLocal(root, 'Issuer');
-    add('the issuer is this identity provider',
-        issuer === this.idpEntityId(),
-        issuer + (issuer === this.idpEntityId() ? ''
-          : ', expected ' + this.idpEntityId()));
-
-    const destination = root.getAttribute('Destination') || '';
-    add('Destination names this assertion consumer service',
-        destination === acsUrl,
-        destination || '(none)');
-
-    const responseSig = this.verifyResponseSignature(xml, 'Response');
-    add('the Response signature verifies', responseSig.ok,
-        responseSig.present ?
-        (responseSig.ok ? (responseSig.signatureMethod || 'signed') + ' ' +
-            'over ' +
-                                                (responseSig.canonicalization ||
-                                                 'a ' +
-                                                    'canonicalization')
-                                              : responseSig.why)
-          : 'unsigned — saml2.signResponse is off, which is a supported ' +
-            'state and not a failure of the service provider');
-
-    const assertion = firstByLocal(root, 'Assertion');
-    add('it contains an assertion', !!assertion,
-        assertion ? 'in ' + assertion.namespaceURI : 'no saml:Assertion — ' +
-                                                     'see the status above');
-    if (!assertion) {
-      result.ok = checks.every(function (c) { return c.ok; });
-      log.debug("Leaving Saml2Sso.verifyResponse(). No assertion.");
-      return result;
-    }
-
-    const assertionSig = this.verifyResponseSignature(xml, 'Assertion');
-    add('the assertion signature verifies', assertionSig.ok,
-        assertionSig.present ? (assertionSig.ok ? 'resolved through the ID ' +
-                                                  'attribute'
-                                                : assertionSig.why)
-          : 'unsigned — saml2.signAssertion is off');
-
-    const conditions = firstByLocal(assertion, 'Conditions');
-    const audience = conditions ? textByLocal(conditions, 'Audience') : '';
-    add('the audience is this service provider', audience === spEntityId,
-        'audience ' + (audience || '(none)') + ', expected ' + spEntityId);
-
-    const notBefore = conditions ? conditions.getAttribute('NotBefore') : '';
-    const notOnOrAfter = conditions ? conditions.getAttribute('NotOnOrAfter') :
-                         '';
-    const now = Date.now();
-    add('it is inside its validity window',
-        !!notBefore && !!notOnOrAfter && Date.parse(notBefore) <= now &&
-        now < Date.parse(notOnOrAfter),
-        (notBefore || '(no NotBefore)') + ' to ' + (notOnOrAfter || '(no ' +
-            'NotOnOrAfter)'));
-
-    // The four things saml-profiles section 4.1.4.2 requires of a BEARER
-    // assertion, which is the half of the profile a service provider most often
-    // skips and an identity provider most often omits.
-    const scd = firstByLocal(assertion, 'SubjectConfirmationData');
-    add('the bearer SubjectConfirmationData is there', !!scd,
-        scd ? 'Recipient, NotOnOrAfter and InResponseTo' : 'missing — ' +
-            'section 4.1.4.2 requires it');
-    if (scd) {
-      add('its Recipient is this assertion consumer service',
-          (scd.getAttribute('Recipient') || '') === acsUrl,
-          scd.getAttribute('Recipient') || '(none)');
-      const known = spContexts.get(String(relayState || ''));
-      add('its InResponseTo is the request this service provider sent',
-          !!known && (scd.getAttribute('InResponseTo') ||
-                      '') === known.requestId,
-          known ?
-          (scd.getAttribute('InResponseTo') ||
-           '(none)') + ', expected ' + known.requestId
-                : 'this service provider has no record of the request — the ' +
-                  'RelayState was altered, or this response was not started ' +
-                  'from ' + SP_PATH);
-    }
-
-    // The RelayState round trip. Its own state, so this service provider is the
-    // only thing that can check it — and an identity provider that decoded and
-    // re-encoded it, or dropped it for being long, produces exactly the same
-    // symptom as a lost session.
-    const known = spContexts.get(String(relayState || ''));
-    add('RelayState came back unaltered', !!known,
-        known ? 'the same value this service provider minted, byte for byte'
-              : (relayState ?
-                 'this service provider did not mint "' + relayState + '"'
-                            : 'no RelayState came back'));
-
-    const nameEl = firstByLocal(assertion, 'NameID');
-    result.subject = nameEl ? (nameEl.textContent || '').trim() : '';
-    result.nameIdFormat = nameEl ? (nameEl.getAttribute('Format') || '') : '';
-    add('the assertion names a subject', !!result.subject,
-        result.subject || '(none)');
-
-    const authnStatement = firstByLocal(assertion, 'AuthnStatement');
-    result.sessionIndex = authnStatement ?
-                          (authnStatement.getAttribute('SessionIndex') || '') :
-                          '';
-    result.authnContext = textByLocal(assertion, 'AuthnContextClassRef');
-    add('it carries an AuthnStatement with a SessionIndex',
-        !!result.sessionIndex,
-        result.sessionIndex ?
-        result.sessionIndex + ' (' + (result.authnContext || 'no ' +
-            'class ref') + ')'
-                            : 'missing — Single Logout has nothing to name ' +
-                              'the session by');
-
-    const attributes = assertion.getElementsByTagNameNS('*', 'Attribute');
-    for (let i = 0; i < attributes.length; i++) {
-      const a = attributes[i];
-      const values = a.getElementsByTagNameNS('*', 'AttributeValue');
-      const list = [];
-      for (let j = 0; j < values.length; j++) {
-        list.push((values[j].textContent || '').trim());
-      }
-      result.attributes.push({ name: a.getAttribute('Name') || '',
-                               nameFormat: a.getAttribute('NameFormat') || '',
-                               values: list });
-    }
-    add('the attributes arrived', result.attributes.length > 0,
-        result.attributes.length + ' attribute(s)');
-
-    result.ok = checks.every(function (c) { return c.ok; });
-    log.debug("Leaving Saml2Sso.verifyResponse(). ok=" + result.ok + ", " +
-              checks.length +
-        " " +
-        "check(s).");
-    return result;
-  }
-
-  // The mock service provider's own AuthnRequest. Unsigned, and that is not
-  // laziness: this identity provider records a request signature and does not
-  // check it (decision 3), so a signature here would be ceremony that proved
-  // nothing — and the one thing worth demonstrating, that an unsigned request
-  // is accepted, is exactly what the debugger's signed one cannot show.
-  private spAuthnRequest(base, spEntityId, acsUrl, protocolBinding,
-                          destination) {
-    const { genId, iso, log, xmlEscape } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.spAuthnRequest(). binding=" + protocolBinding);
-    const id = genId();
-    const xml =
-      '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
-        NS_SAML + '" ' +
-        'ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) + '"' +
-        ' Destination="' + xmlEscape(destination) + '"' +
-        ' ProtocolBinding="' + protocolBinding + '"' +
-        ' AssertionConsumerServiceURL="' + xmlEscape(acsUrl) + '">' +
-        '<saml:Issuer>' + xmlEscape(spEntityId) + '</saml:Issuer>' +
-        '<samlp:NameIDPolicy AllowCreate="true"/>' +
-      '</samlp:AuthnRequest>';
-    log.debug("Leaving Saml2Sso.spAuthnRequest(). id=" + id);
-    return { id: id, xml: xml };
-  }
-
-  // Resolving an artifact for the mock service provider. It calls the
-  // resolution function IN PROCESS rather than making a SOAP call to this same
-  // service over HTTP, and that is a deliberate refusal rather than a shortcut:
-  // an outbound HTTP request this service makes to a URL it computed is the
-  // shape of thing every other module here declines to do (wsfed's `wreqptr`,
-  // the registry's `jwks_uri`), and there is nothing to learn from this process
-  // talking to itself over a socket. What the page does instead is SHOW the
-  // SOAP exchange that a real service provider would have made.
-  private resolveForMockSp(artifact) {
-    const { log } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.resolveForMockSp().");
-    const held = artifacts.get(artifact);
-    if (!held) {
-      log.debug("Leaving Saml2Sso.resolveForMockSp(). It does not resolve.");
-      return { ok: false, why: 'that artifact does not resolve: it was never ' +
-                               'issued here, it has expired, or it has ' +
-                               'already been resolved — an artifact is ' +
-                               'one-shot.' };
-    }
-    artifacts.delete(artifact);
-    log.debug("Leaving Saml2Sso.resolveForMockSp(). Resolved and destroyed.");
-    return { ok: true, xml: held.xml };
-  }
-
-  private receiveAtMockSp(req, res, params, base, spEntityId, acsUrl) {
-    const { errorCodes } = this.deps;
-    const { log, logArtifact, xmlEscape } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.receiveAtMockSp().");
-    const relayState = String(params.RelayState || '');
-    let xml = '';
-    let howItArrived = '';
-    if (params.SAMLart) {
-      const resolved = this.resolveForMockSp(String(params.SAMLart));
-      if (!resolved.ok) {
-        log.debug("Leaving Saml2Sso.receiveAtMockSp(). The artifact did not " +
-                  "resolve.");
-        errorCodes.mark(res, 'STS-SAML-0021');
-        log.debug("Leaving Saml2Sso.receiveAtMockSp().");
-        return this.sendPage(res, 200, 'Artifact did not resolve — mock ' +
-                                       'service provider',
-          '<h1>The artifact did not resolve</h1>' +
-          '<div class="err">' + xmlEscape(resolved.why) + '</div><p>The ' +
-          'commonest cause is the most interesting one: an artifact is ' +
-          'resolvable EXACTLY ONCE (section 3.6.4.1), so reloading this page ' +
-          'after a successful resolution lands here. That is the behaviour ' +
-          'rather than a fault.</p><p><a ' +
-          'href="' + SP_PATH + '">Start another sign-in</a></p>');
-      }
-      xml = resolved.xml;
-      howItArrived = 'as a SAMLart the browser carried, resolved over the ' +
-                     'back channel';
-    } else {
-      xml = this.decodeMessage(String(params.SAMLResponse || ''));
-      howItArrived = req.method === 'POST'
-        ? 'in the body of a form POST (the HTTP POST binding)'
-        : 'on the query string (the HTTP Redirect binding)';
-    }
-    logArtifact('SAML 2.0 Response', 'as received by the mock service provider',
-                xml);
-    const verdict = this.verifyResponse(xml, spEntityId, acsUrl, relayState);
-    if (relayState) spContexts.delete(relayState);
-
-    const rows = verdict.checks.map(function (c) {
-      return '<tr><td>' + xmlEscape(c.name) + '</td><td class="' +
-        (c.ok ? 'pass">PASS' : 'fail">FAIL') +
-        '</td><td>' + xmlEscape(c.detail) + '</td></tr>';
-    }).join('');
-    const attributeRows = verdict.attributes.map(function (a) {
-      return '<tr><td><code>' + xmlEscape(a.name) + '</code></td><td>' +
-        xmlEscape(a.values.join(', ')) + '</td><td>' +
-        xmlEscape(a.nameFormat || '') + '</td></tr>';
-    }).join('');
-    const inner = '<h1>Response received</h1>' +
-      '<p class="sub">Mock service provider at <code>' + xmlEscape(spEntityId) +
-      '</code> ' +
-          '— ' +
-      xmlEscape(howItArrived) + '.</p>' +
-      (verdict.ok
-        ? '<div class="ok">Every check passed. An assertion for <code>' +
-          xmlEscape(verdict.subject) + '</code>.</div>'
-        : '<div class="err">Not every check passed. Each one below says ' +
-          'which, and why — a single verdict for the whole response would ' +
-          'say "it failed" and nothing anybody could act on.</div>') +
-      '<h2>Checks</h2><table><thead><tr><th>Check</th><th>Verdict</th><th>' +
-      'Detail</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      (attributeRows
-        ?
-          '<h2>Attributes</h2><table><thead><tr><th>Name</th>' +
-          '<th>Value</th><th>NameFormat</th></tr></thead>' +
-          '<tbody>' + attributeRows + '</tbody></table><p ' +
-          'class="sub">Anything configured on <a ' +
-          'href="/admin/saml-attributes">Custom SAML attributes</a> is in ' +
-          'this table too: the SAML 2.0 set is appended by the same ' +
-          'assertion builder that serves WS-Trust and WS-Federation, so it ' +
-          'reaches this profile with no wiring of its own.</p>'
-        : '') +
-      '<h2>The response, as it arrived</h2><pre>' +
-      xmlEscape(xml || '(nothing)') + '</pre><p><a ' +
-      'href="' + SP_PATH + '">Start another sign-in</a> &middot; ' +
-      '<a href="' + SLO_PATH + '">Sign out</a></p><div ' +
-      'class="meta"><div>This service provider keeps no session. It verifies ' +
-      'what it was sent and shows it, which is all a mock service provider ' +
-      'can honestly claim to do.</div>' +
-      (params.SAMLart
-        ? '<div>The artifact was resolved IN PROCESS rather than by this ' +
-          'service making a SOAP call to itself over HTTP — there is nothing ' +
-          'to learn from that, and an outbound request to a URL this service ' +
-          'computed is the shape of thing every other module here declines ' +
-          'to make. A real service provider POSTs a signed ArtifactResolve ' +
-          'to <code>' + ARS_PATH +
-          '</code>; the curl for it is on <a href="' + ARS_PATH + '">that ' +
-          'endpoint\'s own page</a>.</div>'
-        : '') + '</div>';
-    // 200 whatever the verdict: the request was answered, and the verdict is
-    // the document. A 400 here would be this service provider reporting on the
-    // identity provider's behaviour with a status code the browser attributes
-    // to itself.
-    if (!verdict.ok) {
-      errorCodes.mark(res, 'STS-SAML-0022');
-    }
-    this.sendPage(res, 200, 'Response — mock service provider', inner);
-    log.debug("Leaving Saml2Sso.receiveAtMockSp(). ok=" + verdict.ok);
-    return undefined;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -6125,7 +5573,6 @@ export = {
   artifactCount: slot.forward('artifactCount'),
   pendingRequestCount: slot.forward('pendingRequestCount'),
   metadataFor: slot.forward('metadataFor'),
-  verifyResponse: slot.forward('verifyResponse'),
   // The LogoutRequests one session is owed. Read by ../logout/logout.ts so that
   // a global sign-out names exactly what Single Logout names — see the block
   // above logoutTargetsFor().

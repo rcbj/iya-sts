@@ -1,0 +1,42 @@
+{
+  "scimmap.user.userName.note": {
+    "en": "e802eafbefe0f779",
+    "text": "La restricción de unicidad de SCIM. Es el RDN de una entrada creada automáticamente, así que para cualquiera a quien este servicio autenticó es también su nombre de inicio de sesión — pero NO es el id de SCIM, que es el entryUUID de la entrada."
+  },
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "El propio identificador del cliente de aprovisionamiento para esta persona. Se almacena tal cual y nada aquí lo lee."
+  },
+  "scimmap.user.active.note": {
+    "en": "eef190d9fd08aa38",
+    "text": "DESHABILITA LA CUENTA. false escribe el bloqueo administrativo 000001010000Z y termina todo lo que tiene la persona; a partir de entonces todas las puertas la rechazan. true lo quita. Si no se envía: sin cambios."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": {
+    "en": "c77936e2f9b505c6",
+    "text": "Un DN en el directorio y un id en SCIM, traducido en ambos sentidos por los manejadores de SCIM desde que el id pasó a ser el entryUUID (2026-09-14). Un valor que no nombra ninguna entrada se conserva tal como se envió."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "Qué sujetos de socios de federación inician la sesión de esta persona, cada uno { relationship, issuer, subject } — issuer es opcional al entrar, y vale el fedPeer de la relación. SI NO SE ENVÍA: sin cambios, para que un cliente de aprovisionamiento que no sabe nada de esta extensión no pueda desvincular a nadie por omitirla. Si se envía, aunque esté vacío: se reemplaza, y cada vínculo quitado termina las sesiones en las que ese socio inició la sesión de la persona. Un vínculo que lleve otra persona se rechaza con 409."
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "SOLO LECTURA, como exige la sección 4.1.2 de RFC 7643. La pertenencia es un hecho de la entrada del GRUPO, así que se cambia mediante un recurso Group y nunca mediante uno User. Se resuelve con groupsOfUser() de ldap_server.js, que es la misma función que lee el claim groups — así un token y un recurso SCIM no pueden discrepar sobre quién está en qué."
+  },
+  "scimmap.group.members.note": {
+    "en": "e791c95075db5178",
+    "text": "La LECTURA resuelve member, uniqueMember y memberUid por igual; la ESCRITURA pone un valor nuevo en `member`, ya que un id de miembro SCIM es un DN. Un miembro colgante — un DN en el que no hay nada almacenado — se devuelve como miembro, porque lo que dice el grupo es el hecho, y este directorio no aplica integridad referencial a propósito."
+  },
+  "scimmap.schema.plain": {
+    "en": "9eb4e31a2b06f959",
+    "text": "propio de este servicio (sin tipo estándar)"
+  },
+  "scimmap.schema.claims": {
+    "en": "1af3e6d95ddf4877",
+    "text": "propio de este servicio (#128; sin tipo estándar)"
+  },
+  "scimmap.schema.federation": {
+    "en": "e45ae284f8f1439e",
+    "text": "propio de este servicio (#109; sin tipo estándar)"
+  }
+}

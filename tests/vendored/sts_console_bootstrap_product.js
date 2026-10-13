@@ -46,6 +46,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const https = require("https");
 const { Command, Option } = require("commander");
@@ -301,51 +303,30 @@ async function signInWithPassword(realmBase, user, password, newPassword) {
   assert.ok(authnId, "the console's authorization request should send the " +
             "browser to the sign-in screen; it answered " + toScreen.status +
             " -> " + where);
-  const screen = await hop(where);
-  const screenHtml = await screen.text();
-  const csrf = (screenHtml.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  let answered = await hop(base + realmBase + "/authn/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ authn_id: decodeURIComponent(authnId),
-                                username: user, password: password,
-                                action: "login", csrf_token: csrf })
-      .toString()
-  });
-  // Up to two steps before a session: the forced password change, and —
-  // since #246 — the second factor OFFERED to an administrator, which this
-  // job ignores (rcbj: "update tests to just click ignore for the time
-  // being"). Either may come first; each is answered once.
-  for (let step = 0; step < 2 && answered.status === 200; step++) {
-    const page = await answered.text();
-    const changeId = (page.match(/name="change_id" value="([^"]+)"/) ||
-                      [])[1] || "";
-    const setupId = /id="mfa-setup-ignore"/.test(page)
-      ? (page.match(/name="mfa_id" value="([^"]+)"/) || [])[1] || "" : "";
-    assert.ok(changeId || setupId, "the sign-in screen answered 200 with " +
-              "neither a session, the password-change step nor the offer " +
-              "of a second factor: " + page.slice(0, 300));
-    if (setupId) {
-      answered = await hop(base + realmBase + "/authn/mfa-setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ mfa_id: setupId, action: "ignore" })
-          .toString()
-      });
-      continue;
-    }
-    const changeCsrf = (page.match(/name="csrf_token" value="([^"]+)"/) ||
-                        [])[1] || "";
-    answered = await hop(base + realmBase + "/authn/password-change", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ change_id: changeId,
-                                  new_password: newPassword,
-                                  confirm_password: newPassword,
-                                  csrf_token: changeCsrf }).toString()
-    });
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper. Up to two
+  // steps before a session: the forced password change, and — since #246 —
+  // the second factor OFFERED to an administrator, which this job ignores
+  // (rcbj: "update tests to just click ignore for the time being"). Either
+  // may come first; each is answered once.
+  let answered = await authnSignin.signIn(base + realmBase,
+    new URL(where, base).toString(),
+    { action: "login", username: user, password: password },
+    { cookie: cookies.header() });
+  cookies.keep(answered);
+  for (let step = 0; step < 2 && answered.next === "password-change";
+       step++) {
+    answered = await authnSignin.changePassword(base + realmBase,
+      answered.location, { new_password: newPassword,
+                           confirm_password: newPassword },
+      { cookie: cookies.header() });
+    cookies.keep(answered);
+    answered = await authnSignin.ignoreOffer(base + realmBase, answered);
+    cookies.keep(answered);
   }
+  assert.strictEqual(answered.next, "redirect",
+    "the sign-in as " + user + " answered neither a session, the " +
+    "password-change step nor the offer of a second factor: " +
+    answered.status + " " + JSON.stringify(answered.json));
   assert.ok(cookies.get("sts_session"),
     "signing in as " + user + " should start a sign-on session; the last " +
     "answer was " + answered.status);

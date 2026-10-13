@@ -213,6 +213,8 @@ STS_SAML_SHIB_CONTAINER_NAME="${STS_SAML_SHIB_CONTAINER_NAME:-sts-docker-tests-s
 STS_SAML_SSP_CONTAINER_NAME="${STS_SAML_SSP_CONTAINER_NAME:-sts-docker-tests-saml-ssp}"
 STS_SAML_PYSAML2_CONTAINER_NAME="${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-tests-saml-pysaml2}"
 STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}"
+# The test peer (#586), named for the same reason.
+STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-test-peer}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -245,6 +247,7 @@ SAML_SHIB_IMAGE="${SAML_SHIB_IMAGE:-${IMAGE_REGISTRY}/sts-saml-shibboleth:${imag
 SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${imageTag}}"
 SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
 SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
+TEST_PEER_IMAGE="${TEST_PEER_IMAGE:-${IMAGE_REGISTRY}/sts-test-peer:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -874,6 +877,16 @@ COMPOSE_ENV=(
   "SAML_SSP_ADDRESS=${STS_NETWORK_PREFIX}.44"
   "SAML_PYSAML2_ADDRESS=${STS_NETWORK_PREFIX}.45"
   "SAML_KEYCLOAK_ADDRESS=${STS_NETWORK_PREFIX}.46"
+  # ---- the test peer (#586) ------------------------------------------------
+  # In EVERY local mode: the far party the protocol jobs talk to — SAML SP and
+  # RP, WS-Federation RP, the RFC 9470 and GNAP resource servers, the SSF
+  # receiver. Pinned above the conformance TLS writer's `.47`, for the
+  # conformance suite's reason. The URL is what tells a job the peer is
+  # there; an AWS target names none, and the jobs that need it skip.
+  "STS_TEST_PEER_CONTAINER_NAME=${STS_TEST_PEER_CONTAINER_NAME}"
+  "TEST_PEER_ADDRESS=${STS_NETWORK_PREFIX}.48"
+  "STS_TEST_PEER_URL=http://test-peer:9600"
+  "TEST_PEER_CA_FILE=/run/sts-test/test-peer/ca.crt"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # The token-exchange chain job's token log, off unless the host sets it.
@@ -971,7 +984,7 @@ then
   COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
 fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
-                 SAML_KEYCLOAK_IMAGE;
+                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE;
 do
   if [ -n "${!peerImage:-}" ];
   then
@@ -1043,6 +1056,10 @@ captureContainerLogs()
     captureOneContainerLog "${mode}" sts2   "00-iya-sts-service-cell-b.log" \
       "Cell B log"
   fi
+  # The test peer's (#586): one line per message any role received, and
+  # why it refused one — what a job's failure against it is read beside.
+  captureOneContainerLog "${mode}" test-peer "00-test-peer.log" \
+    "Test peer log"
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
 
@@ -1884,7 +1901,8 @@ do
   # the plans take. Not attached: the JVM's log is thousands of lines, and
   # the job reports every module itself.
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
-                --no-attach mailpit-tls --no-attach mailpit)
+                --no-attach mailpit-tls --no-attach mailpit
+                --no-attach test-peer)
   # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
   # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
   if stsModeIsCells "${MODE}";
@@ -2002,10 +2020,10 @@ do
 
     # THE ROOT CA AS TEXT, SO THAT sts_xacml_remote_pep.js CAN PUT IT BACK.
     #
-    # The truststore is a Map in the service's process that ANY job can empty:
-    # `POST /tls/trust/clear` needs no credential in development mode (every
-    # mode but `product`, which refuses it), and a job exercising the truststore is entitled
-    # to use it. Nothing noticed until 2026-09-06, when
+    # The truststore is a Map in the service's process that ANY job can change:
+    # `POST /tls/trust/clear` needed no credential until #597 deleted it, and a
+    # job exercising the truststore through /admin-api/tls/trust is entitled
+    # to remove what it finds. Nothing noticed until 2026-09-06, when
     # a client certificate stopped being a turnstile — this container's pull,
     # its heartbeat and its PIP queries all resolve a VERIFIED chain now, so
     # one such job left it authenticating as nobody for the rest of the run,

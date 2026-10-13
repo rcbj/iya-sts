@@ -1,0 +1,1846 @@
+{
+  "ldap.service.bindPolicy": {
+    "en": "ff24480e5b0e0e15",
+    "text": "varje bind lyckas — vilket DN som helst, vilket lösenord som helst, inklusive en anonym — utom det bokstavliga lösenordet \"invalid\", som besvaras med LDAP_INVALID_CREDENTIALS (49) så att ett negativt test har något att misslyckas på"
+  },
+  "ldap.service.bindPolicyProduct": {
+    "en": "2763e3096967070c",
+    "text": "bara en person binder, bara på LDAPS 636, och lösenordet verifieras mot det hashade userPassword på personens post. En anonym bind (48), varje bind på 389 (13), ett tomt lösenord (53), ett DN som inte är en person (49) och ett DN eller en adress som passerat sin gräns för misslyckade bindningar (53) vägras innan något lösenord läses; ett felaktigt lösenord, och det bokstavliga lösenordet \"invalid\", ger LDAP_INVALID_CREDENTIALS (49)"
+  },
+  "ldap.service.schema": {
+    "en": "0aabcadd26b32a63",
+    "text": "inget. Ingen objectClass upprätthålls och inget attribut kontrolleras mot en syntax, så en post kan bära vilka attribut som helst som en klient skickar. En riktig katalog skulle avvisa det mesta av det."
+  },
+  "ldap.service.authenticationFacts": {
+    "en": "50b11d2cbd23b36a",
+    "text": "där det protokoll som godtog autentiseringsuppgiften säger HUR den presenterades — vilket i dag är inloggningsskärmen och ingenting annat, eftersom amr är ett OIDC-ordförråd — bär posten även authnMethod (varje RFC 8176-metod som den här personen har använt här, ackumulerat), mfaAuthenticated (TRUE eller FALSE för den SENASTE autentiseringen, överskrivet varje gång) och mfaLastAuthTime (när flerfaktorsautentisering senast skedde, rensas aldrig). Det här är den här tjänstens egna namn och inte schema. En WebAuthn-ceremoni efter ett lösenord skriver TRUE; samma ceremoni använd lösenordsfritt skriver authnMethod hwk utan pwd bredvid och mfaAuthenticated FALSE, eftersom en faktor är en faktor hur nätfiskeresistent den än är. Ingenting här LÄSER dem: ingen token bär dem och ingen slutpunkt avgör något utifrån dem, precis som en grupp här inte beviljar något — utom de två grupper som avgör vem som får använda administratörskonsolen, vilket är det enda undantaget någonstans i den här katalogen och är begränsat till den konsolen."
+  },
+  "ldap.service.implementation": {
+    "en": "8097f8996f966e83",
+    "text": "ldapjs 3.0.7, fäst som undermodulen node-ldapjs och använd oförändrad"
+  },
+  "ldap.service.enforcedRules.0": {
+    "en": "f35b69973b84ae59",
+    "text": "ett tillägg vars förälder inte finns ger LDAP_NO_SUCH_OBJECT (32)"
+  },
+  "ldap.service.enforcedRules.1": {
+    "en": "bfd20d58c8b5dd5b",
+    "text": "en borttagning av en post med barn ger LDAP_NOT_ALLOWED_ON_NONLEAF (66)"
+  },
+  "ldap.service.enforcedRules.2": {
+    "en": "c23d48836f81aaa4",
+    "text": "en modify delete av ett attribut som inte finns ger LDAP_NO_SUCH_ATTRIBUTE (16)"
+  },
+  "ldap.service.enforcedRules.3": {
+    "en": "84c96a7e373363b1",
+    "text": "att ta bort det sista värdet i ett attribut tar bort attributet"
+  },
+  "ldap.service.enforcedRules.4": {
+    "en": "a41fc8c3be6cf1bc",
+    "text": "ett tillägg under ou=users vars användarnamn redan finns här ger LDAP_ENTRY_ALREADY_EXISTS (68), med namnet på den post som har det. EN POST PER PERSON: användarnamnet är postens namngivande RDN-värde och varje uid den bär, så uid=rcbj och cn=rcbj är samma person och bara en av dem kan finnas här. Det är samma avvisning som konsolen och POST /admin-api/users/create ger, och samma regel som varje protokoll här viker in på när det autentiserar någon"
+  },
+  "ldap.service.specifications.0": {
+    "en": "152af942eb9a86bf",
+    "text": "RFC 4510 (översikt över LDAP:s tekniska specifikation)"
+  },
+  "ldap.service.specifications.1": {
+    "en": "ce36f6cc63efd01c",
+    "text": "RFC 4511 (protokollet)"
+  },
+  "ldap.service.specifications.2": {
+    "en": "4ef14ce29aa9d0f4",
+    "text": "RFC 4512 (modeller för kataloginformation)"
+  },
+  "ldap.service.specifications.3": {
+    "en": "cd7ef4b993066ad2",
+    "text": "RFC 4514 (strängrepresentation av DN)"
+  },
+  "ldap.service.specifications.4": {
+    "en": "b65b5adecdeec710",
+    "text": "RFC 4515 (strängrepresentation av sökfilter)"
+  },
+  "ldap.service.sentences.searchScopeRealms": {
+    "en": "a9a6103ce6cbf322",
+    "text": "en subtree-sökning svarar om den förtroendesfär vars bas-DN den startade från. {{contexts}} är kontexterna; en post som hör till en annan sfär filtreras bort från en sökning som baseras ovanför den, och nås genom att söka från den sfärens egen bas. En operation som namnger ETT DN — add, modify, delete, compare eller en base-sökning — besvaras var det DN:et än finns, eftersom att skriva ut DN:et namnger sfären"
+  },
+  "ldap.service.sentences.searchScopeOne": {
+    "en": "55b2bbab540dbbb4",
+    "text": "inga förtroendesfärer är definierade, så det finns en kontext ({{root}}) och en subtree-sökning från den svarar om hela lagret"
+  },
+  "ldap.service.sentences.clientCertificates": {
+    "en": "18c68f9d37420f1c",
+    "text": "begärs aldrig. Den här lyssnaren bevisar SERVERN för klienten och inget mer; ett klientcertifikat som erbjuds till den efterfrågas inte och skulle inte vara en inloggning om det vore det. Huvudporten ({{port}}) är där klientcertifikat efterfrågas och läses."
+  },
+  "ldap.service.sentences.certificateSource": {
+    "en": "a969a038097605ed",
+    "text": "samma certifikat och nyckel som huvudporten ({{port}}) använder. Det är {{provenance}}: GET /tls/server-certificate lämnar ut det i PEM. Ett ankare för båda socketarna är varför de delar det."
+  },
+  "ldap.service.sentences.autoCreateRule": {
+    "en": "7e10a7e3ec45179d",
+    "text": "en post uid=<name>,{{usersDn}} dyker upp första gången <name> autentiserar sig mot den här tjänsten genom VILKET protokoll som helst. En LDAP-bind skapar ingen (den presenterar ett DN, inte ett användarnamn) och det gör inte heller en OAuth-klient. Ett verifierat TLS-KLIENTCERTIFIKAT är den enda identitet som redan är ett DN: dess post behåller subjektets egen lövnivå-RDN — cn=alice,{{usersDn}} för CN=alice,O=Example — eller hela subjektet där det redan ligger under {{baseDn}}, och hela subjektet, utfärdaren, serienumret och giltigheten finns på posten som x509*-attribut, vilka är den här tjänstens egna namn och inte schema. En DECENTRALISERAD IDENTIFIERARE är den tredje formen och är varken ett namn eller ett DN: ett utfärdat intygs did:jwk-subjekt, vilken DID som än presenterar för OID4VP-verifieraren. Dess post hamnar på uid=did-<12 hex av SHA-256 för DID:en>,{{usersDn}} — en did:jwk utskriven i sin helhet är ett DN på flera hundra tecken, det mesta nyckelmaterial — med själva identifieraren bevarad hel på posten som didSubject, och dess metod som didMethod. Sök efter personen via didSubject, inte via uid: på de posterna är uid ett sammandrag och didSubject är identiteten."
+  },
+  "ldap.spiffe.sourceOfTruth": {
+    "en": "b1ca8ee3d774cf2d",
+    "text": "De här posterna ÄR SPIFFE-registret. En ldapmodify under ou=entries ändrar hur nästa SVID ser ut — spiffeX509SvidTtl ändrar dess livslängd, spiffeDnsName ändrar dess subjectAltName och spiffeId ändrar vems identitet det är — eftersom ingenting cachar dem. De två behållarna innehåller olika SLAGS saker: poster är KONFIGURATION och agenter är en REGISTRERING, vilket är varför ingenting om en agent kan redigeras från konsolen."
+  },
+  "ldap.applications.sourceOfTruth": {
+    "en": "c927447175e35efb",
+    "text": "De här posterna ÄR registret. En ldapmodify här ändrar vad protokollslutpunkterna gör — att lägga till ett värde i oauthRedirectUri lägger till en omdirigerings-URI som RFC 9700-läget sedan godtar vid exakt matchning."
+  },
+  "ldap.federations.sourceOfTruth": {
+    "en": "435fdeccd74e04b0",
+    "text": "De här posterna ÄR registret. En ldapmodify här är en SÄKERHETSändring: fedSigningCertificate avgör vems intyganden den här tjänsten tror på, och fedEnabled slår på en partner. Ingenting cachar dem."
+  },
+  "ldap.devices.sourceOfTruth": {
+    "en": "fbfeae54369b2897",
+    "text": "De här posterna ÄR enhetsregistret: ingenting cachar dem, så en ldapmodify av stsDeviceCompliance är enhetens efterlevnad vid nästa läsning. stsDeviceSecretHash undanhålls."
+  },
+  "ldap.roles.sourceOfTruth": {
+    "en": "88697020f123dac5",
+    "text": "De här posterna ÄR medlemshalvan av rollregistret. En ldapmodify som lägger till ett värde i roleMemberUser beviljar den rollen, och nästa utfärdandebeslut fattas mot det. Det som KRÄVER en roll är appRequiredRole på en applikationspost under ou=applications, vilket är en annan behållare."
+  },
+  "ldap.policies.sourceOfTruth": {
+    "en": "4f8877fec63c3904",
+    "text": "De här posterna ÄR policylagret. En ldapmodify av xacmlPolicyDocument ändrar vad PDP:n beslutar redan vid nästa begäran och valideras INTE statiskt på vägen in, till skillnad från varje skrivning genom /admin/xacml — så ett dokument som slutar typkontrolleras svarar Indeterminate snarare än att avvisas."
+  },
+  "ldap.peps.sourceOfTruth": {
+    "en": "b8fc2f8f4bf8c58b",
+    "text": "Nästan varje attribut här är en REGISTRERING som den här tjänsten skrev när en PEP registrerade sig, hämtade eller rapporterade. De två som inte är det är xacmlPepEnabled, som en administratör sätter och som en PEP som återansluter inte rensar, och xacmlPepNotifyUrl, som är en av de tre adresser som den här tjänsten anropar."
+  },
+  "applications.kinds.oauth2-client.label": {
+    "en": "70d50cab8908ac09",
+    "text": "OAuth 2.0-klient"
+  },
+  "applications.kinds.oauth2-client.what": {
+    "en": "348a7be2ebfe0753",
+    "text": "Ett client_id som presenteras vid auktoriserings- eller tokenslutpunkten."
+  },
+  "applications.kinds.oidc-relying-party.label": {
+    "en": "d1c72d0dc209cf8d",
+    "text": "Förlitande part i OpenID Connect"
+  },
+  "applications.kinds.oidc-relying-party.what": {
+    "en": "af403fd2e4478e84",
+    "text": "Samma client_id där begäran bad om omfånget openid — en förlitande part är en OAuth-klient som också vill ha en ID Token, så en post bär ofta båda slagen."
+  },
+  "applications.kinds.saml2-service-provider.label": {
+    "en": "d9997212d7ad263b",
+    "text": "SAML 2.0-tjänsteleverantör"
+  },
+  "applications.kinds.saml2-service-provider.what": {
+    "en": "f83fcd03aa0aca09",
+    "text": "Målgruppen för ett SAML 2.0-intygande som den här tjänsten utfärdat."
+  },
+  "applications.kinds.saml11-relying-party.label": {
+    "en": "9abb39b3d0f1ed3c",
+    "text": "Förlitande part i SAML 1.1"
+  },
+  "applications.kinds.saml11-relying-party.what": {
+    "en": "4d826e30dbea03d6",
+    "text": "Målgruppen för ett SAML 1.1-intygande — vilket är vad en förlitande part i WS-Federation får som standard, så dessa två visas ofta tillsammans."
+  },
+  "applications.kinds.wsfed-relying-party.label": {
+    "en": "357be565b6f394e2",
+    "text": "WS-Federation-applikation"
+  },
+  "applications.kinds.wsfed-relying-party.what": {
+    "en": "8882d3936c581ca7",
+    "text": "En wtrealm från en wsignin1.0-begäran (avsnitt 13.2.1)."
+  },
+  "applications.kinds.wstrust-relying-party.label": {
+    "en": "c7d4443f1d20d799",
+    "text": "Förlitande part i WS-Trust"
+  },
+  "applications.kinds.wstrust-relying-party.what": {
+    "en": "27bcd37dd10ee019",
+    "text": "En AppliesTo från en RequestSecurityToken — den tjänst som token är till för."
+  },
+  "applications.kinds.oid4vp-verifier.label": {
+    "en": "8f530299a9f890c0",
+    "text": "OpenID4VP-verifierare"
+  },
+  "applications.kinds.oid4vp-verifier.what": {
+    "en": "ecba6c8462d69614",
+    "text": "Det client_id som den här tjänstens Verifier presenterar i en Authorization Request."
+  },
+  "applications.kinds.federation-identity-provider.label": {
+    "en": "3f6b9e4e19beb32d",
+    "text": "Federerad identitetsleverantör"
+  },
+  "applications.kinds.federation-identity-provider.what": {
+    "en": "0d2adcc59a7c1995",
+    "text": "En EXTERN identitetstjänst som den här instansen federerar med som tjänsteleverantör — den autentiserar personer TILL den här tjänsten snarare än att be den OM något, vilket gör den till det enda slaget här som inte är en klient. Den finns i det här registret ändå, eftersom frågan som den här behållaren finns för att besvara är \"vilka parter har den här tjänsten haft att göra med?\" och en federationspartner är den mest betydelsefulla av dem: det är en part vars signatur den här tjänsten TROR PÅ. Se federation/CLAUDE.md. Själva relationen — slutpunkterna, certifikatet, attributmappningen — finns under ou=federations och inte här; den här posten är partnern som part, och den andra är arrangemanget med den."
+  },
+  "applications.kinds.kerberos-service.label": {
+    "en": "c60a52be697d41a7",
+    "text": "Kerberos-tjänsteprincipal"
+  },
+  "applications.kinds.kerberos-service.what": {
+    "en": "066a9468344f9c0d",
+    "text": "Ett tjänsteprincipalnamn som en biljett utfärdades för, eller som acceptorn ombads vara."
+  },
+  "applications.kinds.gnap-client.label": {
+    "en": "ea237766411168ed",
+    "text": "GNAP-klientinstans"
+  },
+  "applications.kinds.gnap-client.what": {
+    "en": "42cf02b486bd48ab",
+    "text": "En nyckel (eller instansidentifierare) som gjorde en GNAP-begäran om beviljande."
+  },
+  "applications.kinds.gnap-resource-server.label": {
+    "en": "5a9da6b3e05542bf",
+    "text": "GNAP-resursserver"
+  },
+  "applications.kinds.gnap-resource-server.what": {
+    "en": "dcbb24cab569794d",
+    "text": "En nyckel som anropade API:t för resursservrar: introspektion, registrering av resursuppsättningar eller en nedströms tokenhärledning."
+  },
+  "applications.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "applications.protocols.oauth2.what": {
+    "en": "fe4f3acd275e39a1",
+    "text": "Ett client_id vid auktoriserings- och tokenslutpunkterna."
+  },
+  "applications.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "applications.protocols.oidc.what": {
+    "en": "1ce7cc23cb0f3a91",
+    "text": "Samma client_id som ber om omfånget openid, och därmed om en ID Token. En förlitande part ÄR en OAuth-klient, så dessa två markeras oftast tillsammans; att markera bara den här är tillåtet och säger att posten är för ett OIDC-flöde."
+  },
+  "applications.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "applications.protocols.saml2.what": {
+    "en": "cae55da402c3a60c",
+    "text": "Ett entityID för en tjänsteleverantör i profilen Web Browser SSO vid /saml2, eller målgruppen för ett SAML 2.0-intygande som utfärdats någon annanstans här."
+  },
+  "applications.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "applications.protocols.saml11.what": {
+    "en": "0f0b81ee62d1009e",
+    "text": "En förlitande part i de två webbläsarprofilerna vid /saml11 — och det som en WS-Federation-applikation får som standard, vilket är varför dessa två ofta markeras tillsammans."
+  },
+  "applications.protocols.wsfed.label": {
+    "en": "75ea234d7b01e1aa",
+    "text": "WS-Federation"
+  },
+  "applications.protocols.wsfed.what": {
+    "en": "cd68aba0fbb971af",
+    "text": "En wtrealm i en wsignin1.0-begäran (avsnitt 13.2.1)."
+  },
+  "applications.protocols.wstrust.label": {
+    "en": "3b83c15d86c7c8b4",
+    "text": "WS-Trust"
+  },
+  "applications.protocols.wstrust.what": {
+    "en": "9cedca1464312341",
+    "text": "En AppliesTo i en RequestSecurityToken — den tjänst som token utfärdas FÖR."
+  },
+  "applications.protocols.krb5.label": {
+    "en": "94391c36fe99d961",
+    "text": "Kerberos v5"
+  },
+  "applications.protocols.krb5.what": {
+    "en": "e0907807887b2538",
+    "text": "Ett tjänsteprincipalnamn som en biljett får utfärdas för, eller som acceptorn kan ombes vara. Detta täcker SPNEGO (HTTP Negotiate, RFC 4559) till en Kerberos-skyddad tjänst, som bär samma biljett. Att logga in personer i den här applikationen med SPNEGO är inte en familj: lista spnego i appAuthnMechanism, och deklarera det protokoll genom vilket applikationen får sina tokens eller intyganden."
+  },
+  "applications.protocols.oid4vci.label": {
+    "en": "6a5c76ded81999e5",
+    "text": "OpenID4VCI"
+  },
+  "applications.protocols.oid4vci.what": {
+    "en": "485e6cdaf91b1a44",
+    "text": "En plånbok som hämtar ett verifierbart intyg från utfärdaren. Plånboken presenterar ingen egen applikationsidentifierare i det flödet — den autentiserar sig som en OAuth-klient och registreras som en — så den här familjen har inget slag och ingenting kommer någonsin att markera den som sedd."
+  },
+  "applications.protocols.oid4vp.label": {
+    "en": "e2031ac8e75c04a0",
+    "text": "OpenID4VP"
+  },
+  "applications.protocols.oid4vp.what": {
+    "en": "23aae2a858af04d4",
+    "text": "Ett client_id för en verifierare i en Authorization Request som ber om en presentation."
+  },
+  "applications.protocols.federation.label": {
+    "en": "f8c6e8016cfb9bea",
+    "text": "Federation"
+  },
+  "applications.protocols.federation.what": {
+    "en": "51f9dc86ae390cb9",
+    "text": "En EXTERN identitetstjänst på andra sidan av en federationsrelation. Det är det enda i det här registret som inte är en klient till den här tjänsten — den autentiserar personer TILL den. Dess OBSERVATION registreras under vilket protokoll relationen än talar, så protokolletiketten på en sådan post går inte att skilja från en vanlig klients och SLAGET är det enda som skiljer dem åt — vilket är hela skälet till att den här tabellen matchar på slag. Själva relationen finns under ou=federations; se federation/CLAUDE.md."
+  },
+  "applications.protocols.ldap.label": {
+    "en": "9018a328b2984963",
+    "text": "LDAP"
+  },
+  "applications.protocols.ldap.what": {
+    "en": "9e2b2e44593ddedf",
+    "text": "En katalogklient som gör bind på 389 eller LDAPS 636. VARJE BIND HÄR LYCKAS och ingen av dem namnger en applikation, så ingenting kommer någonsin att registrera en observation för den här familjen — att markera den säger vad posten är till för och inget mer."
+  },
+  "applications.protocols.scim.label": {
+    "en": "98fe74b2a48a690f",
+    "text": "SCIM 2.0"
+  },
+  "applications.protocols.scim.what": {
+    "en": "ce2bae136c7ecd7f",
+    "text": "En etableringsklient vid /scim/v2. Den ytan autentiserar sin ANROPARE — i något av de sex scheman som RFC 7644 avsnitt 2 namnger — snarare än en applikationsidentifierare, så, som med LDAP, skriver ingenting in den här familjen i appProtocol."
+  },
+  "applications.protocols.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "applications.protocols.spiffe.what": {
+    "en": "6d81b6713ac464a6",
+    "text": "En arbetslast på Workload API, eller en agent eller administratör på SPIRE Server API. En SPIFFE-identitet får en egen post under ou=spiffe snarare än en här (se spiffe/CLAUDE.md), så detta är en deklaration och aldrig en registrering."
+  },
+  "applications.protocols.mtls.label": {
+    "en": "84f3396586f6fc6d",
+    "text": "TLS / ömsesidig TLS"
+  },
+  "applications.protocols.mtls.what": {
+    "en": "eb9407b59ae6b377",
+    "text": "En klient som autentiserar sig mot tokenslutpunkten enligt RFC 8705. Ett TLS-klientcertifikat som utfärdats till applikationen från dess avsnitt Autentiseringsuppgifter autentiserar den under tls_client_auth utan att något registreras; ett certifikat från en annan utfärdare behöver EN av de fem subjektparametrarna (oauthTlsClientAuthSubjectDn och de fyra oauthTlsClientAuthSan*-attributen), och self_signed_tls_client_auth läser jwks x5c eller oauthTlsClientCertificateThumbprint — så att markera den här rutan är en anteckning till dig själv, och de är konfigurationen."
+  },
+  "applications.protocols.ssf.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "applications.protocols.ssf.what": {
+    "en": "4042b281e588be6c",
+    "text": "En Shared Signals-MOTTAGARE: något som kommer överens om en ström vid /ssf/stream och sedan får Security Event Tokens levererade. Dess identifierare är vad den än autentiserade sig som när den skapade strömmen, vilket är den `aud` som dessa SET:ar bär, och dess leveransslutpunkt är dit en push går. Ingen av dem läses som en behörighet — en ström bär sin egen leveransslutpunkt och den här posten är där en operatör skriver ner vad en mottagare FÖRVÄNTAS vara, bredvid allt annat som den applikationen är."
+  },
+  "applications.protocols.gnap.label": {
+    "en": "6bc8ff11f56aea8c",
+    "text": "GNAP"
+  },
+  "applications.protocols.gnap.what": {
+    "en": "86edbf0cbc0fcbab",
+    "text": "En GNAP-klientinstans, eller en GNAP-resursserver, eller båda: en part som bevisar innehav av en nyckel för /gnap (RFC 9635) eller för API:t för resursservrar (RFC 9767). Dess nyckel är gnapKey (ett publikt nyckelobjekt) eller gnapKeyReference med en förseglad gnapSymmetricKey; dess finish-URI:er är returadresser som alla andra; en resursserver bär de platser den svarar för och, när den har registrerat en resursuppsättning, den rotnyckel för macaroons som den verifierar med."
+  },
+  "applications.protocols.acme.label": {
+    "en": "a8308e8e2e4b7330",
+    "text": "ACME"
+  },
+  "applications.protocols.acme.what": {
+    "en": "a497ff001f194be7",
+    "text": "Certifikatregistrering över ACME (RFC 8555) vid /enroll/acme: ett ACME-konto bundet till den här applikationen med en External Account Binding-nyckel. Dess certifikat namnger urn:sts:application:<id> och förvaras på den här posten."
+  },
+  "applications.protocols.est.label": {
+    "en": "c3a1bdb094702a36",
+    "text": "EST"
+  },
+  "applications.protocols.est.what": {
+    "en": "cc7e6d70b3c9a590",
+    "text": "Certifikatregistrering över EST (RFC 7030) vid /.well-known/est: den här applikationen autentiserar sig med sitt klient-id och sin hemlighet, eller med ett certifikat som den här sfären utfärdat till den."
+  },
+  "applications.protocols.scep.label": {
+    "en": "3f6fe5ff8213a188",
+    "text": "SCEP"
+  },
+  "applications.protocols.scep.what": {
+    "en": "3aa1a8167ba7b6a1",
+    "text": "Certifikatregistrering över SCEP (RFC 8894) vid /enroll/scep: ett utmaningslösenord för engångsbruk som skapats för den här applikationen."
+  },
+  "applications.protocols.did.label": {
+    "en": "be52dffd72816927",
+    "text": "Decentraliserad identifierare (DID)"
+  },
+  "applications.protocols.did.what": {
+    "en": "ccfbaceacd779cc0",
+    "text": "En W3C DID som beskriver den här applikationen: did:web:<host>[:realm:<id>]:applications:<identifier>, vars dokument annonseras av den här tjänsten på <base>/applications/<identifier>/did.json. Dokumentet publicerar de publika nycklarna i didPublicKeyJwk (generera ett nyckelpar, eller klistra in den publika halvan av ditt eget), tjänsterna i didService och URI:erna i didAlsoKnownAs. Ingenting utfärdas genom den här familjen: det är så applikationen identifieras och dess nycklar hittas."
+  },
+  "applications.protocols.secret-destination.label": {
+    "en": "c9d21f45ee42c8f9",
+    "text": "Destination för hemlighetspush"
+  },
+  "applications.protocols.secret-destination.what": {
+    "en": "c604726c3f603150",
+    "text": "En hemlighetshanterare som den här tjänsten SKICKAR ett tjänstekontos roterade lösenord till (#221): AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault, eller en HashiCorp Vault / OpenBao KV version 2-motor — och, endast i utvecklingsläge, en fil. Hemligheten måste redan finnas där: en push skriver en ny version och skapar aldrig en. Skrivautentiseringsuppgiften (secretDestCredential) är förseglad på den här posten och visas aldrig. Ingenting utfärdas genom den här familjen."
+  },
+  "applications.protocols.scim-client.label": {
+    "en": "9be47ed83dd2d7b2",
+    "text": "SCIM-klient (utgående etablering)"
+  },
+  "applications.protocols.scim-client.what": {
+    "en": "b4c33bcec8578230",
+    "text": "En fjärransluten SCIM 2.0-tjänsteleverantör som den här tjänsten SKICKAR användare och grupper till (#552): RFC 7643-resurser över RFC 7644, skapade, ersatta eller patchade, inaktiverade eller borttagna när katalogen ändras, och avstämda på begäran eller enligt ett schema. Den autentiserar sig med HTTP Basic, en OAuth 2.0 client_credentials-token eller ett TLS-klientcertifikat; varje autentiseringsuppgift är förseglad på den här posten och visas aldrig. Konfigureras på Protokoll → SCIM → Klienter. Ingenting utfärdas genom den här familjen."
+  },
+  "applications.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "Den abstrakta klass som varje post har."
+  },
+  "applications.schema.objectClasses.applicationProcess.what": {
+    "en": "dd82f17846370ea7",
+    "text": "Den enda REGISTRERADE objektklass som passar en applikation. Den tar med sig cn, description, seeAlso, ou och l — så NAMNET på en applikation här är ett standardattribut även om inget annat om den kan vara det."
+  },
+  "applications.schema.objectClasses.stsApplication.what": {
+    "en": "1687dbb8042b2835",
+    "text": "PÅHITTAD, eftersom inget registrerat LDAP-schema har ett client_id, en uppsättning omdirigerings-URI:er, ett entityID eller ett tjänsteprincipalnamn. Varje produkt som lagrar OAuth-klienter håller dem i sin egen databas snarare än i en katalog, så det fanns ingenting att låna. Det här är den här tjänstens egna namn, på samma sätt som x509subject och didSubject redan är det."
+  },
+  "applications.schema.attributes.appIdentifier.what": {
+    "en": "db19692c7629ad26",
+    "text": "NYCKELN: identifieraren exakt som protokollet presenterade den. Postens eget cn kan vara ett sammandrag av den där den är för lång för att vara ett läsbart RDN, så det här är attributet att söka på — samma arrangemang som didSubject har på en person namngiven med DID."
+  },
+  "applications.schema.attributes.cn.what": {
+    "en": "6fc8c608a7cfc89a",
+    "text": "RDN-värdet: själva identifieraren, eller app-<12 hex> där den skulle vara längre än 64 tecken."
+  },
+  "applications.schema.attributes.appName.what": {
+    "en": "9193fd826474105f",
+    "text": "Vad den ska kallas på en sida. En registrering anger ett; annars är identifieraren namnet, eftersom att hitta på ett vänligt namn för ett ogenomskinligt id vore att hitta på ett faktum."
+  },
+  "applications.schema.attributes.appHomePageUrl.what": {
+    "en": "bb7f9df5947fbef1",
+    "text": "APPLIKATIONENS EGEN STARTSIDA: dit en person går för att nå den, och därför där en inloggning till den börjar. Det är vad /portal/applications länkar varje rad till, och en post utan en ritas där utan länk snarare än med en gissad adress. DEKLARERAD och aldrig härledd — omdirigerings-URI:erna bredvid den är återanrop och inte ytterdörrar, så ingenting beräknar den från dem. Endast http eller https, eftersom den blir en href."
+  },
+  "applications.schema.attributes.appCorsOrigin.what": {
+    "en": "03bcebb131e7b340",
+    "text": "DE URSPRUNG SOM EN WEBBSIDA FÅR ANROPA DEN HÄR TJÄNSTEN FRÅN FÖR DEN HÄR APPLIKATIONEN — `https://app.example.com`, ett exakt ursprung per värde, utan sökväg och utan jokertecken. En begäran som namnger den här applikationen som sin klient (ett client_id, en Basic-autentiseringsuppgift, ett klientintygande eller en åtkomsttoken utfärdad till den) besvaras med Access-Control-Allow-Origin bara när dess Origin finns listad här; en begäran som inte namnger någon klient alls — discovery, en JWKS, ett DID-dokument, en CORS-preflight — besvaras för ett ursprung som finns listat på NÅGON applikation i sfären. TOMT TILLÅTER INGET TREDJEPARTSURSPRUNG, i båda lägena. Den här tjänstens egna ursprung (dess lyssnare, global.publicBaseUrl, den inbäddade debuggern och global.corsOrigins) behöver aldrig listas. Normaliseras när det skrivs: schema och värd i gemener, en standardport tas bort."
+  },
+  "applications.schema.attributes.appKind.what": {
+    "en": "33629ff0f1ba7b81",
+    "text": "Vad den här applikationen ÄR, ett värde per roll den har setts i. Flera är det vanliga fallet och är poängen: en OAuth-klient som ber om omfånget openid är också en förlitande part."
+  },
+  "applications.schema.attributes.appProtocol.what": {
+    "en": "f52b7b33a4356dba",
+    "text": "De protokollfamiljer den har förekommit i, ackumulerat."
+  },
+  "applications.schema.attributes.appAllowedProtocol.what": {
+    "en": "45439186294a129f",
+    "text": "DE PROTOKOLLFAMILJER SOM DEN HÄR APPLIKATIONEN ÄR DEKLARERAD FÖR, ett värde per familj, från den slutna tabell som PROTOCOLS publicerar. Det är den DEKLARERADE tvillingen till appProtocol ovan och de två får inte läsas som en sak: det attributet är vad som har hänt och kan inte redigeras, det här är vad någon sa att applikationen är till för och markeras på /admin/applications/new innan den någonsin har anslutit. Det beviljar ingenting. I PRODUKTläge avvisar utfärdandepolicyn ett utfärdande genom en familj som den inte namnger — en applikation deklarerad enbart för SAML 2.0 nekas en åtkomsttoken (STS-XACML-0084); i utveckling avvisar den ingenting. Deklarerad för ingenting avvisas ingenting i något av lägena."
+  },
+  "applications.schema.attributes.appAuthorizationServer.what": {
+    "en": "c825e716fe988b04",
+    "text": "VILKA AUKTORISERINGSSERVRAR den här klienten har använt, efter namnet i deras sökvägar — ett värde per server den har setts vid. Den här processen publicerar flera, var och en med sina egna funktioner och sina egna slutpunkter under /{id}/oauth2/…, och VARJE KLIENT FÅR ANVÄNDA VAR OCH EN av dem: ingenting här begränsar en klient till en server, så detta registrerar var den HAR varit snarare än vart den får gå. Ackumulerat, eftersom en klient som talar med två av dem är en klient med två värden och inte två klienter."
+  },
+  "applications.schema.attributes.description.what": {
+    "en": "81229d2596ad5f00",
+    "text": "Vad den här applikationen är, i en mening. Ett värde: tills någon skriver ett säger det hur applikationen först kom hit."
+  },
+  "applications.schema.attributes.appFirstSeen.what": {
+    "en": "035402abf1f3f295",
+    "text": "GeneralizedTime, när den här identifieraren först presenterades."
+  },
+  "applications.schema.attributes.appLastSeen.what": {
+    "en": "99233531c45a7ba1",
+    "text": "GeneralizedTime, den senaste gången."
+  },
+  "applications.schema.attributes.appAuthentications.what": {
+    "en": "e453d78bb1daee11",
+    "text": "Hur många autentiseringsuppgifter som den här tjänsten har godtagit FÖR den här applikationen. TILLDELAS vid varje ändring — en räknare som samlade på sig värden vore nonsens — och det är ett levande tal i en katalogpost, vilket är ovanligt nog att säga högt: en riktig katalog skulle inte hålla ett."
+  },
+  "applications.schema.attributes.appSessions.what": {
+    "en": "74c806c6cf9b69f8",
+    "text": "Hur många DISTINKTA inloggningssessioner i webbläsaren som har involverat den. Räknas från det sessions-id som följer med autentiseringstratten, så ett direkt beviljande utan någon webbläsarsession bakom sig tillför ingenting."
+  },
+  "applications.schema.attributes.appUsers.what": {
+    "en": "78bcd4b5578f86b8",
+    "text": "Hur många distinkta identiteter som har autentiserats för den. Själva identiteterna listas INTE här: en applikation som används av tvåtusen personer skulle annars lägga tvåtusen värden på en post."
+  },
+  "applications.schema.attributes.appLastSession.what": {
+    "en": "74b4f32d920e36d9",
+    "text": "Det senaste inloggningssessions-id:t. Det är vad appSessions räknas mot — ett annat ökar räkningen — och det finns på posten snarare än i minnet eftersom posten är lagret: utan det skulle en omstart av ingenting alls räkna om den session som redan räknats."
+  },
+  "applications.schema.attributes.appLastUser.what": {
+    "en": "a33e3ab766bdbaf9",
+    "text": "Den senaste identiteten, av samma skäl och med samma begränsning: den räknar ett BYTE av användare snarare än en distinkt mängd, vilket är rätt för det vanliga fallet och underskattar någon som växlar mellan två applikationer. Anges i seen() där avvägningen görs."
+  },
+  "applications.schema.attributes.appRegistered.what": {
+    "en": "1ee5893663bda0e9",
+    "text": "TRUE när den här applikationen gick igenom dynamisk klientregistrering här, FALSE när den helt enkelt är ett client_id som dök upp. Det registrerar HUR applikationen kom hit och inte vad som räknas: RFC 9700-läget bedömer en klient mot dess eget oauthRedirectUri närhelst posten har ett, hur den än kom dit, och mot inställningen oauth2.redirectUris bara när den inte har något — vilket OAuth 2.1-läget i stället avvisar. En utelämnad token_endpoint_auth_method betyder client_secret_basic för en registrerad klient och ingenting för en som skapats för hand."
+  },
+  "applications.schema.attributes.appRegisteredBy.what": {
+    "en": "7472cd23e6e908b3",
+    "text": "Hur den här applikationen registrerades, när den gjorde det: \"administrator\" (skapad på /admin/applications/new eller via hanterings-API:t), \"rfc7591\" (POST /oauth2/register), \"ldap:<bound DN>\" (ett LDAP-tillägg under ou=applications, #504; \"ldap\" för ett obundet) eller \"startup\" (en av den här tjänstens egna förinstallerade klienter). Saknas på en applikation som helt enkelt dök upp. Skrivs av det här registret och av ett LDAP-tillägg, som behåller ett värde som dess upphovsperson angav; en LDAP-modify stämplar det aldrig. I PRODUKTLÄGE ÄR DET DETTA SOM GÖR ATT EN APPLIKATION BETJÄNAS (#496): en post utan det — en som en observation i utveckling arkiverade — besvaras som ingen applikation vid varje protokolldörr."
+  },
+  "applications.schema.attributes.appFederationRegistration.what": {
+    "en": "f86a04098367f409",
+    "text": "\"automatic\" (dess första signerade autentiseringsbegäran) eller \"explicit\" (dess Entity Configuration skickad med POST till /oidfed/register)."
+  },
+  "applications.schema.attributes.appFederationExpiresAt.what": {
+    "en": "0ff15cde7d7b84d0",
+    "text": "När registreringen upphör, i SEKUNDER sedan epoken: Trust Chain:ens egen utgångstid, eller oidfed.registrationLifetimeS om den kommer först."
+  },
+  "applications.schema.attributes.appFederationTrustAnchor.what": {
+    "en": "ea39ae6600e267d6",
+    "text": "Det Trust Anchor som dess kedja slutade vid."
+  },
+  "applications.schema.attributes.oauthClientId.what": {
+    "en": "1e1a912a88773d34",
+    "text": "CLIENT_ID, och identifierarattributet för tre familjer: en förlitande part i OpenID Connect ÄR en OAuth-klient, och en plånbok som hämtar ett intyg hos OpenID4VCI-utfärdaren autentiserar sig som en, så alla tre deklarerar sitt namn här snarare än i tre attribut som skulle vara tre stavningar av ett faktum. Vanligtvis lika med appIdentifier, vilket är vad en protokollobservation skriver; ett ANDRA värde är ett client_id som den här applikationen också svarar på — ett id per miljö — och är varför detta ackumuleras snarare än tilldelas. Saknas på en post för vilken ingen OAuth-familj har deklarerats."
+  },
+  "applications.schema.attributes.oauthAudience.what": {
+    "en": "85845f64442f584e",
+    "text": "DEN MÅLGRUPP SOM DEN HÄR APPLIKATIONEN SVARAR PÅ — den `aud` som en åtkomsttoken adresserad till den bär, och det som en klient lägger i RFC 8693 avsnitt 2.1:s `audience` (eller `resource`) när den byter en token för att nå den här applikationen. Det är OAuth-stavningen av ett faktum som tre andra familjer här redan registrerar under sina egna namn: `wstrustAppliesTo` är samma sak i en RequestSecurityToken och `samlEntityId` är samma sak i ett intygandes AudienceRestriction, och ett attribut som höll alla tre skulle vara en sträng som måste betyda det som det protokoll som frågade senast avsåg.\n\nDet är DEKLARERAT — ingen presenterar en målgrupp som sitt eget namn, så ingenting här skriver det och det kan inte härledas — och det är en URI snarare än ett client_id eftersom det är vad en målgrupp är: resursen, inte klienten som anropar den. Flera värden är det vanliga fallet (ett värdnamn per miljö), vilket är varför det ackumuleras.\n\n**DET LÄSES, VILKET GÖR DET TILL UNDANTAGET** bland deklarationsattributen bredvid det. Tokenutbytet slår UPP en `audience` här — forAudience() — så att en delegering som registrerats för `https://esb1.example.com` namnger applikationen `esb1` på /admin/delegation och i dess bild, i stället för att rita en ruta för en URL som inget annat i registret nämner. Det är en UPPSLAGNING och inte en behörighet: en målgrupp som ingen registrerat byts precis som förut och registreras ordagrant, eftersom en tjänst som avvisade skulle ta bort ett testfall snarare än lägga till ett."
+  },
+  "applications.schema.attributes.oauthClientSecret.what": {
+    "en": "3acdc90938720b6b",
+    "text": "DE HEMLIGHETER SOM DEN HÄR TJÄNSTEN PRÄGLAT ELLER FÅTT. Varje värde är FÖRSEGLAT under nyckelkrypteringsnyckeln överallt där processen har en beständig sådan (sedan 2026-10-01), så en katalogläsning, en databasrad och en säkerhetskopia innehåller chiffertext; utan en (utveckling) ligger det i klartext. Konsolen och /admin-api, bakom en autentiseringsuppgift, visar det öppnat. Skrivs aldrig till granskningsloggen.\n\nFLERA SEDAN 2026-10-01, VAR OCH EN EN POST: {\"id\",\"secret\",\"created\",\"expires\",\"description\"}, de två tiderna i sekunder sedan epoken och `expires` 0 för aldrig. Varje hemlighet som inte gått ut autentiserar; den NYASTE som inte gått ut är den som den här tjänsten signerar och krypterar med och det client_secret som RFC 7591 och 7592 returnerar. Ett ensamt värde (en ldapmodify, en set) är en hemlighet utan utgång; en set ERSÄTTER varje hemlighet, och avsnittet Autentiseringsuppgifter lägger till, tar bort och roterar dem en i taget, högst oauth2.clientSecretsMax."
+  },
+  "applications.schema.attributes.oauthRedirectUri.what": {
+    "en": "36056278a77af2f2",
+    "text": "Registrerade omdirigerings-URI:er från en registrering, och varje redirect_uri som den här tjänsten har GODTAGIT för applikationen bredvid dem. De två är inte samma påstående och registret slår inte ihop dem i tysthet — se appRedirectUriObserved."
+  },
+  "applications.schema.attributes.appRedirectUriObserved.what": {
+    "en": "8ef752a64a9931a4",
+    "text": "En redirect_uri som setts i en auktoriseringsbegäran som den här tjänsten besvarade. Hålls åtskild från oauthRedirectUri eftersom \"registrerad\" och \"använd\" är olika fakta, och RFC 9700 avsnitt 2.1 handlar helt om att inte blanda ihop dem: en kontroll med exakt matchning läser den registrerade listan, och den här är bevis på vad en klient faktiskt gör."
+  },
+  "applications.schema.attributes.appReturnAddressObserved.what": {
+    "en": "c0072e90e57245a4",
+    "text": "VILKA RETURADRESSER PÅ DEN HÄR POSTEN SOM ALDRIG REGISTRERATS AV NÅGON. Varje värde är `<attribute> <address>` — till exempel `samlAssertionConsumerService https://sp.example.com/acs` — och markerar en adress som en begäran i UTVECKLINGSläge namngav, vilken utvecklingsläget skriver på posten eftersom det tror på varje adress. PRODUKTläget behandlar en markerad adress som INTE registrerad och avvisar den precis som det avvisar en som inte finns på posten alls, så en sfär som byts från utveckling till produkt litar inte i tysthet på det som utvecklingsläget lärt sig. En operatör BEKRÄFTAR en (markeringen försvinner, adressen stannar), KASSERAR en (båda försvinner) eller skriver adressen uttryckligen, vilket bekräftar den. Adresser som registrerades INNAN det här attributet fanns bär ingen markering och kan inte skiljas från registrerade — granska dem för hand."
+  },
+  "applications.schema.attributes.oauthPostLogoutRedirectUri.what": {
+    "en": "2008a5c4fcddceb4",
+    "text": "Registrerade post_logout_redirect_uris, som RP-Initiated Logout matchar mot exakt, i varje läge (#124)."
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutUri.what": {
+    "en": "8c640a5c7d635f32",
+    "text": "DÄR DEN HÄR KLIENTEN FÅR VETA ATT ANVÄNDAREN LOGGADE UT — OpenID Connect Front-Channel Logout 1.0 avsnitt 2:s frontchannel_logout_uri. Utloggningssidan läser in den i en dold iframe, med iss och sid i frågesträngen när klienten bad om dem. Den har ETT värde eftersom specifikationen definierar en URI per klient, till skillnad från omdirigerings-URI:erna bredvid den; en klient som inte har registrerat någon aviseras inte alls och listas som sådan på /logout snarare än att i tysthet hoppas över."
+  },
+  "applications.schema.attributes.oauthFrontchannelLogoutSessionRequired.what": {
+    "en": "501fcc040a4dd31f",
+    "text": "TRUE om den här klienten kräver `iss` och `sid` i aviseringen ovan — Front-Channel Logout 1.0 avsnitt 2:s frontchannel_logout_session_required. Det spelar roll eftersom en RP med flera sessioner i en webbläsare inte kan avgöra vilken som avslutades utan sid, och RFC 7591 avsnitt 2 gör en utelämnad boolesk till FALSE snarare än okänd — så ett saknat värde här betyder att klienten inte bad om det, vilket är ett annat faktum än att klienten inte har registrerat sig."
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutUri.what": {
+    "en": "3b143ba0baa349f2",
+    "text": "DIT DEN HÄR TJÄNSTEN SKICKAR EN LOGOUT TOKEN MED POST NÄR ANVÄNDAREN LOGGAR UT — OpenID Connect Back-Channel Logout 1.0 avsnitt 2.2:s backchannel_logout_uri. Varje utloggning av en session där den här klienten fick ett auktoriseringssvar skickar en, server till server, efter att utloggningen har besvarats, genom den utgående policyn (https med verifierat certifikat; ingen intern adress i produktläge). ETT värde, liksom front-channel-URI:n: specifikationen definierar en per klient. https utan fragment; http bara för en konfidentiell klient och bara där den utgående policyn skickar över http (federation.outboundAllowHttp, utvecklingsläge; avsnitt 2.2, #123)."
+  },
+  "applications.schema.attributes.oauthBackchannelLogoutSessionRequired.what": {
+    "en": "ceb948059d9c1807",
+    "text": "TRUE om den här klienten kräver `sid` i Logout Token — Back-Channel Logout 1.0 avsnitt 2.2:s backchannel_logout_session_required. Den här tjänsten lägger `sid` OCH `sub` i varje Logout Token den skickar, så flaggan respekteras alltid; den registreras eftersom \"false\" och \"inte angivet\" är olika fakta om en klient, som för front-channel-flaggan."
+  },
+  "applications.schema.attributes.oauthGrantType.what": {
+    "en": "0b1c949fd4f2f952",
+    "text": "De beviljandetyper som den här klienten får använda — RFC 7591 avsnitt 2:s grant_types, från en registrering eller skrivna av en administratör. Tokenslutpunkten avvisar varje annat beviljande (unauthorized_client), i varje läge; en tom lista begränsar ingenting. Vad klienten faktiskt har använt är oauthGrantTypeObserved."
+  },
+  "applications.schema.attributes.oauthResponseType.what": {
+    "en": "6be9c178253c7d2c",
+    "text": "De response_type-värden som den här klienten får be om — RFC 7591 avsnitt 2:s response_types, från en registrering eller skrivna av en administratör, varje värde en svarstyp (\"code\", \"code id_token\"). Auktoriseringsslutpunkten avvisar varje annan (unauthorized_client), i varje läge; en tom lista begränsar ingenting. Vad klienten faktiskt har bett om är oauthResponseTypeObserved."
+  },
+  "applications.schema.attributes.oauthGrantTypeObserved.what": {
+    "en": "377bd68db76fa783",
+    "text": "En beviljandetyp som den här klienten setts använda vid tokenslutpunkten. En registrering, inte en behörighet: oauthGrantType är vad den får använda."
+  },
+  "applications.schema.attributes.oauthResponseTypeObserved.what": {
+    "en": "4f06a60676c6cdb9",
+    "text": "En response_type som den här klienten setts be om vid auktoriseringsslutpunkten. En registrering, inte en behörighet: oauthResponseType är vad den får be om."
+  },
+  "applications.schema.attributes.oauthScope.what": {
+    "en": "04292dc39076baaf",
+    "text": "Omfång som den här applikationen har BETT OM, ackumulerade allteftersom den ber. OBSERVERADE, aldrig deklarerade: ingenting tillåts eller avvisas utifrån dem. Vad applikationen får utfärdas är oauthAllowedScope."
+  },
+  "applications.schema.attributes.oauthAllowedScope.what": {
+    "en": "318365370d864543",
+    "text": "DE OMFÅNG SOM DEN HÄR KLIENTEN FÅR UTFÄRDAS — RFC 7591 avsnitt 2:s `scope`, \"the list that the client can use when requesting access tokens\". En omfångstoken per värde. Tre slags omfång läser det olika.\n\n**Den här tjänstens egna skyddade omfång** — admin:read och admin:write (/admin-api), SCIM-omfången (scim.scopeRead, scim.scopeWrite), Shared Signals-omfången (ssf.authScopeRead, ssf.authScopeWrite) och debuggerbehörigheten — utfärdas ENDAST till en klient som listar dem, I BÅDA LÄGENA, och resursservern bakom var och en frågar igen vid varje anrop, så att ta bort ett värde här skär av redan utfärdade tokens. En RFC 7591-registrering får inte deklarera dem; en administratör gör det, här.\n\n**Varje annat omfång** utfärdas i produktläge bara när det listas här — eller, när ingenting listas, när det ingår i standarduppsättningen: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-omfång för intyg. I utveckling utfärdas vilket omfång som helst.\n\n**Ett omfång som namnger en applikation eller en delegerad behörighet** behåller sina egna regler (målgruppen, och oauthDelegatedPermission) och behöver inte listas.\n\nEtt omfång utanför listan avvisas med invalid_scope vid auktoriserings- och tokenslutpunkterna (RFC 6749 avsnitt 3.3), och tas bort vid en förnyelse eller ett tokenutbyte. Skilt från oauthScope, som bara är vad klienten har bett om."
+  },
+  "applications.schema.attributes.oauthPermissionBaseUri.what": {
+    "en": "a2b16552f308a9b4",
+    "text": "DEN BAS-URI SOM VARJE BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN DEFINIERAR HÄNGER UNDER, och det som gör ett behörighetsnamn globalt unikt här. En behörighet identifieras av det här värdet följt av sitt namn — basen `https://example.com/` och namnet `write` är behörigheten `https://example.com/write` — vilket är vad en klient lägger i ett `scope` och vad åtkomsttoken sedan får som MÅLGRUPP. Entra ID kallar det Application ID URI och stavar det `api://<guid>`; formen är densamma och ingenting här kräver det schemat.\n\nDEN NORMALISERAS SÅ ATT DEN SLUTAR MED EN AVGRÄNSARE när den skrivs genom den här modulen — ett avslutande `/` läggs till där det inte finns något `/`, `#` eller `:` i slutet — eftersom bas + namn är en ren sammanfogning och `https://example.com` + `write` annars skulle ge `https://example.comwrite`. En `ldapmodify` når det här attributet som alla andra och normaliseras inte, så en bas som skrivits för hand betyder exakt vad den säger.\n\nETT VÄRDE, och det är det enda attributet i den här gruppen som inte kunde breddas utan att något avgörs: två baser skulle innebära att varje behörighet på posten hade två identifierare, och uppslagningen som gör ett omfång till en målgrupp skulle behöva välja en att lägga i `aud`."
+  },
+  "applications.schema.attributes.oauthPermission.what": {
+    "en": "0c47fe049bbc6c7b",
+    "text": "EN BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN EXPONERAR, ett värde var. Värdet är behörighetens NAMN — `read`, `write`, `Widgets.ReadWrite.All` — eventuellt följt av `|` och en beskrivning: `write|Change widgets on somebody's behalf`. Det FÖRSTA `|` är avgränsaren och varje senare hör till beskrivningen, så en beskrivning får innehålla tecknet men ett namn får inte det.\n\nNamnet måste vara en giltig OAuth-omfångstoken (RFC 6749 avsnitt 3.3 — inget mellanslag, inget dubbelt citattecken, inget omvänt snedstreck), eftersom det är vad en klient lägger i en `scope`-parameter och vad som kommer tillbaka i tokens `scope`-anspråk. Ingenting upprätthåller det när en `ldapmodify` skriver det; den här modulen och båda konsolerna gör det.\n\nEN BEHÖRIGHET MÅSTE FINNAS INNAN NÅGOT KAN BEVILJAS DEN, vilket är den enda ordningsregel som den här funktionen har och kontrolleras i updateApplication() så att konsolformuläret och hanterings-API:t inte kan vara oense om den. Den kontrolleras vid BEVILJANDET och inte här: det här attributet är definitionen, och en definition som ingen har använt än är det vanliga första steget snarare än ett misstag."
+  },
+  "applications.schema.attributes.oauthRoleGatedPermission.what": {
+    "en": "fa1c86d8fb8ce2fb",
+    "text": "EN BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN DEFINIERAR OCH SOM BARA UTFÄRDAS TILL ETT SUBJEKT SOM HAR EN ROLL SOM AUKTORISERAR DEN. Ett värde var, behörighetens NAMN som `oauthPermission` anger det (`write`, inte den fullständiga identifieraren). En person eller en applikation som ber om en spärrad behörighet får den bara medan de har en roll vars `rolePermission` namnger den fullständiga identifieraren (bas + namn); annars utelämnas den från token (RFC 6749 avsnitt 3.3), och en begäran som inte ber om något annat avvisas med `invalid_scope`. En behörighet som inte listas här utfärdas som den alltid gjorde, vilket är det som håller varje befintlig klient fungerande tills någon väljer att använda detta.\n\nNamnet måste vara en av den här postens egna behörigheter när det skrivs genom den här modulen; en `ldapmodify` kontrolleras inte, och ett värde som inte namnger någon definierad behörighet spärrar ingenting, eftersom ingen begäran kan namnge det."
+  },
+  "applications.schema.attributes.oauthResourceMetadata.what": {
+    "en": "46f443d9a9272cd3",
+    "text": "DET METADATADOKUMENT FÖR SKYDDAD RESURS (RFC 9728) SOM DEN HÄR APPLIKATIONEN KONFIGURERADES FRÅN, som kompakt JSON. Dess `resource` är standardnamnet, `oauthPermissionBaseUri` och `oauthAudience` för en post som skapats från det, och dess `scopes_supported` behörigheterna; varje annan medlem — `authorization_servers`, `jwks_uri`, `bearer_methods_supported`, DPoP-medlemmarna — registreras här och ingen annanstans.\n\nDet är ENDAST DEKLARATION: ingenting läser tillbaka det, ingenting hämtar det på nytt, och att ändra det ändrar inget av de attribut det fyllde i. Ett värde som skrivs genom den här modulen måste vara ett JSON-objekt med en `resource`; en `ldapmodify` kontrolleras inte."
+  },
+  "applications.schema.attributes.oauthResourceMetadataUrl.what": {
+    "en": "0e8c5a19327706e7",
+    "text": "VARIFRÅN METADATADOKUMENTET FÖR SKYDDAD RESURS HÄMTADES, när det hämtades snarare än klistrades in eller laddades upp. Registreras och anropas aldrig igen: hämtningen är en administratörs handling på /admin/applications/new eller POST /admin-api/applications/load-resource-metadata, och ingenting uppdaterar den."
+  },
+  "applications.schema.attributes.oauthDelegatedPermission.what": {
+    "en": "78e514ee83d20e97",
+    "text": "EN BEHÖRIGHET SOM DEN HÄR APPLIKATIONEN HAR BEVILJATS PÅ EN ANNAN — hela behörighetsidentifieraren, bas-URI och namn tillsammans: `https://example.com/write`. Det är DELEGERINGSRELATIONEN, och den hålls på KLIENTEN snarare än på resursen av Entras skäl och ett till: klienten är den part som kommer att namnge den i ett `scope`, så den post som svarar på \"får den här begäran respekteras\" är den post som begäran identifierar.\n\n**DEN LÄSES, och den läses på det enda ställe som avgör vad en token säger.** Ett `scope`-värde som matchar en definierad behörighet blir åtkomsttokens `aud` (bas-URI:n) och dess `scope` (namnet) — se oauth2.js:s audienceScopes(). I PRODUKTLÄGE avvisas en obeviljad behörighet med `invalid_scope` vid auktoriserings- och tokenslutpunkterna, alltid. I utveckling rapporteras den och AVVISAR ingenting om inte `oauth2.delegatedPermissionsEnforced` är på, vilket är av som standard: en klient under test prövas av båda svaren.\n\nETT VÄRDE SOM INTE LÖSER UPP TILL NÅGON DEFINIERAD BEHÖRIGHET ÄR INTE ETT FEL OCH DÖLJS INTE. Resursens post kan ha tagits bort, eller behörigheten tagits bort under den; `/admin/delegation` visar ett sådant beviljande som DANGLING, vilket är samma ärlighet i tre tillstånd som resten av den här konsolen tillämpar på ett namn den inte kan lösa upp."
+  },
+  "applications.schema.attributes.oauthGlobalConsent.what": {
+    "en": "7e0e74028e48880c",
+    "text": "ETT OMFÅNG SOM INGEN TILLFRÅGAS OM NÄR DE LOGGAR IN I DEN HÄR APPLIKATIONEN. Ett värde per omfång, skrivet exakt som en klient lägger det i en `scope`-parameter — `openid`, `profile` eller en hel delegerad behörighetsidentifierare som `https://example.com/write`.\n\n**Det är en ÅSIDOSÄTTNING och inte en registrering.** Med `oauth2.consentRequired` på (vilket är standard) ritar auktoriseringsslutpunkten upp /oauth2/consent för varje omfång som den här personen inte har godkänt för den här applikationen; ett omfång som namnges här hoppas över för ALLA, och ingenting skrivs på någons post. Så att ta bort ett värde frågar alla igen — inklusive dem som skulle ha sagt ja — medan att ta bort en persons eget `oauthConsent` bara frågar dem.\n\n**Det är nycklat på paret och inte på omfånget ensamt.** Att samtycka till `read` här samtycker till det för DEN HÄR applikationen; en applikation som registreras fem minuter senare och stavar samma ord tillfrågas ändå.\n\nEtt värde som inte namnger någon behörighet som någon applikation definierar är inte ett fel och döljs inte — de flesta omfång är inte behörigheter. Det måste vara en giltig omfångstoken enligt RFC 6749 avsnitt 3.3, eftersom ett värde med ett mellanslag i aldrig skulle kunna matcha ett omfång; en `ldapmodify` når det här attributet som alla andra och kontrolleras inte, och /admin/consent visar vad den lade där."
+  },
+  "applications.schema.attributes.appOwner.what": {
+    "en": "a86634b10a7034de",
+    "text": "En person eller grupp i den här realmen som ansvarar för applikationen (#604), med DN, som en grupps och en rolls ägare. Flervärt, högst 25. En ägare GER INGENTING: inget i den här tjänsten läser den för att besluta något. Användarportalen listar vad en person äger."
+  },
+  "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
+    "en": "2d52b0e0fe8e25ca",
+    "text": "NÄR ETT GLOBALT SAMTYCKE DROGS TILLBAKA, som `<when> <scope>` med ögonblicket på millisekunden. Förnyelsebeviljandet avvisar en förnyelsetoken som beviljats före det och som vilade på den åsidosättningen, även efter att åsidosättningen lagts tillbaka — ett tillbakadraget beviljande återupplivas inte av nästa. Ett värde per omfång; ett senare tillbakadragande ersätter det tidigare. Skrivs av samtyckesregistret och aldrig av ett formulär."
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthMethod.what": {
+    "en": "3e1fd60dfab74200",
+    "text": "Hur den autentiserar sig — varje metod den får använda vid tokenslutpunkten, varav en begäran får presentera vilken som helst. `none` (en publik klient) kan inte kombineras med någon annan. RFC 7591 avsnitt 2 gör client_secret_basic till standard när en registrering utelämnar den, vilket är varför ett utelämnande betyder KONFIDENTIELL snarare än okänd."
+  },
+  "applications.schema.attributes.oauthNativeSso.what": {
+    "en": "582a2cbef470da1a",
+    "text": "TRUE låter den här klienten be om omfånget device_sso — och därmed få en device_secret — och delta i ett Native SSO-tokenutbyte, som den första appen eller den andra. Allt annat, standard, avvisar båda. Båda apparna i ett utbyte måste ha det OCH dela oauthNativeSsoGroup. En registrering får bara sätta det genom ett betrott software statement, eftersom gruppen är gränsen och en klient inte får välja sin egen."
+  },
+  "applications.schema.attributes.oauthNativeSsoGroup.what": {
+    "en": "78d42281463c5a94",
+    "text": "Native SSO-gruppen: de appar som får dela en enhetssession — i praktiken en leverantörs. Ett tokenutbyte avvisas om inte den app som tog emot ID Token och den app som frågar delar den. 1 till 64 bokstäver, siffror och . _ : -; ett tomt eller felformat värde tar klienten ur Native SSO."
+  },
+  "applications.schema.attributes.oauthBackchannelTokenDeliveryMode.what": {
+    "en": "ebaef707274ab832",
+    "text": "CIBA `backchannel_token_delivery_mode`: poll, ping eller push. En klient utan något får inte använda Backchannel Authentication Endpoint alls."
+  },
+  "applications.schema.attributes.oauthBackchannelClientNotificationEndpoint.what": {
+    "en": "f4bad1b37661210d",
+    "text": "CIBA `backchannel_client_notification_endpoint`: den https-URL som en ping eller en push skickas till med POST, under den utgående policyn. Krävs för ping och push."
+  },
+  "applications.schema.attributes.oauthCommandEndpoint.what": {
+    "en": "849117c9b5e7b475",
+    "text": "OpenID Provider Commands `command_endpoint` (#151): den https-URL som en Command Token skickas till med POST, under den utgående policyn. En klient utan någon får inga kommandon."
+  },
+  "applications.schema.attributes.oauthBackchannelAuthenticationRequestSigningAlg.what": {
+    "en": "cdfc398e17d181c0",
+    "text": "CIBA `backchannel_authentication_request_signing_alg`: när det är satt måste varje autentiseringsbegäran från den här klienten vara ett signerat begärandeobjekt med den här algoritmen (avsnitt 7.1.1)."
+  },
+  "applications.schema.attributes.oauthBackchannelUserCodeParameter.what": {
+    "en": "6c0f2095e873b568",
+    "text": "TRUE: varje autentiseringsbegäran från den här klienten bär personens `user_code` (CIBA avsnitt 7.1), en hemlighet som personen satt på /portal/ciba, vilket hindrar en klient som bara känner till ett namn från att skicka begäranden till dem."
+  },
+  "applications.schema.attributes.oauthSubjectType.what": {
+    "en": "cf054cc8fd5f57e3",
+    "text": "OIDC Core avsnitt 8 `subject_type`: `public` (standard, och vad ett tomt värde betyder) ger varje klient samma `sub`; `pairwise` ger den här klienten ett eget, härlett från personen, sektorn och en hemlighet som varje nod delar, så att två klienter i olika sektorer inte kan korrelera en person; `ephemeral` (#149) ger den ett slumpmässigt för varje autentisering, detsamma för allt som den autentiseringen utfärdar och aldrig igen därefter."
+  },
+  "applications.schema.attributes.oauthSectorIdentifierUri.what": {
+    "en": "2b77aa6b404dbdc0",
+    "text": "OIDC Core avsnitt 8.1 `sector_identifier_uri`: en https-URL vars VÄRD är den sektor som ett parvis `sub` härleds för, så att flera omdirigeringsvärdar hos en organisation ser ett subjekt. En REGISTRERING som namnger en får den HÄMTAD och måste listas i den JSON-array den levererar, varje omdirigerings-URI i den; en som skrivs här av en administratör är administratörens påstående och hämtas inte. Tomt: sektorn är omdirigerings-URI:ernas värd, som då alla måste dela en."
+  },
+  "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
+    "en": "c3cee680e93f74e1",
+    "text": "OIDC Core avsnitt 9 / RFC 7591 `token_endpoint_auth_signing_alg`: den ENDA JWS-algoritm som den här klientens autentiseringsintygande måste signeras med. Ett intygande signerat med någon annan avvisas, i varje läge. Tomt: vilken algoritm som helst som metoden tillåter."
+  },
+  "applications.schema.attributes.oauthJwks.what": {
+    "en": "ecb31a10d74a0998",
+    "text": "KLIENTENS PUBLIKA NYCKLAR, som ett JWKS-dokument — det som private_key_jwt verifieras mot (RFC 7591 `jwks`). Det här är den asymmetriska autentiseringsuppgift som RFC 9700 avsnitt 2.5 REKOMMENDERAR, och det är det enda autentiseringsattributet här som INTE är en hemlighet: det är publikt nyckelmaterial, värt ingenting för den som läser det, vilket är hela poängen med att föredra det framför en delad hemlighet."
+  },
+  "applications.schema.attributes.oauthJwksUri.what": {
+    "en": "99f551bf8039ea17",
+    "text": "RFC 7591 `jwks_uri`, https. HÄMTAS sedan #120, när en nyckel behövs, under federation/federation_http.ts:s utgående policy (https, ingen omdirigering, ett storlekstak, interna adresser avvisade i produktläge), cachas i oauth2.clientJwksCacheS och hämtas igen för ett okänt kid högst var oauth2.clientJwksRefetchS. Aldrig bredvid `oauthJwks`: RFC 7591 avsnitt 2 tillåter det ena eller det andra."
+  },
+  "applications.schema.attributes.oauthIntrospectionSignedResponseAlg.what": {
+    "en": "d3d0457a7d5c2198",
+    "text": "RFC 9701 avsnitt 6 `introspection_signed_response_alg`: JWS-algoritmen för det JWT-introspektionssvar som den här applikationen får när den frågar /oauth2/introspect med `Accept: application/token-introspection+jwt`. TOMT BETYDER RS256, avsnittets standard. Vilken algoritm som helst i `introspection_signing_alg_values_supported` — varje asymmetrisk som den här tjänsten har en nyckel för, och HS256/384/512 nycklade med den här applikationens eget client_secret. `none` avvisas: avsnitt 5 säger att svaret MUST vara kryptografiskt skyddat."
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseAlg.what": {
+    "en": "e7f4e5a5308b2858",
+    "text": "RFC 9701 avsnitt 6 `introspection_encrypted_response_alg`: den JWE-nyckelhanteringsalgoritm som det signerade introspektionssvaret KRYPTERAS till den här applikationen med, vilket gör det till en Nested JWT. TOMT BETYDER INTE KRYPTERAT. En av de asymmetriska algoritmerna (RSA-OAEP, RSA-OAEP-256, ECDH-ES och dess key-wrap-varianter), och nyckeln tas från den här postens `oauthJwks`, eller den uppsättning som dess `oauthJwksUri` svarar med (#120). De symmetriska familjerna avvisas: de är för ett dokument som krypteras TILL den här tjänsten."
+  },
+  "applications.schema.attributes.oauthIntrospectionEncryptedResponseEnc.what": {
+    "en": "a5b33f9189532b52",
+    "text": "RFC 9701 avsnitt 6 `introspection_encrypted_response_enc`: JWE-algoritmen för innehållskryptering. TOMT BETYDER A128CBC-HS256 när `oauthIntrospectionEncryptedResponseAlg` är satt. Det MUST NOT sättas utan det attributet, och en skrivning som försöker avvisas; en post som lämnas med bara det ena (genom `ldapmodify`, eller genom att rensa algoritmen) gör att JWT-introspektionssvaret misslyckas med orsaken snarare än att skickas okrypterat."
+  },
+  "applications.schema.attributes.oauthRequestUri.what": {
+    "en": "5aed34e258774de3",
+    "text": "OpenID Connect Registration `request_uris`: de request_uri-värden (RFC 9101 avsnitt 5.2) som den här klienten får skicka, ett per rad. AUKTORISERINGSSLUTPUNKTEN HÄMTAR EN request_uri ENDAST NÄR DEN ÄR EN AV DESSA, jämförd exakt när ett eventuellt #fragment har tagits bort — en request_uri som ingen registrerat avvisas med invalid_request_uri och anropas aldrig, vilket är det som hindrar hämtningen från att vara en server-side request forgery. https, eller http endast i utvecklingsläge."
+  },
+  "applications.schema.attributes.oauthRequestObjectSigningAlg.what": {
+    "en": "0f2db9e8b6d6472a",
+    "text": "OpenID Connect Registration `request_object_signing_alg`: den ENDA JWS-algoritm som ett begärandeobjekt från den här klienten godtas i. TOMT BETYDER VILKEN algoritm som helst i request_object_signing_alg_values_supported. `none` får bara registreras där ett osignerat begärandeobjekt överhuvudtaget godtas — utvecklingsläge, där inget signerat krävs."
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionAlg.what": {
+    "en": "32ae3a1152bab999",
+    "text": "OpenID Connect Registration `request_object_encryption_alg`: när det är satt MÅSTE ett begärandeobjekt från den här klienten krypteras (RFC 9101 avsnitt 6.1) med den här JWE-algoritmen för nyckelhantering — till den här sfärens nyckel för begärandeobjekt som publiceras i /oauth2/jwks (use: enc) för RSA-OAEP och ECDH-ES, eller till klientens egen client_secret för de symmetriska familjerna. TOMT BETYDER att kryptering är valfri."
+  },
+  "applications.schema.attributes.oauthRequestObjectEncryptionEnc.what": {
+    "en": "fb477df5cfbc6756",
+    "text": "OpenID Connect Registration `request_object_encryption_enc`: den JWE-innehållskryptering som ett begärandeobjekt från den här klienten måste använda. TOMT BETYDER A128CBC-HS256 när `oauthRequestObjectEncryptionAlg` är satt; det får inte sättas utan det attributet."
+  },
+  "applications.schema.attributes.oauthRequireSignedRequestObject.what": {
+    "en": "c9c63effbd13dd2a",
+    "text": "RFC 9101 avsnitt 10.5 `require_signed_request_object`, för enbart den här klienten: TRUE avvisar med invalid_request en auktoriseringsbegäran från den som saknar `request` eller `request_uri`, och ett begärandeobjekt signerat med `none`. FALSE eller tomt överlåter till oauth2.requireSignedRequestObject."
+  },
+  "applications.schema.attributes.oauthRequirePushedAuthorizationRequests.what": {
+    "en": "09a53af1a788654f",
+    "text": "RFC 9126 avsnitt 6 `require_pushed_authorization_requests`, för enbart den här klienten: TRUE avvisar med invalid_request en auktoriseringsbegäran från den som inte bär en request_uri utfärdad vid /oauth2/par. FALSE eller tomt överlåter till oauth2.requirePushedAuthorizationRequests."
+  },
+  "applications.schema.attributes.oauthHttpSignedRequests.what": {
+    "en": "e5c1786e8608f23a",
+    "text": "FAPI 2.0 HTTP Signatures, för enbart den här klienten: TRUE avvisar, med 401, en begäran till en resursserver med klientens åtkomsttoken som inte bär en giltig \"fapi-2-request\"-signatur (RFC 9421) av en nyckel i dess jwks eller jwks_uri. FALSE eller tomt överlåter till oauth2.httpSignatures."
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsType.what": {
+    "en": "103312425b7a3ae9",
+    "text": "En ÅTKOMSTTYP som den här applikationen äger i egenskap av resursserver — en per värde, läst av både RFC 9396 authorization_details och GNAP-åtkomsträttigheter. Ett bart typnamn, eller ett JSON-objekt {\"type\", \"description\", \"locations\", \"schema\", \"actions\", \"datatypes\", \"privileges\", \"required\", \"interaction\", \"consentActions\", \"bearer\", \"maxLifetimeS\", \"acr\", \"derivableFrom\", \"introspectionClaims\", \"limits\"}: `locations` är de adresser som en rättighet av den här typen får namnge (behörighetens bas-URI och oauthAudience räknas alltid), `schema` ett JSON Schema som varje rättighet av typen måste uppfylla, `actions`, `datatypes` och `privileges` de värden den får namnge, `required` de medlemmar den måste bära, `bearer: false` att en token som bär den är avsändarbunden, `maxLifetimeS` den längsta tid en sådan token lever, `derivableFrom` de typer den får härledas från (RFC 9767 avsnitt 4), `introspectionClaims` vad den här resursservern får veta om personen vid introspektion, och `limits` det JSON Schema (en delmängd) som en rättighets begränsningar måste uppfylla. `interaction` (always, default, never), `consentActions` och `acr` avgör, för GNAP, om resursägaren tillfrågas och hur starkt inloggad (#432 fas 6). En odeklarerad typ avvisas med invalid_authorization_details av RFC 9396 i alla lägen, och av GNAP i produktläge."
+  },
+  "applications.schema.attributes.oauthAuthorizationDetailsTypes.what": {
+    "en": "5a0acf9625882942",
+    "text": "RFC 9396 avsnitt 10 `authorization_details_types`: de ENDA authorization_details-typer som den här klienten får använda, en per värde. TOMT BETYDER varje typ som den här auktoriseringsservern stöder."
+  },
+  "applications.schema.attributes.oauthStepUpAcrValues.what": {
+    "en": "847d2fc846138cb9",
+    "text": "RFC 9470 avsnitt 3: de acr-värden som den här applikationen, i egenskap av resursserver, kräver av autentiseringen bakom en åtkomsttoken — blankstegsseparerade, det mest föredragna först. En token vars acr inte uppfyller något av dem utmanas med 401 insufficient_user_authentication med dessa som acr_values. Nivåerna 0 < 1 < mfa är ordnade; hwk, phr och phrh uppfylls av ett lösenord med en säkerhetsnyckel; alla andra värden bara av exakt den acr:en. TOMT kräver ingenting."
+  },
+  "applications.schema.attributes.oauthStepUpMaxAge.what": {
+    "en": "fdd12480b52b8006",
+    "text": "RFC 9470 avsnitt 3:s max_age: den äldsta autentisering, i hela sekunder, som den här applikationen godtar bakom en åtkomsttoken. En token vars auth_time är äldre, eller saknas, utmanas med 401 insufficient_user_authentication med max_age. 0 betyder en autentisering i denna sekund. TOMT kräver ingenting."
+  },
+  "applications.schema.attributes.oauthIdTokenSignedResponseAlg.what": {
+    "en": "8a855d8855d28896",
+    "text": "OpenID Connect Registration `id_token_signed_response_alg`: den JWS-algoritm som klientens ID Tokens signeras med — och dess Logout Tokens för bakkanalen och Command Tokens. TOMT BETYDER RS256 (PS256 under FAPI 1.0 Advanced). Vilken algoritm som helst i id_token_signing_alg_values_supported; en HMAC-algoritm nycklas med klienthemligheten. `none` avvisas."
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseAlg.what": {
+    "en": "183714d075e4bf22",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_alg`: den JWE-algoritm för nyckelhantering som dess ID Tokens (och Logout Tokens) krypteras till den med, efter signering. TOMT BETYDER INTE KRYPTERAT. En asymmetrisk algoritm, och nyckeln tas från `oauthJwks` eller `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthIdTokenEncryptedResponseEnc.what": {
+    "en": "48ee797ab8e75fa2",
+    "text": "OpenID Connect Registration `id_token_encrypted_response_enc`: JWE-innehållskrypteringen. TOMT BETYDER A128CBC-HS256 när `oauthIdTokenEncryptedResponseAlg` är satt; det får inte sättas utan det attributet."
+  },
+  "applications.schema.attributes.oauthUserinfoSignedResponseAlg.what": {
+    "en": "ef48efadfd32f3ee",
+    "text": "OpenID Connect Registration `userinfo_signed_response_alg`: den JWS-algoritm som UserInfo-svaret till den här klienten signeras med, vilket gör det till `application/jwt` med `iss` och `aud`. TOMT (eller `none`) BETYDER vanlig JSON, om det inte krypteras."
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseAlg.what": {
+    "en": "76a0ae0574f3ef25",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_alg`: den JWE-algoritm för nyckelhantering som UserInfo-svaret krypteras till den här klienten med (efter signering, där det signeras). TOMT BETYDER INTE KRYPTERAT. En asymmetrisk algoritm, till `oauthJwks` eller `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthUserinfoEncryptedResponseEnc.what": {
+    "en": "6852fab2d2fc0d6a",
+    "text": "OpenID Connect Registration `userinfo_encrypted_response_enc`: JWE-innehållskrypteringen. TOMT BETYDER A128CBC-HS256 när `oauthUserinfoEncryptedResponseAlg` är satt; det får inte sättas utan det attributet."
+  },
+  "applications.schema.attributes.oauthAuthorizationSignedResponseAlg.what": {
+    "en": "1287c2f4ab72e7da",
+    "text": "JARM avsnitt 3 `authorization_signed_response_alg`: JWS-algoritmen för klientens JWT-skyddade auktoriseringssvar (`response_mode` `jwt`, `query.jwt` och de övriga). TOMT BETYDER RS256 (PS256 under FAPI 1.0 Advanced). `none` avvisas (JARM avsnitt 3)."
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseAlg.what": {
+    "en": "9c508446b117e1da",
+    "text": "JARM avsnitt 3 `authorization_encrypted_response_alg`: den JWE-algoritm för nyckelhantering som ett JWT-skyddat auktoriseringssvar krypteras till den här klienten med. TOMT BETYDER INTE KRYPTERAT. En asymmetrisk algoritm, till `oauthJwks` eller `oauthJwksUri`."
+  },
+  "applications.schema.attributes.oauthAuthorizationEncryptedResponseEnc.what": {
+    "en": "c06c3ef3bf155771",
+    "text": "JARM avsnitt 3 `authorization_encrypted_response_enc`: JWE-innehållskrypteringen. TOMT BETYDER A128CBC-HS256 när `oauthAuthorizationEncryptedResponseAlg` är satt; det får inte sättas utan det attributet."
+  },
+  "applications.schema.attributes.oauthDefaultAcrValues.what": {
+    "en": "2420d2fb6289e439",
+    "text": "OpenID Connect Registration `default_acr_values`: de acr-värden som begärs för den här klienten när en begäran varken anger `acr_values` eller ett väsentligt acr-anspråk — blankstegsseparerade, det mest föredragna först. TOMT begär ingenting."
+  },
+  "applications.schema.attributes.oauthDefaultMaxAge.what": {
+    "en": "4aab318613c37bad",
+    "text": "OpenID Connect Registration `default_max_age`: den äldsta inloggning, i hela sekunder, som den här klienten godtar när en begäran inte anger någon `max_age` — en äldre loggar in personen på nytt. 0 betyder en inloggning i denna sekund. TOMT kräver ingenting."
+  },
+  "applications.schema.attributes.oauthAssertionIssuer.what": {
+    "en": "f927674d2d7a1f5f",
+    "text": "DE `iss`-VÄRDEN SOM DEN HÄR APPLIKATIONEN FÅR PRESENTERA I EN AUKTORISERINGSBEVILJNING ENLIGT RFC 7523 AVSNITT 2.1, och det är ett av de få DEKLARERADE attributen här som LÄSES. Ett JWT bearer-intyg ÄR hela auktoriseringen — det finns ingen webbläsare, inget lösenord och inget samtyckessteg i den beviljningen — så att godta ett från vem som helst skulle innebära att vem som helst som når den här porten får en åtkomsttoken som vem som helst. Detta är därför den andra funktionen i den här tjänsten utan något tillåtande svar, vid sidan av federation, och `oauth2.jwtBearerRequireRegisteredIssuer` är påslaget som standard.\n\nEtt intyg som en klient utfärdar OM SIG SJÄLV anger sitt eget client_id som `iss` och behöver inget värde här: den uppslagningen lyckas redan genom oauthClientId, och att be en operatör skriva ner client_id två gånger vore ett konfigurationssteg utan något beslut i. Det ackumuleras, eftersom en applikation legitimt kan intyga under ett utfärdarnamn per miljö."
+  },
+  "applications.schema.attributes.oauthAssertionJwks.what": {
+    "en": "3abc3d2dd9035aef",
+    "text": "DE PUBLIKA NYCKLAR SOM DEN HÄR TJÄNSTEN UTFÄRDAT TILL DEN HÄR APPLIKATIONEN, som ett JWKS-dokument, där varje nyckel bär `x5c` (sin certifikatkedja) och `x5t#S256`. Skrivs av kontrollen Utfärda på /admin/pki och av POST /admin-api/pki/issue.\n\nDet är ett ANDRA attribut vid sidan av `oauthJwks` och skriver aldrig över det. En klient som registrerade sina egna nycklar och senare fick ett par utfärdat av en operatör har två sätt att signera, som båda någon medvetet har ordnat — och att skriva över det första skulle tyst avsluta det i samma ögonblick som någon tryckte på en knapp om det andra. Båda läses, med ELLER, av client_auth.js och av assertion_grant.js. Publikt nyckelmaterial, så precis som oauthJwks är det värdelöst för den som läser den här katalogen."
+  },
+  "applications.schema.attributes.oauthAssertionCertificate.what": {
+    "en": "b4cbd65aec258415",
+    "text": "Lövcertifikatet, PEM, vars subjekt är den här applikationen och vars utfärdare är sfärens utfärdande CA. Samma byte som den första `x5c`-medlemmen ovan, i den form en person kan klistra in i `openssl x509 -text`."
+  },
+  "applications.schema.attributes.oauthAssertionCertificateChain.what": {
+    "en": "b7a32cc9139e6bd2",
+    "text": "Den utfärdande CA:n och den mellanliggande CA:n, PEM, i den ordningen — det som ett lövcertifikat följs av. ROTEN finns medvetet inte med: en rot är ett förtroendeankare, och en förlitande part som godtog en för att den kom med i kedjan skulle godta ett certifikat som gick i god för sig självt."
+  },
+  "applications.schema.attributes.oauthAssertionPrivateKey.what": {
+    "en": "8b668a69fa54d2c9",
+    "text": "DEN PRIVATA NYCKELN, PEM. **FÖRSEGLAD I VILA ÖVERALLT DÄR NYCKELKRYPTERINGSNYCKELN ÖVERLEVER PROCESSEN** — AES-256-GCM genom common/keystore.js, samma mekanism och samma nyckel som förseglar den här tjänstens egna signeringsnycklar, common/pki.js:s tre CA-nyckelpar och en autentiserares delade hemlighet. Så en ldapsearch på TCP 389 där varje bindning lyckas, en ldif-fil, en databasrad och en säkerhetskopia av någon av dem innehåller `$aesgcm$…` och inte en användbar nyckel. De ytor som går genom den här modulen — /admin/applications och GET /admin-api/applications, båda bakom en inloggningsuppgift — får PEM:en, eftersom förseglingen skyddar LAGRET snarare än konsolen som en operatör hämtar en utfärdad inloggningsuppgift från; SEALED_FIELDS argumenterar för uppdelningen. I UTVECKLINGSLÄGE skrivs den i klartext, vilket är den regel som autentiseraren-hemligheten bredvid följer och av samma skäl: nyckelkrypteringsnyckeln där är tillfällig, så att försegla en post som överlever en omstart under en nyckel som inte gör det skulle göra den privata halvan till permanent skräp medan certifikatet kom tillbaka. Den skrivs aldrig till granskningsloggen, och den här tjänsten behåller INGEN ANDRA KOPIA av den — common/pki.js lämnar över den en gång, vid utfärdandet, och glömmer den."
+  },
+  "applications.schema.attributes.oauthAssertionKid.what": {
+    "en": "0bdfcb2fca7999a3",
+    "text": "`kid` för den utfärdade nyckeln, härledd från nyckelmaterialet som varje kid i den här tjänsten är (RFC 7638). Ett intyg som anger den i sitt JWS-huvud begränsar verifieringen till den nyckeln; ett som inte anger något prövas mot varje nyckel som är registrerad för den här applikationen, vilket är korrekt snarare än slappt."
+  },
+  "applications.schema.attributes.oauthAssertionExpiresAt.what": {
+    "en": "bf8bf93da43a7bf7",
+    "text": "När det utfärdade certifikatet går ut, som en GeneralizedTime. Det är ett faktum om CERTIFIKATET och inte en policy: ingenting här avvisar ett intyg för att detta datum har passerats — det som avvisar ett är att certifikatet inte kan bygga en sökväg, vilket kontrolleras där kedjan kontrolleras. Visas på /admin/pki så att en operatör kan se vad som snart slutar fungera."
+  },
+  "applications.schema.attributes.oauthAssertionKeySource.what": {
+    "en": "9763e439aef61fa1",
+    "text": "VAR RFC 7523-NYCKELPARET OVAN KOM IFRÅN, och därmed vem som har dess privata halva. `issued` — genererat här och signerat av den här sfärens utfärdande CA, med den privata nyckeln i `oauthAssertionPrivateKey`. `uploaded-realm-ca` — ett certifikat som den här sfärens egen certifikatutfärdare utfärdat, uppladdat i stället för ett genererat par. `uploaded-external-ca` — ett certifikat från en annan utfärdare, uppladdat med hela sin kedja upp till en självsignerad rot, där varje länk verifierats. För båda de uppladdade värdena har APPLIKATIONEN den privata nyckeln och den här tjänsten har aldrig haft den.\n\nEtt faktum om vad som gjordes och inte en policy: ingen verifierare läser det, och en post som skrevs innan det fanns har inget — konsolen läser där en förseglad privat nyckel som `issued`, vilket är det enda som kunde ha lagt en sådan på posten."
+  },
+  "applications.schema.attributes.oauthSamlAssertionIssuer.what": {
+    "en": "fd1408bafa076faa",
+    "text": "DE `<Issuer>`-VÄRDEN SOM DEN HÄR APPLIKATIONEN FÅR PRESENTERA I EN AUKTORISERINGSBEVILJNING ENLIGT RFC 7522 AVSNITT 2.1. Det är `oauthAssertionIssuer`:s syskon för SAML 2.0-profilen och det LÄSES av samma skäl: ett bearer-intyg ÄR hela auktoriseringen — ingen webbläsare, inget lösenord, inget samtyckessteg — så att godta ett från vem som helst skulle innebära att vem som helst som når den här porten får en åtkomsttoken som vem som helst. `oauth2.saml2BearerRequireRegisteredIssuer` är påslaget som standard.\n\nDet är ett SEPARAT attribut från JWT-attributet och inte en delad lista: en part som är betrodd att intyga i ett format har inte därmed blivit betrodd att intyga i det andra, och en operatör som deklarerade en utfärdare för RFC 7523 får inte tyst ha deklarerat den för RFC 7522. Jämförs med Simple String Comparison (RFC 3986 avsnitt 6.2.1), vilket RFC 7522 avsnitt 3 punkt 1 begär — ingen skiftlägesutjämning och ingen tolerans för avslutande snedstreck. Det ackumuleras, av samma skäl som JWT-attributet."
+  },
+  "applications.schema.attributes.oauthSamlAssertionSigningCertificate.what": {
+    "en": "2f3d2c8cf3ae0cc7",
+    "text": "DET CERTIFIKAT SOM DEN HÄR PARTEN SIGNERAR SINA RFC 7522-INTYG MED, PEM, registrerat som värde. Motsvarigheten till `oauthJwks` för en profil vars signaturer är XML Signature snarare än JWS — det finns ingen JWKS i SAML, det som en part registrerar ÄR ett certifikat.\n\nFlera PEM-block får finnas i ett värde, eftersom en part som byter certifikat har två så länge intyg signerade av det gamla fortfarande är i omlopp. Publikt nyckelmaterial, så precis som `oauthJwks` är det värdelöst för den som läser den här katalogen.\n\n**ETT CERTIFIKAT SOM KOMMER I INTYGETS EGEN `<ds:KeyInfo>` ERSÄTTER INTE DETTA.** Det används för att välja bland det som är registrerat här och aldrig som en nyckel i sig, och det är där den här profilen är striktare än RFC 7523: en kedja till den här sfärens rot bevisar att SFÄREN utfärdat en nyckel och säger ingenting om VILKEN applikation som har den, så att godta en skulle låta en applikations RFC 7523-lövcertifikat signera ett SAML-intyg."
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificate.what": {
+    "en": "d1e47484136de9b4",
+    "text": "Det lövcertifikat som den här tjänsten UTFÄRDAT till den här applikationen för RFC 7522, PEM, vars subjekt är applikationen och vars utfärdare är sfärens utfärdande CA. Skrivs av kontrollen Utfärda på /admin/pki med syftet SAML 2.0 valt, och av POST /admin-api/pki/issue med `purpose: \"saml\"`. Det är ett ANNAT certifikat över ett ANNAT nyckelpar än `oauthAssertionCertificate` bredvid, och dess subjectAltName bär RFC 7522-profilens URI så att ett certifikat som läses utanför sitt sammanhang säger vilken profil det utfärdades för."
+  },
+  "applications.schema.attributes.oauthSamlAssertionCertificateChain.what": {
+    "en": "49df2430d4c7cf4c",
+    "text": "Den utfärdande CA:n och den mellanliggande CA:n, PEM, i den ordningen — det som lövcertifikatet ovan följs av. ROTEN finns medvetet inte med, av det skäl som raden för JWT-kedjan anger: en förlitande part som godtog en för att den kom med i kedjan skulle godta ett certifikat som gick i god för sig självt."
+  },
+  "applications.schema.attributes.oauthSamlAssertionPrivateKey.what": {
+    "en": "63981c5c57f70802",
+    "text": "DEN PRIVATA NYCKELN för RFC 7522-paret, PEM. **FÖRSEGLAD I VILA ÖVERALLT DÄR NYCKELKRYPTERINGSNYCKELN ÖVERLEVER PROCESSEN**, med samma mekanism och under samma nyckel som `oauthAssertionPrivateKey` bredvid — se den raden, som argumenterar för det hela. Den här tjänsten behåller INGEN ANDRA KOPIA: common/pki.js lämnar över den en gång, vid utfärdandet, och glömmer den."
+  },
+  "applications.schema.attributes.oauthSamlAssertionThumbprint.what": {
+    "en": "7788d86bee182127",
+    "text": "SHA-256-tumavtrycket för det utfärdade certifikatet, base64url. Det är vad `oauthAssertionKid` är för JWT-profilen och det stavas annorlunda eftersom de två formaten bär olika handtag: ett JWS-huvud anger en `kid` och en XML Signature bär själva certifikatet, så det som matchar en presenterad <ds:KeyInfo> mot det som är registrerat är ett tumavtryck."
+  },
+  "applications.schema.attributes.oauthSamlAssertionExpiresAt.what": {
+    "en": "21956043d5d0e1df",
+    "text": "När det utfärdade RFC 7522-certifikatet går ut, som en GeneralizedTime. Ett faktum om CERTIFIKATET och inte en policy, precis som `oauthAssertionExpiresAt` är: ingenting här avvisar ett intyg för att detta datum har passerats. Visas på /admin/pki så att en operatör kan se vad som snart slutar fungera."
+  },
+  "applications.schema.attributes.oauthSamlAssertionKeySource.what": {
+    "en": "885b1731802e4f71",
+    "text": "Var RFC 7522-nyckelparet ovan kom ifrån, med den vokabulär som `oauthAssertionKeySource` använder och av samma skäl: `issued`, `uploaded-realm-ca` eller `uploaded-external-ca`. Det är ett SEPARAT attribut från JWT-attributet eftersom de två nyckelparen är separata — det ena kan vara utfärdat här medan det andra är någon annans certifikat."
+  },
+  "applications.schema.attributes.oauthSoftwareStatementIssuer.what": {
+    "en": "c6834fb57ae3ff4c",
+    "text": "DE `iss`-VÄRDEN VARS SOFTWARE STATEMENTS DEN HÄR APPLIKATIONEN GÅR I GOD FÖR vid POST /oauth2/register (RFC 7591 avsnitt 2.3) — applikationen är programvarans UTGIVARE, och ett statement som anger någon av dessa utfärdare verifieras mot dess `jwks` eller dess RFC 7523-nyckelpar från /admin/pki, eller ett x5c som den här sfären utfärdat till den. Det LÄSES: ett statement från en utfärdare som ingen deklarerar avvisas med unapproved_software_statement medan `oauth2.softwareStatementRequireTrustedIssuer` är påslaget, och ett betrott fastställer den registrerade metadatan och kan öppna en stängd registreringsslutpunkt.\n\nEtt SEPARAT attribut från `oauthAssertionIssuer`: en part som är betrodd att säga vem en person är har inte därmed blivit betrodd att säga vilken programvara som får registrera sig som vad. Ett statement som den här sfären själv utfärdat behöver ingen deklaration. Det ackumuleras, av samma skäl som intygsutfärdarna."
+  },
+  "applications.schema.attributes.oauthIssuedSoftwareStatement.what": {
+    "en": "6e1666963d910326",
+    "text": "DET SOFTWARE STATEMENT SOM DEN HÄR SFÄREN SENAST UTFÄRDADE FÖR DEN HÄR APPLIKATIONEN, som kompakt JWS, typat `software-statement+jwt`, med `sub` som anger den här applikationen. En klient som presenterar det vid POST /oauth2/register registreras med de medlemmar det fastställer. INTE EN HEMLIGHET — RFC 7591 avsnitt 2.3 förväntar sig att ett statement levereras med varje kopia av programvaran — och inte ett register över varje utfärdat statement: att utfärda igen ersätter det här värdet, och det tidigare statementet verifieras fortfarande tills det går ut eller sfärens signeringsnyckel ändras."
+  },
+  "applications.schema.attributes.appSoftwareStatementIssuer.what": {
+    "en": "4bd7d529acd9f5fc",
+    "text": "`iss` för det software statement som den här klienten REGISTRERADES med, eller frånvarande när den inte presenterade något. Rensas av en RFC 7592-uppdatering som inte bär något, och när registreringen tas bort."
+  },
+  "applications.schema.attributes.appSoftwareStatementTrusted.what": {
+    "en": "b995b37e9b9438b5",
+    "text": "TRUE när det statementet verifierades mot en utfärdare som den här sfären litar på, FALSE när det godtogs overifierat eftersom `oauth2.softwareStatementRequireTrustedIssuer` var avstängt. En klient som registrerats på ett TRUE-statement vid en slutpunkt som annars är stängd måste presentera ett betrott statement från samma utfärdare vid varje uppdatering."
+  },
+  "applications.schema.attributes.appSoftwareStatementPublisher.what": {
+    "en": "5b7f331c8b1c940f",
+    "text": "Den applikation som förtroendet kom genom: den som deklarerar utfärdaren, eller — för ett statement som den här sfären utfärdat — den applikation det utfärdades för."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSubjectDn.what": {
+    "en": "5e4d2971c2881d13",
+    "text": "RFC 8705 avsnitt 2.1.2 `tls_client_auth_subject_dn`: subjekts-DN för det PKI-certifikat som den här klienten autentiserar sig med, i RFC 4514-form. Jämförs som ett NAMN sedan 2026-09-13 (common/certificate_subject.js: attributtyper normaliserade, värden med caseIgnoreMatch, AVA:erna i ett flervärt RDN i valfri ordning) och bara mot ett certifikat vars kedja VERIFIERADES. En av de FEM subjektsparametrarna, och en klient registrerar högst en — en andra avvisas (STS-REG-0131, STS-REG-0135). Utan någon autentiserar tls_client_auth fortfarande ett certifikat som den här sfären utfärdat till DEN HÄR applikationen. DET ÄR OCKSÅ IDENTIFIERARATTRIBUTET FÖR FAMILJEN `mtls`, och det är ENVÄRT medan varje annan identifierare här ackumuleras, eftersom RFC 8705 säger att certifikatet matchar \"the single expected subject\"."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanDns.what": {
+    "en": "112f46fd50b192e5",
+    "text": "RFC 8705 avsnitt 2.1.2 `tls_client_auth_san_dns`: ett dNSName som certifikatet som den här klienten autentiserar sig med måste bära, jämfört utan hänsyn till skiftläge eller en avslutande punkt, aldrig som jokertecken. En av de fem subjektsparametrarna; se oauthTlsClientAuthSubjectDn."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanUri.what": {
+    "en": "1d73c827b1f6f2f1",
+    "text": "RFC 8705 avsnitt 2.1.2 `tls_client_auth_san_uri`: en uniformResourceIdentifier som certifikatet måste bära, jämförd exakt. En av de fem subjektsparametrarna."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanIp.what": {
+    "en": "bdaffe89241efe64",
+    "text": "RFC 8705 avsnitt 2.1.2 `tls_client_auth_san_ip`: en iPAddress som certifikatet måste bära, IPv4 eller IPv6, jämförd som adressen snarare än dess stavning. En av de fem subjektsparametrarna."
+  },
+  "applications.schema.attributes.oauthTlsClientAuthSanEmail.what": {
+    "en": "fde7039fac656aab",
+    "text": "RFC 8705 avsnitt 2.1.2 `tls_client_auth_san_email`: ett rfc822Name som certifikatet måste bära, där domänen jämförs utan hänsyn till skiftläge och den lokala delen exakt (RFC 5280 avsnitt 7.5). En av de fem subjektsparametrarna."
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateBoundAccessTokens.what": {
+    "en": "0f2ad8a5c3044e38",
+    "text": "RFC 8705 avsnitt 3.4 `tls_client_certificate_bound_access_tokens`, TRUE eller FALSE. TRUE innebär att den här klienten DEKLARERAR att dess token är certifikatbundna, och den hålls till det i ALLA lägen: en tokenbegäran från den över en anslutning utan klientcertifikat avvisas (STS-OAUTH-0487) i stället för att besvaras med en obunden token, vilket avsnitt 3.4 överlåter till auktoriseringsservern. FALSE eller frånvarande ändrar ingenting — en klient som presenterar ett certifikat får ändå en bunden token."
+  },
+  "applications.schema.attributes.oauthTlsClientCertificateThumbprint.what": {
+    "en": "1aad4795617491a1",
+    "text": "För RFC 8705 avsnitt 2.2 self_signed_tls_client_auth: base64url-kodad SHA-256 av DER-formen av det certifikat som den här klienten autentiserar sig med. DEN HÄR TJÄNSTENS EGET NAMN, som hålls bredvid det som RFC:n namnger: sedan 2026-09-13 autentiserar ett certifikat också klienten när det är x5c[0] för en nyckel i den jwks den registrerade (avsnitt 2.2.2). Hämta ett certifikats tumavtryck med GET /tls/sign-in, eller beräkna det: openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
+  },
+  "applications.schema.attributes.oauthConfidential.what": {
+    "en": "ae52d212279d2378",
+    "text": "TRUE/FALSE, den bedömning som RFC 9700-läget gör om den — och därmed om PKCE krävs av den och om dess hemlighet kontrolleras. Skrivs här så att svaret kan läsas i stället för att härledas."
+  },
+  "applications.schema.attributes.samlEntityId.what": {
+    "en": "3987c430d22d9352",
+    "text": "TJÄNSTELEVERANTÖRENS ENTITYID — intygets målgrupp, och identifierarattributet för BÅDA SAML-familjerna. SAML 1.1 har inget eget entityID i protokollet (det finns inget begärandemeddelande för ett att färdas i) och det som står i dess ställe — Shibboleths providerId, sökvägssegmentet eller TARGET:s ursprung — namnger samma part, så ett attribut håller det i stället för två som skulle vara oense första gången en applikation deklarerades för båda. Ackumuleras: en applikation som svarar på två entityID:n är en applikation.\n\nDET LÄSES, som den ANDRA halvan av forAppliesTo(): en WS-Trust AppliesTo och AudienceRestriction i intyget som utfärdas för den är en och samma sträng, så en applikation som registrerade den här i stället för i `wstrustAppliesTo` får ändå sin egen ruta på delegeringskartan. Samma uppslagning, och sedan #496 avvisas den AppliesTo den löser upp i produktläge när applikationen den anger inte är registrerad (appRegisteredBy)."
+  },
+  "applications.schema.attributes.samlAssertionConsumerService.what": {
+    "en": "fd890662f96f022c",
+    "text": "ASSERTION CONSUMER SERVICE-URL:EN — dit ett SAML-svar postas tillbaka, och omdirigerings-URI:n för båda SAML-familjerna. Den höll även WS-Federations `wreply` fram till 2026-08-25; den flyttades till wsfedReplyUrl, eftersom SAML-sidorna läser det här attributet för reservvägen för Single Logout och en wreply som hamnade här fick en WS-Federation-applikation att se ut som om den hade angett en SAML-ACS. KONTROLLERAS ENDAST I PRODUKTLÄGE: utvecklingsläget skickar ett svar dit begäran bad om och registrerar adressen här; produktläget levererar bara till en adress som redan finns på den här listan, och en observation där lägger aldrig till någon. Det som utvecklingsläget REGISTRERAR här markeras i appReturnAddressObserved, och produktläget avvisar en markerad adress tills en operatör bekräftar den — så en sfär som byts från utvecklingsläge till produktläge litar inte på det som utvecklingsläget lärt sig. Värden som registrerades innan den markeringen fanns har ingen och behöver fortfarande granskas."
+  },
+  "applications.schema.attributes.samlSingleLogoutService.what": {
+    "en": "afe0a7928da789d7",
+    "text": "DIT EN <samlp:LogoutResponse> SKICKAS för den här tjänsteleverantören, och dit en LogoutRequest går när den här identitetsleverantören startar utloggningen. DEKLARERAT, inte observerat: en LogoutRequest bär ingen returadress, så bara SP-METADATA eller en operatör kan säga det. Att konsumera metadatan skriver dess SingleLogoutService-platser här (och varje slutpunkts bindning och ResponseLocation i samlSloEndpoint, som läses först). När ingen är registrerad faller den tillbaka på saml2.defaultSingleLogoutService och sedan på assertion consumer service-URL:en ovan, vilket är en gissning som den här tjänsten gör öppet snarare än i tysthet."
+  },
+  "applications.schema.attributes.samlNameIdFormat.what": {
+    "en": "7f5ead1978717201",
+    "text": "Varje NameID Format som den här tjänsteleverantören har bett om i en NameIDPolicy, ackumulerat. Det är belägg snarare än konfiguration: den här identitetsleverantören svarar med vad som än begärdes, inklusive ett format som ingen någonsin hört talas om, så ett värde här begränsar inte nästa begäran."
+  },
+  "applications.schema.attributes.samlResponseBinding.what": {
+    "en": "d9d4d1b00c05d3ef",
+    "text": "De ProtocolBinding-värden som den har bett att få sina svar tillbaka på — HTTP-POST, HTTP-Redirect eller HTTP-Artifact. Flera är det vanliga fallet för en tjänsteleverantör som testas, och det är därför detta är en lista."
+  },
+  "applications.schema.attributes.samlSigningCertificate.what": {
+    "en": "a2ead784b1dff911",
+    "text": "TJÄNSTELEVERANTÖRENS REGISTRERADE SIGNERINGSCERTIFIKAT, base64 DER, ett per värde. En signerad AuthnRequest, LogoutRequest eller LogoutResponse från den här tjänsteleverantören VERIFIERAS mot dessa — i alla lägen — och avvisas när den inte verifieras mot något av dem. Skrivs när dess metadata konsumeras (varje KeyDescriptor med use=\"signing\" eller utan use), av konsolsidan för SAML 2.0, av POST /admin-api/saml2/set-signing-certificate, genom att bekräfta det observerade certifikatet nedan, eller för hand. Dess nyckel måste ge en XML-signatur som den här tjänsten verifierar — RSA, EC, EdDSA, DSA, ML-DSA eller SLH-DSA (STS-REG-0160). Det skrivs ALDRIG från en begäran: certifikatet som en begäran bär i sin ds:KeyInfo hamnar i samlObservedSigningCertificate. Värden som skrevs före 2026-09-17 fångades från begäranden och saknar ursprungsuppgift — granska dem innan du litar på dem. Publikt nyckelmaterial, så till skillnad från oauthClientSecret är det värdelöst för den som läser den här katalogen."
+  },
+  "applications.schema.attributes.samlObservedSigningCertificate.what": {
+    "en": "91dce6d63a1aaa80",
+    "text": "DET CERTIFIKAT SOM DEN SENASTE SIGNERADE BEGÄRAN BAR I SIN ds:KeyInfo, base64 DER, när det inte är ett av de registrerade samlSigningCertificate-värdena. OBSERVERAT, INTE BETROTT: en nyckel som en begäran har med sig bevisar ingenting om vem som skickade begäran, så den verifierar ingenting i något läge. Utvecklingsläget krypterar ändå ett intyg till den när posten inte har något annat certifikat; produktläget gör det inte. En operatör BEKRÄFTAR det (det flyttas till samlSigningCertificate) eller KASSERAR det, på SAML 2.0-sidan eller med POST /admin-api/saml2/confirm-signing-certificate och /discard-signing-certificate. ETT värde — det senaste — så att en ström av begäranden med påhittade nycklar inte kan få posten att växa."
+  },
+  "applications.schema.attributes.samlAuthnRequestVerification.what": {
+    "en": "6acc91b675eb6f89",
+    "text": "VAD KONTROLLEN AV DEN SENASTE BEGÄRANS SIGNATUR KOM FRAM TILL: `verified`, `failed`, `unsigned` eller `no-certificate` (signerad, och inget registrerat att kontrollera den mot), följt av bindningen och algoritmen. Tilldelat, precis som samlAuthnRequestSigned bredvid."
+  },
+  "applications.schema.attributes.samlSpMetadataUrl.what": {
+    "en": "4de7dca3c5546c56",
+    "text": "VAR DEN HÄR TJÄNSTELEVERANTÖRENS METADATA PUBLICERAS. Den hämtas av åtgärden \"refresh metadata\" på applikationssidan och av POST /admin-api/applications/refresh-metadata, och ALDRIG medan ett flöde pågår — ett intyg som måste vänta på någon annans webbserver för att utfärdas skulle göra varje inloggning lika tillförlitlig som den servern. Det som hämtningen skriver är allt som konsumtionen av dokumentet skriver — se samlSpMetadata nedan.\n\nDetta är den ANDRA ytan för utgående begäranden i den här tjänsten; federation var den första och är den enda andra. Den följer samma avvisningar — URL:en måste vara en som den här posten bär, schemat måste vara http eller https, och begäran har en tidsgräns."
+  },
+  "applications.schema.attributes.samlSpMetadata.what": {
+    "en": "f94a9d0c56e1e3f0",
+    "text": "TJÄNSTELEVERANTÖRENS METADATADOKUMENT, cachat ordagrant. Det är vad uppdateringsåtgärden lagrar, och vad en uppladdning på SAML 2.0-sidan (eller POST /admin-api/saml2/upload-metadata) lagrar för en tjänsteleverantör vars metadata den här tjänsten inte kan nå. Att KONSUMERA det (2026-09-17) skriver dess AssertionConsumerService- och SingleLogoutService-slutpunkter som REGISTRERADE returadresser (samlAssertionConsumerService, samlAcsEndpoint, samlSingleLogoutService, samlSloEndpoint), dess signeringscertifikat (samlSigningCertificate), dess krypteringscertifikat (samlEncryptionCertificate), dess NameIDFormats, AuthnRequestsSigned och WantAssertionsSigned, samt dess validUntil och cacheDuration. Att sätta det här attributet för hand lagrar dokumentet och konsumerar INGENTING — använd uppladdningen.\n\nDET BEHÅLLS UTÖVER UTDRAGET så att en läsare kan se vad som faktiskt konsumerades. Ett certifikat utan något dokument bakom sig är ett värde som ingen kan kontrollera."
+  },
+  "applications.schema.attributes.samlEncryptionCertificate.what": {
+    "en": "9105bb16521de17b",
+    "text": "DET CERTIFIKAT SOM ETT INTYG KRYPTERAS TILL, base64 DER eller PEM. Skrivs av metadatahämtningen från <md:KeyDescriptor use=\"encryption\"> — med reserv på en okvalificerad KeyDescriptor, som specifikationen säger tjänar båda användningarna — och kan sättas för hand för en tjänsteleverantör helt utan metadata.\n\nDet avgör vad som skickas ut. Om inget finns här används ett registrerat samlSigningCertificate, sedan — endast i utvecklingsläge — det observerade, och om inget av dem finns skickas intyget i klartext (utvecklingsläge) eller avvisas (produktläge), och sidan säger det."
+  },
+  "applications.schema.attributes.samlAcsEndpoint.what": {
+    "en": "3bc462623206e5a8",
+    "text": "En <md:AssertionConsumerService> från den konsumerade metadatan, som `<index> <isDefault> <binding> <location>` — isDefault är `true`, `false` eller `-` för ej angivet. En SAML 2.0 AuthnRequest som anger ett AssertionConsumerServiceIndex besvaras vid den slutpunkten och på dess bindning; en som anger en AssertionConsumerServiceURL måste ange en av dessa (i ALLA lägen, när metadata har konsumerats); en som inte anger någondera går till standardslutpunkten (saml-metadata-2.0-os avsnitt 2.2.3). SAML 1.1 använder den registrerade bindningen och platsen för att välja Browser/POST eller Browser/Artifact när ingen profil uttryckligen begärs."
+  },
+  "applications.schema.attributes.samlSloEndpoint.what": {
+    "en": "50fc4269807fa1f6",
+    "text": "En <md:SingleLogoutService> från den konsumerade metadatan, som `<binding> <location>` eller `<binding> <location> <responseLocation>`. En LogoutResponse går till ResponseLocation där en sådan finns, på den bindning som LogoutRequest kom på där tjänsteleverantören publicerar den."
+  },
+  "applications.schema.attributes.samlSpNameIdFormat.what": {
+    "en": "5c24c66a2d887053",
+    "text": "De <md:NameIDFormat>-värden som tjänsteleverantörens metadata deklarerar. Till skillnad från samlNameIdFormat (det den har BETT om) BEGRÄNSAR dessa: en NameIDPolicy som anger ett annat format besvaras med InvalidNameIDPolicy (saml-core-2.0-os avsnitt 3.4.1.1), och standardformatet väljs bland dem."
+  },
+  "applications.schema.attributes.samlSpAuthnRequestsSigned.what": {
+    "en": "9859c664a8b4172e",
+    "text": "TRUE när metadatan säger AuthnRequestsSigned=\"true\": en osignerad begäran från den här tjänsteleverantören avvisas då oavsett vad saml2.requireSignedAuthnRequests säger, och den metadata som den här identitetsleverantören serverar den säger WantAuthnRequestsSigned=\"true\"."
+  },
+  "applications.schema.attributes.samlSpWantAssertionsSigned.what": {
+    "en": "e0f4d22138fd10d6",
+    "text": "TRUE när metadatan säger WantAssertionsSigned=\"true\": intyget signeras även där saml2.signAssertion (eller saml2SignAssertion) är avstängt — i produktläge; utvecklingsläget respekterar inställningen, vilket är ett testfall, och loggar att tjänsteleverantören bad om annat."
+  },
+  "applications.schema.attributes.samlSpWantAssertionsEncrypted.what": {
+    "en": "0435ae5ea89e68d9",
+    "text": "TRUE när den konsumerade metadatan publicerar en KeyDescriptor märkt use=\"encryption\" — tjänsteleverantören som säger att den har en nyckel för krypterade intyg, något som SAML 2.0-metadata saknar ett eget attribut för (interoperabilitetsprofilerna läser nyckeln som begäran). Intyget KRYPTERAS då till den nyckeln i alla lägen, oavsett vad saml2.encryptAssertion säger."
+  },
+  "applications.schema.attributes.samlSpMetadataValidUntil.what": {
+    "en": "144abddd1e7267dc",
+    "text": "Den GÄLLANDE validUntil för det konsumerade dokumentet — den tidigaste på något omslutande EntitiesDescriptor, EntityDescriptor och dess SPSSODescriptor. Ett dokument som redan har gått ut avvisas när det konsumeras; när denna tidpunkt har passerats AVVISAS varje begäran från tjänsteleverantören (STS-SAML-0074) tills ett nyare dokument konsumeras."
+  },
+  "applications.schema.attributes.samlSpMetadataCacheDuration.what": {
+    "en": "14f91b25e0604839",
+    "text": "Den GÄLLANDE cacheDuration för det konsumerade dokumentet (den kortaste i dess kedja), som den xs:duration det bar. När den har förflutit sedan dokumentet konsumerades är dokumentet INAKTUELLT: bakgrundsuppdateringen hämtar det igen där den kan (saml2.spMetadataRefresh), och det fortsätter att fungera tills dess validUntil."
+  },
+  "applications.schema.attributes.samlSpMetadataConsumedAt.what": {
+    "en": "f4b47a01d6cdaafd",
+    "text": "När dokumentet senast konsumerades, och hur: `<ISO instant> <refresh|upload|mdq>` — `mdq` för ett som hämtats från Metadata Query-tjänsten, som bakgrundsuppdateringen kan hämta igen."
+  },
+  "applications.schema.attributes.samlSpMetadataSignature.what": {
+    "en": "918bec6e5d05e1d7",
+    "text": "Vad kontrollen av det konsumerade dokumentets egen signatur kom fram till: `verified`, `unsigned` eller `signed-not-verified` (signerat, och inget samlSpMetadataSigningCertificate att kontrollera det mot)."
+  },
+  "applications.schema.attributes.samlSpMetadataSigningCertificate.what": {
+    "en": "cdb98da69d5f24ce",
+    "text": "DET CERTIFIKAT SOM DEN HÄR TJÄNSTELEVERANTÖRENS METADATA MÅSTE VARA SIGNERAD MED, base64 DER. När det är satt AVVISAS ett dokument som är osignerat, eller vars signatur inte verifieras mot det, och ingenting på posten ändras. Utan det konsumeras ett signerat dokument och registreras som signed-not-verified: förtroendehandlingen är då operatörens val av URL (eller dokument), vilket är vad en uttrycklig uppdatering eller uppladdning är."
+  },
+  "applications.schema.attributes.saml2EncryptAssertion.what": {
+    "en": "759b4ebf4d0a40a8",
+    "text": "TRUE eller FALSE: kryptera intyget som utfärdas till DEN HÄR tjänsteleverantören, vilket åsidosätter saml2.encryptAssertion. Det här är den av de fyra som är mest värd att ha per applikation — en miljö där en tjänsteleverantör kräver kryptering och de andra inte kan läsa den är det vanliga fallet, och en tjänstevid växel kunde inte uttrycka det."
+  },
+  "applications.schema.attributes.saml2EncryptionAlgorithm.what": {
+    "en": "fa273f083d4148cb",
+    "text": "Det blockchiffer som används för den här tjänsteleverantören — aes256-gcm, aes128-gcm, aes256-cbc eller aes128-cbc — vilket åsidosätter saml2.encryptionAlgorithm. Ett värde som inte är ett av dessa fyra IGNORERAS med en varning och det tjänstevida valet används, precis som ett tal som inte kan tolkas skulle göra."
+  },
+  "applications.schema.attributes.saml2KeyTransportAlgorithm.what": {
+    "en": "e2972659824b67ae",
+    "text": "Hur innehållsnyckeln omsluts för den här tjänsteleverantören — rsa-oaep-mgf1p, rsa-oaep (SHA-256, MGF1-SHA-256; #168) eller rsa-1_5 — vilket åsidosätter saml2.keyTransportAlgorithm. En apparat som bara godtar rsa-1_5 är skälet till att detta är per applikation snarare än ett beslut som fattas en gång för hela tjänsten."
+  },
+  "applications.schema.attributes.saml2EncryptLogoutNameId.what": {
+    "en": "6d5adf9b1aaa6b01",
+    "text": "TRUE eller FALSE: skicka <saml:EncryptedID> i stället för <saml:NameID> i den LogoutRequest som skickas till den här tjänsteleverantören, vilket åsidosätter saml2.encryptLogoutNameId. Separat från intygsväxeln ovan eftersom de är separata förmågor i varje tjänsteleverantörsbibliotek som har dem: ett som dekrypterar intyg kan ändå förvänta sig ett okrypterat NameID i ett utloggningsmeddelande."
+  },
+  "applications.schema.attributes.oauthAccessTokenTtlS.what": {
+    "en": "a97604c8265b331c",
+    "text": "HUR LÄNGE EN ÅTKOMSTTOKEN SOM UTFÄRDAS TILL DEN HÄR KLIENTEN LEVER, i sekunder, vilket åsidosätter oauth2.accessTokenTtlS för enbart den. Det blir tokens `exp`, så det stämplas in vid signeringen och ingenting här kan förkorta en token som redan utfärdats. Sätt det till 30 på en klient för att se den klienten uppdatera medan alla andra klienter fortsätter som vanligt."
+  },
+  "applications.schema.attributes.oauthIdTokenTtlS.what": {
+    "en": "8cc6c14509612cb8",
+    "text": "Detsamma för OIDC ID Token, vilket åsidosätter oauth2.idTokenTtlS. Separat från åtkomsttokens eftersom de två går till olika läsare: en ID Token konsumeras en gång vid inloggningen och en åtkomsttoken presenteras så länge den varar."
+  },
+  "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
+    "en": "47a623e69e617b6d",
+    "text": "Detsamma för uppdateringstoken, vilket åsidosätter oauth2.refreshTokenTtlS. Ett värde lika med eller under oauthAccessTokenTtlS är tillåtet och är en beviljning som aldrig kan förnyas på ett meningsfullt sätt — /admin/token-lifetimes rapporterar den kombinationen för det tjänstevida paret, och den är lika nåbar här."
+  },
+  "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
+    "en": "37eeca0107443e0c",
+    "text": "ENDAST I RFC 9700-LÄGE: hur länge en uppdateringskedja får vara oanvänd innan den kapas, vilket åsidosätter oauth2.refreshIdleSeconds för den här klienten. Det mäts från senaste gången någon token i KEDJAN löstes in snarare än från utfärdandet, så en aktiv klient behåller sin beviljning och en tyst gör det inte. Utanför RFC 9700-läge läser ingenting det, vilket är en egenskap hos inställningen snarare än hos det här attributet."
+  },
+  "applications.schema.attributes.oauthClaimsAccessToken.what": {
+    "en": "e284080e7c1bb9a6",
+    "text": "DEN HÄR APPLIKATIONENS EGNA ANSPRÅK I ÅTKOMSTTOKEN, som en JSON-matris av rader likt sfärens sida Anpassade anspråk. Läggs till sfärens anspråk i åtkomsttoken för token som utfärdas till den här klienten, och en applikationsrad ersätter sfärens rad med samma namn."
+  },
+  "applications.schema.attributes.oauthClaimsIdToken.what": {
+    "en": "bf6d6d58355a3d7d",
+    "text": "DEN HÄR APPLIKATIONENS EGNA ANSPRÅK I ID TOKEN, som en JSON-matris av rader likt sfärens sida Anpassade anspråk. Läggs till sfärens anspråk i ID Token för den här klienten och vinner efter namn."
+  },
+  "applications.schema.attributes.oauthClaimsUserinfo.what": {
+    "en": "45d44e8df029c130",
+    "text": "DEN HÄR APPLIKATIONENS EGNA USERINFO-ANSPRÅK, som en JSON-matris av rader likt sfärens sida UserInfo-anspråk. Läggs till sfärens UserInfo-anspråk som besvaras till den här klienten och vinner efter namn."
+  },
+  "applications.schema.attributes.oauthClaimAttributesAccessToken.what": {
+    "en": "0bb51f4496678312",
+    "text": "DEN HÄR APPLIKATIONENS EGET URVAL av katalogattribut för dess åtkomsttoken, som en JSON-matris av attributnamn från sfärens katalog över Anpassade anspråk. När det finns ERSÄTTER det sfärens urval för token som utfärdas till den här klienten; saknas det används sfärens."
+  },
+  "applications.schema.attributes.oauthClaimAttributesIdToken.what": {
+    "en": "281e877a92a4cd99",
+    "text": "DEN HÄR APPLIKATIONENS EGET URVAL av katalogattribut för dess ID Tokens, en JSON-matris av attributnamn från anspråkskatalogen, som ersätter sfärens urval när det finns."
+  },
+  "applications.schema.attributes.oauthClaimAttributesUserinfo.what": {
+    "en": "bc1313ec18da0769",
+    "text": "DEN HÄR APPLIKATIONENS EGET URVAL av katalogattribut för det UserInfo-svar som besvaras till den, en JSON-matris av attributnamn från anspråkskatalogen, som ersätter sfärens urval när det finns."
+  },
+  "applications.schema.attributes.oauthClaimsCombineAccessToken.what": {
+    "en": "0fdd9c637c2aed07",
+    "text": "HUR SFÄRENS ANSPRÅK I ÅTKOMSTTOKEN OCH DEN HÄR APPLIKATIONENS EGNA KOMBINERAS (#395), både de inskrivna raderna och de markerade katalogattributen: application (endast applikationens egna), union (sfärens och dess egna), intersection (endast det som båda har) eller realm (endast sfärens). Om det inte är satt läggs dess rader till sfärens och vinner efter namn, och dess urval ersätter sfärens. En applikation som inte har något eget får sfärens oavsett vad detta säger."
+  },
+  "applications.schema.attributes.oauthClaimsCombineIdToken.what": {
+    "en": "5712c8d8fec06866",
+    "text": "HUR SFÄRENS ANSPRÅK I ID TOKEN OCH DEN HÄR APPLIKATIONENS EGNA KOMBINERAS (#395), både de inskrivna raderna och de markerade katalogattributen: application (endast applikationens egna), union (sfärens och dess egna), intersection (endast det som båda har) eller realm (endast sfärens). Om det inte är satt läggs dess rader till sfärens och vinner efter namn, och dess urval ersätter sfärens. En applikation som inte har något eget får sfärens oavsett vad detta säger."
+  },
+  "applications.schema.attributes.oauthClaimsCombineUserinfo.what": {
+    "en": "114411a8522be187",
+    "text": "HUR SFÄRENS USERINFO-ANSPRÅK OCH DEN HÄR APPLIKATIONENS EGNA KOMBINERAS (#395), både de inskrivna raderna och de markerade katalogattributen: application (endast applikationens egna), union (sfärens och dess egna), intersection (endast det som båda har) eller realm (endast sfärens). Om det inte är satt läggs dess rader till sfärens och vinner efter namn, och dess urval ersätter sfärens. En applikation som inte har något eget får sfärens oavsett vad detta säger."
+  },
+  "applications.schema.attributes.oauthAccessTokenClaim.what": {
+    "en": "cf887c3be9a18ff1",
+    "text": "DE IDENTITETSANSPRÅK SOM DEN HÄR RESURSSERVERN VILL HA i de åtkomsttoken som är adresserade till den (ett av dess oauthAudience-värden, eller dess client_id angivet som scope), bland OpenID Connect Core avsnitt 5.4:s anspråk för profile, email, address och phone. Vart och ett släpps bara när det scope som täcker det BEVILJADES, och i en token för flera resursservrar tas bara ett anspråk med som var och en av dem har deklarerat. Saknas det bär token inga av dessa anspråk från det här lagret — preferred_username inräknat."
+  },
+  "applications.schema.attributes.oauthPermissionClaims.what": {
+    "en": "81cd9d9de131a21b",
+    "text": "DE ANSPRÅK SOM VAR OCH EN AV DEN HÄR RESURSSERVERNS BEHÖRIGHETER BÄR, som ett JSON-objekt från ett behörighetsnamn (ett av dess oauthPermission-värden) till en lista med attributnamn från sfärens anspråkskatalog. En åtkomsttoken adresserad till den här applikationen där en behörighet BEVILJADES bär personens värden för den behörighetens attribut, under katalogens anspråksnamn; att bevilja behörigheten är beviljandet av de anspråken, ett standardanspråk från OpenID Connect inräknat. Kombineras med klientens anspråk så som oauthAccessTokenClaimsCombine anger."
+  },
+  "applications.schema.attributes.oauthAccessTokenClaimsCombine.what": {
+    "en": "bf5a0b995021c02e",
+    "text": "HUR KLIENTENS ANSPRÅK I ÅTKOMSTTOKEN OCH DEN HÄR RESURSSERVERNS DEKLARERADE ANSPRÅK (oauthAccessTokenClaim) KOMBINERAS i en token adresserad till den: 'union' (standard), 'intersection' (endast anspråk som båda bär), 'client' (endast klientens) eller 'resource' (endast de deklarerade). Flera resursservrar som är oense kombineras med intersection. Ingenting som en beviljning inte täckte släpps, vilket som än väljs."
+  },
+  "applications.schema.attributes.oauthRevokeRefreshOnLogout.what": {
+    "en": "4a6e20c0380356cf",
+    "text": "TRUE eller FALSE: återkallar utloggning den här klientens uppdateringstoken, vilket åsidosätter oauth2.revokeRefreshOnLogout. FALSE är det intressanta fallet och skälet till att detta är värt att ha per klient — en klient som kan uppdatera sig tillbaka efter en utloggning är en verklig brist i verkliga driftsättningar, och detta gör den reproducerbar för EN klient medan resten beter sig som vanligt."
+  },
+  "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
+    "en": "25b5b04c83819b5b",
+    "text": "OM ETT TOKENUTBYTE ENLIGT RFC 8693 SOM UTFÖRS AV DEN HÄR KLIENTEN FÅR EN `refresh_token` BREDVID DEN UTBYTTA ÅTKOMSTTOKEN, vilket åsidosätter oauth2.tokenExchangeRefreshToken för enbart den. Ett av tre ord: `never`, `when-requested` (det tjänstevida standardvärdet — klienten ber om en med RFC 8693 avsnitt 2.1:s `requested_token_type` och får en bara om den gjorde det) eller `always`.\n\nDET LÄSES PÅ KLIENTEN SOM UTFÖR UTBYTET och inte på målgruppen, eftersom uppdateringstoken lämnas till klienten: det är den partens inloggningsuppgift att förvara, återkalla och till slut lösa in. Det subjekt som utbytet GÄLLER har ingen post alls i det här registret i det intressanta fallet, eftersom hela poängen med ett utbyte är en subject_token från någon annanstans.\n\n**DET GÄLLER FAMILJERNA OAUTH 2.0 OCH OPENID CONNECT OCH INGEN ANNAN, och till skillnad från varje annat attribut här UPPRÄTTHÅLLS det.** En post som inte är deklarerad för någon av dem avvisas av båda konsolens dörrar och av hanterings-API:t, som anger vilken familj som ska markeras först — eftersom ett värde här är en policy för tokenslutpunkten, och en post som ingen tokenbegäran någonsin kan ange skulle bära den som om den vore i kraft. Blocket ovanför den här raden argumenterar för det. `ldapmodify` når det här attributet som alla andra och kontrolleras inte.\n\nETT VÄRDE SOM INTE ÄR ETT AV DE TRE ORDEN ÄR INTE ETT FEL VID SKRIVNING OCH ÄR INTE TYST: settingFor() varnar med angivande av posten, attributet och vad det innehåller, och den tjänstevida inställningen avgör — samma tretillståndsärlighet som varje annan åsidosättning på den här posten får."
+  },
+  "applications.schema.attributes.appRequiredRole.what": {
+    "en": "03d0f9a2b65f3598",
+    "text": "En roll som någon måste ha innan den här applikationen utfärdas något — en token, ett intyg, ett WS-Federation-svar, en session. Flervärd och VILKEN SOM HELST av dem räcker. FRÅNVARANDE BETYDER ALLA, den inbyggda roll som alla har, vilket är varför en okonfigurerad applikation inte avvisar någon. Beslutet fattas av XACML-PDP:n mot den policy som anges av xacml.issuancePolicy, inte av en if-sats på ett utfärdandeställe, så skälet till en avvisning är en policy som någon kan läsa."
+  },
+  "applications.schema.attributes.appAllowedToDelegateTo.what": {
+    "en": "5308a92257a7b8f9",
+    "text": "DE MÅL SOM DEN HÄR APPLIKATIONEN FÅR ERHÅLLA EN TOKEN FÖR Å NÅGON ANNANS VÄGNAR, när den är MELLANHAND i en WS-Trust OnBehalfOf / ActAs-begäran eller ett tokenutbyte enligt RFC 8693 — motsvarigheten till Kerberos msDS-AllowedToDelegateTo, på framsidan. En applikationsidentifierare (eller den bokstavliga målgruppen / AppliesTo) per värde. Upprätthålls i produktläge; utvecklingsläget registrerar på /admin/delegation vad som skulle ha avvisats. appAllowedToActOnBehalfOf på MÅLET är det andra sättet att tillåta samma par."
+  },
+  "applications.schema.attributes.appAllowedToActOnBehalfOf.what": {
+    "en": "ec2ab22c5113f585",
+    "text": "DE MELLANHÄNDER SOM DEN HÄR APPLIKATIONEN GODTAR som agerande för någon annan när den är MÅLET för en delegering — den resursbaserade motsvarigheten till Kerberos msDS-AllowedToActOnBehalfOfOtherIdentity, satt på baksidan. En applikationsidentifierare för mellanhanden per värde."
+  },
+  "applications.schema.attributes.appDelegationSubjectGroup.what": {
+    "en": "ccd774803e78bb21",
+    "text": "DE PERSONER SOM DEN HÄR MELLANHANDEN FÅR AGERA FÖR, som grupp-DN:er: ett subjekt måste vara medlem i en av dem. TOMT BETYDER VEM SOM HELST som inte är skyddad — en person som bär stsNotDelegated, eller en medlem av konsolens förteckning för Admin Read eller Admin Write, delegeras aldrig oavsett vad detta säger."
+  },
+  "applications.schema.attributes.appDelegationSemantics.what": {
+    "en": "9faf00ab16755dec",
+    "text": "DEN SEMANTIK som den här applikationen tillåter: `delegation`, `impersonation` eller båda. Som AKTÖR — klienten i ett tokenutbyte, den begärande i en WS-Trust OnBehalfOf / ActAs, tjänsten i en Kerberos S4U-begäran — säger den vad den här applikationen får GÖRA; tomt är endast delegering, så att uppträda som någon annan kräver `impersonation` här (Kerberos TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION). Som SUBJEKT säger den vad som får göras SOM den; tomt är båda. Utfärdandepolicyn avgör; detta är ett av dess fakta."
+  },
+  "applications.schema.attributes.appDefaultDelegationSemantics.what": {
+    "en": "172f18f5cdd5396c",
+    "text": "`delegation` eller `impersonation`: vad en handling som den här applikationen ingår i är när begäran inte säger det — aktörens standard först, sedan subjektets, sedan delegation.defaultSemantics."
+  },
+  "applications.schema.attributes.appNotDelegated.what": {
+    "en": "08d03ae79d14ab20",
+    "text": "TRUE eller FALSE, standard FALSE: ingen får agera för den här applikationen, i något protokoll — NOT_DELEGATED, applikationens motsvarighet till en persons stsNotDelegated."
+  },
+  "applications.schema.attributes.appMayAct.what": {
+    "en": "46cfc90a8de4561b",
+    "text": "DN för EN part — en person eller en annan applikation — som den här applikationen anger som sitt ombud: en token om den bär RFC 8693 avsnitt 4.4:s may_act som anger den parten, så som utfärdandepolicyn tilldelar det, och ett utbyte av den token av någon annan avvisas. En persons motsvarighet är stsMayAct."
+  },
+  "applications.schema.attributes.appGroupsClaim.what": {
+    "en": "01129d11979c9b3d",
+    "text": "TRUE eller FALSE: bär något som utfärdas till den här applikationen över huvud taget ett gruppanspråk, vilket åsidosätter groups.claim. FALSE på en applikation är sättet att testa en klient som går sönder av ett oväntat anspråk utan att ta bort anspråket från allt annat."
+  },
+  "applications.schema.attributes.appGroupsClaimName.what": {
+    "en": "4fc6ecdda2fd1881",
+    "text": "Vad gruppanspråket HETER för den här applikationen, vilket åsidosätter groups.claimName. Det är det här attributet som ger gruppen dess plats här: `groups`, `roles`, `memberOf` och ett URI-format anspråksnamn är alla vanliga, de skiljer sig per förlitande part i varje verklig driftsättning, och ett enda tjänstevitt namn innebar att bara ett av dem kunde testas åt gången."
+  },
+  "applications.schema.attributes.appGroupsClaimValue.what": {
+    "en": "68134f2525fc0453",
+    "text": "Om anspråket bär varje grupps namn eller hela dess DN, vilket åsidosätter groups.claimValue. Förlitande parter skiljer sig verkligen åt: en matchar på `cn` och nästa skrevs mot ett LDAP-DN."
+  },
+  "applications.schema.attributes.appGroupsClaimFromMemberOf.what": {
+    "en": "a49254d4644665d9",
+    "text": "Varifrån grupperna läses för den här applikationen, vilket åsidosätter groups.claimFromMemberOf — personens memberOf-attribut, eller en sökning i gruppcontainern. De två stämmer överens i den här katalogen; de är värda att skilja åt eftersom memberOf i en verklig katalog kan släpa efter."
+  },
+  "applications.schema.attributes.wsfedAssertionLifetimeMin.what": {
+    "en": "9a4a30909e2c05ca",
+    "text": "Hur länge SAML 1.1-intyget i ett WS-Federation-inloggningssvar för DEN HÄR förlitande parten är giltigt, i minuter, vilket åsidosätter wsfed.assertionLifetimeMin. Det sätter intygets Conditions och wsu:Lifetime för den RequestSecurityTokenResponse som omger det, så att kuvertet och dokumentet inuti inte kan vara oense. Det är separat från saml11AssertionLifetimeMin: en applikation kan tala båda, och en WS-Federation-session och ett Browser/POST-intyg konsumeras inte på samma sätt."
+  },
+  "applications.schema.attributes.saml2CustomAttributes.what": {
+    "en": "6a7f74a34549ac13",
+    "text": "DEN HÄR TJÄNSTELEVERANTÖRENS EGNA SAML 2.0-ATTRIBUT, som en JSON-matris av rader likt sfärens sida Anpassade SAML-attribut (ett nameFormat tillåts). Läggs till sfärens SAML 2.0-attribut i intyg för den här målgruppen och vinner efter namn."
+  },
+  "applications.schema.attributes.saml11CustomAttributes.what": {
+    "en": "c1469888e73b177f",
+    "text": "DEN HÄR FÖRLITANDE PARTENS EGNA SAML 1.1-ATTRIBUT, som en JSON-matris av rader likt sfärens sida Anpassade SAML-attribut (ett namnområde tillåts). Läggs till sfärens SAML 1.1-attribut i intyg för den här målgruppen (SAML 1.1, WS-Federation, WS-Trust) och vinner efter namn."
+  },
+  "applications.schema.attributes.saml2ClaimAttributes.what": {
+    "en": "1975b37dcacff86c",
+    "text": "DEN HÄR TJÄNSTELEVERANTÖRENS EGET URVAL av katalogattribut för dess SAML 2.0-intyg, en JSON-matris av attributnamn från anspråkskatalogen, som ersätter sfärens urval när det finns."
+  },
+  "applications.schema.attributes.saml11ClaimAttributes.what": {
+    "en": "bb6b41c7ea67806c",
+    "text": "DEN HÄR FÖRLITANDE PARTENS EGET URVAL av katalogattribut för dess SAML 1.1-intyg (SAML 1.1, WS-Federation, WS-Trust), en JSON-matris av attributnamn från anspråkskatalogen, som ersätter sfärens urval när det finns."
+  },
+  "applications.schema.attributes.saml2ClaimsCombine.what": {
+    "en": "d0a05b0063187eff",
+    "text": "HUR SFÄRENS SAML 2.0-ATTRIBUT OCH DEN HÄR APPLIKATIONENS EGNA KOMBINERAS (#395), både de inskrivna raderna och de markerade katalogattributen: application (endast applikationens egna), union (sfärens och dess egna), intersection (endast det som båda har) eller realm (endast sfärens). Om det inte är satt läggs dess rader till sfärens och vinner efter namn, och dess urval ersätter sfärens. En applikation som inte har något eget får sfärens oavsett vad detta säger."
+  },
+  "applications.schema.attributes.saml11ClaimsCombine.what": {
+    "en": "a19640f716396460",
+    "text": "HUR SFÄRENS SAML 1.1-ATTRIBUT OCH DEN HÄR APPLIKATIONENS EGNA KOMBINERAS (#395), både de inskrivna raderna och de markerade katalogattributen: application (endast applikationens egna), union (sfärens och dess egna), intersection (endast det som båda har) eller realm (endast sfärens). Om det inte är satt läggs dess rader till sfärens och vinner efter namn, och dess urval ersätter sfärens. En applikation som inte har något eget får sfärens oavsett vad detta säger."
+  },
+  "applications.schema.attributes.vcCredentialClaimAttributes.what": {
+    "en": "5df9a1b2f23cb7e9",
+    "text": "DEN HÄR KLIENTENS EGET URVAL av de katalogattribut som ett Verifiable Credential bär, en JSON-matris av attributnamn från anspråkskatalogen. När det finns ERSÄTTER det sfärens urval av credential-anspråk för credentials som utfärdas på den här klientens åtkomsttoken; utfärdarens metadata annonserar fortfarande sfärens."
+  },
+  "applications.schema.attributes.saml2AssertionLifetimeMin.what": {
+    "en": "5980ad42371e28c5",
+    "text": "HUR LÄNGE DEN HÄR TJÄNSTELEVERANTÖRENS INTYG ÄR GILTIGA, i minuter, vilket åsidosätter saml2.assertionLifetimeMin för enbart den. Det blir både Conditions/NotOnOrAfter och bearer-SubjectConfirmationData/NotOnOrAfter, vidgat i båda ändar av saml.clockSkewS — som INTE är per applikation, eftersom det är ett faktum om klockorna i den här miljön snarare än om en förlitande part."
+  },
+  "applications.schema.attributes.saml2SignAssertion.what": {
+    "en": "119214c380ca0bfc",
+    "text": "TRUE eller FALSE: signera den <saml:Assertion> som utfärdas till den här tjänsteleverantören, vilket åsidosätter saml2.signAssertion för enbart den. FALSE är ett testfall snarare än ett misstag — en tjänsteleverantör som godtar ett osignerat intyg har ett hål, och så här hittar man ett utan att samtidigt stänga av signering för varje annan applikation. Det är hela skälet till att detta är per applikation."
+  },
+  "applications.schema.attributes.saml2SignResponse.what": {
+    "en": "bb83449f1266566e",
+    "text": "TRUE eller FALSE: signera den <samlp:Response> som omger intyget för den här tjänsteleverantören, vilket åsidosätter saml2.signResponse. På HTTP Redirect-bindningen styr det också frågesträngssignaturen enligt avsnitt 3.4.4.1, som är den som ett omdirigeringssvar faktiskt verifieras med."
+  },
+  "applications.schema.attributes.saml2NameIdFormat.what": {
+    "en": "c71975e6bdd39ec9",
+    "text": "Det NameID Format som används för den här tjänsteleverantören när dess AuthnRequests NameIDPolicy inte begär något, vilket åsidosätter saml2.nameIdFormat. En begäran som ANGER ett format besvaras fortfarande med det format den angav — detta är standardvärdet, inte en begränsning, och det kontrolleras medvetet INTE mot samlNameIdFormat bredvid, som är listan över format som den här tjänsteleverantören har BETT om."
+  },
+  "applications.schema.attributes.saml2ArtifactTtlS.what": {
+    "en": "f6fd526344172dcd",
+    "text": "Hur länge en artefakt som skapats för den här tjänsteleverantören kan lösas upp, i sekunder, vilket åsidosätter saml2.artifactTtlS. En artefakt är DESSUTOM engångs oavsett hur långt detta är — att lösa upp den förstör den, vilket avsnitt 3.6.4.1 kräver och ingen livslängd kan uttrycka."
+  },
+  "applications.schema.attributes.saml11AssertionLifetimeMin.what": {
+    "en": "1c1e8ff577d70a0c",
+    "text": "SAML 1.1-motsvarigheten till saml2AssertionLifetimeMin, vilket åsidosätter saml11.assertionLifetimeMin för den här förlitande parten. Separat från 2.0-attributet av samma skäl som de två INSTÄLLNINGARNA är separata: profilerna är separata implementationer som konsumeras olika, och en applikation som är deklarerad för båda vill legitimt ha två svar."
+  },
+  "applications.schema.attributes.saml11SignAssertion.what": {
+    "en": "6123c6863711aa4b",
+    "text": "TRUE eller FALSE: signera SAML 1.1-<saml:Assertion> för den här förlitande parten, vilket åsidosätter saml11.signAssertion. Browser/POST-profilen KRÄVER ett signerat intyg (saml-profile-1.1 avsnitt 4.2.1.4), så FALSE här är precis testfallet: en förlitande part som ändå godtar det har ett hål."
+  },
+  "applications.schema.attributes.saml11SignResponse.what": {
+    "en": "b5c3ac0c3a3f20d3",
+    "text": "TRUE eller FALSE: signera SAML 1.1-<samlp:Response> för den här förlitande parten, vilket åsidosätter saml11.signResponse, med referensen som anger ResponseID."
+  },
+  "applications.schema.attributes.saml11NameIdFormat.what": {
+    "en": "0e4deac01ea4ef16",
+    "text": "Det NameIdentifier Format som används för den här förlitande parten, vilket åsidosätter saml11.nameIdFormat. SAML 1.1 har inget begärandemeddelande, så ingenting kan be om ett format och detta är det enda som avgör det — vilket gör det till det mer användbara av de två formatattributen per applikation."
+  },
+  "applications.schema.attributes.saml11ArtifactTtlS.what": {
+    "en": "1887a455954e9b4f",
+    "text": "Hur länge en SAML 1.1-artefakt som skapats för den här förlitande parten kan lösas upp, i sekunder, vilket åsidosätter saml11.artifactTtlS. Browser/Artifact-profilens SOAP-tjänst är det som löser in den, en gång."
+  },
+  "applications.schema.attributes.samlAuthnRequestSigned.what": {
+    "en": "2150507140b66231",
+    "text": "TRUE när den senaste AuthnRequest från den här tjänsteleverantören bar en signatur — en inbäddad ds:Signature på POST-bindningen, eller Signature-parametern enligt avsnitt 3.4.4.1 på Redirect-bindningen. TILLDELAT snarare än ackumulerat, eftersom det är ett faktum om den senaste begäran och en historik av booleska värden inte skulle säga någonting."
+  },
+  "applications.schema.attributes.wsfedRealm.what": {
+    "en": "86782168726d7440",
+    "text": "WTREALM från en wsignin1.0-begäran (avsnitt 13.2.1) — WS-Federations identifierarattribut. Ackumuleras, av samma skäl som varje identifierare här."
+  },
+  "applications.schema.attributes.wsfedReplyUrl.what": {
+    "en": "1d6376f1797ef43c",
+    "text": "DIT ETT INLOGGNINGSSVAR POSTAS TILLBAKA för den här applikationen: `wreply` enligt avsnitt 13.2.1, WS-Federations omdirigerings-URI. Det skrevs i samlAssertionConsumerService fram till 2026-08-25, vilket lade en wreply i det attribut som SAML-sidorna läser för en assertion consumer service och för reservvägen för Single Logout — ett attribut som höll två protokolls returadresser, så att en WS-Federation-applikation verkade ha en SAML-ACS som den aldrig hade angett. Två fakta, två attribut. Precis som SAML-attributet bredvid KONTROLLERAS detta ENDAST I PRODUKTLÄGE: utvecklingsläget avvisar ingen wreply, eftersom en tjänst som avvisade skulle ta bort ett testfall snarare än lägga till ett; produktläget postar bara till en adress på den här listan och en observation lägger aldrig till någon. En wreply som utvecklingsläget registrerat markeras i appReturnAddressObserved och produktläget avvisar den tills den bekräftas; värden som registrerades innan den markeringen fanns har ingen och behöver fortfarande granskas innan en sfär byts till produktläge."
+  },
+  "applications.schema.attributes.wsfedSignOutUri.what": {
+    "en": "493ac4121c2076ca",
+    "text": "DIT ETT wsignoutcleanup1.0-ANROP SKICKAS för den här applikationen — WS-Federations utloggnings-URI, och den som den här tabellen saknade fram till 2026-08-30. DEKLARERAT, inte observerat, vilket gör det till ett syskon till samlSingleLogoutService snarare än till wsfedReplyUrl: en cleanup skickas när en SESSION avslutas, och då är den begäran som skulle ha burit en wreply sedan länge över.\n\n**DET LÄSES ÄNNU INTE AV UTLOGGNINGEN**, och det sägs uttryckligen snarare än antyds. `cleanupTargetsFor()` bygger sin lista från `session.wsfedRealms`, som registrerar den wreply varje inloggningssvar faktiskt gick till — så det som den här tjänsten anropar i dag är det den OBSERVERADE, och det här attributet är det som en operatör DEKLARERADE. Det är två olika fakta och det andra är det som en person som sätter upp en applikation kan ange i förväg. Att koppla in det som reserv för en sfär som loggats in i utan wreply är det självklara nästa steget och tas medvetet inte här: den här ändringen lägger till fältet och lagringen, och att ändra vart en cleanup går är en ändring av vad protokollet gör."
+  },
+  "applications.schema.attributes.wstrustAppliesTo.what": {
+    "en": "9a8d1ca262be725c",
+    "text": "APPLIESTO-ADRESSEN från en RequestSecurityToken — den tjänst som token utfärdas FÖR, och WS-Trusts identifierarattribut. Ackumuleras.\n\n**DET LÄSES**, vilket det inte gjorde före 2026-08-27, och det är `oauthAudience`:s undantag som kommer in via ett andra protokoll: en OnBehalfOf eller ActAs som ber om en token för att nå `https://esb.example.com` registreras på /admin/delegation mot den APPLIKATION som registrerade den adressen, så att en kedja av delegerade hopp ritas som en bild snarare än som rutor uppkallade efter URL:er som ingenting annat i den nämner. I utvecklingsläge en UPPSLAGNING och inte en behörighet — en AppliesTo som ingen registrerat utfärdas för och registreras ordagrant; i produktläge avvisas den (#496). Se forAppliesTo(), som frågar det här attributet först och `samlEntityId` därefter."
+  },
+  "applications.schema.attributes.wstrustJwtScope.what": {
+    "en": "86ac83dbe366a17b",
+    "text": "DE OAUTH 2.0-SCOPES SOM EN WS-TRUST-JWT FÖR DEN HÄR APPLIKATIONEN BÄR, ett scope-värde vardera (#485). En JWT som WS-Trust utfärdar med den här applikationen som AppliesTo (wst:TokenType urn:ietf:params:oauth:token-type:jwt) bär dem i sitt `scope`-anspråk, blankstegsavgränsade (RFC 9068 avsnitt 2.2.3); om inga är satta bär den inget `scope`. En SAML-token påverkas inte.\n\n**VART OCH ETT BEDÖMS SOM EN OAUTH-ÅTKOMSTTOKENS**, med den här applikationen som klient: `oauthAllowedScope` deklarerar vad den får utfärdas (i produktläge; den här tjänstens skyddade scopes i alla lägen), och utfärdandepolicyns fråga per scope avgör. Ett värde som policyn tar bort UTELÄMNAS från token och granskas (STS-OAUTH-0579), utfärdas aldrig. En skrivning som anger ett odeklarerat scope godtas här, eftersom deklarationen kan ändras och utvecklingsläget beviljar odeklarerade scopes: deklarera det även i oauthAllowedScope. Ett värde som policyn kommer att ta bort VARNAS för där det sätts (#488): bredvid det här fältet, i svaret på Spara, och som `warnings` i svaren på skrivningar via /admin-api och i applikationens vy."
+  },
+  "applications.schema.attributes.krb5ServicePrincipalName.what": {
+    "en": "2e8e5f607172bae7",
+    "text": "SPN:EN, t.ex. HTTP/sts@EXAMPLE.COM — Kerberos v5:s identifierarattribut. En Kerberos-tjänst är en applikation som de andra här, och den är den vars identifierare den här tjänsten kan ha skapat på begäran (KRB5_SERVICE_DOMAINS). Den ackumuleras, och här är det det vanliga fallet snarare än det ovanliga: en tjänst svarar ofta på flera SPN:er — HTTP/host och HTTP/host.example.com — och en verklig KDC håller dem alla mot ett konto."
+  },
+  "applications.schema.attributes.krb5ClaimsPac.what": {
+    "en": "0abf4d44f51d3755",
+    "text": "DEN HÄR TJÄNSTENS EGNA PAC-ANSPRÅK, som en JSON-matris av rader likt sfärens sida Kerberos PAC-anspråk. Läggs till de anspråk som en tjänstebiljett för någon av den här applikationens SPN:er bär (de från den TGT den utfärdades från), där en applikationsrad ersätter anspråket med samma namn. Endast medan krb5.pacClaims är påslaget."
+  },
+  "applications.schema.attributes.krb5TrustedForDelegation.what": {
+    "en": "3b66e9eeaaad2290",
+    "text": "TRUE eller FALSE, standard FALSE: den här Kerberos-tjänsten är BETRODD FÖR DELEGERING — obegränsad (Active Directorys TRUSTED_FOR_DELEGATION). Dess tjänstebiljetter bär ok-as-delegate, vilket säger till en klient att den får vidarebefordra sin TGT hit; den som har en vidarebefordrad TGT kan agera som den personen var som helst. En skyddad persons TGT är aldrig vidarebefordringsbar, så den vidarebefordras aldrig hur detta än är satt. Begränsad delegering (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) är det säkrare alternativet."
+  },
+  "applications.schema.attributes.krb5ServiceKeys.what": {
+    "en": "35f24692c1cc40a5",
+    "text": "EN TJÄNSTEPRINCIPALS SLUMPMÄSSIGA LÅNGTIDSNYCKLAR, en per enctype, i ETT värde: ett JSON-dokument som anger SPN:en, sfären och kvno bredvid nycklarna, FÖRSEGLAT under nyckelkrypteringsnyckeln överallt där den nyckeln överlever processen. Ett värde snarare än ett per enctype så att en nyckel inte kan flyttas till en annan post eller ett annat kvno utan att förseglingen bryts. Lösenordsekvivalent: det UNDANHÅLLS från varje sida och varje svar från /admin-api, och den enda gång det lämnar den här tjänsten är som den keytab som en skapning eller rotation lämnar över."
+  },
+  "applications.schema.attributes.krb5ServiceKeyInfo.what": {
+    "en": "c7f1cd5d22b9cff1",
+    "text": "Vad `krb5ServiceKeys` innehåller, utan nycklarna: kvno, enctypes, när nycklarna skapades och om de är förseglade. Skrivs i samma handling som nycklarna, så att de två inte kan beskriva olika generationer."
+  },
+  "applications.schema.attributes.appEnrolledCertificate.what": {
+    "en": "8aa24cf06f1d004f",
+    "text": "En JSON-post per certifikat som utfärdats till den här applikationen via ett enrollment-protokoll: serienummer, protokoll, profil, subjekt, namn, giltighet, vem som bad om det, om nyckeln genererades här, certifikatet och dess utfärdande kedja, samt en återkallelsemarkering. Publikt material. Skrivs endast av common/cert_enrollment.ts."
+  },
+  "applications.schema.attributes.appEnrolledPrivateKey.what": {
+    "en": "68a37a841eb0e1f0",
+    "text": "En privat nyckel som DEN HÄR TJÄNSTEN genererade för ett av certifikaten ovan (EST-nyckelgenerering på serversidan, eller konsolens servergenererade nyckelpar), som `<serial>:<PEM>`, förseglad överallt där nyckelkrypteringsnyckeln överlever processen. UNDANHÅLLS från varje sida och varje svar från /admin-api; den lämnas över en gång, vid utfärdandet."
+  },
+  "applications.schema.attributes.appAcmeEabKey.what": {
+    "en": "a77a4c24f3169e88",
+    "text": "ACME External Account Binding-nycklar som utfärdats för den här applikationen, en JSON-post vardera: nyckel-id, den förseglade HMAC-nyckeln, dess utgångstid och det konto den band. En fungerande inloggningsuppgift, UNDANHÅLLEN från varje sida och varje svar från /admin-api."
+  },
+  "applications.schema.attributes.appScepChallenge.what": {
+    "en": "5cfc533567cbdfbe",
+    "text": "SCEP-utmaningslösenord som utfärdats för den här applikationen, en JSON-post vardera: id, en SHA-256-sammanfattning av hemligheten, profilen, utgångstiden och när det löstes in. UNDANHÅLLS från varje sida och varje svar från /admin-api."
+  },
+  "applications.schema.attributes.appCertificateHostName.what": {
+    "en": "1ed851c949c198fb",
+    "text": "Ett DNS-namn eller en IP-adress som den här applikationen får utfärdas ett certifikat för via ACME, EST eller SCEP. Att registrera ett är hela beviset på kontroll: den här tjänsten anropar aldrig ett namn för att validera det. Sätts av en administratör; läses av common/cert_enrollment.ts."
+  },
+  "applications.schema.attributes.appRegistrationJson.what": {
+    "en": "5766d34ddf2a5c0b",
+    "text": "RFC 7591-REGISTRERINGEN ORDAGRANT, som JSON i ett attribut. Den finns här eftersom RFC 7591 låter en klient registrera godtycklig metadata och RFC 7592:s läsning måste lämna tillbaka det som registrerades — vilket ingen fast uppsättning LDAP-attribut kan representera. Den är UTGÅNGSPUNKTEN när posten rekonstrueras och inte det sista ordet: varje medlem som också har ett attribut ovan skrivs sedan över FRÅN det attributet, så en ldapmodify av oauthRedirectUri är det som RFC 9700-läget upprätthåller. Redigera detta bara för att ändra en medlem som inte har något eget attribut."
+  },
+  "applications.schema.attributes.appRegistrationAccessToken.what": {
+    "en": "c7a3a95ccee6d6fb",
+    "text": "RFC 7592-registreringens åtkomsttoken, som är det som skyddar läs-, uppdaterings- och borttagningsoperationerna på den här klienten. Förseglad som oauthClientSecret överallt där processen har en beständig nyckelkrypteringsnyckel (sedan 2026-10-01), och skrivs aldrig till granskningsloggen."
+  },
+  "applications.schema.attributes.oid4vpClientId.what": {
+    "en": "7254425d22df2918",
+    "text": "VERIFIERARENS CLIENT_ID i en Authorization Request som ber om en presentation — OpenID4VP:s identifierarattribut. Den här tjänstens egen verifierare tar sitt från konfigurationen (oid4vp.clientId) snarare än från en anropare, så den posten dyker upp första gången en presentation verifieras; ett värde som deklareras här är en FRÄMMANDE verifierare som någon konfigurerar."
+  },
+  "applications.schema.attributes.federationPartnerId.what": {
+    "en": "6b7f63d65cdd8229",
+    "text": "VAD EN FEDERATIONSPARTNER KALLAR SIG SJÄLV — en främmande identitetsleverantörs entityID, eller dess utfärdaridentifierare där relationen talar OpenID Connect. RELATIONEN FINNS INTE HÄR: slutpunkterna, certifikatet och attributmappningen finns under ou=federations och är det som /federation/acs/{id} faktiskt verifierar mot (se federation/CLAUDE.md). Den här posten är partnern som PART, och det här attributet är namnet den går under — så ett värde här federerar med ingen, vilket är det enda stället i den här tjänsten där den meningen har tänder."
+  },
+  "applications.schema.attributes.ldapBindDn.what": {
+    "en": "f1e68cbe5820e3d4",
+    "text": "DET DN SOM EN KATALOGKLIENT BINDER SOM på 389 eller LDAPS 636. Ingenting kommer någonsin att skriva detta och ingenting kommer någonsin att läsa det: i utvecklingsläge LYCKAS VARJE BINDNING — vilket DN som helst, vilket lösenord som helst, anonymt — och i produktläge binder bara en person, så en applikation läser katalogen via SCIM i stället. Det är där en operatör registrerar vilken inloggningsuppgift en applikation förväntas använda, bredvid resten av det som applikationen är."
+  },
+  "applications.schema.attributes.scimClientId.what": {
+    "en": "9fa8008ba9df8d03",
+    "text": "VAD EN PROVISIONERINGSKLIENT VID /scim/v2 HETER — det OAuth-client_id som den presenterar en token från, eller användarnamnet den skickar i Basic. Den ytan autentiserar sin ANROPARE i något av de sex scheman som RFC 7644 avsnitt 2 namnger snarare än en applikationsidentifierare, så den skriver ingenting här; värdet är en deklaration, och SCIM-grinden är det som avgör om en inloggningsuppgift krävs över huvud taget."
+  },
+  "applications.schema.attributes.acmeAllowedProfiles.what": {
+    "en": "de16295602b7cfb4",
+    "text": "DE ACME-PROFILER SOM DEN HÄR APPLIKATIONEN FÅR UTFÄRDAS. Där den listar något ÅSIDOSÄTTER den acme.allowedProfiles för den här applikationen, bredare eller snävare; tomt behåller sfärens lista. De fem CA-, OCSP- och KDC-profilerna utfärdas aldrig."
+  },
+  "applications.schema.attributes.acmeDefaultProfile.what": {
+    "en": "4b0f22f11ec6337b",
+    "text": "DEN PROFIL SOM DEN HÄR APPLIKATIONEN UTFÄRDAS VIA ACME NÄR EN BEGÄRAN INTE ANGER NÅGON, vilket åsidosätter acme.defaultProfile. Används bara så länge den lista som gäller för den tillåter det."
+  },
+  "applications.schema.attributes.acmeCertificateLifetimeDays.what": {
+    "en": "32178dcf7b3e4ef3",
+    "text": "Hur länge ett certifikat som den här applikationen utfärdas via ACME är giltigt, i dagar, vilket åsidosätter acme.certificateLifetimeDays (längre eller kortare). Inget certifikat överlever sin utfärdande CA."
+  },
+  "applications.schema.attributes.estAllowedProfiles.what": {
+    "en": "fe0432c6af1e6225",
+    "text": "DE EST-PROFILER SOM DEN HÄR APPLIKATIONEN FÅR UTFÄRDAS. Där den listar något ÅSIDOSÄTTER den est.allowedProfiles för den här applikationen, bredare eller snävare; tomt behåller sfärens lista. De fem CA-, OCSP- och KDC-profilerna utfärdas aldrig."
+  },
+  "applications.schema.attributes.estDefaultProfile.what": {
+    "en": "c4ee79f2c43d72a3",
+    "text": "DEN PROFIL SOM DEN HÄR APPLIKATIONEN UTFÄRDAS VIA EST NÄR EN BEGÄRAN INTE ANGER NÅGON, vilket åsidosätter est.defaultProfile. Används bara så länge den lista som gäller för den tillåter det."
+  },
+  "applications.schema.attributes.estCertificateLifetimeDays.what": {
+    "en": "ea0b1720d4a2f466",
+    "text": "Hur länge ett certifikat som den här applikationen utfärdas via EST är giltigt, i dagar, vilket åsidosätter est.certificateLifetimeDays (längre eller kortare). Inget certifikat överlever sin utfärdande CA."
+  },
+  "applications.schema.attributes.scepAllowedProfiles.what": {
+    "en": "c5d9d1351151d0c4",
+    "text": "DE SCEP-PROFILER SOM DEN HÄR APPLIKATIONEN FÅR UTFÄRDAS. Där den listar något ÅSIDOSÄTTER den scep.allowedProfiles för den här applikationen, bredare eller snävare; tomt behåller sfärens lista. De fem CA-, OCSP- och KDC-profilerna utfärdas aldrig."
+  },
+  "applications.schema.attributes.scepDefaultProfile.what": {
+    "en": "c1fa1a123597d8f1",
+    "text": "DEN PROFIL SOM DEN HÄR APPLIKATIONEN UTFÄRDAS VIA SCEP NÄR EN BEGÄRAN INTE ANGER NÅGON, vilket åsidosätter scep.defaultProfile. Används bara så länge den lista som gäller för den tillåter det."
+  },
+  "applications.schema.attributes.scepCertificateLifetimeDays.what": {
+    "en": "0c245cd0b371079a",
+    "text": "Hur länge ett certifikat som den här applikationen utfärdas via SCEP är giltigt, i dagar, vilket åsidosätter scep.certificateLifetimeDays (längre eller kortare). Inget certifikat överlever sin utfärdande CA."
+  },
+  "applications.schema.attributes.estBasicAuthentication.what": {
+    "en": "d46cf350842998c4",
+    "text": "Om EST godtar den här applikationens klient-id och hemlighet (HTTP Basic, RFC 7030 avsnitt 3.2.3), vilket åsidosätter est.basicAuthentication: TRUE godtar det och FALSE avvisar det oavsett vad sfären säger; ej satt låter sfären avgöra."
+  },
+  "applications.schema.attributes.estCertificateAuthentication.what": {
+    "en": "a50d58c25992eab8",
+    "text": "Om EST godtar ett certifikat som den här sfären utfärdat till den här applikationen (TLS-klientautentisering, RFC 7030 avsnitt 3.3.2), vilket åsidosätter est.certificateAuthentication: TRUE godtar det och FALSE avvisar det; ej satt låter sfären avgöra."
+  },
+  "applications.schema.attributes.estServerKeyGeneration.what": {
+    "en": "7b442138976271e8",
+    "text": "Om EST /serverkeygen (RFC 7030 avsnitt 4.4) får generera den här applikationens nyckel, vilket åsidosätter est.serverKeyGeneration: TRUE tillåter det och FALSE avvisar det; ej satt låter sfären avgöra."
+  },
+  "applications.schema.attributes.enrollMaxCertificates.what": {
+    "en": "4f16c3693e154521",
+    "text": "Hur många ej utgångna enrollade certifikat (ACME, EST och SCEP sammantaget) som den här applikationen får ha, vilket åsidosätter pki.enrollmentMaxCertificatesPerEntry (högre eller lägre)."
+  },
+  "applications.schema.attributes.didPublicKeyJwk.what": {
+    "en": "0e71b81250b48154",
+    "text": "EN PUBLIK NYCKEL SOM APPLIKATIONENS DID-DOKUMENT PUBLICERAR, en JWK per värde, var och en en JsonWebKey2020-verifieringsmetod namngiven efter sin kid (dess RFC 7638-tumavtryck där den inte bär någon) och listad under authentication och assertionMethod. Endast publika medlemmar: ett värde som bär d, p, q, dp, dq, qi, oth, k eller priv avvisas. Generera ett nyckelpar på applikationens sida så lämnas den privata halvan ut en gång och behålls inte här."
+  },
+  "applications.schema.attributes.didPrivateKeys.what": {
+    "en": "a302dcc5f0442754",
+    "text": "DE PRIVATA HALVORNA AV DE DID-NYCKLAR SOM DEN HÄR TJÄNSTEN GENERERADE, som en JSON-matris av privata JWK:er, FÖRSEGLADE i vila under nyckelkrypteringsnyckeln precis som en applikations RFC 7523-nyckelpar. Behålls så att den här tjänsten kan signera applikationens Domain Linkage Credentials (DIF Well-Known DID Configuration) på begäran; en nyckel som klistrats in i didPublicKeyJwk för hand har ingen privat halva här och kan inte signera någon. Skrivs endast av Generera ett nyckelpar."
+  },
+  "applications.schema.attributes.didService.what": {
+    "en": "e5ce72a596909938",
+    "text": "EN TJÄNST SOM DID-DOKUMENTET NAMNGER, som <type>|<serviceEndpoint>: till exempel LinkedDomains|https://app.example.com. Typen är en token; slutpunkten en absolut http- eller https-URL. Var och en blir en service-post med id:t <did>#service-<n>."
+  },
+  "applications.schema.attributes.didAlsoKnownAs.what": {
+    "en": "5a74e5a6c69ffbcd",
+    "text": "EN ANNAN IDENTIFIERARE FÖR SAMMA APPLIKATION, publicerad som DID-dokumentets alsoKnownAs: en absolut URI som applikationens webbursprung eller dess client_id-URL. DID Core gör det till ett påstående, inte ett bevis; en förlitande part kontrollerar det."
+  },
+  "applications.schema.attributes.secretDestProvider.what": {
+    "en": "999c0334f7036e11",
+    "text": "VILKEN HEMLIGHETSHANTERARE DEN HÄR DESTINATIONEN ÄR: aws (Secrets Manager, PutSecretValue), gcp (Secret Manager, AddSecretVersion), azure (Key Vault, setSecret), vault (en KV version 2-motor i HashiCorp Vault eller OpenBao, en skrivning med check-and-set) eller file (endast utvecklingsläge). En nyckelhanteringstjänst är inte en destination: den lagrar nycklar, inte hemligheter."
+  },
+  "applications.schema.attributes.secretDestPayload.what": {
+    "en": "afacd48434fc8c13",
+    "text": "VAD EN PUSH SKRIVER: password (det nakna lösenordet, standard) eller json — {\"username\", \"password\", \"realm\", \"rotatedAt\"}, det objekt som en läsare tar ut lösenordet ur via dess fält, så som den här tjänstens egna hemlighetsläsningar gör (keys.kekField och liknande). I Vault, vars versioner är mappningar, skriver password det enda fält som secretDestField anger."
+  },
+  "applications.schema.attributes.secretDestRegion.what": {
+    "en": "b18c846aef149c6a",
+    "text": "aws: den AWS-region som hemligheterna finns i (us-east-1)."
+  },
+  "applications.schema.attributes.secretDestProject.what": {
+    "en": "6bb1d4dc14be4ba4",
+    "text": "gcp: det projekt som ett kort hemlighetsnamn finns i, så att ett tjänstekonto anger sin hemlighet som sts-svc-backup snarare än projects/<project>/secrets/sts-svc-backup. Ett fullständigt resursnamn tas som det är."
+  },
+  "applications.schema.attributes.secretDestEndpoint.what": {
+    "en": "42bf9494550ebc2f",
+    "text": "azure: valv-URL:en (https://<name>.vault.azure.net). vault: Vault- eller OpenBao-adressen (https://vault.example.com:8200). Endast https — skrivuppgiften och ett lösenord passerar den."
+  },
+  "applications.schema.attributes.secretDestMount.what": {
+    "en": "364ce1b692cdde7c",
+    "text": "vault: där KV version 2-motorn är monterad; secret när tomt."
+  },
+  "applications.schema.attributes.secretDestField.what": {
+    "en": "22aeaa69eeb5f6d9",
+    "text": "vault, med password-nyttolasten: det fält i versionen som lösenordet skrivs till; value när tomt, vilket är det fält som den här tjänstens egna Vault-läsningar har som standard."
+  },
+  "applications.schema.attributes.secretDestDirectory.what": {
+    "en": "ea50b002c10c07e7",
+    "text": "file (ENDAST UTVECKLINGSLÄGE): den absoluta katalog där ett hemlighetsnamn är en fil. Filen måste redan finnas; ett namn som lämnar katalogen avvisas."
+  },
+  "applications.schema.attributes.secretDestCaCertificates.what": {
+    "en": "2ddb41551cc111c9",
+    "text": "vault: PEM-certifikaten för den CA som Vault-lyssnaren kedjar till, betrodda vid sidan av de publika rötterna. Certifikat är publika; certifikatet verifieras alltid."
+  },
+  "applications.schema.attributes.secretDestCredential.what": {
+    "en": "0e3e22596dd9d73c",
+    "text": "DESTINATIONENS SKRIVUPPGIFT, som får skriva versioner av namngivna hemligheter och inte bör kunna göra något annat: aws, en JSON {\"accessKeyId\", \"secretAccessKey\"[, \"sessionToken\"]}; gcp, JSON från en nyckelfil för ett tjänstekonto; azure, en JSON {\"tenantId\", \"clientId\", \"clientSecret\"}; vault, en token. Separat från de skrivskyddade inloggningsuppgifter som den här tjänsten läser sin egen nyckelkrypteringsnyckel och sitt databaslösenord med. Förseglad med nyckelkrypteringsnyckeln när nycklar är beständiga, UNDANHÅLLEN från varje sida, varje svar från /admin-api och varje katalogläsning, och loggas aldrig."
+  },
+  "applications.schema.attributes.scimClientBaseUrl.what": {
+    "en": "8576dcce5d9aa880",
+    "text": "DEN FJÄRRANSLUTNA SCIM-BAS-URI:N (RFC 7644 avsnitt 1.3), med /v2-segmentet där tjänsteleverantören använder ett: https://idp.example.com/scim/v2. Endast https (avsnitt 7.2); ingen fråga, fragment eller användarinformation (avsnitt 7.1)."
+  },
+  "applications.schema.attributes.scimClientEnabled.what": {
+    "en": "f0836917befa5243",
+    "text": "TRUE för att skicka ändringar och stämma av; FALSE (standard) behåller konfigurationen och skickar ingenting."
+  },
+  "applications.schema.attributes.scimClientAuthMethod.what": {
+    "en": "fe00a32026bba611",
+    "text": "HUR EN BEGÄRAN AUTENTISERAS (RFC 7644 avsnitt 2): basic (HTTP Basic med scimClientUsername och scimClientPassword), oauth2 (en client_credentials-token från scimClientTokenEndpoint, skickad som Bearer-token) eller none (endast TLS-klientcertifikatet, när ett är konfigurerat)."
+  },
+  "applications.schema.attributes.scimClientUsername.what": {
+    "en": "46d34680b8229ade",
+    "text": "basic: det användarnamn som tjänsteleverantören känner den här klienten under."
+  },
+  "applications.schema.attributes.scimClientPassword.what": {
+    "en": "0bd798150c823e27",
+    "text": "basic: lösenordet. Förseglat med nyckelkrypteringsnyckeln när nycklar är beständiga, UNDANHÅLLET från varje sida, varje svar från /admin-api och varje katalogläsning, och loggas aldrig."
+  },
+  "applications.schema.attributes.scimClientTokenEndpoint.what": {
+    "en": "2fff62508823be4f",
+    "text": "oauth2: tokenslutpunkten för den auktoriseringsserver som tjänsteleverantören litar på. Endast https."
+  },
+  "applications.schema.attributes.scimClientOAuthClientId.what": {
+    "en": "7db4d9638e6d19a4",
+    "text": "oauth2: det client_id som den här klienten är registrerad under där."
+  },
+  "applications.schema.attributes.scimClientOAuthClientSecret.what": {
+    "en": "532cf20542b7031b",
+    "text": "oauth2: klienthemligheten. Förseglad, undanhållen och loggas aldrig."
+  },
+  "applications.schema.attributes.scimClientOAuthClientAuth.what": {
+    "en": "ede4e8f4cfdb1611",
+    "text": "oauth2: hur klienten autentiserar sig vid tokenslutpunkten — client_secret_basic (standard) eller client_secret_post (RFC 6749 avsnitt 2.3.1)."
+  },
+  "applications.schema.attributes.scimClientOAuthScope.what": {
+    "en": "9f692d33ed80633f",
+    "text": "oauth2: det scope som begärs, blankstegsseparerat (scim:write, för den här tjänstens egen /scim/v2). Tomt begär inget."
+  },
+  "applications.schema.attributes.scimClientOAuthResource.what": {
+    "en": "b8d133b2b811132b",
+    "text": "oauth2: en resursindikator enligt RFC 8707 som skickas med tokenbegäran, där auktoriseringsservern vill ha en."
+  },
+  "applications.schema.attributes.scimClientTlsSource.what": {
+    "en": "59a022632ff98966",
+    "text": "DET TLS-KLIENTCERTIFIKAT som presenteras för tjänsteleverantören: none (standard), issued (av den här sfärens CA, från dess utfärdande CA för tls-client, återkallningsbart på /admin/pki) eller uploaded (scimClientTlsCertificate och scimClientTlsPrivateKey). Det presenteras oavsett vad scimClientAuthMethod säger."
+  },
+  "applications.schema.attributes.scimClientTlsCertificate.what": {
+    "en": "b666cc747004775b",
+    "text": "Klientcertifikatet, PEM, med sin kedja efter. Publikt."
+  },
+  "applications.schema.attributes.scimClientTlsPrivateKey.what": {
+    "en": "93b05dbd701d0139",
+    "text": "Klientcertifikatets privata nyckel, PEM. Förseglad, undanhållen och loggas aldrig."
+  },
+  "applications.schema.attributes.scimClientCaCertificates.what": {
+    "en": "cd2239779722a5f1",
+    "text": "PEM-certifikat för en CA som tjänsteleverantörens TLS-certifikat kedjar till, betrodda vid sidan av de publika rötterna. Certifikatet och dess värdnamn verifieras alltid."
+  },
+  "applications.schema.attributes.scimClientScopeMode.what": {
+    "en": "372adf4f4a44227b",
+    "text": "VILKA SOM SKICKAS: all (varje person i sfären), groups (medlemmarna i scimClientScopeGroups) eller filter (de personer som scimClientScopeFilter matchar). Den som lämnar omfånget avprovisioneras där."
+  },
+  "applications.schema.attributes.scimClientScopeGroups.what": {
+    "en": "8377e938c9251688",
+    "text": "omfånget groups: de grupper vars medlemmar skickas, var och en en grupps cn eller DN."
+  },
+  "applications.schema.attributes.scimClientScopeFilter.what": {
+    "en": "eb63610a69d08d21",
+    "text": "omfånget filter: ett LDAP-filter enligt RFC 4515 som en persons post måste matcha, till exempel (department=Sales)."
+  },
+  "applications.schema.attributes.scimClientGroupMode.what": {
+    "en": "c83feac3531f87f7",
+    "text": "VILKA GRUPPER SOM SKICKAS, var och en med bara sina medlemmar inom omfånget: none, selected (scimClientGroups), member-groups (varje grupp som en person inom omfånget är med i) eller all."
+  },
+  "applications.schema.attributes.scimClientGroups.what": {
+    "en": "b69fad674e7a8af5",
+    "text": "valda grupper: var och en en grupps cn eller DN."
+  },
+  "applications.schema.attributes.scimClientDeprovision.what": {
+    "en": "fa13a73140f18534",
+    "text": "VAD SOM HÄNDER DÄR när en person tas bort här eller lämnar omfånget: deactivate (active false, standard) eller delete. Ett inaktiverat konto här är alltid active false där."
+  },
+  "applications.schema.attributes.scimClientReconcileMinutes.what": {
+    "en": "a40bdc8ff019b288",
+    "text": "HUR OFTA HELA OMFÅNGET STÄMS AV, i minuter, av klusterschemaläggaren: varje person och grupp inom omfånget skickas, och det som tjänsteleverantören har under ett externalId från den här sfären och som inte längre är inom omfånget avprovisioneras. 0 (standard) stämmer bara av när en administratör ber om det."
+  },
+  "applications.schema.attributes.ssfReceiverId.what": {
+    "en": "25f9e6acd671b643",
+    "text": "VAD EN SHARED SIGNALS-MOTTAGARE HETER — det den autentiserade sig som när den skapade en ström vid /ssf/stream, vilket också är `aud` för varje Security Event Token som den strömmen bär. Till skillnad från de fyra deklarationsidentifierarna ovanför SKRIVS den här av protokollet: att skapa en ström registrerar en observation, eftersom att en mottagare autentiserar sig och beviljas en ström är exakt den sortens händelse som det här registret finns till för. Den beviljar ändå ingenting — en ström är det som avgör vad en mottagare får, och den bär sin egen målgrupp."
+  },
+  "applications.schema.attributes.ssfDeliveryEndpoint.what": {
+    "en": "1e2bc78133a2e93d",
+    "text": "DIT DEN HÄR MOTTAGAREN FÖRVÄNTAR SIG ATT DESS HÄNDELSER SKICKAS — en leveransslutpunkt enligt RFC 8935. Det är en DEKLARATION och ingenting läser den: en push går till slutpunkten på STRÖMMEN, som mottagaren angav när den skapade en, och den här tjänsten tar inte en URL att anropa från en applikationspost: en URL som registreras här är en anteckning om vad en mottagare är, och en URL på en ström är en URL som den här tjänsten öppnar en anslutning till. De två är medvetet inte samma lager."
+  },
+  "applications.schema.attributes.ssfAllowedEvents.what": {
+    "en": "4f31fdedab6d1306",
+    "text": "VILKA SHARED SIGNALS-HÄNDELSETYPER SOM EN STRÖM SOM ÄGS AV DEN HÄR APPLIKATIONEN FÅR SKICKAS. Ett värde per rad, vart och ett antingen en hel profil — `caep` (de åtta sessionshändelserna) eller `risc` (de fjorton kontohändelserna) — eller en URI för en händelsetyp, till exempel https://schemas.openid.net/secevent/caep/event-type/session-revoked. TOMT BETYDER OBEGRÄNSAT. SSF:s egna verifierings- och stream-updated-händelser är alltid tillåtna. Det UPPRÄTTHÅLLS två gånger: en ström som den här applikationen skapar eller uppdaterar beviljas bara de typer som tillåts här (allt annat den bad om saknas i `events_delivered`, och strömmens logg säger varför), och varje leverans kontrollerar det igen, så att ta bort ett värde gör att befintliga strömmar slutar ta emot den typen. Ägaren är den som autentiserade sig mot /ssf/stream, matchad mot den här postens identifierare eller dess ssfReceiverId-värden."
+  },
+  "applications.schema.attributes.ssfCaepIncludeReasons.what": {
+    "en": "059ef3d0fe452b85",
+    "text": "TRUE eller FALSE: skicka reason_admin och reason_user i de CAEP-händelser som den här mottagarens strömmar bär. Båda är OPTIONAL-medlemmar (CAEP 1.0 avsnitt 2), så båda svaren är förenliga med specifikationen."
+  },
+  "applications.schema.attributes.ssfCaepReasonLanguage.what": {
+    "en": "100441045f6dec57",
+    "text": "Den BCP 47-språktagg som CAEP-medlemmarna för skäl nycklas under i den här mottagarens strömmar. De förblir objekt nycklade efter en tagg i båda fallen."
+  },
+  "applications.schema.attributes.ssfCaepOmitEventTimestamp.what": {
+    "en": "64e3c89f9f918ec8",
+    "text": "TRUE eller FALSE: utelämna event_timestamp (OPTIONAL, CAEP 1.0 avsnitt 2) från de CAEP-händelser som den här mottagarens strömmar bär."
+  },
+  "applications.schema.attributes.ssfRiscIncludeReasons.what": {
+    "en": "87fd9888a9716f80",
+    "text": "TRUE eller FALSE: skicka reason_admin och reason_user i de RISC-händelser som definierar dem, i den här mottagarens strömmar."
+  },
+  "applications.schema.attributes.ssfRiscReasonLanguage.what": {
+    "en": "f381d51fb9949509",
+    "text": "Den BCP 47-språktagg som RISC-medlemmarna för skäl nycklas under i den här mottagarens strömmar."
+  },
+  "applications.schema.attributes.ssfRiscOmitEventTimestamp.what": {
+    "en": "f3d2b4cf9c458620",
+    "text": "TRUE eller FALSE: utelämna event_timestamp från de RISC-händelser som definierar den, i den här mottagarens strömmar."
+  },
+  "applications.schema.attributes.ssfSigningAlgorithm.what": {
+    "en": "4e33e62e91d9c511",
+    "text": "Den JWS-algoritm som den här mottagarens Security Event Tokens signeras med. Var och en är en som den här sändaren publicerar en nyckel för i sin JWKS, så att mottagaren alltid kan verifiera."
+  },
+  "applications.schema.attributes.ssfMinVerificationInterval.what": {
+    "en": "3994c1382024d169",
+    "text": "Sekunder: min_verification_interval (SSF 1.0 avsnitt 8.1.1, anges av sändaren) i den här mottagarens strömmar. En mottagare som ber om ett kortare avvisas."
+  },
+  "applications.schema.attributes.ssfInactivityTimeoutS.what": {
+    "en": "5e2f9c2067c275ce",
+    "text": "Sekunder: inactivity_timeout (SSF 1.0 avsnitt 8.1.1, anges av sändaren) i den här mottagarens strömmar; 0 betyder ingen."
+  },
+  "applications.schema.attributes.ssfInactivityAction.what": {
+    "en": "ee8022952a9ec9a9",
+    "text": "Vad som händer med en av den här mottagarens strömmar när dess tidsgräns för inaktivitet passeras."
+  },
+  "applications.schema.attributes.ssfVerificationEveryS.what": {
+    "en": "923b6f96adaf217c",
+    "text": "Sekunder mellan de verifieringshändelser som den här sändaren själv skickar i den här mottagarens strömmar; 0 betyder inga."
+  },
+  "applications.schema.attributes.ssfStreamStatusOnCreate.what": {
+    "en": "529d7f85e9b424fd",
+    "text": "Den status som en ström som den här mottagaren skapar börjar i."
+  },
+  "applications.schema.attributes.ssfMaxStreams.what": {
+    "en": "aea69ff44391bddd",
+    "text": "Hur många strömmar den här mottagaren får ha samtidigt."
+  },
+  "applications.schema.attributes.ssfMaxSubjectsPerStream.what": {
+    "en": "c6bf17308cf86a2e",
+    "text": "Hur många subjekt en av den här mottagarens strömmar får ange."
+  },
+  "applications.schema.attributes.ssfMaxQueuedEvents.what": {
+    "en": "bce67526a337e6c5",
+    "text": "Hur många olevererade händelser en av den här mottagarens strömmar håller."
+  },
+  "applications.schema.attributes.ssfPollMaxEvents.what": {
+    "en": "7059c22de4f7bb2c",
+    "text": "Det största antalet händelser som en avfrågning av den här mottagarens ström returnerar (RFC 8936 låter en sändare returnera färre än maxEvents)."
+  },
+  "applications.schema.attributes.ssfDeadLetterMaxPerStream.what": {
+    "en": "d6a27411e99ce504",
+    "text": "Hur många olevererbara meddelanden en av den här mottagarens strömmar behåller."
+  },
+  "applications.schema.attributes.ssfPushTimeoutMs.what": {
+    "en": "68440f363578ed9e",
+    "text": "Millisekunder att vänta på att den här mottagarens push-slutpunkt svarar."
+  },
+  "applications.schema.attributes.ssfPushRetries.what": {
+    "en": "193c97284b3b02e8",
+    "text": "Hur många gånger en misslyckad push till den här mottagaren försöks igen innan den blir ett olevererbart meddelande."
+  },
+  "applications.schema.attributes.ssfPushRetryDelayMs.what": {
+    "en": "4e5bbb896a8e1382",
+    "text": "Millisekunder mellan push-försök till den här mottagaren."
+  },
+  "applications.schema.attributes.gnapInstanceId.what": {
+    "en": "5bf2a9c4ae9566c8",
+    "text": "En STATISK instansidentifierare (RFC 9635 avsnitt 2.3.1): den sträng som en klient skickar som `client` i stället för sin nyckel. Den nyckel den då måste bevisa är gnapKey eller gnapKeyReference på den här posten. Dynamiska identifierare som auktoriseringsservern delar ut (avsnitt 3.5) skrivs inte här."
+  },
+  "applications.schema.attributes.gnapKey.what": {
+    "en": "f0520a38e076cf8b",
+    "text": "Klientinstansens eller resursserverns PUBLIKA nyckel, som JSON-nyckelobjektet i RFC 9635 avsnitt 7.1: en bevismetod och exakt en av jwk, cert eller cert#S256. Det är så en begäran per värde matchas mot den här posten, via nyckelns tumavtryck."
+  },
+  "applications.schema.attributes.gnapKeyIdentity.what": {
+    "en": "e1ed7ac7ee02a735",
+    "text": "Tumavtrycksidentiteten för gnapKey (jkt:... för en JWK, x5t:... för ett certifikat), skriven när GNAP skapar posten så att nyckeln kan hittas utan att läsas om."
+  },
+  "applications.schema.attributes.gnapKeyReference.what": {
+    "en": "d8aec54850661b34",
+    "text": "En NYCKELREFERENS (RFC 9635 avsnitt 7.1.1): den opaka sträng som en klient skickar som `key`. Den löses upp till gnapSymmetricKey när den är satt, och annars till gnapKey."
+  },
+  "applications.schema.attributes.gnapKeyProof.what": {
+    "en": "1c6aefeeff99f7f3",
+    "text": "Den bevismetod som en nyckelreferens är bunden till (avsnitt 7.1.1: \"MUST be bound to a single proofing mechanism\"): httpsig, jwsd eller jws. Standard httpsig."
+  },
+  "applications.schema.attributes.gnapMtlsTrust.what": {
+    "en": "c51b28815693cab2",
+    "text": "Hur en nyckel som den här klienten bevisar med ömsesidig TLS betros, för enbart den här klienten (#107): `pki` eller `pinned`, som sfärens gnap.mtlsTrust. Den kan bara göra sfären STRIKTARE — `pki` där sfären är pinned — och `pinned` avvisas där sfären är pki (STS-REG-0196) och ignoreras om sfären görs till pki efteråt. Tomt följer sfären. Under pki måste certifikatet kedja till klientens förtroendelager och vara utfärdat till den här posten av den här sfären, eller bära den enda RFC 8705-subjektsparameter den registrerar (oauthTlsClientAuthSubjectDn eller ett oauthTlsClientAuthSan*-attribut)."
+  },
+  "applications.schema.attributes.gnapSymmetricKey.what": {
+    "en": "ded5d8a8476372b4",
+    "text": "En DELAD HEMLIGHET för en nyckelreferens, base64url, minst 32 byte — det enda fall där GNAP tillåter en symmetrisk nyckel, eftersom den aldrig skickas över nätet (avsnitt 7.1.2). Förseglad med nyckelkrypteringsnyckeln när nycklar är beständiga, undanhållen från LDAP-läsare i produktläge."
+  },
+  "applications.schema.attributes.gnapSymmetricAlg.what": {
+    "en": "6bdcccc92db67444",
+    "text": "Den algoritm som en delad hemlighet signerar med: HS256 (standard), HS384 eller HS512 för jwsd och jws; hmac-sha256 för httpsig."
+  },
+  "applications.schema.attributes.gnapClassId.what": {
+    "en": "cf0254b61fae8a9c",
+    "text": "Klientprogramvarans class_id (avsnitt 2.3). Ett registrerat värde har företräde framför det som en begäran bär."
+  },
+  "applications.schema.attributes.gnapDisplayUri.what": {
+    "en": "2eac54c277b83c17",
+    "text": "Klientens display.uri, som visas på godkännandesidan (avsnitt 2.3.2)."
+  },
+  "applications.schema.attributes.gnapLogoUri.what": {
+    "en": "15cc8de2d5eecf88",
+    "text": "Klientens display.logo_uri. Endast en data:-bild ritas; varje annan URI visas som en länk (avsnitt 11.16)."
+  },
+  "applications.schema.attributes.gnapFinishUri.what": {
+    "en": "5a8f71c45d66489d",
+    "text": "En URI FÖR AVSLUTAD INTERAKTION (avsnitt 2.5.2) som den här klienten får skickas tillbaka till eller få push till. En returadress: i produktläge avvisas en avslutnings-URI som inte finns listad här."
+  },
+  "applications.schema.attributes.gnapInteractionStartModes.what": {
+    "en": "764406fc42ad4c3c",
+    "text": "De startlägen för interaktion som den här klienten får använda (redirect, app, user_code, user_code_uri). Tomt betyder varje läge som auktoriseringsservern erbjuder."
+  },
+  "applications.schema.attributes.gnapAllowedAccess.what": {
+    "en": "a9291497eb549cb6",
+    "text": "De åtkomsttyper och referenssträngar som den här klienten får begära, eller som den här resursservern får registrera. Tomt betyder vilka som helst."
+  },
+  "applications.schema.attributes.gnapBearerTokens.what": {
+    "en": "7b779b458f033217",
+    "text": "FALSE avvisar bearer-flaggan för den här klienten med invalid_flag."
+  },
+  "applications.schema.attributes.gnapSkipInteraction.what": {
+    "en": "83695731fd2cce04",
+    "text": "TRUE gör detta till en BETRODD klientinstans (avsnitt 2.3.3): en behörighet som inte ber om någon subjektsinformation godkänns utan resursägare och utan interaktion, och en som bär ett verifierat användarintyg godkänns för den personen. Respekteras bara för en registrerad post, aldrig för en som GNAP skapat vid första anblick."
+  },
+  "applications.schema.attributes.gnapAccessTokenFormat.what": {
+    "en": "453628f81688d935",
+    "text": "RFC 9767-tokenformatet för token som utfärdas till den här klienten, eller för den här resursservern: jwt-signed, jwt-encrypted, macaroon, biscuit eller zcap."
+  },
+  "applications.schema.attributes.gnapAccessTokenLifetimeS.what": {
+    "en": "fc21e3ffa049e1a6",
+    "text": "Livslängden i sekunder för åtkomsttoken som utfärdas till den här klienten."
+  },
+  "applications.schema.attributes.gnapResourceServerUri.what": {
+    "en": "52d42256a31f2bd6",
+    "text": "De platser som den här resursservern svarar för. En åtkomsträttighet vars platser börjar med någon av dessa får den här posten som målgrupp, och en token för den skapas med den här resursserverns format, JWE-nyckel och macaroon-nyckel."
+  },
+  "applications.schema.attributes.gnapOwnerLookupUri.what": {
+    "en": "c07831202c3c5254",
+    "text": "Där den här resursservern svarar på vem som äger en resurs (#432 fas 5): en https-URL-mall som innehåller {identifier} en gång, i sin sökväg, t.ex. https://rs.example.com/owners/{identifier}. Auktoriseringsservern hämtar den med identifieraren procentkodad i det segmentet och läser {\"owner\": \"<DN>\"} (404: ingen äger den); den person som godkänner en rättighet som anger identifieraren måste vara den personen eller medlem i den gruppen."
+  },
+  "applications.schema.attributes.gnapJweKey.what": {
+    "en": "754dbf2167a8ecea",
+    "text": "Den här resursserverns PUBLIKA krypteringsnyckel (en JWK) för jwt-encrypted-token, så att bara den här resursservern kan läsa dem."
+  },
+  "applications.schema.attributes.gnapMacaroonKey.what": {
+    "en": "20db1983f230f494",
+    "text": "Den macaroon-ROTNYCKEL som den här resursservern verifierar sina macaroon-token med, base64url. Skrivs av auktoriseringsservern när resursservern först registrerar en resursuppsättning; förseglad med nyckelkrypteringsnyckeln när nycklar är beständiga."
+  },
+  "applications.schema.attributes.gnapScopedSignals.what": {
+    "en": "2671ec903329beba",
+    "text": "FALSE undantar den här webbapplikationen från avgränsningen av Shared Signals: en ström som den äger bär då händelser om alla, som vilken annan mottagares som helst."
+  },
+  "applications.schema.attributes.spiffeWorkloadId.what": {
+    "en": "57058ad7e2424d0b",
+    "text": "Ett SPIFFE-ID som den här applikationen förväntas ha — spiffe://<trust domain>/<path>. En SPIFFE-identitet får en EGEN post under ou=spiffe (se spiffe/CLAUDE.md) och registret där är det som ett SVID faktiskt utfärdas mot, så detta skriver ingenting och läser ingenting: det är länken mellan en applikation i det här registret och en identitet i det andra, angiven för hand eftersom inget protokoll anger den."
+  },
+  "applications.schema.attributes.appFederationRelationship.what": {
+    "en": "2353119c3b8b44f3",
+    "text": "DE FEDERATIONSRELATIONER SOM DEN HÄR APPLIKATIONENS ANVÄNDARE AUTENTISERAS GENOM — varje värde är `fedId` för en post under ou=federations, i DEN HÄR förtroendesfären, vars `fedRole` är service-provider. Båda halvorna av det kontrolleras när det läses snarare än när det skrivs: en relation på identitetsleverantörssidan går åt andra hållet (den här tjänsten intygar till den partnern, så det finns inget att logga in i), och registret är per sfär, så ett id som anger en relation i en annan sfär anger ingenting här.\n\nDET HÅLLER EN LISTA, och det är det som gör att en applikation kan erbjuda mer än en identitetsleverantör. ETT användbart värde med automatisk omdirigering påslagen är det fall som attributet lades till för och det är oförändrat: webbläsaren går direkt till den partnern. FLERA användbara värden ritar /authn/select-idp, där personen väljer vilken — hemsfärsidentifiering avgränsad till den här applikationens partner snarare än utförd mot varje relation som den här tjänsten har. De behöver inte dela protokoll: en SAML 2.0-partner och en OpenID Connect-partner är två värden här och två knappar där, eftersom det som listan anger är var en person kan autentiseras och inte hur.\n\nEtt värde som anger en relation som den här tjänsten inte kan använda RAPPORTERAS på skärmen snarare än släpps, en rad per värde: en lista med tre vars mellersta post är inaktiverad får inte se ut som en lista med två.\n\nDet SKRIVS AV INGEN. Inget protokoll presenterar det och ingen observation härleder det — en applikations hemidentitetsleverantör är ett arrangemang som någon har gjort, inte något som den här tjänsten kan observera — så det är redigerbart och det börjar tomt."
+  },
+  "applications.schema.attributes.appFederationAutoRedirect.what": {
+    "en": "f049a40c629458fa",
+    "text": "TRUE om en person som loggar in i den här applikationen ska skickas DIREKT till partnern som anges ovan, utan inloggningsskärmen emellan. Det här är hemsfärsidentifiering gjord genom konfiguration i stället för genom att fråga, vilket är vad en driftsättning med en federerad identitetsleverantör faktiskt gör.\n\nDet är TRUE SOM STANDARD när en relation har angetts, eftersom att ange en och sedan behöva klicka på en knapp är det tillstånd som ingen vill ha; sätt det till FALSE för att behålla skärmen, där partnerna då är de enda knappar som erbjuds. Ett frånvarande värde betyder därför \"ja\" här och inte \"okänt\", vilket är motsatsen till vad RFC 7591 avsnitt 2 låter ett utelämnat booleskt värde betyda — det sägs uttryckligen eftersom de två reglerna möts på en post.\n\nMED FLERA RELATIONER ANGIVNA BETYDER DET EXAKT VAD DET ALLTID HAR BETYTT — \"utan inloggningsskärmen\" — och det som ändras är vad det lämnar kvar. Med en är det en omdirigering direkt till partnern. Med flera är det väljaren vid /authn/select-idp: en knapp per partner och inget lösenordsfält, vilket är inloggningsskärmens uppgift utförd utan inloggningsskärmen. Det betyder aldrig \"välj en åt dem\"; det finns inget värde på ett booleskt värde som kan säga vilken identitetsleverantör någons arbetsgivare är.\n\nFALSE med flera angivna är därför SKÄRMEN, med en knapp per partner under lösenordsrutan — samma sak som FALSE alltid har gjort, med partnerna i plural.\n\nUtan någon angiven relation gör det ingenting alls, snarare än att vara ett fel: de två redigeras separat och ett värde som lämnats kvar av en relation som rensats bör inte avvisa nästa skrivning."
+  },
+  "applications.schema.attributes.appAuthnMechanism.what": {
+    "en": "7d4ba95b80f7683e",
+    "text": "DE MEKANISMER SOM DEN HÄR APPLIKATIONENS PERSONER FÅR LOGGA IN MED, från den stängda lista som fedAuthnMechanism använder: password, password-mfa, webauthn, spnego, wallet, federation. INGEN MARKERAD TILLÅTER ALLA.\n\nUPPRÄTTHÅLLS vid varje webbläsarinloggning i applikationen, i båda lägena: en person vars session inte vilar på någon listad mekanism skickas för att logga in igen med en som är det, och en inloggning gjord med en som inte är det avvisas. Dörrar utan webbläsare (lösenordsbeviljningen, WS-Trust, en LDAP-bindning) omfattas inte.\n\nEn listad är också dit inloggningen går: `spnego` skickar personen till /authn/spnego, inloggad på den Kerberos-biljett som deras dator har; `wallet` till /authn/wallet; `federation` till de relationer som anges i appFederationRelationship; `password`, `password-mfa` och `webauthn` är inloggningsskärmen i dess tre former. Flera listade ritar skärmen med bara dessa erbjudna.\n\nEn mekanism som den här tjänsten har stängt av — `spnego` medan krb5.spnegoAuthentication är avstängt, `wallet` medan oid4vp.signIn är avstängt — rapporteras på skärmen och kan inte erbjudas.\n\nDet SKRIVS AV INGEN: inget protokoll presenterar det, så det är redigerbart och börjar tomt."
+  },
+  "applications.schema.attributes.appMfaMechanism.what": {
+    "en": "0cc6b4ecec8af7ad",
+    "text": "DE ANDRA FAKTORER SOM DEN HÄR APPLIKATIONENS PERSONER FÅR ANVÄNDA: password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet. INGEN MARKERAD LÄMNAR SFÄRENS AUTENTISERINGSPOLICY SOM DEN ÄR.\n\nDet SNÄVAR BARA IN den policyn (Katalog > Policyer): en andra faktor som sfären har stängt av förblir avstängd här, och en e-postad erbjuds fortfarande aldrig medan sfären inte kan skicka e-post. Det säger VILKA andra faktorer, aldrig OM en behövs — det är fortfarande sfärens, kontots och riskbedömningens sak.\n\nInloggningsskärmen ber bara om en andra faktor som listas här. En person som inte har någon av dem erbjuds att konfigurera en (en säkerhetsnyckel eller en autentiseringsapp, där de listas) — efter att ha angett den andra faktor som de har, om de har en.\n\nUPPRÄTTHÅLLS vid varje webbläsarinloggning i applikationen, i båda lägena: en person vars session angav en andra faktor som inte listas här skickas för att logga in igen. Dörrar utan webbläsare (lösenordsbeviljningen, WS-Trust, en LDAP-bindning) omfattas inte.\n\nDet SKRIVS AV INGEN: inget protokoll presenterar det, så det är redigerbart och börjar tomt."
+  },
+  "devices.schema.objectClasses.device.what": {
+    "en": "d480f4c7cd3a1226",
+    "text": "cn, samt standardattributen owner och description."
+  },
+  "devices.schema.objectClasses.stsDevice.what": {
+    "en": "a8d77e5e94f00be8",
+    "text": "Varje stsDevice*-attribut nedan: ägarens typ, applikationerna, nycklarna, attestering, efterlevnad, status, de beskrivande etiketterna, registreringen och Native SSO."
+  },
+  "devices.schema.attributes.cn.what": {
+    "en": "e3e1cbc76383e39a",
+    "text": "Enhets-id, ett UUID."
+  },
+  "devices.schema.attributes.owner.what": {
+    "en": "20552d2a82296c6e",
+    "text": "DN för dess enda ägare: en person eller en applikation."
+  },
+  "devices.schema.attributes.stsDeviceOwnerKind.what": {
+    "en": "7b8d9312393bf1b0",
+    "text": "person eller application."
+  },
+  "devices.schema.attributes.description.what": {
+    "en": "18482faa4e7ecf07",
+    "text": "Dess etikett."
+  },
+  "devices.schema.attributes.stsDeviceApplication.what": {
+    "en": "98905a8e55fa4198",
+    "text": "DN för varje applikation som har använt den."
+  },
+  "devices.schema.attributes.stsDeviceKey.what": {
+    "en": "500fcea967956d89",
+    "text": "Ett JSON-värde per nyckel: id, kind (x509, jwk, webauthn), thumbprint, label, added, addedBy, proof, attestation och det publika materialet. Aldrig en hemlighet."
+  },
+  "devices.schema.attributes.stsDeviceKeyThumbprint.what": {
+    "en": "28d0e44cd4e26efd",
+    "text": "<kind>:<thumbprint> per nyckel, härlett från stsDeviceKey vid varje skrivning så att ett LDAP-filter kan hitta en enhet via dess nyckel."
+  },
+  "devices.schema.attributes.stsDeviceCredentialId.what": {
+    "en": "5c367d4336aa3edd",
+    "text": "Credential-id för varje länkad WebAuthn-nyckel, härlett från stsDeviceKey vid varje skrivning så att en inloggning hittar sin enhet via index."
+  },
+  "devices.schema.attributes.stsDeviceAttestation.what": {
+    "en": "c06a57ab13bda511",
+    "text": "attested när någon nyckels attestering verifierades, annars self-asserted. Härleds vid varje skrivning."
+  },
+  "devices.schema.attributes.stsDeviceCompliance.what": {
+    "en": "90630ca11c38c021",
+    "text": "compliant eller not-compliant; frånvarande är okänt."
+  },
+  "devices.schema.attributes.stsDeviceComplianceChange.what": {
+    "en": "ff1e956941db4c7c",
+    "text": "JSON: den senaste efterlevnadsändringen — status, previous, at, source (admin, mdm, test-control, caep), actor, reason."
+  },
+  "devices.schema.attributes.stsDeviceStatus.what": {
+    "en": "cae725abd42266df",
+    "text": "compromised; frånvarande är aktiv."
+  },
+  "devices.schema.attributes.stsDeviceStatusChange.what": {
+    "en": "5bd1d7f64e5bb6b1",
+    "text": "JSON: den senaste statusändringen."
+  },
+  "devices.schema.attributes.stsDeviceRiskLevel.what": {
+    "en": "6a2a30b54f4d72c8",
+    "text": "LOW, MEDIUM eller HIGH (CAEP:s risknivåer); frånvarande är ej bedömd. Sätts av riskbedömningen och av en kompromettering."
+  },
+  "devices.schema.attributes.stsDeviceRiskChange.what": {
+    "en": "cc0db159344881ab",
+    "text": "JSON: den senaste ändringen av risknivå — level, previous, at, source (risk, compromise, admin), actor, reason."
+  },
+  "devices.schema.attributes.stsDeviceBrowser.what": {
+    "en": "16fa8dcc3a7975f0",
+    "text": "JSON: en ihågkommen webbläsares tillstånd (#265) — tokengenerationen, när den och den föregående utfärdades, den webbläsare den var bunden till, och när den andra faktorn senast angavs i den. Ingen token och ingen hemlighet."
+  },
+  "devices.schema.attributes.stsDevicePlatform.what": {
+    "en": "0d8e2225e2bd158d",
+    "text": "ios, ipados, android, macos, windows, linux, chromeos eller other."
+  },
+  "devices.schema.attributes.stsDeviceModel.what": {
+    "en": "57494abd3e39355e",
+    "text": "Beskrivande."
+  },
+  "devices.schema.attributes.stsDeviceOs.what": {
+    "en": "57494abd3e39355e",
+    "text": "Beskrivande."
+  },
+  "devices.schema.attributes.stsDeviceEnrolment.what": {
+    "en": "f5796c5015933387",
+    "text": "JSON: method (native-sso, admin, portal, est, scep), at, actor."
+  },
+  "devices.schema.attributes.stsDeviceSecretHash.what": {
+    "en": "c7709d14767009ba",
+    "text": "SHA-256 av dess Native SSO-device_secret. Undanhålls från varje LDAP-läsning."
+  },
+  "devices.schema.attributes.stsDeviceSession.what": {
+    "en": "4e1ef4b44bea18f1",
+    "text": "Den inloggningssession som hemligheten gäller för."
+  },
+  "devices.schema.attributes.stsDeviceLastUsed.what": {
+    "en": "8c5617e5acd3ea36",
+    "text": "När den senast användes, ISO 8601."
+  },
+  "xacmlPolicies.schema.objectClasses.xacmlPolicy.what": {
+    "en": "df332e0eeff63c92",
+    "text": "En XACML 3.0-Policy eller -PolicySet, lagrad som det dokument den skrevs som. DEN HÄR CONTAINERN ÄR POLICYREPOSITORIET — en ldapmodify av xacmlPolicyDocument här ändrar vad PDP:n beslutar vid nästa begäran."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyId.what": {
+    "en": "b1c3c568e23849c7",
+    "text": "PolicyId eller PolicySetId inuti dokumentet. HÄRLETT vid skrivning och används för listning och för att lösa upp en PolicyIdReference; dokumentet är sanningen."
+  },
+  "xacmlPolicies.schema.attributes.xacmlPolicyDocument.what": {
+    "en": "9bc6b993b0d6c0df",
+    "text": "XACML 3.0-XML:en. DETTA ÄR POLICYN. Allt annat på posten härleds från den."
+  },
+  "xacmlPolicies.schema.attributes.xacmlVersion.what": {
+    "en": "ddb54fc06797469d",
+    "text": "Dokumentets Version-attribut. Härlett."
+  },
+  "xacmlPolicies.schema.attributes.xacmlKind.what": {
+    "en": "90f98881070fc199",
+    "text": "\"Policy\" eller \"PolicySet\". Härlett."
+  },
+  "xacmlPolicies.schema.attributes.xacmlCombiningAlgId.what": {
+    "en": "8457173a3dcce81d",
+    "text": "Den regel- eller policykombinerande algoritm som dokumentet anger. Härledd, och visas i konsolen eftersom den är den enskilt mest betydelsefulla raden i en policy."
+  },
+  "xacmlPolicies.schema.attributes.xacmlEnabled.what": {
+    "en": "9ba8d73484fcced4",
+    "text": "\"TRUE\" eller \"FALSE\". En inaktiverad policy blir kvar i repositoriet och utvärderas inte. INTE härlett — det är det enda här som är ett faktum om driftsättningen snarare än om dokumentet, vilket är varför det är ett attribut snarare än en kommentar i XML:en."
+  },
+  "xacmlPolicies.schema.attributes.xacmlIsRoot.what": {
+    "en": "b927978feb9fe3f1",
+    "text": "\"TRUE\" på den policy som PDP:n utgår från. Ett repositorium utan rot beslutar ingenting och säger det; ett repositorium med två avvisas vid skrivning snarare än att välja en."
+  },
+  "xacmlPolicies.schema.attributes.description.what": {
+    "en": "7aa4f682ef6437eb",
+    "text": "Dokumentets egen <Description>, där det har en."
+  },
+  "xacmlPeps.schema.objectClasses.xacmlPep.what": {
+    "en": "2b063c0577e29981",
+    "text": "En fjärransluten Policy Enforcement Point som har registrerat sig hos den här Policy Decision Point. RADEN ÄR EN REGISTRERING OCH INTE EN BEHÖRIGHET — en PEP som aldrig registrerar sig kan ändå hämta repositoriet och upprätthålla. Det en rad ger är en plats i konsolen och en adress för ändringsknuffen."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepIdentity.what": {
+    "en": "aa1e6b32f2237675",
+    "text": "Det DN som certificatePlan() namnger det här certifikatets identitet med. INGEN POST SKAPAS DÄR av en registrering — namngivningsregeln återanvänds, inte skapandet av posten, eftersom en PEP är en komponent och ou=users räknar personer."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepCertificateSubject.what": {
+    "en": "a7bb93a757915e8c",
+    "text": "Hela subjektet för det klientcertifikat som registreringen kom på. Hålls i sin helhet bredvid DN:et eftersom DN:et är LÖVET och detta är vad som faktiskt presenterades."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepThumbprint.what": {
+    "en": "caeb8d9bfef75798",
+    "text": "RFC 8705 x5t#S256 för det certifikatet — SHA-256 av dess DER, base64url. Samma beräkning som tokenslutpunkten binder en certifikatbunden åtkomsttoken med, genom samma funktion, så att de två stavningarna inte kan glida isär."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAuthenticated.what": {
+    "en": "0d3cc605fa81dd70",
+    "text": "\"TRUE\" när registreringen kom på en anslutning som bar ett klientcertifikat, \"FALSE\" när xacml.pepRequireCertificate var avstängt och den inte gjorde det. INTE dolt och inte sammanblandat: en oautentiserad registrering är en rad som inte bevisade någonting, och konsolen säger det på raden snarare än i en fotnot."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepNotifyUrl.what": {
+    "en": "0b05ac938bf3376e",
+    "text": "Dit ändringsknuffen ska POSTas, om PEP:en angav en. KNUFFEN ÄR ALDRIG MEKANISMEN — en PEP hämtar med sitt eget intervall och konvergerar utan detta — så en frånvarande, avvisad eller onåbar URL kostar latens och ingenting annat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepBias.what": {
+    "en": "9d0aed2bdeb99a4b",
+    "text": "Den tendens som fjärr-PEP:en rapporterar att den kör med. RAPPORTERAS AV DEN, ställs aldrig in härifrån: det är PEP:ens egen konfiguration (PEP_BIAS), och en kontroll som verkade ställa in den skulle tyst inte göra någonting."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepResource.what": {
+    "en": "b53451dce7081be1",
+    "text": "Vad den fjärranslutna PEP:en säger att den skyddar. Fritext från PEP:en, visad som dess eget påstående om sig själv."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepEnabled.what": {
+    "en": "d83c2cb6edef6347",
+    "text": "\"TRUE\" eller \"FALSE\". En inaktiverad PEP behåller sin rad och sina räknare och knuffas inte. Den slutar INTE upprätthålla, och konsolen säger det — ingenting här kan nå in i en annan process och stänga av den."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRegisteredAt.what": {
+    "en": "edb9e97207f6ea2f",
+    "text": "När den här PEP:en först registrerade sig. Behålls vid en omregistrering, eftersom en komponent som startar om varje timme är ett faktum värt att se och en post vars ålder nollställdes vid varje omstart aldrig skulle kunna visa det."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastSeen.what": {
+    "en": "eca573eaea822db7",
+    "text": "Det senaste pulsslaget eller den senaste hämtningen. xacml.pepStaleAfterS är hur lång tid sedan detta innan konsolen säger \"inaktuell\" — vilket medvetet inte ändrar något som den här tjänsten gör."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSyncToken.what": {
+    "en": "44708a3c15a93cf6",
+    "text": "Den repositoriesammanfattning som den här PEP:en senast rapporterade att den hade. Jämförs mot syncToken() för att avgöra om den är AKTUELL, så att vara uppdaterad är något som den här tjänsten räknar ut snarare än något som PEP:en påstår."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyCount.what": {
+    "en": "f985e1174e1c1b66",
+    "text": "Hur många policyer PEP:en säger att den läste in från den hämtningen. Ett antal som inte stämmer med det här repositoriets är kännetecknet för en PEP som hämtade framgångsrikt och sedan avvisade ett dokument."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepDecisions.what": {
+    "en": "ca35f28698ce6c91",
+    "text": "Beslut som den fjärranslutna PEP:en rapporterar att den har FATTAT, kumulativt. Dess eget antal, i dess egen process — den här tjänsten såg dem inte, och det är poängen med en fjärransluten PEP."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepAllowed.what": {
+    "en": "7a24f64947edb3c3",
+    "text": "Hur många av dem den TILLÄT. Bredvid antalet beslut snarare än härlett från det, eftersom skillnaden mellan dem är vad biasen och obligationsregeln faktiskt gjorde."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepRefused.what": {
+    "en": "820782cb1ba96ee7",
+    "text": "Hur många den AVVISADE, inklusive Permit som avvisats för en obligation som den inte kunde uppfylla (avsnitt 7.2)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepUndischargeable.what": {
+    "en": "a252138a66875fb2",
+    "text": "Hur många av de avvisningarna som var en ouppfyllbar obligation på en Permit. Räknas separat eftersom det är det enda upprätthållandeutfall som ser ut som en bugg från klientsidan och är specifikationen som fungerar."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepVersion.what": {
+    "en": "b6078cbbbfdb9576",
+    "text": "Vad den fjärranslutna PEP:en säger att den är. Fritext."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
+    "en": "a4283bfe7916574e",
+    "text": "Vad som hände med den senaste knuffen — statusen, eller avvisningsmeningen. DET ENDA STÄLLE DÄR EN MISSLYCKAD KNUFF REGISTRERAS, av det skäl som ssf_streams.js anger om en avvisad push: den är per definition osynlig från den mottagande änden."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
+  }
+}

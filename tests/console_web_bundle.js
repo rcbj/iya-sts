@@ -59,7 +59,6 @@ function childMain() {
   const OUT = process.env.AG_OUT;
   const fsC = require('fs');
   const pathC = require('path');
-  const vm = require('vm');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
@@ -72,8 +71,11 @@ function childMain() {
     const mode = require(ROOT_DIR + '/common/mode');
     const admin = require(ROOT_DIR + '/admin-ui/admin');
     const adminApi = require(ROOT_DIR + '/mgmt-api/admin_api');
+    const protocolEndpoints =
+      require(ROOT_DIR + '/admin-core/protocol_endpoints');
     const WebKit = require(ROOT_DIR + '/admin-ui/web_kit');
     const WebPages = require(ROOT_DIR + '/admin-ui/web_pages');
+    const WebForms = require(ROOT_DIR + '/admin-ui/web_forms');
     // THE VIEW OF EVERY CONVERTED PAGE IS WHAT ITS OPERATION'S HANDLER
     // ANSWERS — the handler itself, called with a request that carries
     // nothing but a query, and not the function this test supposes the
@@ -87,6 +89,10 @@ function childMain() {
         const entry = adminApi.ROUTES.filter(function (one) {
           return one.method === 'GET' && one.path === operation &&
                  typeof one.handler === 'function';
+        })[0];
+        const page = WebPages.PAGES.filter(function (one) {
+          return one.operation === operation &&
+            protocolEndpoints.pages().indexOf(one.path) >= 0;
         })[0];
         if (!entry) {
           reject(new Error('no GET operation at ' + operation));
@@ -118,6 +124,14 @@ function childMain() {
             return this;
           },
           json: function (body) {
+            // The direct handler call skips admin-api's route wrapper, which
+            // adds protocol endpoints to mirrored Protocols page answers.
+            if (page && body && typeof body === 'object' &&
+                !Array.isArray(body)) {
+              body = Object.assign({}, body, {
+                protocolEndpoints: protocolEndpoints.forPage(req, page.path)
+              });
+            }
             resolve({ status: this.statusCode, body: body });
             return this;
           },
@@ -128,6 +142,14 @@ function childMain() {
             } catch (e) {
               // Not JSON: answered as the text it is, and D0 reports it.
               parsed = { notJson: String((e && e.message) || e) };
+            }
+            // The direct handler call skips admin-api's route wrapper, which
+            // adds protocol endpoints to mirrored Protocols page answers.
+            if (page && parsed && typeof parsed === 'object' &&
+                !Array.isArray(parsed)) {
+              parsed = Object.assign({}, parsed, {
+                protocolEndpoints: protocolEndpoints.forPage(req, page.path)
+              });
             }
             resolve({ status: this.statusCode, body: parsed });
             return this;
@@ -149,7 +171,24 @@ function childMain() {
           typeof answer.body !== 'object') {
         throw new Error(page.operation + ' answered ' + answer.status);
       }
-      return JSON.parse(JSON.stringify(answer.body));
+      const view = JSON.parse(JSON.stringify(answer.body));
+      if (page.compose) {
+        // The members as the runtime asks them (`composeRequests()`), each
+        // under the names its own operation reads.
+        const asked = WebPages.composeRequests(page, query || {});
+        const answers = await Promise.all(asked.map(function (one) {
+          return apiAnswer(one.operation, one.params);
+        }));
+        answers.forEach(function (one, index) {
+          if (one.status !== 200 || !one.body ||
+              typeof one.body !== 'object') {
+            throw new Error(asked[index].operation + ' answered ' +
+                            one.status);
+          }
+          view[asked[index].member] = JSON.parse(JSON.stringify(one.body));
+        });
+      }
+      return view;
     }
     const dir = pathC.join(ROOT_DIR, 'admin-ui');
 
@@ -301,35 +340,26 @@ function childMain() {
          proseDiffers.join(', '));
 
     // --- C. the bundle -------------------------------------------------------
+    // Loaded by the round-trip harness every static surface shares (#570):
+    // no require, process, module or Buffer, which is what a browser has
+    // not.
+    const harness = require(ROOT_DIR + '/tests/tools/web_round_trip');
     const bundlePath = pathC.join(dir, 'console.bundle.js');
-    let code = '';
-    try {
-      code = fsC.readFileSync(bundlePath, 'utf8');
-    } catch (e) {
-      // No bundle: C1 reports it.
-      code = '';
-    }
+    const loaded = harness.loadBundle(bundlePath, 'StsConsole');
+    const code = loaded.code;
     note(code.length > 500,
          'C1. the image build wrote the browser bundle',
          bundlePath + ' ' + code.length + ' byte(s)');
-    let StsConsole = null;
-    let loadProblem = '';
-    try {
-      // No require, process, module or Buffer: what a browser has not.
-      const sandbox = vm.createContext({});
-      StsConsole = vm.runInContext(code + '\n;StsConsole;', sandbox,
-                                   { filename: 'console.bundle.js' });
-      // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
-      // the page's own (`applyLocale()`), so a helper handed no translator
-      // draws in the reader's language. Here there is no runtime, so the
-      // bundle is given node's — English — and the two draw the same words.
-      if (StsConsole && StsConsole.messages) {
-        StsConsole.messages.WebTranslator.setDefault(function () {
-          return WebKit.context().t;
-        });
-      }
-    } catch (e) {
-      loadProblem = String((e && e.message) || e);
+    const StsConsole = loaded.value;
+    const loadProblem = loaded.problem;
+    // THE DEFAULT TRANSLATOR (#539): in a browser the runtime sets it to
+    // the page's own (`applyLocale()`), so a helper handed no translator
+    // draws in the reader's language. Here there is no runtime, so the
+    // bundle is given node's — English — and the two draw the same words.
+    if (StsConsole && StsConsole.messages) {
+      StsConsole.messages.WebTranslator.setDefault(function () {
+        return WebKit.context().t;
+      });
     }
     note(!!StsConsole && Array.isArray(StsConsole.PAGES) &&
          typeof StsConsole.render === 'function',
@@ -348,22 +378,7 @@ function childMain() {
     servers.setMember('webcheck', 'code_challenge_methods_supported',
                       '["S256"]');
     servers.removeMember('webcheck', 'request_uri_parameter_supported');
-    // And a SAML 2.0 service provider and a SAML 1.1 relying party, for
-    // the two identity providers' drill-downs.
     const applications = require(ROOT_DIR + '/common/applications');
-    const seeded = applications.createApplication({
-      identifier: 'https://sp.webcheck.example/saml2',
-      kind: 'saml2-service-provider', protocol: 'SAML 2.0',
-      note: 'drawn by the bundle check',
-      // What it may do and nothing it has done: an entry is refused one
-      // carrying a field the protocol endpoints accumulate.
-      fields: { samlEntityId: 'https://sp.webcheck.example/saml2' }
-    });
-    const seeded11 = applications.createApplication({
-      identifier: 'urn:webcheck:saml11',
-      kind: 'saml11-relying-party', protocol: 'SAML 1.1',
-      note: 'drawn by the bundle check'
-    });
     // And a federation relationship of each direction, for its drill-down.
     const federation = require(ROOT_DIR + '/federation/federation');
     const fedSp = federation.create({ id: 'webcheck-sp',
@@ -385,10 +400,6 @@ function childMain() {
       selectors: [{ type: 'unix', value: 'uid:1000' }] }, 'api', td, 'test');
     note(seededEntry && seededEntry.ok, 'D-seed-spiffe. an entry is made',
          JSON.stringify((seededEntry && seededEntry.errors) || []));
-    note(seeded && seeded.ok && seeded11 && seeded11.ok,
-         'D-seed. the service provider and the relying party are made',
-         JSON.stringify([(seeded && seeded.errors) || [],
-                         (seeded11 && seeded11.errors) || []]));
     // A DELEGATION ACT, so the pictures are drawn with something in them —
     // a chain, an application in two roles, a person — and not only as the
     // page that says nothing has been delegated yet (#446).
@@ -523,7 +534,6 @@ function childMain() {
     // /admin-api/console/operations` — both kinds since #454, because a
     // form helper is the console's own operation; a form that resolves to
     // none, or to two, is a control the static console could not work.
-    const WebForms = require(ROOT_DIR + '/admin-ui/web_forms');
     const formTable = WebForms.table(adminApi.operationSummaries('all'));
     const unresolved = {};
     let forms = 0;
@@ -535,7 +545,8 @@ function childMain() {
         const head = /^<form\b[^>]*>/i.exec(form)[0];
         if (/method="post"/i.test(head)) {
           const target = (/action="([^"]*)"/i.exec(head) || [])[1] || '';
-          const path = target.replace(/[?#].*$/, '');
+          const targetUrl = new URL(target, 'https://sts.example');
+          const path = targetUrl.pathname + targetUrl.hash;
           const actions = [];
           const fields = /<(?:input|button)\b[^>]*\bname="action"[^>]*>/gi;
           let f = fields.exec(form);
@@ -591,7 +602,7 @@ function childMain() {
         const form = m[0];
         const head = /^<form\b[^>]*>/i.exec(form)[0];
         const path = ((/action="([^"]*)"/i.exec(head) || [])[1] || '')
-          .replace(/[?#].*$/, '');
+          .replace(/\?.*$/, '');
         const hiddenAction = (/<input\b[^>]*\bname="action"[^>]*\bvalue="([^"]*)"/i
           .exec(form) || [])[1] || '';
         const buttons = /<button\b[^>]*>/gi;
@@ -775,7 +786,7 @@ function childMain() {
         if (/method="post"/i.test(head) &&
             !/multipart\/form-data/i.test(head)) {
           const path = ((/action="([^"]*)"/i.exec(head) || [])[1] || '')
-            .replace(/[?#].*$/, '');
+            .replace(/\?.*$/, '');
           const hidden = /<input\b[^>]*\bname="action"[^>]*\bvalue="([^"]*)"/i
             .exec(form);
           const action = hidden ? hidden[1] : '';
@@ -860,7 +871,7 @@ function childMain() {
               body: JSON.stringify(shaped),
               headers: { 'content-type': 'application/json' } });
             const real = (checked.errors || []).filter(function (e) {
-              return !/is required\.$/.test(e);
+              return !/(?:is required\.|must have required property)/.test(e);
             });
             if (!checked.ok && real.length) {
               const key = operation + ': ' + real[0];
@@ -959,6 +970,70 @@ function childMain() {
            return k + ' (on ' + refusedBodies[k] + ')';
          }).join('; '));
 
+    // Seed the SAML applications after checking every form: a registered
+    // SAML 1.1 relying party changes the provider page's registration form.
+    // These entries exist only to verify the application's own nested tabs.
+    const seeded = applications.createApplication({
+      identifier: 'https://sp.webcheck.example/saml2',
+      kind: 'saml2-service-provider', protocol: 'SAML 2.0',
+      protocols: ['saml2'],
+      note: 'drawn by the bundle check',
+      fields: { samlEntityId: 'https://sp.webcheck.example/saml2' }
+    });
+    const seeded11 = applications.createApplication({
+      identifier: 'urn:webcheck:saml11',
+      kind: 'saml11-relying-party', protocol: 'SAML 1.1',
+      protocols: ['saml11'],
+      note: 'drawn by the bundle check'
+    });
+    const seededDual = applications.createApplication({
+      identifier: 'https://sp.webcheck.example/dual',
+      kind: 'saml2-service-provider', protocol: 'SAML 2.0 and SAML 1.1',
+      protocols: ['saml2', 'saml11'],
+      note: 'drawn by the bundle check',
+      fields: { samlEntityId: 'https://sp.webcheck.example/dual' }
+    });
+    note(seeded && seeded.ok && seeded11 && seeded11.ok &&
+         seededDual && seededDual.ok,
+         'D-seed. the SAML 2.0, SAML 1.1 and dual-family applications are made',
+         JSON.stringify([(seeded && seeded.errors) || [],
+                        (seeded11 && seeded11.errors) || [],
+                        (seededDual && seededDual.errors) || []]));
+    const applicationPage = WebPages.PAGES.filter(function (one) {
+      return one.path === '/admin/applications';
+    })[0];
+    const applicationTabs = [
+      { id: 'saml2', query: 'https://sp.webcheck.example/saml2',
+        want: ['cfg-saml2'], omit: ['cfg-saml11'] },
+      { id: 'saml11', query: 'urn:webcheck:saml11',
+        want: ['cfg-saml11'], omit: ['cfg-saml2'] },
+      { id: 'dual', query: 'https://sp.webcheck.example/dual',
+        want: ['cfg-saml2', 'cfg-saml11'], omit: [] }
+    ];
+    for (let i = 0; i < applicationTabs.length; i++) {
+      const one = applicationTabs[i];
+      const detail = await viewOf(applicationPage, {
+        application: one.query, per: '10'
+      });
+      const html = WebPages.render(applicationPage.path, detail,
+        WebKit.context({ application: one.query }, true));
+      const present = one.want.every(function (id) {
+        return html.indexOf('id="' + id + '"') >= 0;
+      });
+      const absent = one.omit.every(function (id) {
+        return html.indexOf('id="' + id + '"') < 0;
+      });
+      note(present && absent &&
+          (one.id !== 'dual' ||
+            (html.indexOf('name="family" value="saml2"') >= 0 &&
+             html.indexOf('name="family" value="saml11"') >= 0)) &&
+          html.indexOf('name="file"') >= 0 &&
+          html.indexOf('name="document"') >= 0,
+          'D-SAML-' + one.id + '. the matching metadata sub-tabs offer paste ' +
+          'and file import for their family',
+          'want=' + one.want.join(',') + '; omit=' + one.omit.join(','));
+    }
+
     // THE DRIFT CHECK, IN PROCESS (#446): `/admin/sts-metadata`'s answer
     // reports a route registered and undescribed, and a description of a
     // route that is not registered. Every page converted here owes its
@@ -989,6 +1064,817 @@ function childMain() {
          differing.join(', ') ||
          'drill-downs: ' + drilled.join(', ') + '; examples: ' +
          exampled.join(', '));
+    const oauthPage = WebPages.pageFor('/admin/oauth2');
+    const oauthView = oauthPage ? await viewOf(oauthPage, {}) : null;
+    const oauthHtml = oauthView
+      ? WebPages.render('/admin/oauth2', oauthView, WebKit.context({}, true))
+      : '';
+    const oauthTabIds = [
+      'oauth-tab-metadata', 'oauth-tab-global-settings',
+      'oauth-tab-authorization-servers',
+      'oauth-tab-token-lifetimes', 'oauth-tab-claims',
+      'oauth-tab-userinfo-claims'
+    ];
+    const metadataTab =
+      /<section class="tabpanel first" id="oauth-tab-metadata">([\s\S]*?)<\/section>/
+        .exec(oauthHtml);
+    const globalTab =
+      /<section class="tabpanel" id="oauth-tab-global-settings">([\s\S]*?)<\/section>/
+        .exec(oauthHtml);
+    const metadataWarnings = metadataTab
+      ? (metadataTab[1].match(/<details class="warn fold">/g) || []).length
+      : 0;
+    note(oauthTabIds.every(function (id) {
+      return oauthHtml.indexOf('id="' + id + '"') >= 0;
+    }) && oauthHtml.indexOf('consoleAuthorizationServers') < 0 &&
+         oauthHtml.indexOf('openid-configuration') >= 0 &&
+         !!metadataTab && !!globalTab &&
+         metadataTab[1].indexOf('<details class="note fold">') >= 0 &&
+         metadataWarnings === oauthView.alsoHtml.length &&
+         metadataTab[1].indexOf('The authorization server') >= 0 &&
+         metadataTab[1].indexOf('is a MODE, and so is') >= 0 &&
+         metadataTab[1].indexOf('/oauth2/authorize') >= 0 &&
+         globalTab[1].indexOf('The authorization server') < 0 &&
+         globalTab[1].indexOf('is a MODE, and so is') < 0 &&
+         globalTab[1].indexOf('/oauth2/authorize') < 0,
+         'D-OAuth. Metadata is the first peer tab and contains the notes and ' +
+         'endpoints, separate from Global settings',
+         'tabs missing: ' + oauthTabIds.filter(function (id) {
+           return oauthHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', ') + '; warning folds: ' + metadataWarnings + '/' +
+         (oauthView ? oauthView.alsoHtml.length : 0) +
+         '; Metadata: ' + (!!metadataTab &&
+           metadataTab[1].indexOf('/oauth2/authorize') >= 0) +
+         '; Global: ' + (!!globalTab &&
+           globalTab[1].indexOf('/oauth2/authorize') >= 0));
+    const samlPage = WebPages.pageFor('/admin/saml2');
+    const samlView = samlPage ? await viewOf(samlPage, {}) : null;
+    const samlHtml = samlView
+      ? WebPages.render('/admin/saml2', samlView,
+                        WebKit.context({}, true))
+      : '';
+    const samlTabIds = [
+      'saml-tab-metadata', 'saml-tab-global-settings',
+      'saml-tab-shared-settings', 'saml-tab-saml2', 'saml-tab-saml11',
+      'saml-tab-assertions', 'saml-tab-attributes'
+    ];
+    const samlMetadataTab =
+      /<section class="tabpanel first" id="saml-tab-metadata">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlGlobalTab =
+      /<section class="tabpanel" id="saml-tab-global-settings">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlSharedTab =
+      /<section class="tabpanel" id="saml-tab-shared-settings">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const saml2Tab =
+      /<section class="tabpanel" id="saml-tab-saml2">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const saml11Tab =
+      /<section class="tabpanel" id="saml-tab-saml11">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlTabLabels = samlHtml.match(
+      /<a[^>]+href="#saml-tab-saml(?:2|11)"[^>]*>[^<]*<\/a>/g) || [];
+    const samlAssertionTab =
+      /<section class="tabpanel" id="saml-tab-assertions">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const samlAttributeTab =
+      /<section class="tabpanel" id="saml-tab-attributes">([\s\S]*?)<\/section>/
+        .exec(samlHtml);
+    const settingKeys = function (settings, groups) {
+      return (settings.groups || []).filter(function (group) {
+        return groups.indexOf(group.group) >= 0;
+      }).reduce(function (keys, group) {
+        return keys.concat(group.settings.map(function (setting) {
+          return setting.key;
+        }));
+      }, []);
+    };
+    const hasSettings = function (tab, keys) {
+      return !!tab && keys.length > 0 && keys.every(function (key) {
+        return tab[1].indexOf('name="' + WebKit.esc(key) + '"') >= 0;
+      });
+    };
+    const lacksSettings = function (tab, keys) {
+      return !!tab && keys.every(function (key) {
+        return tab[1].indexOf('name="' + WebKit.esc(key) + '"') < 0;
+      });
+    };
+    const samlGlobalKeys = samlView
+      ? settingKeys(samlView.settings, ['SAML 2.0', 'SAML 1.1']) : [];
+    const samlSharedKeys = samlView
+      ? settingKeys(samlView.settings, ['SAML']) : [];
+    const samlAssertionKeys = samlView && samlView.assertions
+      ? samlView.assertions.settings.map(function (setting) {
+        return setting.key;
+      }).filter(function (key) {
+        return key !== 'saml.clockSkewS';
+      }) : [];
+    let samlExpectedEndpoints = samlView
+      ? [samlView, samlView.saml11, samlView.assertions, samlView.attributes]
+        .reduce(function (rows, answer) {
+          return rows.concat(answer.protocolEndpoints || []);
+        }, []) : [];
+    const samlEndpointKeys = {};
+    samlExpectedEndpoints = samlExpectedEndpoints.filter(function (row) {
+      const key = String(row.name) + '\n' + String(row.url);
+      if (samlEndpointKeys[key]) {
+        return false;
+      }
+      samlEndpointKeys[key] = true;
+      return true;
+    });
+    const saml2Intro = WebKit.context({}, true).t.html(
+      'consoleSaml.saml2.intro');
+    const saml11Intro = WebKit.context({}, true).t.html(
+      'consoleSaml.saml11.intro');
+    note(samlTabIds.every(function (id) {
+      return samlHtml.indexOf('id="' + id + '"') >= 0;
+    }) && !!samlMetadataTab && !!samlGlobalTab && !!samlSharedTab &&
+         !!saml2Tab && !!saml11Tab && !!samlAssertionTab &&
+         !!samlAttributeTab,
+         'D-SAML-tabs. the combined SAML page has all seven peer tabs',
+         samlTabIds.filter(function (id) {
+           return samlHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', '));
+    note(samlTabLabels.some(function (label) {
+      return label === '<a href="#saml-tab-saml2">SAML 2.0 IdP</a>';
+    }) && samlTabLabels.some(function (label) {
+      return label === '<a href="#saml-tab-saml11">SAML 1.1 IdP</a>';
+    }), 'D-SAML-tab-labels. profile tabs identify their identity providers',
+    samlTabLabels.join(' '));
+    note(!!samlMetadataTab &&
+         samlMetadataTab[1].indexOf(saml2Intro) >= 0 &&
+         samlMetadataTab[1].indexOf(saml11Intro) >= 0 &&
+         samlMetadataTab[1].indexOf('saml-tab-saml2') >= 0 &&
+         samlExpectedEndpoints.length > 0 &&
+         samlExpectedEndpoints.every(function (row) {
+           return samlMetadataTab[1].indexOf(WebKit.esc(row.url)) >= 0;
+         }),
+         'D-SAML-metadata. Metadata is first/default and holds the profile ' +
+         'notes, SAML 2.0 link and all four endpoint lists',
+         'first=' + !!samlMetadataTab + '; notes=' +
+         (!!samlMetadataTab &&
+           samlMetadataTab[1].indexOf(saml2Intro) >= 0) + '/' +
+         (!!samlMetadataTab &&
+           samlMetadataTab[1].indexOf(saml11Intro) >= 0) +
+         '; endpoints=' + samlExpectedEndpoints.filter(function (row) {
+           return samlMetadataTab &&
+             samlMetadataTab[1].indexOf(WebKit.esc(row.url)) >= 0;
+         }).length + '/' + samlExpectedEndpoints.length);
+    note(hasSettings(samlGlobalTab, samlGlobalKeys) &&
+         hasSettings(samlSharedTab, samlSharedKeys) &&
+         hasSettings(samlAssertionTab, samlAssertionKeys),
+         'D-SAML-settings. global, shared, and assertion settings render in ' +
+         'their respective tabs',
+         'settings=' + samlGlobalKeys.length + '/' + samlSharedKeys.length +
+         '/' + samlAssertionKeys.length + '; present=' +
+         hasSettings(samlGlobalTab, samlGlobalKeys) + '/' +
+         hasSettings(samlSharedTab, samlSharedKeys) + '/' +
+         hasSettings(samlAssertionTab, samlAssertionKeys));
+    note(lacksSettings(samlSharedTab, samlGlobalKeys) &&
+         lacksSettings(samlAssertionTab,
+                       samlGlobalKeys.concat(samlSharedKeys)),
+         'D-SAML-separation. Global, shared and assertion settings do not ' +
+         'bleed into sibling tabs',
+         'shared omits global=' +
+         lacksSettings(samlSharedTab, samlGlobalKeys) +
+         '; assertions omit others=' +
+         lacksSettings(samlAssertionTab,
+                       samlGlobalKeys.concat(samlSharedKeys)) +
+         '; found=' +
+         samlGlobalKeys.concat(samlSharedKeys).filter(function (key) {
+           return samlAssertionTab &&
+             samlAssertionTab[1].indexOf('name="' + WebKit.esc(key) +
+                                          '"') >= 0;
+         }).join(', '));
+    note(!!samlAttributeTab &&
+         samlAttributeTab[1].indexOf(WebKit.context({}, true).t.html(
+           'consoleClaims.samlSetsHeading')) >= 0,
+         'D-SAML-attributes. Custom SAML attributes has its own content tab',
+         !!samlAttributeTab);
+    note(!!saml2Tab && !!saml11Tab &&
+         saml2Tab[1].indexOf(saml2Intro) < 0 &&
+         saml11Tab[1].indexOf(saml11Intro) < 0 &&
+         saml2Tab[1].indexOf('action="/admin/saml2#saml-tab-saml2"') >= 0 &&
+         saml11Tab[1].indexOf(
+           'action="/admin/saml2#saml-tab-saml11"') >= 0,
+         'D-SAML-links. profile notes stay on Metadata and list forms keep ' +
+         'submissions on their respective tabs',
+         'SAML 2.0=' + (!!saml2Tab &&
+           saml2Tab[1].indexOf(
+             'action="/admin/saml2#saml-tab-saml2"') >= 0) +
+         '; SAML 1.1=' + (!!saml11Tab &&
+           saml11Tab[1].indexOf(
+             'action="/admin/saml2#saml-tab-saml11"') >= 0));
+
+    const vcPage = WebPages.pageFor('/admin/vc');
+    const vcView = vcPage ? await viewOf(vcPage, {}) : null;
+    if (vcView && vcView.vcStatus) {
+      vcView.vcStatus.rows = [{
+        idx: 1,
+        format: 'dc+sd-jwt',
+        configId: 'IdentityCredential',
+        status: 'VALID',
+        explicit: 'VALID',
+        via: 'fixture',
+        changedAt: 0,
+        expiresAt: 1
+      }];
+    }
+    const vcHtml = vcView
+      ? WebPages.render('/admin/vc', vcView, WebKit.context({}, true))
+      : '';
+    const vcTabIds = [
+      'vc-tab-metadata', 'vc-tab-oid4vci', 'vc-tab-claims',
+      'vc-tab-status', 'vc-tab-oid4vp', 'vc-tab-verifier-request'
+    ];
+    const vcTabs = {};
+    vcTabIds.forEach(function (id) {
+      vcTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(vcHtml);
+    });
+    const vcExpectedEndpoints = vcView
+      ? vcView.protocolEndpoints || [] : [];
+    note(vcTabIds.every(function (id) {
+      return !!vcTabs[id];
+    }) && /<section class="tabpanel first" id="vc-tab-metadata">/.test(
+      vcHtml),
+      'D-VC-tabs. the combined Verifiable Credentials page has six peer tabs ' +
+      'with Metadata first',
+      vcTabIds.filter(function (id) { return !vcTabs[id]; }).join(', '));
+    note(vcExpectedEndpoints.length > 0 &&
+         vcExpectedEndpoints.every(function (row) {
+           return vcTabs['vc-tab-metadata'] &&
+             vcTabs['vc-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         vcTabIds.slice(1).every(function (id) {
+           return vcExpectedEndpoints.every(function (row) {
+             return !vcTabs[id] || vcTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-VC-metadata. the combined issuer and verifier endpoints appear ' +
+         'on Metadata only',
+         'endpoints=' + vcExpectedEndpoints.length);
+    note(vcTabs['vc-tab-metadata'][1].indexOf(
+           'The OpenID4VCI credential issuer,') >= 0 &&
+         vcTabs['vc-tab-metadata'][1].indexOf(
+           'The OpenID4VP Verifier, whose') >= 0 &&
+         vcTabs['vc-tab-metadata'][1].indexOf(
+           'href="/.well-known/openid-credential-issuer"') >= 0 &&
+         vcTabs['vc-tab-metadata'][1].indexOf(
+           'href="/issuer/offer"') < 0 &&
+         vcTabs['vc-tab-oid4vci'][1].indexOf(
+           'The OpenID4VCI credential issuer,') < 0 &&
+         vcTabs['vc-tab-oid4vp'][1].indexOf(
+           'The OpenID4VP Verifier, whose') < 0,
+         'D-VC-metadata. issuer and verifier guidance and endpoint links are ' +
+         'preserved on Metadata, not repeated in settings tabs');
+    const issuerFold = vcTabs['vc-tab-metadata'][1].match(
+      /<details class="fold vc-metadata"><summary>OpenID4VCI<\/summary>[\s\S]*?<\/details>/);
+    const verifierFold = vcTabs['vc-tab-metadata'][1].match(
+      /<details class="fold vc-metadata"><summary>OpenID4VP<\/summary>[\s\S]*?<\/details>/);
+    note(!!issuerFold && !!verifierFold &&
+         !/<details[^>]*\bopen\b/.test(issuerFold[0]) &&
+         !/<details[^>]*\bopen\b/.test(verifierFold[0]) &&
+         issuerFold[0].indexOf('The OpenID4VCI credential issuer,') >= 0 &&
+         verifierFold[0].indexOf('The OpenID4VP Verifier, whose') >= 0,
+         'D-VC-metadata-folds. issuer and verifier guidance is collapsed by ' +
+         'default in native disclosure sections',
+         'issuer=' + !!issuerFold + '; verifier=' + !!verifierFold);
+    const vciKeys = vcView
+      ? settingKeys(vcView.oid4vciSettings.settings, ['OID4VCI']) : [];
+    const vpKeys = vcView
+      ? settingKeys(vcView.oid4vpSettings.settings, ['OID4VP']) : [];
+    note(hasSettings(vcTabs['vc-tab-oid4vci'], vciKeys) &&
+         hasSettings(vcTabs['vc-tab-oid4vp'], vpKeys) &&
+         lacksSettings(vcTabs['vc-tab-oid4vci'], vpKeys) &&
+         lacksSettings(vcTabs['vc-tab-oid4vp'], vciKeys),
+         'D-VC-settings. OpenID4VCI and OpenID4VP configuration stays in ' +
+         'separate tabs',
+         'settings=' + vciKeys.length + '/' + vpKeys.length);
+    note(!!vcTabs['vc-tab-claims'] &&
+         vcTabs['vc-tab-claims'][1].indexOf(
+           'action="/admin/vc#vc-tab-claims"') >= 0 &&
+         !!vcTabs['vc-tab-status'] &&
+         vcTabs['vc-tab-status'][1].indexOf(
+           'action="/admin/vc#vc-tab-status"') >= 0 &&
+         !!vcTabs['vc-tab-verifier-request'] &&
+         vcTabs['vc-tab-verifier-request'][1].indexOf(
+           'action="/admin/vc#vc-tab-verifier-request"') >= 0,
+         'D-VC-forms. claim, status and verifier-request actions return to ' +
+         'their own tabs',
+         'claims=' + (vcTabs['vc-tab-claims']
+           ? vcTabs['vc-tab-claims'][1].indexOf(
+             'action="/admin/vc#vc-tab-claims"') : -1) +
+         '; status=' + (vcTabs['vc-tab-status']
+           ? vcTabs['vc-tab-status'][1].indexOf(
+             'action="/admin/vc#vc-tab-status"') : -1) +
+         '; verifier=' + (vcTabs['vc-tab-verifier-request']
+           ? vcTabs['vc-tab-verifier-request'][1].indexOf(
+             'action="/admin/vc#vc-tab-verifier-request"') : -1));
+
+    const xacmlPage = WebPages.pageFor('/admin/xacml');
+    const xacmlView = xacmlPage ? await viewOf(xacmlPage, {}) : null;
+    const xacmlHtml = xacmlView
+      ? WebPages.render('/admin/xacml', xacmlView,
+                        WebKit.context({}, true))
+      : '';
+    const xacmlTabIds = [
+      'xacml-tab-metadata', 'xacml-tab-settings', 'xacml-tab-policies',
+      'xacml-tab-editor', 'xacml-tab-peps', 'xacml-tab-decide'
+    ];
+    const xacmlTabs = {};
+    xacmlTabIds.forEach(function (id) {
+      xacmlTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(xacmlHtml);
+    });
+    const xacmlEndpoints = xacmlView
+      ? xacmlView.protocolEndpoints || [] : [];
+    note(xacmlTabIds.every(function (id) {
+      return !!xacmlTabs[id];
+    }) && /<section class="tabpanel first" id="xacml-tab-metadata">/.test(
+      xacmlHtml),
+      'D-XACML-tabs. the combined XACML page has six peer tabs with ' +
+      'Metadata first',
+      xacmlTabIds.filter(function (id) {
+        return !xacmlTabs[id];
+      }).join(', '));
+    note(xacmlEndpoints.length > 0 &&
+         xacmlEndpoints.every(function (row) {
+           return xacmlTabs['xacml-tab-metadata'] &&
+             xacmlTabs['xacml-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         xacmlTabIds.slice(1).every(function (id) {
+           return xacmlEndpoints.every(function (row) {
+             return !xacmlTabs[id] || xacmlTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-XACML-metadata. the XACML endpoint inventory appears on ' +
+         'Metadata only',
+         'endpoints=' + xacmlEndpoints.length);
+    const xacmlLinks = WebPages.xacmlTabLinks(
+      '<a href="/admin/xacml/policies#service-own">Policies</a>' +
+      '<a href="/admin/xacml/editor?policy=sample">Editor</a>' +
+      '<form action="/admin/xacml/peps"></form>');
+    note(xacmlLinks.indexOf(
+           'href="/admin/xacml#service-own"') >= 0 &&
+         xacmlLinks.indexOf(
+           'href="/admin/xacml?policy=sample#xacml-tab-editor"') >= 0 &&
+         xacmlLinks.indexOf(
+           'action="/admin/xacml#xacml-tab-peps"') >= 0,
+         'D-XACML-links. links and forms target their combined-page tabs',
+         xacmlLinks);
+    const xacmlFormTable = WebForms.table(
+      adminApi.operationSummaries('all'));
+    note(WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-settings', 'set-many') ===
+             '/admin-api/config/set-many' &&
+         WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-policies',
+             'create-from-template') ===
+             '/admin-api/xacml/create-from-template' &&
+         WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-editor', 'edit-policy') ===
+             '/admin-api/xacml/edit-policy' &&
+         WebForms.resolve(xacmlFormTable,
+             '/admin/xacml#xacml-tab-peps', 'issue-pep-certificate') ===
+             '/admin-api/xacml/issue-pep-certificate',
+         'D-XACML-actions. each tab resolves forms through its mirrored API ' +
+         'operation');
+
+    const scimPage = WebPages.pageFor('/admin/scim');
+    const scimView = scimPage ? await viewOf(scimPage, {}) : null;
+    const scimHtml = scimView
+      ? WebPages.render('/admin/scim', scimView,
+                        WebKit.context({}, true))
+      : '';
+    // METADATA FIRST (2026-10-12): the endpoints and everything the page
+    // explains or reports; Server is its settings.
+    const scimServerTab =
+      /<section class="tabpanel(?: first)?" id="server">([\s\S]*?)<\/section>/
+        .exec(scimHtml);
+    const scimMetadataTab =
+      /<section class="tabpanel first" id="scim-tab-metadata">([\s\S]*?)<\/section>/
+        .exec(scimHtml);
+    const scimEndpoints = scimView
+      ? scimView.protocolEndpoints || [] : [];
+    note(!!scimServerTab && !!scimMetadataTab &&
+         scimMetadataTab[1].indexOf('<h2>Endpoints</h2>') >= 0 &&
+         scimEndpoints.length > 0 &&
+         scimEndpoints.every(function (row) {
+           return scimMetadataTab[1].indexOf(
+             'data-copy="' + WebKit.esc(row.url) + '"') >= 0 &&
+             scimServerTab[1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+         }),
+         'D-SCIM-endpoints. the SCIM endpoint inventory is on Metadata, the ' +
+         'first tab', 'endpoints=' + scimEndpoints.length);
+    note(!!scimMetadataTab && !!scimServerTab &&
+         scimMetadataTab[1].indexOf('What each operation does') >= 0 &&
+         scimMetadataTab[1].indexOf('/scim/v2/Users') >= 0 &&
+         scimServerTab[1].indexOf('What each operation does') < 0 &&
+         scimServerTab[1].indexOf('action="/admin/config"') >= 0,
+         'D-SCIM-server. operation descriptions are on Metadata and the ' +
+         'Server tab is its settings');
+
+    const ssfPage = WebPages.pageFor('/admin/ssf');
+    const ssfView = ssfPage ? await viewOf(ssfPage, {}) : null;
+    const ssfHtml = ssfView
+      ? WebPages.render('/admin/ssf', ssfView,
+                        WebKit.context({}, true))
+      : '';
+    const ssfTabIds = [
+      'ssf-tab-metadata', 'ssf-tab-ssf', 'ssf-tab-caep', 'ssf-tab-risc'
+    ];
+    const ssfTabs = {};
+    ssfTabIds.forEach(function (id) {
+      ssfTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(ssfHtml);
+    });
+    const ssfEndpoints = ssfView
+      ? ssfView.protocolEndpoints || [] : [];
+    note(ssfTabIds.every(function (id) {
+      return !!ssfTabs[id];
+    }) && /<section class="tabpanel first" id="ssf-tab-metadata">/.test(
+      ssfHtml) &&
+      !WebPages.pageFor('/admin/caep') &&
+      !WebPages.pageFor('/admin/risc'),
+      'D-SSF-tabs. Shared Signals, CAEP and RISC are tabs on one page, ' +
+      'with Metadata first',
+      ssfTabIds.filter(function (id) {
+        return !ssfTabs[id];
+      }).join(', '));
+    note(ssfEndpoints.length > 0 &&
+         ssfEndpoints.every(function (row) {
+           return ssfTabs['ssf-tab-metadata'][1].indexOf(
+             'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         ssfTabIds.slice(1).every(function (id) {
+           return ssfEndpoints.every(function (row) {
+             return ssfTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-SSF-metadata. the protocol endpoint inventory appears on ' +
+         'Metadata only',
+         'endpoints=' + ssfEndpoints.length);
+    const ssfSettings = {
+      ssf: settingKeys(ssfView.settings, ['SSF']),
+      caep: settingKeys(ssfView.caep.settings, ['CAEP']),
+      risc: settingKeys(ssfView.risc.settings, ['RISC'])
+    };
+    note(hasSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.ssf) &&
+         hasSettings(ssfTabs['ssf-tab-caep'], ssfSettings.caep) &&
+         hasSettings(ssfTabs['ssf-tab-risc'], ssfSettings.risc) &&
+         lacksSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.caep) &&
+         lacksSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.risc) &&
+         lacksSettings(ssfTabs['ssf-tab-caep'], ssfSettings.risc) &&
+         lacksSettings(ssfTabs['ssf-tab-risc'], ssfSettings.caep),
+         'D-SSF-settings. SSF, CAEP and RISC settings stay on their own tabs',
+         Object.keys(ssfSettings).map(function (name) {
+           return name + '=' + ssfSettings[name].length;
+         }).join(', ') + '; ssf=' +
+         hasSettings(ssfTabs['ssf-tab-ssf'], ssfSettings.ssf) +
+         ', caep=' +
+         hasSettings(ssfTabs['ssf-tab-caep'], ssfSettings.caep) +
+         ', risc=' +
+         hasSettings(ssfTabs['ssf-tab-risc'], ssfSettings.risc));
+    const ssfFormTable = WebForms.table(
+      adminApi.operationSummaries('all'));
+    note(WebForms.resolve(ssfFormTable, '/admin/ssf', 'status') ===
+           '/admin-api/ssf/status' &&
+         WebForms.resolve(ssfFormTable, '/admin/caep', 'emit') ===
+           '/admin-api/caep/emit' &&
+         WebForms.resolve(ssfFormTable, '/admin/risc', 'emit') ===
+           '/admin-api/risc/emit',
+         'D-SSF-actions. forms retain each vocabulary API operation');
+
+    const kerberosPage = WebPages.pageFor('/admin/kerberos');
+    const kerberosView = kerberosPage
+      ? await viewOf(kerberosPage, {}) : null;
+    const kerberosHtml = kerberosView
+      ? WebPages.render('/admin/kerberos', kerberosView,
+                        WebKit.context({}, true))
+      : '';
+    const kerberosTabIds = [
+      'kerberos-tab-metadata', 'kerberos-tab-settings',
+      'kerberos-tab-claims', 'kerberos-tab-principals'
+    ];
+    const kerberosTabs = {};
+    kerberosTabIds.forEach(function (id) {
+      kerberosTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(kerberosHtml);
+    });
+    note(kerberosTabIds.every(function (id) {
+      return !!kerberosTabs[id];
+    }) &&
+         /<section class="tabpanel first" id="kerberos-tab-metadata">/.test(
+           kerberosHtml),
+         'D-Kerberos-tabs. Metadata, Settings, PAC claims and Principals ' +
+         'are tabs on one page, Metadata first',
+         kerberosTabIds.filter(function (id) {
+           return !kerberosTabs[id];
+         }).join(', '));
+    const kerberosEndpoints = kerberosView
+      ? kerberosView.protocolEndpoints || [] : [];
+    note(kerberosEndpoints.length > 0 &&
+         kerberosEndpoints.every(function (row) {
+           return kerberosTabs['kerberos-tab-metadata'] &&
+             kerberosTabs['kerberos-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         kerberosTabIds.slice(1).every(function (id) {
+           return kerberosEndpoints.every(function (row) {
+             return !kerberosTabs[id] || kerberosTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-Kerberos-metadata. endpoint inventory appears on Metadata only',
+         'endpoints=' + kerberosEndpoints.length);
+    const kerberosLinks = WebPages.kerberosTabLinks(
+      '<a href="/admin/kerberos/principals?peoplePage=2">Next</a>' +
+      '<form action="/admin/kerberos/claims">' +
+      '<input type="hidden" name="back" ' +
+      'value="/admin/kerberos/principals?servicesPage=2"></form>');
+    note(kerberosLinks.indexOf(
+           'href="/admin/kerberos?peoplePage=2#kerberos-tab-principals"') >=
+             0 &&
+         kerberosLinks.indexOf(
+           'action="/admin/kerberos#kerberos-tab-claims"') >= 0 &&
+         kerberosLinks.indexOf(
+           'value="/admin/kerberos?servicesPage=2#' +
+           'kerberos-tab-principals"') >= 0,
+         'D-Kerberos-links. links and forms stay on the selected tab',
+         kerberosLinks);
+    const kerberosFormTable = WebForms.table(
+      adminApi.operationSummaries('all'));
+    note(WebForms.resolve(kerberosFormTable,
+             '/admin/kerberos#kerberos-tab-claims', 'add') ===
+             '/admin-api/kerberos/claims/add' &&
+         WebForms.resolve(kerberosFormTable,
+             '/admin/kerberos#kerberos-tab-principals',
+             'rotate-krbtgt') ===
+             '/admin-api/kerberos/principals/rotate-krbtgt',
+         'D-Kerberos-actions. each data tab resolves through its API operation');
+
+    // PROTOCOLS → CERT ISSUANCE (2026-10-12): ACME, EST, SCEP and SPIFFE's
+    // four pages as one page of tabs, Metadata first, SPIFFE's as sub-tabs.
+    const certPage = WebPages.pageFor('/admin/cert-issuance');
+    const certView = certPage ? await viewOf(certPage, {}) : null;
+    const certHtml = certView
+      ? WebPages.render('/admin/cert-issuance', certView,
+                        WebKit.context({}, true))
+      : '';
+    const certTabIds = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
+                        'cert-tab-scep', 'cert-tab-spiffe'];
+    const certSubIds = ['cert-spiffe-overview', 'cert-spiffe-entries',
+                        'cert-spiffe-agents', 'cert-spiffe-brokers'];
+    const certTabs = {};
+    certTabIds.forEach(function (id) {
+      certTabs[id] = new RegExp(
+        '<section class="tabpanel(?: first)?" id="' + id +
+        '">([\\s\\S]*?)<\\/section>').exec(certHtml);
+    });
+    const spiffeTab = certTabs['cert-tab-spiffe']
+      ? certTabs['cert-tab-spiffe'][1] : '';
+    note(certTabIds.every(function (id) {
+      return !!certTabs[id];
+    }) && /<section class="tabpanel first" id="cert-tab-metadata">/.test(
+           certHtml) &&
+         certSubIds.every(function (id) {
+           return new RegExp('<div class="subpanel(?: first)?" id="' + id +
+                             '">').test(spiffeTab);
+         }),
+         'D-Cert-tabs. Metadata, ACME, EST, SCEP and SPIFFE are tabs on one ' +
+         'page, Metadata first, and SPIFFE\'s four pages are its sub-tabs',
+         certTabIds.concat(certSubIds).filter(function (id) {
+           return certHtml.indexOf('id="' + id + '"') < 0;
+         }).join(', '));
+    const certEndpoints = certView ? certView.protocolEndpoints || [] : [];
+    note(certEndpoints.length > 0 &&
+         ['/enroll/acme/directory', '/.well-known/est/cacerts',
+          '/enroll/scep', '/spiffe/bundle'].every(function (route) {
+           return certEndpoints.some(function (row) {
+             return row.route === route;
+           });
+         }) &&
+         certEndpoints.every(function (row) {
+           return certTabs['cert-tab-metadata'] &&
+             certTabs['cert-tab-metadata'][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') >= 0;
+         }) &&
+         certTabIds.slice(1).every(function (id) {
+           return certEndpoints.every(function (row) {
+             return !certTabs[id] || certTabs[id][1].indexOf(
+               'data-copy="' + WebKit.esc(row.url) + '"') < 0;
+           });
+         }),
+         'D-Cert-metadata. all four families\' endpoints are on Metadata, ' +
+         'and only there', 'endpoints=' + certEndpoints.length);
+    // ONE SECTION PER PROTOCOL (2026-10-12): each family's routes under
+    // its own heading, and none of the four tabs listing its endpoints.
+    const certMeta = certTabs['cert-tab-metadata']
+      ? certTabs['cert-tab-metadata'][1] : '';
+    const metaSection = function (key) {
+      const at = certMeta.indexOf('<h2 id="cert-metadata-' + key + '">');
+      const next = certMeta.indexOf('<h2', at + 4);
+      return at < 0 ? '' : certMeta.slice(at, next < 0 ? undefined : next);
+    };
+    const certFamilies = { acme: '/enroll/acme', est: '/.well-known/est',
+                           scep: '/enroll/scep', spiffe: '/spiffe' };
+    const misfiled = certEndpoints.filter(function (row) {
+      const key = Object.keys(certFamilies).filter(function (one) {
+        const prefix = certFamilies[one];
+        return row.route === prefix || String(row.route || '')
+          .indexOf(prefix + '/') === 0;
+      })[0];
+      return row.route && (!key || metaSection(key).indexOf(
+        'data-copy="' + WebKit.esc(row.url) + '"') < 0);
+    });
+    note(Object.keys(certFamilies).every(function (key) {
+           return metaSection(key) !== '';
+         }) && misfiled.length === 0 &&
+         // An endpoint drawn is a URL in a <code>; a setting's description
+         // naming a path is not one.
+         ['/enroll/acme/new-nonce</code>',
+          '/.well-known/est/simpleenroll</code>',
+          '/enroll/scep/pkiclient.exe</code>'].every(function (path) {
+           return ['cert-tab-acme', 'cert-tab-est', 'cert-tab-scep']
+             .every(function (id) {
+               return certTabs[id] && certTabs[id][1].indexOf(path) < 0;
+             });
+         }) && spiffeTab.indexOf('>The gRPC listeners</h') < 0 &&
+         metaSection('spiffe').indexOf('>The gRPC listeners</h3>') >= 0,
+         'D-Cert-sections. Metadata draws each protocol\'s endpoints under ' +
+         'its own heading, and the ACME, EST, SCEP and SPIFFE tabs list none',
+         misfiled.map(function (row) { return row.route; }).join(', '));
+    // THE ACME, EST AND SCEP TABS' SECTIONS ARE SUB-TABS (2026-10-12): one
+    // per section, the first shown, and no section heading left above them.
+    const familySubTabs = {
+      'cert-tab-acme': ['ca', 'profiles', 'eab', 'accounts', 'certificates',
+                        'host-names', 'mode', 'settings'],
+      'cert-tab-est': ['ca', 'profiles', 'credentials', 'issue',
+                       'host-names', 'certificates', 'settings'],
+      'cert-tab-scep': ['ca', 'profiles', 'challenges', 'host-names',
+                        'certificates', 'exceptions', 'settings']
+    };
+    const missingSubTabs = [];
+    Object.keys(familySubTabs).forEach(function (tab) {
+      const family = tab.replace('cert-tab-', '');
+      const html = certTabs[tab] ? certTabs[tab][1] : '';
+      familySubTabs[tab].forEach(function (one, n) {
+        const id = 'cert-' + family + '-' + one;
+        if (!new RegExp('<div class="subpanel' + (n === 0 ? ' first' : '') +
+                        '" id="' + id + '">').test(html) ||
+            html.indexOf('href="#' + id + '"') < 0) {
+          missingSubTabs.push(id);
+        }
+      });
+      // The settings block draws its own heading, as on every page.
+      const settingsAt = html.indexOf('id="cert-' + family + '-settings"');
+      if (/<h2\b/.test(settingsAt < 0 ? html : html.slice(0, settingsAt))) {
+        missingSubTabs.push(tab + ' still has a section <h2>');
+      }
+    });
+    note(missingSubTabs.length === 0,
+         'D-Cert-subtabs. the ACME, EST and SCEP tabs draw each section as a ' +
+         'sub-tab', missingSubTabs.join(', '));
+
+    // EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (2026-10-12): each page
+    // `WebPages.PROTOCOL_TABS` names is drawn as tabs whose first is
+    // Metadata, and every tab it draws is one the table lists (the
+    // stylesheet's ids come from that table). A page this process cannot
+    // answer here (the truststore, with no TLS module loaded) is skipped.
+    const protocolProblems = [];
+    const protocolDrawn = [];
+    const protocolPaths = Object.keys(WebPages.PROTOCOL_TABS);
+    for (let i = 0; i < protocolPaths.length; i++) {
+      const path = protocolPaths[i];
+      const row = WebPages.pageFor(path);
+      if (!row) {
+        protocolProblems.push(path + ' is no console page');
+        continue;
+      }
+      const pview = await viewOf(row, {}).catch(function () {
+        return null;
+      });
+      if (!pview) {
+        continue;
+      }
+      const html = WebPages.render(path, pview, WebKit.context({}, true));
+      const slug = path.replace(/^\/admin\//, '').replace(/[^a-z0-9]+/gi,
+                                                            '-');
+      const bar = /<nav class="tabbar"[^>]*>([\s\S]*?)<\/nav>/.exec(html);
+      const ids = bar ? (bar[1].match(/href="#([^"]+)"/g) || [])
+        .map(function (h) { return h.slice(7, -1); }) : [];
+      // A page that drew no marked section this time is drawn as it was
+      // (`protocolTabs()`), with no tab bar to check.
+      if (ids.length && ids[0] !== slug + '-tab-metadata') {
+        protocolProblems.push(path + ' does not open on Metadata: ' +
+                              ids.join(' '));
+      }
+      ids.slice(1).forEach(function (id) {
+        const name = id.replace(slug + '-tab-', '');
+        if (WebPages.PROTOCOL_TABS[path].indexOf(name) < 0) {
+          protocolProblems.push(path + ' draws a tab its row does not ' +
+                                'list: ' + name);
+        }
+      });
+      if (ids.length && pview.protocolEndpoints &&
+          pview.protocolEndpoints.length) {
+        const meta = new RegExp('<section class="tabpanel first" id="' +
+          slug + '-tab-metadata">([\\s\\S]*?)<\\/section>').exec(html);
+        if (!meta || meta[1].indexOf('data-copy="' +
+            WebKit.esc(pview.protocolEndpoints[0].url) + '"') < 0) {
+          protocolProblems.push(path + '\'s endpoints are not on Metadata');
+        }
+      }
+      protocolDrawn.push(path);
+    }
+    // Every page under Protocols is tabbed: by this table, or by a page of
+    // its own drawn as tabs before it.
+    const tabbedOtherwise = ['/admin/oauth2', '/admin/saml2', '/admin/vc',
+      '/admin/xacml', '/admin/scim', '/admin/ssf', '/admin/kerberos',
+      '/admin/cert-issuance',
+      // A hidden NAV row (7f9db637): its address answers, and what it draws
+      // is a tab of /admin/oauth2 — the page a reader is sent to.
+      '/admin/token-lifetimes'];
+    // The Protocols pages are the endpoint table's pages and its
+    // exemptions (`tests/protocol_endpoints.js` holds that they are).
+    protocolEndpoints.pages().concat(Object.keys(protocolEndpoints.exempt()))
+      .forEach(function (path) {
+        if (tabbedOtherwise.indexOf(path) < 0 &&
+            !WebPages.PROTOCOL_TABS[path]) {
+          protocolProblems.push(path + ' is under Protocols and not tabbed');
+        }
+      });
+    note(protocolProblems.length === 0 && protocolDrawn.length >= 14,
+         'D-Protocol-tabs. every Protocols and Directory page in the table is ' +
+         'drawn as ' +
+         'tabs, Metadata first, its endpoints there, and draws only tabs ' +
+         'the table lists', protocolProblems.join('; ') + ' (drew ' +
+         protocolDrawn.length + ')');
+    // EACH TAB'S NAMES ARE ITS OWN: three families page `certificatesPage`
+    // and the three SPIFFE lists search `q`, so on one page each carries
+    // its prefix — in its links, its pager's anchor and its filter form.
+    const estLinks = WebPages.certTabLinks(
+      '<a href="/admin/est?per=5&amp;certificatesPage=2#list-' +
+      'certificatesPage">2</a><div class="pagenav" id="list-' +
+      'certificatesPage"></div><a href="/admin/est?format=json">JSON</a>',
+      'est');
+    const entryLinks = WebPages.certTabLinks(
+      '<a href="/admin/spiffe/entries?entry=x">x</a>' +
+      '<form method="get" action="/admin/spiffe/entries"><label for="q">' +
+      '</label><input id="q" name="q"><select name="per"></select></form>' +
+      '<form method="post" action="/admin/spiffe/entries"></form>',
+      'spiffeEntries');
+    note(estLinks.indexOf('href="/admin/cert-issuance?per=5&amp;' +
+           'estCertificatesPage=2#list-estCertificatesPage"') >= 0 &&
+         estLinks.indexOf('id="list-estCertificatesPage"') >= 0 &&
+         estLinks.indexOf('href="/admin-api/est"') >= 0 &&
+         entryLinks.indexOf('href="/admin/cert-issuance?entry=x#' +
+           'cert-spiffe-entries"') >= 0 &&
+         entryLinks.indexOf('action="/admin/cert-issuance#' +
+           'cert-spiffe-entries"') >= 0 &&
+         entryLinks.indexOf('name="entriesQ"') >= 0 &&
+         entryLinks.indexOf('id="entries-q"') >= 0 &&
+         entryLinks.indexOf('for="entries-q"') >= 0 &&
+         entryLinks.indexOf('name="per"') >= 0 &&
+         entryLinks.indexOf('method="post" action="/admin/spiffe/entries"') >=
+           0,
+         'D-Cert-names. a tab\'s links, pager and filter form carry its own ' +
+         'names, a document link is its operation, and a POST form posts ' +
+         'where its operation mirrors it', estLinks + ' ' + entryLinks);
+    const certAsked = WebPages.composeRequests(certPage, {
+      per: '5', estCertificatesPage: '2', scepCredentialsPage: '3',
+      entriesQ: 'web', agent: 'a1'
+    });
+    const certAskedOf = function (member) {
+      return (certAsked.filter(function (one) {
+        return one.member === member;
+      })[0] || {}).params || null;
+    };
+    note(JSON.stringify(certAskedOf('est')) ===
+           JSON.stringify({ per: '5', certificatesPage: '2' }) &&
+         JSON.stringify(certAskedOf('scep')) ===
+           JSON.stringify({ per: '5', credentialsPage: '3' }) &&
+         JSON.stringify(certAskedOf('acme')) === JSON.stringify({ per: '5' }) &&
+         JSON.stringify(certAskedOf('spiffeEntries')) ===
+           JSON.stringify({ per: '5', q: 'web' }) &&
+         JSON.stringify(certAskedOf('spiffeAgents')) ===
+           JSON.stringify({ per: '5', agent: 'a1' }),
+         'D-Cert-compose. each tab\'s operation is asked with its own names',
+         JSON.stringify(certAsked));
+
     const report = mode.report();
     const here = WebPages.render('/admin/mode',
                                  JSON.parse(JSON.stringify(report)));
@@ -997,7 +1883,8 @@ function childMain() {
     }).concat(report.developmentOnlySettings.filter(function (row) {
       return here.indexOf('id="setting-' + WebKit.esc(row.key) + '"') < 0;
     }));
-    note(missing.length === 0 && here.indexOf('<div class="tiles">') === 0 &&
+    // The page is tabs since 2026-10-12, its tiles on Metadata.
+    note(missing.length === 0 && here.indexOf('<div class="tiles">') >= 0 &&
          report.requirements.length > 10,
          'D2. and it carries every requirement and every development-only ' +
          'setting of the report', missing.length + ' missing of ' +
@@ -1052,7 +1939,19 @@ function childMain() {
     // A page of the console, or a page drawn under one of its tabs
     // (`/admin/keys/history` under Key pairs).
     const consolePage = function (path) {
+      const oauthChildren = [
+        '/admin/authorization-servers', '/admin/token-lifetimes',
+        '/admin/claims', '/admin/userinfo-claims'
+      ];
+      const samlChildren = [
+        '/admin/saml11', '/admin/saml-assertions',
+        '/admin/saml-attributes'
+      ];
       return consolePages.indexOf(path) >= 0 ||
+        (consolePages.indexOf('/admin/oauth2') >= 0 &&
+         oauthChildren.indexOf(path) >= 0) ||
+        (consolePages.indexOf('/admin/saml2') >= 0 &&
+         samlChildren.indexOf(path) >= 0) ||
         consolePages.some(function (one) {
           return path.indexOf(one + '/') === 0;
         });
@@ -1060,12 +1959,105 @@ function childMain() {
     const untrue = WebPages.PAGES.filter(function (page) {
       return !consolePage(page.path) ||
              operations.indexOf('GET ' + page.operation) < 0 ||
+             Object.keys(page.compose || {}).some(function (member) {
+               return operations.indexOf(
+                 'GET ' + page.compose[member]) < 0;
+             }) ||
              typeof page.render !== 'function' || !page.title;
     }).map(function (page) { return page.path; });
     note(WebPages.PAGES.length >= 1 && untrue.length === 0,
          'E. every converted page is a page of the console and names an ' +
          '/admin-api operation that exists', untrue.join(', ') + ' ' +
          operations.length + ' operation(s)');
+    const oauthChildren = [
+      '/admin/authorization-servers', '/admin/token-lifetimes',
+      '/admin/claims', '/admin/userinfo-claims'
+    ];
+    note(consolePages.indexOf('/admin/oauth2') >= 0 &&
+         oauthChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0;
+         }),
+         'E-OAuth. the sidebar has one OAuth 2.0 / OIDC entry, not its ' +
+         'four former leaves', consolePages.filter(function (page) {
+           return page === '/admin/oauth2' ||
+             oauthChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const vcChildren = [
+      '/admin/oid4vci', '/admin/vc-status', '/admin/oid4vp',
+      '/admin/vc-verifier-config'
+    ];
+    note(consolePages.indexOf('/admin/vc') >= 0 &&
+         vcChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }),
+         'E-VC. the sidebar has one Verifiable Credentials destination, not ' +
+         'its former leaves',
+         consolePages.filter(function (page) {
+           return page === '/admin/vc' || vcChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const xacmlChildren = [
+      '/admin/xacml/policies', '/admin/xacml/editor',
+      '/admin/xacml/peps', '/admin/xacml/decide'
+    ];
+    note(consolePages.indexOf('/admin/xacml') >= 0 &&
+         xacmlChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }) &&
+         consolePages.indexOf('/admin/xacml/monitor') >= 0,
+         'E-XACML. the sidebar has one XACML destination and keeps its ' +
+         'monitor separate',
+         consolePages.filter(function (page) {
+           return page === '/admin/xacml' ||
+             page.indexOf('/admin/xacml/') === 0;
+         }).join(', '));
+    const kerberosChildren = [
+      '/admin/kerberos/claims', '/admin/kerberos/principals'
+    ];
+    note(consolePages.indexOf('/admin/kerberos') >= 0 &&
+         kerberosChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }),
+         'E-Kerberos. the sidebar has one Kerberos destination, not its ' +
+         'former leaves',
+         consolePages.filter(function (page) {
+           return page === '/admin/kerberos' ||
+             kerberosChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const certChildren = [
+      '/admin/acme', '/admin/est', '/admin/scep', '/admin/spiffe',
+      '/admin/spiffe/entries', '/admin/spiffe/agents', '/admin/spiffe/brokers'
+    ];
+    note(consolePages.indexOf('/admin/cert-issuance') >= 0 &&
+         certChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }) &&
+         ['/admin/acme/monitor', '/admin/est/monitor', '/admin/scep/monitor']
+           .every(function (page) {
+             return consolePages.indexOf(page) >= 0;
+           }),
+         'E-Cert. the sidebar has one Cert issuance destination, not its ' +
+         'seven former pages, and keeps the three monitors',
+         consolePages.filter(function (page) {
+           return page === '/admin/cert-issuance' ||
+             certChildren.indexOf(page) >= 0;
+         }).join(', '));
+    const samlChildren = [
+      '/admin/saml11', '/admin/saml-assertions', '/admin/saml-attributes'
+    ];
+    note(consolePages.indexOf('/admin/saml2') >= 0 &&
+         samlChildren.every(function (page) {
+           return consolePages.indexOf(page) < 0 &&
+                  WebPages.pageFor(page) === null;
+         }),
+         'E-SAML. the console has one SAML destination, not its former leaves',
+         consolePages.filter(function (page) {
+           return page === '/admin/saml2' ||
+             samlChildren.indexOf(page) >= 0;
+         }).join(', '));
 
     // --- F. the settings block is one block ----------------------------------
     const config = require(ROOT_DIR + '/common/config');

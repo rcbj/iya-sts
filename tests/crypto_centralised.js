@@ -57,12 +57,14 @@ const ROOT = path.resolve(__dirname, '..');
 
 // Directories never walked: generated, somebody else's, not this service's
 // runtime (the tests, the deployment trees, the documentation, the Rust
-// conversion), or the parent project's copies.
+// conversion, the development companion container of #591 — a separate
+// party that reaches this service only over its doors, and ships in no
+// image of it), or the parent project's copies.
 const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded', 'tests',
                     'deploy', 'docs', 'rust', 'data', 'apidocs',
-                    'common/vendored'];
+                    'common/vendored', 'companion'];
 
 // The files that ARE the common module.
 const THE_MODULE = ['common/crypto.js', 'common/pq_native.js',

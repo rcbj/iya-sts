@@ -117,6 +117,11 @@ class GnapPage {
                     '#list-grantsPage">' +
                     esc(state) + '</a>';
       }).join(' · ');
+    // The named authorization servers are paged on `serversPage` (#313).
+    const serversNav = json.authorizationServersPaging
+      ? kit.pageNavPair('/admin/gnap', ctx.query,
+                        json.authorizationServersPaging, t)
+      : { head: '', foot: '' };
     const grantNav = kit.pageNavPair('/admin/gnap', ctx.query,
                                        Object.assign({},
                                                      json.grants.paging,
@@ -207,7 +212,8 @@ class GnapPage {
       'href="/admin/authorization-servers">' +
       t.html('consoleGnap.authorizationServersLink') + '</a>' +
       t.html('consoleGnap.publishesWhatEnforces') +
-      '</p><table><thead><tr><th>' + t.html('consoleGnap.thServer') +
+      '</p>' + serversNav.head + '<table><thead><tr><th>' +
+      t.html('consoleGnap.thServer') +
       '</th><th>' + t.html('consoleGnap.thGrantEndpoint') + '</th><th>' +
       t.html('consoleGnap.thStartModes') + '</th><th>' +
       t.html('consoleGnap.thFinish') + '</th><th>' +
@@ -223,7 +229,8 @@ class GnapPage {
       list(caps.key_proofs_supported) + '</td><td>' +
       list(caps.token_formats_supported) + '</td><td>' +
       esc(caps.key_rotation_supported) + '</td></tr>' + capabilityRows +
-      '</tbody></table><h2>' + t.html('consoleGnap.tokenFormats') +
+      '</tbody></table>' + serversNav.foot + '<h2>' +
+      t.html('consoleGnap.tokenFormats') +
       '</h2><table class="kv"><tr><th>jwt-signed</th><td>' +
       t.html('consoleGnap.jwtSigned',
              { uri: material ? material.jwt.jwks_uri : '' }) +
@@ -239,7 +246,8 @@ class GnapPage {
       t.html('consoleGnap.zcap',
              { controller: material ? material.zcap.controller : '' }) +
       '</td></tr></table><h2 ' +
-      'id="list-grantsPage">' + t.html('consoleGnap.grants') + '</h2><p ' +
+      'id="list-grantsPage" data-tab="grants">' + t.html('consoleGnap.grants') +
+      '</h2><p ' +
       'class="sub">' + stateLinks + ' — ' +
       t.html('consoleGnap.grantCount', { n: json.grants.paging.total }) +
       '</p>' + grantNav.head +
@@ -253,7 +261,7 @@ class GnapPage {
       '<th>' + t.html('consoleGnap.thUpdated') +
       '</th><th></th></tr></thead><tbody>' + grantRows +
       '</tbody></table>' + grantNav.foot +
-      '<h2 id="list-resourcesPage">' +
+      '<h2 id="list-resourcesPage" data-tab="resources">' +
       t.html('consoleGnap.registeredResourceSets') + '</h2>' +
       resourceNav.head +
       '<table><thead><tr><th>' + t.html('consoleGnap.thReference') +
@@ -264,9 +272,10 @@ class GnapPage {
       '<th>' + t.html('consoleGnap.thRegistered') + '</th><th>' +
       '</th></tr></thead><tbody>' + resourceRows +
       '</tbody></table>' + resourceNav.foot +
-      '<h2>' + t.html('consoleGnap.settings') + '</h2>' +
+      '<h2 data-tab="settings">' + t.html('consoleGnap.settings') + '</h2>' +
       SettingsForms.forms(json.settings, '/admin/gnap', undefined, t) +
-      '<p class="links"><a href="/admin/gnap?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="/admin/gnap?format=json">' +
+      'JSON</a> · ' +
       '<code>GET ' +
       '/admin-api/gnap</code> · <a href="/admin/gnap/monitor">' +
       t.html('consoleGnap.linkMonitor') + '</a> · <a ' +
@@ -367,13 +376,16 @@ class GnapPage {
     const inner =
       kit.note(t.html('consoleGnap.monitorIntro', { since: json.since })) +
       tiles +
-      '<h2>' + t.html('consoleGnap.tokensByFormat') +
+      // A TAB PER TABLE (2026-10-12): the intro and the tiles above, and the
+      // closing note and links, are Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="formats">' + t.html('consoleGnap.tokensByFormat') +
       '</h2><table><thead><tr>' + Object.keys(
           json.tokensByFormat).map(function (f) {
         return '<th>' + esc(f) + '</th>';
       }).join('') + '</tr></thead><tbody><tr>' + formatRow +
       '</tr></tbody></table><h2 ' +
-      'id="list-page">' + t.html('consoleGnap.applications') + '</h2>' +
+      'id="list-page" data-tab="applications">' +
+      t.html('consoleGnap.applications') + '</h2>' +
       nav.head +
       '<table><thead><tr><th>' + t.html('consoleGnap.thApplication') +
       '</th><th>' + t.html('consoleGnap.thRole') + '</th><th>' +
@@ -395,6 +407,7 @@ class GnapPage {
       nav.foot +
       // The link is markup a message cannot carry (#539), so the sentence
       // is the words before it, the link's text, and the words after.
+      '<div data-metadata>' +
       kit.note(t.html('consoleGnap.noReset') + '<a ' +
         'href="/admin/audit">' + t.html('consoleGnap.auditLog') + '</a>' +
         t.html('consoleGnap.noResetEnd')) +
@@ -402,7 +415,7 @@ class GnapPage {
       '· ' +
       '<code>GET /admin-api/gnap/monitor</code> · <a ' +
       'href="/admin/gnap">' + t.html('consoleGnap.linkSettings') +
-      '</a></p>';
+      '</a></p></div>';
     return inner;
   }
 }

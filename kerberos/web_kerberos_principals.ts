@@ -6,18 +6,18 @@
 // File: web_kerberos_principals.ts
 //
 // ---------------------------------------------------------------------------
-// PROTOCOLS → KERBEROS PRINCIPALS, DRAWN FROM ITS VIEW ALONE (#446,
+// PROTOCOLS → KERBEROS PRINCIPALS TAB, DRAWN FROM ITS VIEW ALONE (#446,
 // 2026-10-05).
 //
-// Draws Kerberos principals from the answer of `GET
+// Draws the Principals tab on `/admin/kerberos` from the answer of `GET
 // /admin-api/kerberos/principals`: this realm's KDC principals, people and
 // services, with their keys and the forms that change them.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
-// It was drawn inside the route of `/admin/kerberos/principals` in
-// `admin-ui/admin.ts`, which still draws the page until the console's cutover
-// by calling this with its view passed through JSON.
+// It was the body of the `/admin/kerberos/principals` route in
+// `admin-ui/admin.ts` until the console's cutover; `admin-ui/web_pages.ts`
+// composes it into the Principals tab.
 // ---------------------------------------------------------------------------
 
 import kit = require('../admin-ui/web_kit');
@@ -33,7 +33,7 @@ type Json = any;
  */
 class KerberosPrincipalsPage {
   /**
-   * Draws the page's body from its view.
+   * Draws the tab's body from its view.
    *
    * @param ctx - the render context (`WebKit.context()`)
    * @param json - the answer of the page's management API operation
@@ -62,6 +62,18 @@ class KerberosPrincipalsPage {
                       noun: t.html('consoleKerberosPrincipals.nounServices'),
                       offset: 0 },
                     json.servicesPaging));
+    // THE KDC'S WHOLE DATABASE (#595), which the demonstration document
+    // `/krb5/principals` listed until it was deleted: every principal by its
+    // public fields, paged as the two lists above are.
+    const databaseNav = json.databasePaging
+      ? kit.pageNavPair('/admin/kerberos/principals',
+          kit.pageParamsOf(ctx.query),
+          Object.assign({ param: 'databasePage',
+                          noun: t.html('consoleKerberosPrincipals.' +
+                                       'nounDatabase'),
+                          offset: 0 },
+                        json.databasePaging))
+      : { head: '', foot: '' };
     const etypeList = function (etypes) {
       return (etypes || []).map(function (one) {
         return '<code>' + kit.esc(one.name) + '</code>';
@@ -335,18 +347,36 @@ class KerberosPrincipalsPage {
       peopleRows + '</table>' + peopleNav.foot +
       kit.perPageForm('/admin/kerberos/principals', 'peoplePage', '1',
                        json.peoplePaging.perPage) +
+      '<h2>' + t.html('consoleKerberosPrincipals.hDatabase') + '</h2>' +
+      kit.note(t.html('consoleKerberosPrincipals.database')) +
+      databaseNav.head +
+      '<table id="kerberos-database"><tr><th>' +
+      t.html('consoleKerberosPrincipals.thPrincipal') + '</th><th>kvno' +
+      '</th><th>' + t.html('consoleKerberosPrincipals.thEnctypes') +
+      '</th><th>' + t.html('consoleKerberosPrincipals.thSalt') +
+      '</th><th>' + t.html('consoleKerberosPrincipals.thFlags') +
+      '</th></tr>' + (json.database || []).map(function (row) {
+        const flags = ['requiresPreAuth', 'revoked', 'passwordExpired',
+                       'okAsDelegate', 'autoCreated', 'directoryKeys']
+          .filter(function (name) {
+            return !!row[name];
+          });
+        return '<tr><td><code>' + kit.esc(row.principal) + '</code></td>' +
+          '<td>' + kit.esc(String(row.kvno)) + '</td><td>' +
+          kit.esc((row.etypes || []).map(function (one) {
+            return one.name;
+          }).join(', ')) + '</td><td><code>' + kit.esc(row.salt || '') +
+          '</code></td><td>' + kit.esc(flags.join(', ')) + '</td></tr>';
+      }).join('') + '</table>' + databaseNav.foot +
       '<h2>' + t.html('consoleKerberosPrincipals.hNoButton') + '</h2>' +
       kit.note(t.html('consoleKerberosPrincipals.noButton')) +
-      kit.note('<a href="/admin/kerberos/principals?format=json">' +
-                t.html('consoleKerberosPrincipals.linkJson') +
-                '</a> &middot; <a ' +
-                'href="/admin-api/kerberos/principals">' +
+      // No "this page as JSON" link: on the tab, /admin/kerberos?format=json
+      // is the whole Kerberos page's operation, not the principals', so the
+      // management API's own operation below is this tab's JSON.
+      kit.note('<a href="/admin-api/kerberos/principals">' +
                 t.html('consoleKerberosPrincipals.linkApi') +
                 '</a> &middot; <a href="/admin/kerberos">' +
-                t.html('consoleKerberosPrincipals.linkSettings') +
-                '</a> &middot; <a ' +
-                'href="/krb5/principals">' +
-                t.html('consoleKerberosPrincipals.linkDb') + '</a>');
+                t.html('consoleKerberosPrincipals.linkSettings') + '</a>');
 
     return inner;
   }

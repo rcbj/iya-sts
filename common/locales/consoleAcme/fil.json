@@ -56,8 +56,6 @@
   "intro": "<strong>ACME (RFC 8555), isang server kada trust realm.</strong> Nagrerehistro ang isang client ng account gamit ang External Account Binding na inisyu para sa isang tao o application, nag-o-order ng mga certificate para sa mga identifier na pag-aari ng entry na iyon, at tinatapos gamit ang isang CSR. Ang directory ay",
   "turnedOff": "<strong>Naka-off ang ACME sa realm na ito.</strong>",
   "noDialOut": "<strong>Walang challenge na tumatawag palabas.</strong> Ginagawang valid ang isang authorization, na may isang <code>{challenge}</code> challenge, para sa identifier na pag-aari ng nakataling entry — isang nakarehistrong host name, ang mail ng tao, ang entry mismo — at tinatanggihan sa newOrder gamit ang rejectedIdentifier ang identifier na hindi nito pag-aari. Vine-verify ang mga EAB MAC sa bawat mode.",
-  "hDirectory": "Directory",
-  "hEndpoints": "Mga endpoint",
   "hIssuingCa": "ACME Issuing CA",
   "hProfiles": "Mga profile",
   "hEab": "Mga External Account Binding key",

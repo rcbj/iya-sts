@@ -56,8 +56,6 @@
   "intro": "<strong>ACME (RFC 8555), one server per trust realm.</strong> A client registers an account with an External Account Binding issued for one person or application, orders certificates for identifiers that entry owns, and finalizes with a CSR. The directory is",
   "turnedOff": "<strong>ACME is turned off in this realm.</strong>",
   "noDialOut": "<strong>No challenge dials out.</strong> An authorization is created valid, with one <code>{challenge}</code> challenge, for an identifier the bound entry owns — a registered host name, the person's mail, the entry itself — and an identifier it does not own is refused at newOrder with rejectedIdentifier. EAB MACs are verified in every mode.",
-  "hDirectory": "Directory",
-  "hEndpoints": "Endpoints",
   "hIssuingCa": "ACME Issuing CA",
   "hProfiles": "Profiles",
   "hEab": "External Account Binding keys",

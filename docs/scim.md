@@ -227,8 +227,7 @@ is spent once across every node.
 
 HOBA's signature is RSA with SHA-256 over RFC 7486 section 5's length-prefixed
 blob. The key is registered at `POST /.well-known/hoba/register` — in
-development unauthenticated, for the reason `POST /tls/trust` is: it is how a
-caller **gets** a credential — and it lands on the person's own directory entry
+development unauthenticated: it is how a caller **gets** a credential — and it lands on the person's own directory entry
 as `hobaPublicKey`, so an `ldapsearch` and `/admin/users` show it. A HOBA
 credential names its key by id alone, which is why a key id already registered
 to another account is refused in every mode. In development the shared Digest

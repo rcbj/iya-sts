@@ -122,6 +122,13 @@ cluster (`security.rateLimit*`).
   draws `/authn/password-change` in place of a session, and after the change
   the sign-in continues, second factor included. Every other door that takes a
   password refuses the account until then (product mode).
+* **Start over.** Every page after the sign-in screen — a second factor, the
+  set-up step, an emailed code or link, the forced password change — has a
+  **Start over** button. It returns to the sign-in screen for the same
+  request, so the application that sent the person still gets its answer
+  once they sign in again. Nothing from the step is kept: a mailed code or
+  link stops working, an authenticator app half set up is discarded, and the
+  first factor has to be given again.
 * **Reset link.** **Send a reset link** on a person's `/admin/users` page (or
   `POST /admin-api/users/issue-password-reset`) removes the current password,
   signs the person out everywhere, and issues a single-use link to
@@ -171,9 +178,8 @@ that is decided from the role chosen on the screen and carried on the pending
 record — never re-read from the ceremony's own POST, which is the browser's
 result and says nothing about what somebody chose a screen earlier.
 
-It is one of the few pages here with a
-script (`/authn/webauthn.js`), because a WebAuthn ceremony is a browser API
-call. **Registration and every assertion are verified in both modes**: the
+Like every sign-in page since #572, it is drawn by the sign-in page's
+script, which runs the ceremony (a WebAuthn ceremony is a browser API call). **Registration and every assertion are verified in both modes**: the
 challenge, the origin, the RP ID hash, the user-presence and user-verification
 flags, the signature over
 `authenticatorData ‖ SHA-256(clientDataJSON)` against the registered COSE key
@@ -300,7 +306,7 @@ row says `disallow`. See [XACML](xacml.md).
 
 | Field | Default | What it does |
 |---|---|---|
-| `allowUsernameless` | off | Offers a passkey sign-in with **no username**, described below. |
+| `allowUsernameless` | on | Offers a passkey sign-in with **no username**, described below. |
 | `securityKeyResidentKey` | `required` | What *Use a security key* asks the authenticator to store **while usernameless sign-in is on**: `discouraged`, `preferred` or `required`. |
 | `backupEligibility` | `allow` | `disallow` accepts only **device-bound** passkeys, refusing a synced one at registration and at sign-in (below). |
 | `enforcePinLength` | off | Requires a minimum **security-key PIN length**, as the key reports it (below). |
@@ -481,8 +487,7 @@ with several passkeys is shown one *Use passkey* button, and the request lists
 all of them so the browser offers whichever is present. With
 `aggregateDevices` off, somebody with more than one first chooses which to use
 from a list of their passkeys by name, and the request then names only that
-one, with a link back to choose another. The choice is a list of links and
-needs no script. The rule applies to the passwordless step and to the passkey
+one, with a link back to choose another. The choice is a list of links. The rule applies to the passwordless step and to the passkey
 asked for after a password. Either way the assertion is checked against the
 passkey it names; only the request changes.
 
@@ -515,7 +520,7 @@ The policy replaced the settings `webauthn.usernameless` and
 refused at start.
 
 **Signing in with a passkey and no username** (the passkey policy's
-`allowUsernameless`, off by default). Where it is on, the sign-in screen draws
+`allowUsernameless`, on by default). Where it is on, the sign-in screen draws
 *Sign in with a passkey*, and the username field offers passkeys as autofill in browsers that
 support conditional mediation. The browser is asked for any passkey of this
 service, the user handle it returns names the account, and:
@@ -539,13 +544,13 @@ passkey needs it, and the password form works as before.
 
 An authenticator app as a second factor: RFC 6238 over
 [RFC 4226](https://www.rfc-editor.org/rfc/rfc4226). It is typed into a form,
-so it works from a phone, a script or a test job, and the code page
-`/authn/totp` has no script.
+so it works from a phone, a script or a test job (`POST
+/authn-api/mfa/{id}/totp`, [the sign-in API](authn-api.md)).
 
 * **Enrolment** happens on `/portal/mfa`, on an activation link, or at
   `/authn/mfa-setup` when a second factor is required. It is two steps. The
-  page shows a QR code (a server-drawn SVG, arriving as a `data:` URI, since
-  every portal page is `script-src 'none'`) and the same base32 secret in
+  page shows a QR code (drawn by the browser from the `otpauth:` URI) and the
+  same base32 secret in
   groups of four, with the algorithm, digits and period written out. The
   typed form is not a fallback nobody sees: scanning is impossible when the
   phone *is* the browser showing the page, when a desktop authenticator has no
@@ -691,6 +696,8 @@ second (the person opts in on `/portal/mfa`).
 - **A link finishes the sign-in only in the browser that asked for it.**
   Opening it anywhere else signs nobody in. Opening it at all spends nothing
   until Continue is pressed, so a mail scanner that fetches it does nothing.
+  The page that waits for it checks every few seconds and, once the link is
+  opened, says the sign-in went on in the other tab.
 - As a first factor, **the page is the same whether or not the account exists
   or has a verified address**, and nothing is mailed for one that does not.
 - The session records `amr ["otp"]` — RFC 8176 has no value for email — with
@@ -919,10 +926,11 @@ be changed with `POST /admin-api/config/set`.
   implementations rather than one agreeing with itself. (This side verifies
   ECDSA in its native DER form; the browser side converts DER to raw `r‖s`
   because Web Crypto will not take DER.)
-* **The ceremony script is a separate resource** (`/authn/webauthn.js`), not
-  an inline `<script>`: every response here carries `script-src 'none'` and
-  that page relaxes it only to `'self'`, so an inline script would simply not
-  run, with the button doing nothing and no error anywhere.
+* **The ceremony runs in the sign-in page's own script** (`/authn/signin.js`)
+  since #572, armed by `POST /authn-api/mfa/{id}/webauthn/options`; the page's
+  policy allows only `'self'` scripts, never an inline one. Whether a step
+  registers a passkey or asks for one is the step's, never the browser's to
+  choose.
 * **Settings that turn a mechanism off do not remove what people already
   hold.** Otherwise a switch would silently downgrade accounts to one factor,
   or lock out someone whose only credential is a primary key.

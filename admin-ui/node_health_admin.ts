@@ -140,6 +140,10 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import nodeSnapshots = require('../cluster/node_snapshots');
+// At the top rather than lazily (#543 phase 2c): `server_prose.ts` requires
+// only what config.js's neighbours already loaded, and this module is built
+// at 18s, long after them — `encryption_admin.ts`'s arrangement.
+import serverProse = require('../common/server_prose');
 // The page's renderer (#446): a `web_` module, loadable in a browser.
 import NodeHealthPage = require('./web_node_health');
 
@@ -165,6 +169,173 @@ const MIN_WINDOW_US = 250 * 1000;
 const MAX_WINDOW_US = 60 * 1000 * 1000;
 
 const MIB = 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// EVERY SENTENCE THIS PAGE'S VIEW CARRIES, as a table (#543 phase 2c), so
+// that the nodehealth namespace can carry them and `common/server_prose.ts`
+// refill an answer to `GET /admin-api/node-health` in a console reader's
+// language. Each is what the code below wrote inline until #543, byte for
+// byte; a `{{name}}` is a value filled in with `serverProse.fill()` — a
+// number, a file, a node's name, a pid, an error's own text (carried over as
+// data) — or another sentence of this table (translated in turn).
+//
+// **ANOTHER NODE'S SECTION IS ITS STORED SNAPSHOT** (`node_snapshots.ts`),
+// written in English by that node's front process, so it is translated by
+// matching too, and only while that node runs a build whose templates are
+// these: a node on an older build whose sentence differs is drawn in the
+// English it wrote.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  notLinux: 'This node is not running on Linux ({{platform}}), so there are ' +
+    'no cgroup files to read.',
+  noCgroup: 'There is no cgroup at {{root}}: no cgroup v2 ({{why}}) and no ' +
+    'cgroup v1 memory or cpuacct controller.',
+  noCgroupShort: 'No cgroup.',
+  cpuUnreadable: 'The container\'s CPU time cannot be read: {{source}} — ' +
+    '{{why}}.',
+  cpuOnce: 'The container\'s CPU time could be read once and not a second ' +
+    'time: {{why}}.',
+  cpuQuota: 'The container may use {{vcpus}} vCPU ({{version}}, {{file}}), ' +
+    'and the percentage is of that.',
+  cpuNoFile: 'This cgroup ({{version}}) has no {{file}}, so it has no CPU ' +
+    'quota of its own; the percentage is of the {{cpus}} CPU(s) node ' +
+    'reports available (os.availableParallelism()).',
+  cpuUnlimited: 'No CPU quota ({{version}}, {{file}} says none): the ' +
+    'container may use every CPU the host gives it, and the percentage is ' +
+    'of the {{cpus}} CPU(s) node reports available ' +
+    '(os.availableParallelism()).',
+  noThrottling: 'The cgroup has no throttling counters: with no quota ' +
+    'there is nothing to throttle against.',
+  noV1Memory: 'This cgroup v1 host has no memory controller for this ' +
+    'process.',
+  memoryUnreadable: 'The container\'s memory cannot be read: {{source}} — ' +
+    '{{why}}.',
+  memoryLimit: 'The container may use {{mib}} MiB ({{version}}, {{file}}).',
+  memoryNoFile: 'This cgroup ({{version}}) has no {{file}}, so it has no ' +
+    'memory limit of its own and there is no percentage to give.',
+  memoryUnlimited: 'No memory limit ({{version}}, {{file}} says none), so ' +
+    'there is no percentage to give.',
+  // `anon` and `file` are `anon`/`file` on v2 and `rss`/`cache` on v1:
+  // memory.stat's own key names, carried over.
+  memoryStat: '{{anon}} is the processes\' own memory; {{file}} is page ' +
+    'cache the kernel reclaims under pressure before it kills anything.',
+  memoryNoStat: 'memory.stat cannot be read, so what the memory is made of ' +
+    'is not known.',
+  ecsMemoryContainer: 'From the ECS agent (/task/stats), because the ' +
+    'cgroup cannot be read here. The limit is the container\'s, as the ' +
+    'agent reports it.',
+  ecsMemoryTask: 'From the ECS agent (/task/stats), because the cgroup ' +
+    'cannot be read here. The container has no limit of its own, so the ' +
+    'limit is the ECS TASK\'s, {{mib}} MiB.',
+  ecsMemoryNone: 'From the ECS agent (/task/stats), because the cgroup ' +
+    'cannot be read here. There is no limit to measure against.',
+  ecsTotalOnly: 'The ECS agent reports the total only.',
+  taskMemoryLimit: 'The container has no memory limit of its own (cgroup ' +
+    'v{{version}}), so the limit is the ECS TASK\'s, {{mib}} MiB (/task ' +
+    'Limits.Memory), and the percentage is of that.',
+  ecsCpuTask: 'From the ECS agent (/task/stats), between its last two ' +
+    'samples, because the cgroup cannot be read here; the percentage is of ' +
+    'the ECS TASK\'s {{vcpus}} vCPU.',
+  ecsCpuNone: 'From the ECS agent (/task/stats), between its last two ' +
+    'samples, because the cgroup cannot be read here; the task names no ' +
+    'CPU limit, so there is no percentage.',
+  ecsNoThrottling: 'The ECS agent does not report throttling.',
+  taskCpuLimit: 'The container has no CPU quota of its own (cgroup ' +
+    'v{{version}}), so the percentage is of the ECS TASK\'s {{vcpus}} vCPU ' +
+    '(/task Limits.CPU).',
+  procUnreadable: '{{file}} could not be read ({{why}})',
+  noVmRss: 'its status file has no VmRSS',
+  threadProcessWide: 'a thread\'s resident size and CPU time are the whole ' +
+    'process\'s, so they are on the front process\'s row (pid {{pid}}) and ' +
+    'not repeated here',
+  frontProcessWide: 'its resident size and CPU time are the whole ' +
+    'process\'s, every worker thread\'s included; its heap figures are its ' +
+    'main thread\'s',
+  roleFront: 'front process',
+  roleDebugger: 'protocol debugger api',
+  roleSurface: 'hosted-surface worker thread {{thread}}',
+  roleProtocol: 'protocol worker thread {{thread}}',
+  childNoMemory: 'it answered without its memory, so only its resident ' +
+    'size is shown, from /proc',
+  childNoAnswer: '{{why}}, so only its resident size is shown, from /proc',
+  debuggerSilent: 'it did not answer within {{ms}}ms (its memory preload, ' +
+    'debugger_api_status.js, answers when it is installed)',
+  threadSilent: 'it did not answer within {{ms}}ms',
+  threadUnanswered: '{{why}}; a thread has no /proc entry of its own, so ' +
+    'its heap cannot be read from outside it',
+  debuggerNoPid: 'The protocol debugger\'s api process could not be asked ' +
+    'for its pid: {{error}}.',
+  totals: 'The request and hosted-surface workers are THREADS of ' +
+    'the front process (#364), so their resident size and CPU time are ' +
+    'the front process\'s own figures and are counted once, on its row. ' +
+    'The resident total is the sum over the {{rss}} process(es) ' +
+    'whose size could be read — the front process and the debugger\'s ' +
+    'api child — so pages the two share (node\'s own code among them) ' +
+    'are counted once for each and it can exceed the container\'s ' +
+    'memory.current. The heap figures are the {{heap}} V8 ' +
+    'isolate(s) that reported process.memoryUsage() themselves: the ' +
+    'front process\'s main thread, each worker thread, and the child; a ' +
+    'child process that did not answer in time is shown with its ' +
+    'resident size from /proc and no heap, and a worker thread that did ' +
+    'not is listed as unanswered, since a thread has no /proc entry of ' +
+    'its own. Post-quantum signing and scrypt have had no processes ' +
+    'of their own since #363: they run on libuv\'s thread pool, and ' +
+    'their memory is counted in the process that asked.',
+  ecsNotSet: 'ECS_CONTAINER_METADATA_URI_V4 is not set: this node is not ' +
+    'an Amazon ECS task (it is not on Fargate or an ECS container ' +
+    'instance), so there is no task metadata endpoint to cross-check the ' +
+    'cgroup against.',
+  ecsSilent: 'ECS_CONTAINER_METADATA_URI_V4 is set, but the task metadata ' +
+    'endpoint did not answer within {{ms}}ms: {{why}}.',
+  // The trailing space is the inline sentence's own: it stood before a
+  // second sentence that is empty when the container has stats.
+  ecsPartial: 'Part of the endpoint did not answer: {{whys}}. ',
+  // Each with the second sentence written out, so that a reason holding a
+  // full stop cannot be split at the wrong one when an answer is matched.
+  ecsPartialNoStats: 'Part of the endpoint did not answer: {{whys}}. There ' +
+    'are no stats for this container in /task/stats.',
+  ecsPartialNoStatsId: 'Part of the endpoint did not answer: {{whys}}. ' +
+    'There are no stats for this container in /task/stats ({{dockerId}}).',
+  ecsNoStats: 'There are no stats for this container in /task/stats.',
+  ecsNoStatsId: 'There are no stats for this container in /task/stats ' +
+    '({{dockerId}}).',
+  ecsText: 'The ECS agent\'s own figures for this container, as a cross-' +
+    'check of the cgroup: the agent samples on its own schedule, so ' +
+    'they will not agree to the byte or the percent.',
+  scope: 'These are the figures of the node {{node}} — its container — ' +
+    'drawn by its front process, pid {{pid}}. Every node of a cluster is a ' +
+    'container of its own, with its own figures.',
+  machine: 'The machine this container runs on — on Fargate, the ' +
+    'micro-VM; on a workstation, the whole workstation. NOT the ' +
+    'container: its free memory and load say nothing about the ' +
+    'container\'s limit.',
+  clusterTotals: 'Over the {{count}} node(s) that are not gone and have a ' +
+    'snapshot, stale ones included and marked. The limits are summed only ' +
+    'when every node has one.'
+});
+
+// The phrases that appear only INSIDE a sentence above — why a file could
+// not be read, why a sample has no CPU time — keyed `.param.` so that they
+// are never matched as a whole string.
+const PARAMS = Object.freeze({
+  notThere: 'it is not there',
+  notANumber: 'it is not a number',
+  noUsage: 'it has no usage_usec',
+  noCpuacct: 'there is no cgroup v1 cpuacct controller',
+  noMemory: 'it answered without its memory'
+});
+
+// The routes whose answers carry the nodehealth namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/node-health'];
+
+// A sentence of the table, filled.
+const say = function say(key: keyof typeof SENTENCES,
+                         params?: Record<string, unknown>): string {
+  helpers.log.debug("Entering say(). " + key);
+  const out = serverProse.fill(SENTENCES[key], params || {});
+  helpers.log.debug("Leaving say().");
+  return out;
+};
 
 interface NodeHealthAdminDeps {
   log: typeof helpers.log;
@@ -209,6 +380,29 @@ class NodeHealthAdmin {
    * See the module's `PAGE`.
    */
   static readonly PAGE = PAGE;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the nodehealth namespace (#543 phase 2c): every sentence of the
+   * view, the computed ones as templates, and the phrases that appear only
+   * inside them. A row's `source` is not harvested: it names a file or a
+   * function call (`process.memoryUsage()`, `/proc/<pid>/status`).
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering NodeHealthAdmin.prose().");
+    const out: Record<string, string> = Object.assign({},
+      serverProse.harvest('nodehealth.s', SENTENCES, Object.keys(SENTENCES)),
+      serverProse.harvest('nodehealth.param', PARAMS, Object.keys(PARAMS)));
+    helpers.log.debug("Leaving NodeHealthAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   // The previous CPU sample, and the cgroup it was read from.
   private lastCpu: { dir: string; usageUsec: number; atUs: number } | null =
@@ -346,7 +540,7 @@ class NodeHealthAdmin {
       // Not there, or not readable: the caller says which source is
       // missing, in words.
       return { text: null,
-               why: e && e.code === 'ENOENT' ? 'it is not there'
+               why: e && e.code === 'ENOENT' ? PARAMS.notThere
                                              : String((e && e.message) || e) };
     });
   }
@@ -484,8 +678,8 @@ class NodeHealthAdmin {
                    cpuacctDir: null, why: '' };
     if (platform !== 'linux') {
       log.debug("Leaving NodeHealthAdmin.cgroupDir(). Not Linux.");
-      return Object.assign(none, { why: 'This node is not running on ' +
-        'Linux (' + platform + '), so there are no cgroup files to read.' });
+      return Object.assign(none, { why: say('notLinux',
+                                            { platform: platform }) });
     }
     const lines = await this.selfCgroups();
     const controllers = await this.read(path.join(cgroupRoot,
@@ -516,9 +710,8 @@ class NodeHealthAdmin {
                                    cpuDir: cpuDir, cpuacctDir: cpuacctDir });
     }
     log.debug("Leaving NodeHealthAdmin.cgroupDir(). None.");
-    return Object.assign(none, { why: 'There is no cgroup at ' + cgroupRoot +
-      ': no cgroup v2 (' + controllers.why + ') and no cgroup v1 memory or ' +
-      'cpuacct controller.' });
+    return Object.assign(none, { why: say('noCgroup',
+      { root: cgroupRoot, why: controllers.why }) });
   }
 
   // The container's cumulative CPU time, as cgroup v2's `cpu.stat` names it
@@ -540,13 +733,13 @@ class NodeHealthAdmin {
       const stat = NodeHealthAdmin.keyed(read.text);
       log.debug("Leaving NodeHealthAdmin.cpuSample().");
       return { stat: 'usage_usec' in stat ? stat : null, atUs: atUs,
-               why: 'usage_usec' in stat ? '' : 'it has no usage_usec',
+               why: 'usage_usec' in stat ? '' : PARAMS.noUsage,
                source: file };
     }
     if (!where.cpuacctDir) {
       log.debug("Leaving NodeHealthAdmin.cpuSample(). No cpuacct.");
       return { stat: null, atUs: clockUs(), source: 'cpuacct.usage',
-               why: 'there is no cgroup v1 cpuacct controller' };
+               why: PARAMS.noCpuacct };
     }
     const file = path.join(where.cpuacctDir, 'cpuacct.usage');
     const usage = await this.read(file);
@@ -555,7 +748,7 @@ class NodeHealthAdmin {
     if (!(ns >= 0)) {
       log.debug("Leaving NodeHealthAdmin.cpuSample(). Unreadable v1.");
       return { stat: null, atUs: atUs, source: file,
-               why: usage.text === null ? usage.why : 'it is not a number' };
+               why: usage.text === null ? usage.why : PARAMS.notANumber };
     }
     const stat: Json = { usage_usec: ns / 1000 };
     if (where.cpuDir) {
@@ -618,7 +811,7 @@ class NodeHealthAdmin {
     if (!where || !where.version) {
       log.debug("Leaving NodeHealthAdmin.cpuView(). No cgroup.");
       return { available: false, cgroupVersion: null,
-               unavailableText: where ? where.why : 'No cgroup.' };
+               unavailableText: where ? where.why : say('noCgroupShort') };
     }
     const key = where.version + ':' + (where.dir || where.cpuacctDir);
     let current = await this.cpuSample(where);
@@ -626,8 +819,8 @@ class NodeHealthAdmin {
       log.debug("Leaving NodeHealthAdmin.cpuView(). No CPU time.");
       return { available: false, cgroupVersion: where.version,
                source: current.source,
-               unavailableText: 'The container\'s CPU time cannot be read: ' +
-                 current.source + ' — ' + current.why + '.' };
+               unavailableText: say('cpuUnreadable',
+                 { source: current.source, why: current.why }) };
     }
     const kept = this.lastCpu;
     let previous: { usageUsec: number; atUs: number };
@@ -647,8 +840,7 @@ class NodeHealthAdmin {
         log.debug("Leaving NodeHealthAdmin.cpuView(). Second read failed.");
         return { available: false, cgroupVersion: where.version,
                  source: second.source,
-                 unavailableText: 'The container\'s CPU time could be read ' +
-                   'once and not a second time: ' + second.why + '.' };
+                 unavailableText: say('cpuOnce', { why: second.why }) };
       }
       current = second;
       how = 'fresh-sample';
@@ -664,19 +856,15 @@ class NodeHealthAdmin {
     const version = 'cgroup v' + where.version;
     let limitText: string;
     if (q.kind === 'quota') {
-      limitText = 'The container may use ' +
-        NodeHealthAdmin.round1(q.vcpus as number) + ' vCPU (' + version +
-        ', ' + q.file + '), and the percentage is of that.';
+      limitText = say('cpuQuota', {
+        vcpus: NodeHealthAdmin.round1(q.vcpus as number), version: version,
+        file: q.file });
     } else if (q.kind === 'no-file') {
-      limitText = 'This cgroup (' + version + ') has no ' + q.file + ', so ' +
-        'it has no CPU quota of its own; the percentage is of the ' +
-        hostCpus + ' CPU(s) node reports available ' +
-        '(os.availableParallelism()).';
+      limitText = say('cpuNoFile', { version: version, file: q.file,
+                                     cpus: hostCpus });
     } else {
-      limitText = 'No CPU quota (' + version + ', ' + q.file + ' says ' +
-        'none): the container may use every CPU the host gives it, and the ' +
-        'percentage is of the ' + hostCpus + ' CPU(s) node reports ' +
-        'available (os.availableParallelism()).';
+      limitText = say('cpuUnlimited', { version: version, file: q.file,
+                                        cpus: hostCpus });
     }
     const s = current.stat;
     const throttling = 'nr_periods' in s
@@ -709,9 +897,7 @@ class NodeHealthAdmin {
       systemSeconds: 'system_usec' in s
         ? NodeHealthAdmin.round1(s.system_usec / 1e6) : null,
       throttling: throttling,
-      throttlingText: throttling ? null
-        : 'The cgroup has no throttling counters: with no quota there is ' +
-          'nothing to throttle against.'
+      throttlingText: throttling ? null : say('noThrottling')
     };
     log.debug("Leaving NodeHealthAdmin.cpuView().");
     return view;
@@ -754,15 +940,14 @@ class NodeHealthAdmin {
     if (!where || !where.version) {
       log.debug("Leaving NodeHealthAdmin.memoryView(). No cgroup.");
       return { available: false, cgroupVersion: null,
-               unavailableText: where ? where.why : 'No cgroup.' };
+               unavailableText: where ? where.why : say('noCgroupShort') };
     }
     const v2 = where.version === 2;
     const dir = v2 ? where.dir : where.memoryDir;
     if (!dir) {
       log.debug("Leaving NodeHealthAdmin.memoryView(). No v1 memory.");
       return { available: false, cgroupVersion: 1,
-               unavailableText: 'This cgroup v1 host has no memory ' +
-                 'controller for this process.' };
+               unavailableText: say('noV1Memory') };
     }
     const names = v2
       ? ['memory.current', 'memory.max', 'memory.stat', 'memory.peak',
@@ -779,9 +964,8 @@ class NodeHealthAdmin {
       log.debug("Leaving NodeHealthAdmin.memoryView(). No usage.");
       return { available: false, cgroupVersion: where.version,
                source: source,
-               unavailableText: 'The container\'s memory cannot be read: ' +
-                 source + ' — ' + (files[0].why || 'it is not a number') +
-                 '.' };
+               unavailableText: say('memoryUnreadable', {
+                 source: source, why: files[0].why || PARAMS.notANumber }) };
     }
     const maxText = files[1].text === null ? null : files[1].text.trim();
     const raw = NodeHealthAdmin.numberOf(files[1]);
@@ -811,26 +995,19 @@ class NodeHealthAdmin {
                                   : maxText === null ? 'no-' + limitName
                                                      : 'unlimited',
       limitText: limit !== null
-        ? 'The container may use ' + (limit / MIB).toFixed(0) + ' MiB (' +
-          version + ', ' + limitName + ').'
-        : maxText === null
-          ? 'This cgroup (' + version + ') has no ' + limitName + ', so it ' +
-            'has no memory limit of its own and there is no percentage to ' +
-            'give.'
-          : 'No memory limit (' + version + ', ' + limitName + ' says ' +
-            'none), so there is no percentage to give.',
+        ? say('memoryLimit', { mib: (limit / MIB).toFixed(0),
+                               version: version, file: limitName })
+        : say(maxText === null ? 'memoryNoFile' : 'memoryUnlimited',
+              { version: version, file: limitName }),
       utilisationPercent: limit ? NodeHealthAdmin.round1(100 * used / limit)
                                 : null,
       peakBytes: NodeHealthAdmin.numberOf(files[3]),
       anonBytes: v2 ? pick(['anon']) : pick(['total_rss', 'rss']),
       fileBytes: v2 ? pick(['file']) : pick(['total_cache', 'cache']),
       kernelBytes: v2 ? pick(['kernel']) : NodeHealthAdmin.numberOf(files[5]),
-      statText: stat ? (v2 ? 'anon' : 'rss') + ' is the processes\' own ' +
-                       'memory; ' + (v2 ? 'file' : 'cache') + ' is page ' +
-                       'cache the kernel reclaims under pressure before it ' +
-                       'kills anything.'
-                     : 'memory.stat cannot be read, so what the memory is ' +
-                       'made of is not known.',
+      statText: stat ? say('memoryStat', { anon: v2 ? 'anon' : 'rss',
+                                           file: v2 ? 'file' : 'cache' })
+                     : say('memoryNoStat'),
       oomKills: events && 'oom_kill' in events ? events.oom_kill : null
     };
     log.debug("Leaving NodeHealthAdmin.memoryView(). " + version);
@@ -870,25 +1047,21 @@ class NodeHealthAdmin {
         currentBytes: stats.memoryUsageBytes, limitBytes: lim,
         limitSource: typeof stats.memoryLimitBytes === 'number'
           ? 'ecs-container' : lim ? 'ecs-task' : 'none',
-        limitText: 'From the ECS agent (/task/stats), because the cgroup ' +
-          'cannot be read here. ' + (typeof stats.memoryLimitBytes ===
-          'number' ? 'The limit is the container\'s, as the agent reports it.'
-          : lim ? 'The container has no limit of its own, so the limit is ' +
-                  'the ECS TASK\'s, ' + (lim / MIB).toFixed(0) + ' MiB.'
-                : 'There is no limit to measure against.'),
+        limitText: typeof stats.memoryLimitBytes === 'number'
+          ? say('ecsMemoryContainer')
+          : lim ? say('ecsMemoryTask', { mib: (lim / MIB).toFixed(0) })
+                : say('ecsMemoryNone'),
         utilisationPercent: lim ? round1(100 * stats.memoryUsageBytes / lim)
                                 : null,
         peakBytes: null, anonBytes: null, fileBytes: null, kernelBytes: null,
         oomKills: null,
-        statText: 'The ECS agent reports the total only.'
+        statText: say('ecsTotalOnly')
       });
     } else if (outMem.available && outMem.limitBytes === null && taskMem) {
       Object.assign(outMem, {
         limitBytes: taskMem, limitSource: 'ecs-task',
-        limitText: 'The container has no memory limit of its own (cgroup ' +
-          'v' + outMem.cgroupVersion + '), so the limit is the ECS TASK\'s, ' +
-          (taskMem / MIB).toFixed(0) + ' MiB (/task Limits.Memory), and the ' +
-          'percentage is of that.',
+        limitText: say('taskMemoryLimit', {
+          version: outMem.cgroupVersion, mib: (taskMem / MIB).toFixed(0) }),
         utilisationPercent: round1(100 * outMem.currentBytes / taskMem)
       });
     }
@@ -901,22 +1074,19 @@ class NodeHealthAdmin {
         coresUsed: stats.cpuCoresUsed, limitVcpus: taskCpu,
         percentOfVcpus: taskCpu,
         limitSource: taskCpu ? 'ecs-task' : 'none',
-        limitText: 'From the ECS agent (/task/stats), between its last two ' +
-          'samples, because the cgroup cannot be read here' + (taskCpu
-            ? '; the percentage is of the ECS TASK\'s ' + taskCpu + ' vCPU.'
-            : '; the task names no CPU limit, so there is no percentage.'),
+        limitText: taskCpu ? say('ecsCpuTask', { vcpus: taskCpu })
+                           : say('ecsCpuNone'),
         utilisationPercent: taskCpu ? round1(100 * stats.cpuCoresUsed /
                                              taskCpu) : null,
         sampled: 'ecs', windowSeconds: null, usageSeconds: null,
         userSeconds: null, systemSeconds: null, throttling: null,
-        throttlingText: 'The ECS agent does not report throttling.'
+        throttlingText: say('ecsNoThrottling')
       });
     } else if (outCpu.available && outCpu.limitVcpus === null && taskCpu) {
       Object.assign(outCpu, {
         percentOfVcpus: taskCpu, limitSource: 'ecs-task',
-        limitText: 'The container has no CPU quota of its own (cgroup v' +
-          outCpu.cgroupVersion + '), so the percentage is of the ECS ' +
-          'TASK\'s ' + taskCpu + ' vCPU (/task Limits.CPU).',
+        limitText: say('taskCpuLimit', { version: outCpu.cgroupVersion,
+                                         vcpus: taskCpu }),
         utilisationPercent: round1(100 * outCpu.coresUsed / taskCpu)
       });
     }
@@ -947,8 +1117,9 @@ class NodeHealthAdmin {
     if (read.text === null) {
       log.debug("Leaving NodeHealthAdmin.procMemory(). Unreadable.");
       return { rss: null, hwm: null,
-               why: path.join(procRoot, String(pid), 'status') + ' could ' +
-                 'not be read (' + read.why + ')' };
+               why: say('procUnreadable', {
+                 file: path.join(procRoot, String(pid), 'status'),
+                 why: read.why }) };
     }
     const kb = function (key: string): number | null {
       log.debug("Entering kb(). " + key);
@@ -960,7 +1131,7 @@ class NodeHealthAdmin {
     const rss = kb('VmRSS');
     log.debug("Leaving NodeHealthAdmin.procMemory().");
     return { rss: rss, hwm: kb('VmHWM'),
-             why: rss === null ? 'its status file has no VmRSS' : '' };
+             why: rss === null ? say('noVmRss') : '' };
   }
 
   // A row for a process that reported `process.memoryUsage()` itself: its
@@ -1006,9 +1177,7 @@ class NodeHealthAdmin {
       peakRssBytes: null,
       cpuUserSeconds: null,
       cpuSystemSeconds: null,
-      processWide: 'a thread\'s resident size and CPU time are the whole ' +
-        'process\'s, so they are on the front process\'s row (pid ' + pid +
-        ') and not repeated here',
+      processWide: say('threadProcessWide', { pid: pid }),
       uptimeSeconds: uptimeS
     };
   }
@@ -1042,10 +1211,8 @@ class NodeHealthAdmin {
                                                            : answer.uptimeS);
     }
     const row = await this.procRow(pid, role);
-    row.notReported = answer
-      ? 'it answered without its memory, so only its resident size is ' +
-        'shown, from /proc'
-      : noAnswer + ', so only its resident size is shown, from /proc';
+    row.notReported = answer ? say('childNoMemory')
+                             : say('childNoAnswer', { why: noAnswer });
     log.debug("Leaving NodeHealthAdmin.childRow(). From /proc.");
     return row;
   }
@@ -1072,20 +1239,17 @@ class NodeHealthAdmin {
     const rows: Json[] = [];
     const unanswered: Json[] = [];
     const children: Promise<Json>[] = [];
-    const front = this.reportedRow(pid, 'front process', memoryUsage(),
+    const front = this.reportedRow(pid, say('roleFront'), memoryUsage(),
                                    cpuUsage(), uptimeS());
-    front.processWide = 'its resident size and CPU time are the whole ' +
-      'process\'s, every worker thread\'s included; its heap figures are ' +
-      'its main thread\'s';
+    front.processWide = say('frontProcessWide');
     rows.push(front);
     // EACH WORKER IS A THREAD OF THIS PROCESS (#364): the pool's `pid` for it
     // is its threadId, and its row is its isolate's heap alone.
     (stats.workers || []).filter(function (one: Json): boolean {
       return one.ready;
     }).forEach(function (one: Json): void {
-      const role = ((one.pool || 'protocol') === 'surfaces'
-        ? 'hosted-surface worker thread ' : 'protocol worker thread ') +
-        one.pid;
+      const role = say((one.pool || 'protocol') === 'surfaces'
+        ? 'roleSurface' : 'roleProtocol', { thread: one.pid });
       const answer = answers[one.pid];
       if (answer && answer.memory) {
         rows.push(self.threadRow(pid, one.pid, role, answer.memory,
@@ -1095,32 +1259,27 @@ class NodeHealthAdmin {
         // NOTHING TO FALL BACK ON: a thread has no /proc entry of its own,
         // and /proc/<pid> is the whole process, already on the front row.
         unanswered.push({ pid: pid, threadId: one.pid, role: role,
-                          why: (answer
-                            ? 'it answered without its memory'
-                            : 'it did not answer within ' + ASK_WORKERS_MS +
-                              'ms') + '; a thread has no /proc entry of its ' +
-                            'own, so its heap cannot be read from outside ' +
-                            'it' });
+                          why: say('threadUnanswered', { why: answer
+                            ? PARAMS.noMemory
+                            : say('threadSilent', { ms: ASK_WORKERS_MS }) }) });
       }
     });
     let debuggerNote: string | null = null;
     try {
       const status = debuggerProcess().status();
       if (status && status.pid) {
-        children.push(this.childRow(status.pid, 'protocol debugger api',
+        children.push(this.childRow(status.pid, say('roleDebugger'),
           debuggerAnswer && debuggerAnswer.pid === status.pid
             ? debuggerAnswer : null,
-          'it did not answer within ' + ASK_CHILDREN_MS + 'ms (its ' +
-          'memory preload, debugger_api_status.js, answers when it is ' +
-          'installed)'));
+          say('debuggerSilent', { ms: ASK_CHILDREN_MS })));
       }
     } catch (e) {
       log.debug("Caught in NodeHealthAdmin.processesView(): " +
                 ((e && e.message) || e));
       // The debugger's api is a child only where the debugger runs; its row
       // is left out and the reason said.
-      debuggerNote = 'The protocol debugger\'s api process could not be ' +
-        'asked for its pid: ' + String((e && e.message) || e) + '.';
+      debuggerNote = say('debuggerNoPid',
+                         { error: String((e && e.message) || e) });
     }
     const read = await Promise.all(children);
     read.forEach(function (row: Json): void {
@@ -1165,26 +1324,38 @@ class NodeHealthAdmin {
         externalBytes: sum('externalBytes'),
         isolatesWithHeap: withHeap
       },
-      totalsText: 'The request and hosted-surface workers are THREADS of ' +
-        'the front process (#364), so their resident size and CPU time are ' +
-        'the front process\'s own figures and are counted once, on its row. ' +
-        'The resident total is the sum over the ' + withRss + ' process(es) ' +
-        'whose size could be read — the front process and the debugger\'s ' +
-        'api child — so pages the two share (node\'s own code among them) ' +
-        'are counted once for each and it can exceed the container\'s ' +
-        'memory.current. The heap figures are the ' + withHeap + ' V8 ' +
-        'isolate(s) that reported process.memoryUsage() themselves: the ' +
-        'front process\'s main thread, each worker thread, and the child; a ' +
-        'child process that did not answer in time is shown with its ' +
-        'resident size from /proc and no heap, and a worker thread that did ' +
-        'not is listed as unanswered, since a thread has no /proc entry of ' +
-        'its own. Post-quantum signing and scrypt have had no processes ' +
-        'of their own since #363: they run on libuv\'s thread pool, and ' +
-        'their memory is counted in the process that asked.'
+      totalsText: say('totals', { rss: withRss, heap: withHeap })
     };
     log.debug("Leaving NodeHealthAdmin.processesView(). " + rows.length +
               " row(s), " + threads + " of them thread(s).");
     return view;
+  }
+
+  /**
+   * What is missing from the ECS endpoint's answer, as the sentence the view
+   * carries: which requests failed, and whether this container has no stats.
+   * Byte for byte the concatenation it replaced (#543 phase 2c).
+   *
+   * @param whys - each failed request's reason, data carried over
+   * @param hasStats - whether `/task/stats` had this container's figures
+   * @param dockerId - the container's id, or null
+   * @returns the sentence, or '' when nothing is missing
+   */
+  static ecsGaps(whys: string[], hasStats: boolean,
+                 dockerId: string | null): string {
+    helpers.log.debug("Entering NodeHealthAdmin.ecsGaps().");
+    const params = { whys: whys.join('; '), dockerId: dockerId };
+    let out: string;
+    if (hasStats) {
+      out = whys.length ? say('ecsPartial', params) : '';
+    } else if (whys.length) {
+      out = say(dockerId ? 'ecsPartialNoStatsId' : 'ecsPartialNoStats',
+                params);
+    } else {
+      out = say(dockerId ? 'ecsNoStatsId' : 'ecsNoStats', params);
+    }
+    helpers.log.debug("Leaving NodeHealthAdmin.ecsGaps().");
+    return out;
   }
 
   /**
@@ -1201,10 +1372,7 @@ class NodeHealthAdmin {
     if (!base) {
       log.debug("Leaving NodeHealthAdmin.ecsView(). Not on ECS.");
       return { available: false,
-               unavailableText: 'ECS_CONTAINER_METADATA_URI_V4 is not set: ' +
-                 'this node is not an Amazon ECS task (it is not on Fargate ' +
-                 'or an ECS container instance), so there is no task ' +
-                 'metadata endpoint to cross-check the cgroup against.' };
+               unavailableText: say('ecsNotSet') };
     }
     const ask = function (suffix: string): Promise<Json> {
       log.debug("Entering ask(). " + (suffix || '/'));
@@ -1236,11 +1404,12 @@ class NodeHealthAdmin {
     }
     self.ecsFailing = failed.length > 0;
     if (!container && !task && !allStats) {
+      // STS-CORE-0125 is recorded on the warning above, where the silence
+      // was detected; a code is never sent, so it is not in the answer.
       log.debug("Leaving NodeHealthAdmin.ecsView(). Nothing answered.");
-      return { available: false, errorCode: 'STS-CORE-0125',
-               unavailableText: 'ECS_CONTAINER_METADATA_URI_V4 is set, but ' +
-                 'the task metadata endpoint did not answer within ' +
-                 ECS_TIMEOUT_MS + 'ms: ' + got[0].why + '.' };
+      return { available: false,
+               unavailableText: say('ecsSilent', { ms: ECS_TIMEOUT_MS,
+                                                   why: got[0].why }) };
     }
     const dockerId = container && container.DockerId
       ? String(container.DockerId) : null;
@@ -1287,16 +1456,11 @@ class NodeHealthAdmin {
         : null,
       stats: figures,
       unavailableText: failed.length || !figures
-        ? (failed.length ? 'Part of the endpoint did not answer: ' +
-            failed.map(function (one: Json): string {
-              return one.why;
-            }).join('; ') + '. ' : '') +
-          (figures ? '' : 'There are no stats for this container in ' +
-            '/task/stats' + (dockerId ? ' (' + dockerId + ')' : '') + '.')
+        ? NodeHealthAdmin.ecsGaps(failed.map(function (one: Json): string {
+          return one.why;
+        }), !!figures, dockerId)
         : null,
-      text: 'The ECS agent\'s own figures for this container, as a cross-' +
-        'check of the cgroup: the agent samples on its own schedule, so ' +
-        'they will not agree to the byte or the percent.'
+      text: say('ecsText')
     };
     log.debug("Leaving NodeHealthAdmin.ecsView().");
     return view;
@@ -1352,21 +1516,14 @@ class NodeHealthAdmin {
       node: node,
       pid: pid,
       scope: 'node',
-      scopeText: 'These are the figures of the node ' + node + ' — its ' +
-        'container — drawn by its front process, pid ' + pid + '. Every ' +
-        'node of a cluster is a container of its own, with its own figures.',
+      scopeText: say('scope', { node: node, pid: pid }),
       cgroup: where.dir || where.memoryDir || null,
       cgroupVersion: where.version,
       cpu: container.cpu,
       memory: container.memory,
       processes: processes,
       ecs: got[3],
-      machine: Object.assign({
-        text: 'The machine this container runs on — on Fargate, the ' +
-          'micro-VM; on a workstation, the whole workstation. NOT the ' +
-          'container: its free memory and load say nothing about the ' +
-          'container\'s limit.'
-      }, machine())
+      machine: Object.assign({ text: say('machine') }, machine())
     };
     log.debug("Leaving NodeHealthAdmin.localView().");
     return view;
@@ -1431,9 +1588,7 @@ class NodeHealthAdmin {
       workerThreads: threads,
       rssBytes: rss,
       heapUsedBytes: heap,
-      text: 'Over the ' + counted.length + ' node(s) that are not gone ' +
-        'and have a snapshot, stale ones included and marked. The limits ' +
-        'are summed only when every node has one.'
+      text: say('clusterTotals', { count: counted.length })
     };
   }
 
@@ -1550,6 +1705,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   PAGE: PAGE,
+  // The nodehealth namespace's routes and English (#543 phase 2c).
+  PROSE_ROUTES: NodeHealthAdmin.PROSE_ROUTES,
+  prose: NodeHealthAdmin.prose,
   // For `mgmt-api/admin_api.ts` (rule 7).
   nodeHealthView: slot.forward('nodeHealthView')
 };

@@ -63,7 +63,7 @@
   "tileServices": "principaux de service",
   "tileEnctypes": "enctypes (krb5.enctypes)",
   "tileKvno": "kvno de départ",
-  "acceptor": "L’accepteur sur <code>krb5.servicePort</code> et <code>/authn/spnego</code> répond en tant que ",
+  "acceptor": "L’accepteur sur <code>/authn/spnego</code> répond en tant que ",
   "noSpn": "(aucun SPN)",
   "acceptorStored": ", avec la clé d’un principal de service stocké ici.",
   "acceptorPassword": ", avec une clé issue de krb5.servicePassword. Créer ce SPN ici lui donne plutôt une clé aléatoire et un keytab.",
@@ -82,8 +82,11 @@
   "thMatches": "Correspond au mot de passe",
   "hNoButton": "Ce pour quoi il n’y a délibérément aucun bouton",
   "noButton": "<strong>Télécharger à nouveau un keytab.</strong> Une clé stockée n’est jamais relue : le keytab d’un principal de service est remis par la création ou le renouvellement qui l’a produit, et un keytab perdu se remplace par un renouvellement. Le keytab d’une PERSONNE (#59) est dérivé d’un mot de passe connu : <strong>Réinitialiser le mot de passe et télécharger le keytab</strong> sur sa page sous Annuaire &rarr; Utilisateurs, ou son propre mot de passe sur <code>/portal/kerberos</code>. <strong>Définir les clés d’une personne.</strong> Elles proviennent du mot de passe de la personne et de rien d’autre ; les effacer est la seule commande, et la prochaine connexion vérifiée les dérive à nouveau.",
-  "linkJson": "cette page en JSON",
   "linkApi": "la même chose via l’API de gestion",
   "linkSettings": "les réglages Kerberos",
-  "linkDb": "la base des principaux"
+  "hDatabase": "La base des principaux",
+  "database": "Chaque principal que détient ce KDC, par ses seuls champs publics : le sel et les enctypes qu’un client apprend des réponses mêmes du KDC, le kvno et les indicateurs. Les comptes de démonstration du développement et les noms créés à la première rencontre y figurent ; aucune clé ni aucun mot de passe.",
+  "nounDatabase": "principaux",
+  "thSalt": "Sel",
+  "thFlags": "Indicateurs"
 }

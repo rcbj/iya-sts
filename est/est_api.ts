@@ -199,7 +199,7 @@ class EstApi {
             schema: { type: 'integer', minimum: 1 },
             description: 'Rows per page.' }
         ],
-        mirrors: 'GET /admin/est',
+        mirrors: 'GET /admin/cert-issuance',
         responseDescription: 'The EST server as the page draws it.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: 'The view /admin/est renders.' },

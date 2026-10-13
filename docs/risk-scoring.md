@@ -364,7 +364,8 @@ as any other is.
 
 Each person sees their own assessed sign-ins of the last thirty days on the
 user portal, at **Recent sign-ins** (`/portal/sign-ins`): when, from where,
-with what browser and system, and at what level. Each has two buttons:
+with what browser and system, and at what level, newest first and twenty a
+page. Each has two buttons:
 
 - **This wasn't me** puts the person's risk at HIGH. By default that ends
   every session they hold, this one included, and RISC is told their
@@ -641,9 +642,11 @@ the same settings: the connection string from `STS_DATABASE_URL` or
 `persistence.databaseUrl`, and the password from
 `persistence.databasePasswordProvider` (OpenBao, AWS Secrets Manager or
 another secret store). It also verifies the database server's certificate
-when `persistence.databaseTlsRejectUnauthorized` is on. So in a container of
-the service's image it needs nothing else: no password on the command line
-and no `PGPASSWORD`. For a throwaway database with no secret store, a
+as the service does: when `persistence.databaseTlsRejectUnauthorized` is on
+(the default), or when the connection string says `sslmode=verify-ca` or
+`verify-full`, against `persistence.databaseTlsCaFile` when it is set. So in a
+container of the service's image it needs nothing else: no password on the
+command line and no `PGPASSWORD`. For a throwaway database with no secret store, a
 password written into `STS_DATABASE_URL` still works. If the secret store is
 configured but cannot be read, the loader stops with `STS-RISK-0040` and the
 store's own reason, and imports nothing.

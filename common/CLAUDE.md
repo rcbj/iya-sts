@@ -127,8 +127,8 @@ an unusable scope would have written it.
 `userFor`, `parseBody`, `bodyValues`, `oauthError`, `vciError`, `signJwt` and
 `firstByLocal`/`textByLocal` are in `helpers.js` because more than one protocol needs
 them, not because they are especially general. The last two are read by three parsers
-— the WS-Trust RST, WS-Federation's `wreq`, and the `wresult` the mock relying party
-is POSTed — and they match on **local name with the namespace ignored** because the
+— the WS-Trust RST, WS-Federation's `wreq`, and once the `wresult` the mock relying
+party was POSTed (deleted, #592) — and they match on **local name with the namespace ignored** because the
 trust namespace alone has four versions in use. That is what lets one parser answer
 WS-Trust 1.0 through 1.4 instead of four.
 
@@ -520,8 +520,8 @@ And the handles below section 13's floor were raised to 128 bits (the
 OID4VCI `credential_offer_uri` id, the mock SP's `RelayState` and the mock
 RP's `wctx`), the LDAP cluster instruction's nonce to 16 bytes, and
 `admin_stats.js`'s `ARTIFACT_TAG` takes four random bytes where it took the
-start time. `krb5_service.js`'s sequence number (7 random bits) is in a locked
-file and RFC 4121 does not require it to be random.
+start time. `krb5_service.js`'s sequence number (7 random bits) was left as it
+is: RFC 4121 does not require it to be random.
 
 **AND THE TESTS.** GitHub's code scanning (CodeQL `js/insecure-randomness`)
 had sixteen open alerts on `ldap/ldap_server.js` whose SOURCE was a test's
@@ -732,7 +732,9 @@ derived ones), and `samlCertificateProblem()`, which `updateApplication()` asks
 of every add or set of `samlSigningCertificate` and
 `samlSpMetadataSigningCertificate` (an X.509 certificate whose key makes an XML
 signature this service verifies — RSA, EC, EdDSA, DSA, ML-DSA or SLH-DSA —
-`STS-REG-0160`). An explicit
+`STS-REG-0160`). The metadata writer takes the selected protocol label for its
+audit row; SAML 1.1-only applications are recorded as SAML 1.1, while the
+legacy and SAML 2.0 paths retain SAML 2.0. An explicit
 `add` of the observed value confirms it. `saml/CLAUDE.md` argues why the
 certificate is a separate attribute where a return address is a mark, and the
 two `mode.js` predicates it added — `acceptsUnsignedSamlRequests()` and
@@ -991,8 +993,8 @@ nothing drives it against the running container yet.
 
 **This service is one node process and it owns every listener** — the express
 app (on the main port and on the plain-HTTP revocation port), the KDC on TCP
-and UDP 88, the Kerberos service on 8888, the LDAP directory, the gRPC
-surfaces and the embedded debugger's listener — and node runs all of them on
+and UDP 88, the LDAP directory (and the Kerberos test service on 8888, until
+#595), the gRPC surfaces and the embedded debugger's listener — and node runs all of them on
 ONE THREAD, so a synchronous computation does not slow it down, it STOPS it.
 **A KDC that does not answer looks from the outside exactly like a KDC that is
 not there.**
@@ -1128,9 +1130,10 @@ exports `registerRoutes(app)`, and `load()` requires it and then calls
 `register(app, module, name)` on the next line — at the point where requiring it
 used to register the routes, so the route order did not move (Express's layer
 list, 603 layers with their handlers, is identical before and after). The
-JavaScript route modules — the parent project's locked `krb5_kdc`,
-`krb5_service` and `spnego`, `tls/tls_server` and `ldap/ldap_server` — still
-register at their require, which `load()` makes at its
+JavaScript route modules — `krb5_kdc`, `krb5_service` and `spnego`
+(this repository's own, kept JavaScript because the parent's tests image
+copies them; `kerberos/CLAUDE.md`), `tls/tls_server` and `ldap/ldap_server` —
+still register at their require, which `load()` makes at its
 old place. So the file now holds two interleaved orders: the REQUIRE order,
 which decides load-time effects (slot fills, stores, cycles, and where a
 JavaScript module's routes land), and the order of `register()` calls, which
@@ -2585,7 +2588,7 @@ answers `{ realm, since, why }` marked `STS-CORE-0121`, and:
 
 | Where | What refuses |
 |---|---|
-| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the locked KDC records its own policy code, and the gate's log line carries 0121) |
+| `issuance_gate.check()` | FIRST, before the disabled account: every kind, with `retiring: true` on the answer — so every site that asks the gate (sessions, every token grant, authorization codes, SAML 2.0 and 1.1, WS-Federation, WS-Trust, Kerberos, GNAP) is refused, and records `STS-CORE-0121` where it can tell (the token endpoint answers `invalid_grant`; the KDC records its own policy code, and the gate's log line carries 0121) |
 | `authn.startSession()` | FIRST, for every door — the sign-in screen asks the gate early and then passes `gated: true` |
 | `cert_enrollment.issue()`, OpenID4VCI's credential and deferred endpoints, `SpiffeCa`'s three mints | ask `retiringRefusal()` themselves, not being gate sites: 503, `credential_request_denied`, a thrown mint |
 
@@ -2782,7 +2785,7 @@ is created with `krb5.enabled` off and builds its principal database when it is
 turned on, rebuilding it when one of those ten changes. So for a realm nothing
 was consumed at any startup, which is the same argument SPIFFE's ten made on
 2026-09-12. What is still consumed for the PROCESS is still a no: `krb5.kdcPort`
-and `krb5.servicePort` are bound sockets, and `krb5.trustedRealm` and its three
+is a bound socket (and `krb5.servicePort` was, until #595), and `krb5.trustedRealm` and its three
 build the development-mode second realm at startup.
 
 **MOVED FROM THE ROOT `CLAUDE.md`'s TRUST-REALM INDEX, AND IT DISAGREES WITH THE
@@ -2838,7 +2841,8 @@ cannot change, and it fails in the direction that looks like the console is brok
 existing container and test working: nothing in the parent project sets these
 variables in compose, but
 `tests/krb5_spnego_http.js` sets `KRB5_REALM`, `KRB5_KDC_PORT` and
-`KRB5_SERVICE_PORT` before requiring the KDC in-process, and that still wins. The
+`KRB5_SERVICE_PORT` before requiring the KDC in-process, and that still wins
+(the last names a setting #595 removed, so it is ignored now). The
 legacy level has NO occupant since #523 (2026-10-08): its one, `STS_ISSUER`, fed
 `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, and all four went when every
 name became the realm's OAuth issuer (`issuer_names.ts`). A start that still names
@@ -3998,9 +4002,10 @@ with `Cannot find module` naming a file the operator never mentioned.
    there — `seq` is monotonic only within one process, so the sort is by TIME,
    and the cap is per process. **The test to apply to the next `merge: 'own'`
    store is not "is it declared right" but "does everything that REPORTS it
-   fan in"**: three stores in this service still do not, and each is a page
+   fan in"**: two stores in this service still do not, and each is a page
    that under-reports rather than a page that is wrong —
-   `admin_stats.scimCounts`, `admin_stats.users` and `ssf_streams.received`.
+   `admin_stats.scimCounts` and `admin_stats.users` (`ssf_streams.received`
+   was the third, until #593 deleted it with `POST /ssf/receive`).
 
    **`record()` CANNOT THROW.** The whole body is wrapped and a caller must
    never guard it — the fourth place that rule applies (after `audit()`,
@@ -5206,7 +5211,7 @@ it exists in the realm most deployments only ever have.
 `/xacml/pep/*` and `POST /xacml/pip` — the documents this service enforces its
 own access with, and a named person's directory attributes. `XACML_USER`
 reaches the four XACML endpoints proper. One group granting both would make
-admitting a caller to the demonstration surface silently admit it to those,
+admitting a caller to the XACML surface proper silently admit it to those,
 which is the collapse the split exists to prevent.
 
 **A PERSON IS GRANTED ONE BY GOING IN THE GROUP**, not by a role entry: the
@@ -5375,6 +5380,24 @@ name — `rolePermission` (it may authorize only its own application's
 permissions, `STS-ADMIN-0831`), the PIP's role designator — and outside it by
 its name inside the application. `roles.rolesOf()` takes `application(s)` for
 the first reading and `ids: true` for the second.
+
+### A role has owners (#604)
+
+`owner` on the role entry: people and groups of the realm who answer for the
+role, the rule a group's owners follow (#603). `addOwner()` and
+`removeOwner()` resolve through the directory's `resolveOwner` hook (the
+service account's resolver), refuse what names nobody (`STS-XACML-0174`), no
+owner (`0173`), a value not listed (`0176`) and more than `MAX_OWNERS`
+(`0175`), and write through `write()`. **`write()` keeps the owners when a
+caller does not name them** (`given.owners === undefined`), for
+`conferredBy`'s reason: every older caller writes the whole record. An owner
+grants nothing; `ownersOf()` reports one deleted since with `kind: ''`, and
+`entryOf()` answers the role's directory entry for its page.
+
+**An application has owners too (#604)**: `appOwner` on its entry, written by
+`applications.addOwner()` and `removeOwner()` alone (in no EDITABLE row, so the
+field grid never draws it), with the same rules and its own codes
+(`STS-REG-0353` to `0358`), resolved through the directory's `resolveOwner`.
 
 ### `roles.js` is a LEAF and must stay one
 
@@ -8645,9 +8668,45 @@ SPIRE Server API and the admin console are a turnstile rather than a lock, and
 demonstration data, invent a claim value, or open a test control to anybody.**
 No seeded people, groups, Kerberos fixture accounts or SPIFFE entries; no
 persona surname, `@sts.example` address or `email_verified: true`;
-`POST /tls/trust`, `POST /dpop/nonce-mode`, open client registration, the SAML
-1.1 attribute authority and a sign-out naming somebody else are refused.
-Development keeps all of it, which is what the test suite drives.
+open client registration, the SAML 1.1 attribute authority and a sign-out
+naming somebody else are refused. Development keeps all of it, which is what
+the test suite drives.
+
+**AND SINCE #591 (rcbj, 2026-10-12) THE RUNTIME SHIPS NO DEMONSTRATION,
+STAND-IN OR TEST-CONTROL ENDPOINT IN ANY MODE.** #585 first made them
+development-only: a mark on the route in `common/app.js` (`next('route')`
+where the realm was product, so the answer was Express's own 404), a
+predicate here, a `demo` flag on the route's `sts_metadata.ts` row, and every
+list — the metadata page, the Protocols pages, the hosted-applications
+catalogue, the Listeners page, `/admin/crypto-metadata`, the protocol settings
+pages' links — reading the mark off the router. rcbj's view was that "at
+some point, those become a liability", so #592 to #598 took each one out of
+the runtime instead:
+
+* the relying parties, receivers and resource-server stand-ins the suite
+  needed went to the test peer (`tests/peer/`, #586) or were deleted (#592,
+  #593, #596);
+* the click-through demonstrations a person uses — the OpenID4VC issuer and
+  verifier, SPNEGO and the Kerberos-protected service with its socket — went
+  to the development companion (`companion/`, #594, #595);
+* `/xacml/protected` went to the remote PEP (#596);
+* the test controls became a setting, the MDM feed, a console page and
+  `/admin-api` operations (#597), and the W3C VC API a product surface off by
+  default (#598).
+
+**#599 then removed the mechanism**, with nothing left to mark: the mark and
+its readers, the predicate and its `/admin/mode` row, the metadata flag and
+its `demoMarkMismatches` drift report, `demoPrefixes`. The per-handler
+product refusals #585 retired (`STS-OAUTH-0178`, `STS-TLS-0024`,
+`STS-VC-0100`, `STS-DEVICE-0035`) stay retired; the mechanism itself recorded
+no code. `tests/demo_endpoints.js` is the guard: no route carries a mark or a
+retired demonstration path, the symbols are gone from the source, and the
+metadata page describes none. **A new endpoint that exists only to be
+exercised belongs in the test peer or the companion, never here.** What is
+left in this file is `opensTestControls()`, a test control on a REAL endpoint
+(the CIBA answer, `restore-kerberos`, `/logout ?username=`, open
+registration, the SAML 1.1 attribute responder, SCIM key add), which #591
+left out of scope.
 
 **NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
 FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is
@@ -9412,8 +9471,9 @@ its certificate. Four things reach outside the module:
   algorithms by name; their comments give the missing row as the reason and
   predate it.
 * **NOT TRANSLATED**: HMAC (no kid), the SPIFFE JWT-SVID (a separate
-  authority), and the three DID-bound kids — the DIF Domain Linkage Credential,
-  `/did/generate`'s credential, and the DID document's verification method ids.
+  authority), and the DID-bound kids — the DIF Domain Linkage Credential and
+  the DID document's verification method ids (`/did/generate`'s credential
+  was a third until it was deleted on #594).
   A key whose thumbprint cannot be computed signs under its internal kid and
   logs `STS-KEYS-0055` once.
 
@@ -9454,7 +9514,8 @@ because a leaf failing two at once hid two deleted checks in the first round:
   username.
 
 A chain through NO held authority answers `issuedHere: false` and every door
-treats it exactly as before — that is an anchor somebody installed at `/tls/trust`.
+treats it exactly as before — that is an anchor somebody installed through
+`/admin-api/tls/trust`.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and
@@ -10536,8 +10597,9 @@ Five decisions:
     and on no other path.
   - `realms.keyed(factory, onLookup)` grew its optional second argument for
     the one cache whose lookup is a property read (`helpers.js`'s STS proxy).
-  - **A lookup in a locked file is not counted** (`counted: false`). That is
-    the Kerberos authenticator store in `krb5_service.js`. The page says "not
+  - **A lookup the owner does not count is shown as not counted**
+    (`counted: false`). That is the Kerberos authenticator store in
+    `krb5_service.js`, which has no count yet. The page says "not
     counted" rather than showing a ratio of nothing.
 - **VALID IS THE OWNER'S CALL.**
   - A row with a deadline is valid until it passes.
@@ -10874,8 +10936,8 @@ is the operator's page; each file's header argues its part.
   nothing is REFUSED for a service account (`secondFactorRefusal()`'s refuse
   by default). The password grant declares `door: 'ropc'`, which is no app
   password's door. The KDC asks the same question through
-  `krb5_person_keys.personDisabled()`, because the KDC is locked and that is
-  the question it asks. A browser session from ANY first factor is refused in
+  `krb5_person_keys.personDisabled()`, which is the question `krb5_kdc.js`
+  asks. A browser session from ANY first factor is refused in
   `authn.startSession()`; a KEYED session (SCIM, SPIRE) is a program's and
   is not.
 * **THE EXEMPTION** is `mfaRequirementFor()` answering nothing required and
@@ -10901,8 +10963,11 @@ is the operator's page; each file's header argues its part.
 
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 
-The emailed six-digit code and the emailed sign-in link are drawn and checked
-by `authn/email_factor.ts` (`authn/CLAUDE.md`); what the screens, the
+The emailed six-digit code and the emailed sign-in link are answered and
+checked by `authn/email_factor.ts` (`authn/CLAUDE.md`) — their three pages
+are the sign-in surface's since #573, drawn in the browser from
+`/authn-api/mfa/{id}`, the mailed link still landing on
+`/authn/email-link/open`, whose GET spends nothing; what the screens, the
 credential store, the portal and the console must agree on is here:
 
 - **A PERSON OPTS IN (D8)** — `stsMailFactor` (`code` | `link`), from
@@ -11248,8 +11313,8 @@ product, to one definition, this file's:
   that checks an `aud` rather than from a list: the default resource
   indicator of a hosted authorization server
   (`jwt_access_token.isOwnResourceAudience()`), the management API
-  (`mgmt-api/admin_api`'s `namesThisApi()`), and the GNAP demonstration
-  resource server while `gnap.demoResourceServer` is on;
+  (`mgmt-api/admin_api`'s `namesThisApi()`), and the account API (#568) —
+  the GNAP demonstration resource server was the fourth until #593;
 * **or a registered application** (`appRegisteredBy`) by `oauthAudience`,
   client_id, identifier or permission base URI — the embedded debugger's api
   is one, seeded registered.
@@ -11276,7 +11341,9 @@ case." His answers on the ticket, D1–D6, are what this section holds to.
 * **`hosted_applications.js` IS THE CATALOGUE, CLOSED.** An application is an
   id, a label and the paths it answers (prefixes on a segment boundary, and
   exact paths); `classify(path)` answers which, for a path without its realm
-  prefix. `/healthcheck` is `EVERYWHERE`, a path nobody claims is null and
+  prefix. `/healthcheck` is `EVERYWHERE`, and so is everything under `/web`
+  since #570 (the public surfaces' card and catalogs, 3cl), a path nobody
+  claims is null and
   admitted everywhere (so Express's `Cannot GET` body is unchanged). Named
   authorization servers (`/<as>/oauth2`, `/<as>/gnap`) are matched on their
   second segment. **`tests/hosted_applications.js` holds it to the router**:
@@ -11358,7 +11425,7 @@ second followed `webauthn.residentKey`, which defaulted to `discouraged`.
   - The directory's three store functions are `ldap_server.js`'s, filled
     through `setDirectory()`.
 * **Two rows, and rcbj's three answers on the issue:**
-  - `allowUsernameless` is off by default.
+  - `allowUsernameless` is ON by default since 2026-10-10 (rcbj: "Enable webauthn usernameless logins by default"); it was off on #527's answer.
   - `securityKeyResidentKey` defaults to `required`.
   - `securityKeyResidentKey()` answers `required` while `allowUsernameless`
     is off, whatever the row says (answer 1), and the row while it is on.
@@ -11467,10 +11534,12 @@ portal translations).
 
 **#534 ADDED `aggregateDevices` (2026-10-08)**, on by default, which is what
 the passkey step did before: one ceremony with every key of the step's role
-in `allowCredentials`. Off, `authn.ts`'s `webauthnPage()` draws a list of
-links for a person holding more than one key. Each link is
-`/authn/webauthn?mfa=<step>&key=<credential id>`, and the page drawn for a
-chosen key names only that key in `data-allow`. A chosen id that is not one
+in `allowCredentials`. Off, the passkey step's page draws a list of
+links for a person holding more than one key (`webauthnFacts()`'s `choices`
+since #572, when `webauthnPage()` became facts). Each link is
+`/authn/webauthn?mfa=<step>&key=<credential id>`, and the ceremony armed for a
+chosen key (`POST /authn-api/mfa/{id}/webauthn/options`, `key`) names only
+that key in `allow`. A chosen id that is not one
 of the step's keys draws the list again. The GET now draws a passwordless
 step for a person holding a PRIMARY key, and still never the enrolment
 ceremony. `keyForAssertion()` still decides which key an assertion is
@@ -11494,8 +11563,8 @@ selects for the person where no door did) follow it.
 
 These doors select:
 - `startSessionHere()` (the person and the application);
-- `webauthnPage()` and `POST /authn/webauthn` (the step's person and
-  application);
+- `webauthnFacts()` and the passkey step's act (the step's person and
+  application; `webauthnPage()` and `POST /authn/webauthn` until #572);
 - `loginPage()` (the application, where nothing selected yet);
 - `passkeySignIn()` (the application, then the owner);
 - `/portal/keys` and activation (the person).
@@ -11610,8 +11679,8 @@ reasons for the shape:
 * **`ui_locales`** is carried on the pending sign-in record, and discovery's
   `ui_locales_supported` lists the offered locales.
 * **The admin console (phases 5 and 6) runs the SAME formatter.**
-  - `admin-ui/web_messages.ts` holds the parser, renderer and translator as
-    a `web_` module. `common/i18n.ts` keeps the catalogs and the
+  - `common/web_messages.ts` holds the parser, renderer and translator as
+    a `web_` module (`admin-ui/web_messages.ts` until #570). `common/i18n.ts` keeps the catalogs and the
     negotiation, and builds `WebTranslator`s, so there is one parser.
   - `GET /admin-api/console` answers a `locale` member: the negotiation for
     the administrator and `sts-admin-console`, and every `console*`
@@ -11626,7 +11695,7 @@ reasons for the shape:
     browser (`applyLocale()` sets it). `tests/console_web_bundle.js` gives
     the sandboxed bundle node's default, as the runtime would.
   - English output was held byte-identical when the strings moved. Text the
-    server writes into a view stays English for now.
+    server writes into a view is #543's (3ck).
 * **`PageLocale.herePath()` never copies the request's URL** (the
   integrator's finding on phase 3). It answers the caller's own path plus
   the parameters named in `keep`, so nothing a request merely adds is drawn
@@ -11715,3 +11784,310 @@ information that has been granted"):
   for one audience. Its mapped claims join the declared ones in the
   every-audience intersection, and are returned as `grantedByPermission`,
   which `gate()` passes: granting the permission granted them.
+
+## 3ck. `server_prose.ts`: THE PROSE THE SERVER WRITES INTO A CONSOLE VIEW (#543, 2026-10-12)
+
+#539 left the sentences a VIEW carries in English: a setting's label,
+description and restart reason, and later a policy's rule sentences and a
+module's notes. The console draws them as they arrive. rcbj's four answers
+on #543:
+
+* **The server translates, and only on request.** `/admin-api`'s
+  `sendJson()` passes every 2xx answer through `translateView()` when the
+  request carries `Accept-Language`.
+  - The console sends the locale it negotiated (`web_runtime.ts`'s
+    `sendOnce()`). It does not send it on the two calls that negotiate it,
+    the shell and `console/language`, so that "follow the browser" still
+    follows the browser.
+  - Only that header is negotiated, with English as the last resort. The
+    locale policy's default is never applied, so a script that names no
+    language reads exactly what it read before. Every answer says
+    `Vary: Accept-Language`.
+* **Console prose only.** `translatesAnswer()` refuses the two OpenAPI
+  documents, which stay English.
+* **English stays in the source.**
+  - `common/prose_locales/<ns>/en.json` is generated by `extract()` through
+    `tests/tools/prose-catalogs.js`, in the tests image, because the module
+    is TypeScript.
+  - Each translation is `{ en: <hash>, text }`, the first 16 hex digits of
+    the SHA-256 of the English it was made from. One whose hash is not the
+    current English's is never served: the reader gets the new English.
+  - The tool's `--merge` computes the hash from the source, never from the
+    translator's file.
+* **Phased and machine-translated.** The catalogs share #539's catalog list
+  and status (`machine-unreviewed`), and its negotiation.
+
+Why it is shaped this way:
+
+* **Not `common/locales/`.** Those catalogs are ICU messages, and their test
+  refuses a literal brace, while a setting description says
+  `/pki/chain/{scope}/{sha256}.pem`. This is plain text with a hash beside
+  it, so it is a second kind of catalog, in its own directory, as
+  `common/mail_locales/` is.
+* **Exact match after the view is built.** A namespace's RECOGNISER is asked
+  of every plain object in the answer.
+  - The settings recogniser knows a described setting by its `key`, and
+    replaces a prose member only where it EXACTLY equals that row's English.
+  - So a stored value is never touched, and every view carrying described
+    settings is translated without a translator threaded through the dozens
+    of builders. That includes `/admin-api/config`, every page's settings
+    block and the token-lifetime and claim pages.
+  - The alternative was an argument on `config.describe()`, which the
+    OpenAPI example also calls.
+  - A later phase adds a namespace by adding a source (`extract()` plus
+    `recognise()`) to `defaultDeps()`.
+* **Keys** are `<setting>|label`, `|description`, `|restartReason` and
+  `|csvValueNotes|<value>`. The separator is `|` because a setting key has
+  dots.
+* **Every catalog must be current (rcbj, 2026-10-12)**, and
+  `tests/server_prose_catalogs.js` C enforces it in the suite and in the
+  coverage run. A new setting or a changed sentence fails there until it is
+  translated.
+  - A base catalog must translate every English message from the English the
+    source says now.
+  - An overlay may hold only current translations.
+  - No catalog may keep a key the English has lost.
+  - The reader would get the English meanwhile, but rcbj asked for the pages
+    in these languages, not partly in them.
+  - What IS enforced besides: `en.json` is current, and every entry has a
+    hash and a text.
+  - A current translation keeps every `code span` of its English verbatim,
+    because a translated setting key or path names something that does not
+    exist.
+* **Paying what is owed.**
+  - `--untranslated` lists it, and `--merge` takes the translations back.
+  - Both, and `--report`, read the catalog files and run on the host, because
+    `en.json` is held to the source.
+  - Only `--print` and `--write` read the source, and so need the tests image.
+* **No regional overlays yet.** `fr-CA`, `es-ES` and `zh-Hant-HK` read their
+  base catalogs' prose.
+* `STS-I18N-0011`: a prose catalog could not be read.
+
+### Phrase sources and templates (phase 2, from the policies on)
+
+A setting row has a `key` to be recognised by. Most other prose does not: a
+`describe()` sentence is a bare string in an array, and many sentences are
+COMPUTED. So the second kind of source is a PHRASE source
+(`phraseSource()`).
+
+* **Scoped by route.** It translates any string of an answer to one of its
+  routes that is EXACTLY one of its messages.
+  - Only on those routes, so a value elsewhere that reads like one of its
+    sentences is never touched.
+  - The route is `res.locals.proseRoute`, which `admin_api.ts`'s
+    registration loop sets on every request.
+  - A console twin (`/admin-api/console/...`) and a moved form helper carry
+    the route they mirror (`proseRoute` on the copied entry), so a source
+    names an operation once.
+* **A computed sentence is a TEMPLATE**, with `{{name}}` placeholders,
+  declared once beside the code that makes it. The policy modules' and
+  `policy_kinds.ts`'s tables are `SENTENCES` and `MESSAGES`.
+  - The code fills it with `ServerProse.fill()`. A template and the sentence
+    it is matched against therefore cannot drift: the English output is
+    byte-identical to the concatenation it replaced.
+  - The server matches the answer's sentence against the template and
+    refills the TRANSLATED template.
+  - Each parameter is translated in turn when it is itself a message of the
+    namespace, a filled template, or a list of those joined with `, `. The
+    list is segmented so that a phrase holding a comma stays whole.
+  - Anything else is carried over: a number, a profile name, a DN.
+* **A key holding `.param.`** names a phrase used only inside a template
+  ("none" in "first factors: none"). It is never matched as a whole string,
+  where it could be a value a form sends back.
+* **`harvest()`** collects a table's prose members, keyed
+  `<prefix>.<id>.<member>` by each element's own id.
+  - It skips identifiers: camelCase names (a `governs` of `userPassword`),
+    bare paths, and strings with no letter. Harvesting one would translate
+    that name wherever the route's answer carries it.
+* **The marks a translation must keep**, which test B checks:
+  - code spans and `{{placeholders}}`;
+  - HTML elements by name (`<code>`, `<strong>`; never `<this value>`,
+    which is prose) and entities;
+  - `**`, which a renderer strips in pairs.
+  It caught a Traditional Chinese setting description that had invented a
+  `**` pair.
+
+The **policies** namespace is `admin-core/policy_kinds.ts`'s `prose()`:
+- every kind's label, its `governs`, `appliesTo` and `fallsBackTo`, and the
+  noun a message names it by;
+- each kind module's `FIELDS`, `SCHEMA`, `MECHANISMS`, `DOORS` and
+  `SELECTORS`, and its `describe()` templates;
+- the save and reset messages;
+- `VIEW_PROSE`: the page's enforcement, generator, doors and mail notes,
+  moved out of `admin_views.ts` so the namespace extracts without loading the
+  views.
+It is registered lazily in `defaultDeps()`, because the policy modules
+require this one to fill their templates.
+
+### The module namespaces (phase 2b)
+
+* **`PHRASE_MODULES` in `server_prose.ts`** maps a namespace to the modules
+  whose prose it is.
+  - Each module exports `PROSE_ROUTES` and `prose()`, its keys prefixed with
+    its own name.
+  - Each is required LAZILY, because many of them require `server_prose` to
+    fill their templates.
+* **Seventeen namespaces, 1,741 messages:** audit, database, delegation,
+  devices, encryption, federation, gnap, kerberos, ldap, listeners, mode,
+  pki, realms, roles, scim, secrets and spiffe.
+* **Two things are drawn as raw HTML** and held to their tags by test B: the
+  delegation map key (a filled template whose rows are `.param.` messages and
+  whose SVG swatches are carried over), and the secrets and encryption notes.
+* **Extraction loads the whole stack.** `tests/tools/prose-catalogs.js`
+  requires `common/protocol_stack`, as a request worker does, before it
+  extracts, because a namespace's English may sit in a module that registers
+  routes when it loads.
+  - `tests/server_prose_catalogs.js` A runs the tool as a CHILD
+    (`--print-all`) and compares, so the test runner never loads them.
+  - B and C read `en.json`, which A has just held to the source.
+* **`harvest()` keys a colliding element by its index too.** An audit
+  action's shared `category` would otherwise have dropped labels.
+* **Known residuals at the end of 2b**, most swept in 2c:
+  - the SCIM field-mapping notes (`scim/scim_map.ts`);
+  - the persistence notes on the LDAP service page;
+  - the secret-source labels on the encryption page;
+  - the endpoint names every Protocols page carries, which are
+    `sts_metadata.ts`'s (phase 3).
+  2c ends with a page-by-page sweep for these.
+
+### The registry namespaces and the metadata page (phase 2c and phase 3)
+
+* **2c** added the crypto report, the scheduler, caches, node health and
+  worker pools, and the 2b residuals: SCIM's mapping notes, the persistence
+  notes and the secret store's providers.
+  - **The scheduler and cache namespaces read a REGISTRY.** Their `prose()`
+    is called after the whole stack has loaded, so every job and cache
+    registered at build or wire time is there.
+  - **Lazy registrations stay English.** A job registered only once the
+    process starts or on first use is absent at extraction: the change-log
+    pull and trim, the SAML metadata refresher, the LDAP mirror's
+    maintenance and the CRL directory refresh.
+  - **Caches.** A cache's computed `lifetime` is a template declared beside
+    its registration, under the descriptor's new `sentences` member.
+    `cache_registry.js`'s `literalOnly()` calls a lifetime or bound function
+    only when its source returns nothing but literals.
+* **Phase 3** is `sts_metadata.ts` (`stsmetadata`, about 61k words) and the
+  endpoint names every Protocols page lists (`endpoints`).
+  - **`endpoints` is the one namespace on the `*` route (every route).** So
+    it holds only names that are phrases. A bare product or protocol name,
+    and any name that is a card name, an endpoint group or a spec name (a
+    join key), is left out.
+  - **The cost:** an operator-written value anywhere that exactly equals an
+    endpoint name such as "Token endpoint" is translated too.
+* **A coverage note's first word stays English** (test B, and the
+  translators' validator). That word is `full`, `partial` or `minimal`, and
+  `tests/vendored/sts_metadata.js` reads it from the answer, as any consumer
+  may.
+* **Twenty-eight namespaces in all**, every base catalog current.
+
+Phase 1 is the infrastructure and the settings namespace. Phase 2a is phrase
+sources and the policies, 2b the module namespaces above, 2c the registry
+namespaces, and phase 3 the metadata page. 2b and 2c are the module prose (LDAP, SCIM, SPIFFE,
+Kerberos, federation, PKI, encryption, secrets, database, mode, realms,
+audit, roles, delegation, devices, GNAP, listeners, the crypto report,
+scheduler jobs, caches, node health), then `sts_metadata.ts`.
+
+## 3cl. WHAT EVERY STATIC SURFACE STANDS ON: `web_page.ts`, `web_spa_client.ts`, `web_messages.ts`, `web_locale.ts`, `web_i18n.ts`, `web_surface.ts`, `web_card_css.ts`, `shell_document.ts`, `public_assets.ts` (#570, 2026-10-12)
+
+#569 converts every human-facing page outside `/admin` and `/portal` into a
+static application on the console's pattern; #570 is the foundation, and
+**nothing a person sees changed in it**: the console and the portal moved onto
+it byte for byte, and no public page is converted until its own ticket (#579,
+the front door, is the first). rcbj's three decisions on #570:
+
+1. **The shared runtime lives in `common/web_*.ts`**, held to the console's
+   rule — a `web_` module requires nothing but other `web_` modules, logs
+   nothing (browser code is exempt from Entering/Leaving), and is bundled by
+   esbuild for a browser, where reaching a server module fails the build.
+   `tests/console_web_bundle.js` A2 reads every `web_*.ts` in the tree for it.
+2. **One bundle per surface**, each over the shared runtime.
+3. **The browser translates**: the catalogs served as static JSON, the
+   runtime choosing the locale in #539's order, the APIs language-free and
+   errors English.
+
+And from #569: **script is required** (the shell's `<noscript>` says so, and
+there is no server-drawn fallback), **the cutover is per surface**, and **a
+specification's endpoint is never converted**.
+
+### The modules, and what each answers
+
+| Module | What it is |
+|---|---|
+| `web_page.ts` (`WebPage`) | The base of every runtime, client or not: `basesOf()`/`attribute()` read the shell's `data-sts-*`; `prefixAt(pathname, base)` the realm prefix; `queryOf()`; `url(path)` — this origin and prefix, or the base of the listener that answers the path (#472); `publicJson(method, path, body)` → `{ status, json, res }` with `json` null for a body that is not JSON; `realmLinks(html, prefix)`, `app.js`'s `withRealmLinks()` in the browser; `formFields(form, submitter)` — a form as an operation's JSON, the pressed button included and `csrf_token` left out; `targetFragment()`; `saveBase64()`. The console's and the portal's copies of each were deleted and both inherit these. |
+| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. |
+| `web_messages.ts` | The formatter and translator (#539 phase 5), moved from `admin-ui/`. |
+| `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
+| `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
+| `web_surface.ts` (`WebSurface extends WebPage`) | A public surface's runtime: the portal's with the sign-in taken out. Its page table `{ path, operation, render(json, ctx), title? }`; routing on real paths under its `base` (a link to another of its pages is followed in place, the history kept); each page drawn from its operation's GET answer (`view` or the whole JSON) in the browser's language with the chooser; a POST form sent as JSON to the operation the API's index says `mirrors` it (`GET <api>` → `operations: [{ method, path, mirrors }]`, `/account-api`'s convention) and REFUSED where none does; an answer's `location`, `view`, `go`, `message` and `errors` drawn by `answered()`; refusals English. The `frame(body, ctx)` is handed the page's `view` in its context as well (#579, for the front door's band), the renderer never. Since #571 a page's `operation` may be a FUNCTION of the location's query answering the whole path (the sign-in screen's `/authn-api/pending/{id}`), a view answered with `go` replaces the address and routes again, a refused GET with no `view` is a problem page, an API-held `uiLocales` beside the view is honoured as `ui_locales`, and `lastAnswer` keeps the whole answer (the screen's `csrf`) for a subclass. The realm prefix is the shell's `data-sts-prefix`, since a surface at `/` cannot find it in its own path. |
+| `web_webauthn.ts` (`WebWebAuthn`) | Base64url and a WebAuthn credential's JSON form (#571), shared by the portal's ceremonies (`portal/web_portal_webauthn.ts`) and the sign-in surface's — the screen's passkey and, since #572, the passkey step (`authn/web_authn.ts`). |
+| `web_limits_form.ts` (`WebLimitsForm`) | A right's limits as controls a person may lower (#576): the markup `limits_form.ts`'s `controls()` drew for GNAP's approval page, the portal's absent-owner approvals and the consent screen, moved here so the consent screen's renderer draws it in the browser from the rows its view carries. `LimitsForm.controls()` hands its work to it with `AccessLimits.rows()`; `lowered()`, which reads the controls back, stays on the server. English, as it always was. |
+| `web_outcome.ts` (`WebOutcome`) | The one renderer of an error or outcome page (#580): a heading, what was refused (`.bad`), why (a paragraph, or the steps' `.err` box), notes (`.meta`, markup the caller built) and the ways on, the ids the caller's. Words are the caller's — a refusal's English (#539's decision 6), escaped here. The federation pages' refusals and 404s draw through it, and the emailed factor's `end` page (#573) does to the bytes it drew before. |
+| `web_description.ts` (`WebDescription`), `web_description_pages.ts`, `web_description_surface.ts`, `description_pages.ts` (server) | The protocol families' description pages (#584): `/saml2`, `/saml11`, `/xacml`, `/ssf`, `/scim`, `/spiffe`, each a path no specification defines. The kit draws what the six share — a table, a list, a note, a link, and `rich()`/`linked()`, a catalog message whose sentence holds a link or a run of `<code>` (a raw slot between `\uE010`/`\uE011`, which no catalog may carry) — and each family's renderer is beside its server module (`saml/web_saml_description.ts`, `xacml/`, `ssf/`, `scim/`, `spiffe/`), words from a namespace of its own (`describeSaml2` … `describeSpiffe`), the description document's values English. `DescriptionPages` answers the JSON form (`asksForJson()`: the family's `?format=` where the query names one, else an `Accept` preferring JSON — the four documents to the byte as before, SAML's view new), the shell carrying the view, and the script. **ONE bundle, SIX paths**: the renderers are the small part of a runtime the six share, so one surface and one bundle (#570's decision 2), served at `<family>/description.js` because each family is a hosted application a realm may put on its own listener (#472); `/xacml`'s copy is behind the XACML gate, as the page is. |
+| `web_embedded_surface.ts` (`WebEmbeddedSurface extends WebSurface`) | The runtime of a surface whose every page is the SHELL'S (#583): the view read off `data-sts-state` and never fetched, a link left to the browser, the page drawn again from the view in hand when a language is chosen, `drawInPlace(view)` for what an act answered, and every form refused unless the subclass's `submit()` says how. `match(pages, path)` reads a row's `/:id`. It is `federation/web_federation_surface.ts`'s runtime (#580) with the federation taken out; the TLS diagnostic pages and the SPNEGO demonstration pages stood on it until #597 and #595 took them out of the runtime, and the three older embedded runtimes (the sign-in screen's embedded pages, GNAP's refusals, the federation pages) may move onto it. |
+| `web_qr.ts` (`WebQr`) | A QR code drawn in the browser as inline SVG, ISO/IEC 18004 byte mode (#589) — the portal's Credential Offer, and since #572 the set-up step's authenticator app (`otpauth:`); moved here from `portal/` by #572. |
+| `web_card_css.ts` (`WebCardCss`) | `CARD_CSS` and `CHOOSER_CSS`, moved byte for byte from `authn/authn.ts` (which still exports `authn.CARD_CSS`); served as `/web/card.css`. `STEP_CSS` (#572, #573), appended to it, is what the sign-in surface's steps drew in their own stylesheets: a notice, a warning, a code's wide field, the ways round a factor, the technical fold, the QR code.`VC_DEMO_CSS` (#582), the OpenID4VC demonstration's, left with it on #594. `DIAG_CSS` (#583), last, is what the TLS diagnostic pages (and, until #595 moved them to the companion, the SPNEGO ones) drew in their own server-drawn shells: a verdict's band, the PEM box, a list's indent, scoped to `.diag`, and the TLS page's wider card to `.tls`. |
+| `shell_document.ts` (`ShellDocument`, server) | `document(spec)` — doctype, `<html lang dir data-sts-*>` (an empty attribute left out), viewport, title, stylesheets, the deferred script, and in the body the `<noscript>` notice and a loading line, or a refusal and no script; `policy(app, { connect, csp })` and `serve(app, req, res, html, { connect, csp, compress, prefix })` — `no-store`, the CSP through `app.contentSecurityPolicy()` only, compressed with the realm's links put on first where asked; `acceptedEncoding()`, `sendCompressed()` (`AdminConsole.sendConsoleFile()` until #570), `readFile(dir, name, placeholder)` and `sendFile(req, res, file, type)` for a surface's built bundle and its `.br`/`.gz`. The console's and the portal's shells go through it, held to the bytes they drew by hand (`tests/web_foundation.js` A). |
+| `public_assets.ts` (`PublicAssets`, server) | `/web/card.css`, `/web/locales/catalogs.json` and `/web/locales/<ns>/<catalog>.json`, from what `i18n.ts` loaded — **nothing read from disk by a requested name**, an unknown name a 404 (`STS-I18N-0012`), a known pair with no file `{}`. `?v=<build>` equal to this build's version is `immutable` for a year, anything else `no-cache`. `/web` is `EVERYWHERE` in `hosted_applications.js` and `local` in `cell_placement.ts`. Registered at 6a-web. |
+
+`PageLocale.shellAttributes(req, application)` answers the three language
+attributes a translated surface's shell carries — `data-sts-version`,
+`data-sts-lang` (canonical, never as the request sent it) and
+`data-sts-locale-default`.
+
+### How a public surface is added — the recipe #579 follows
+
+1. **The API** its pages are drawn from, language-free, answering each page's
+   view to a GET and listing its POST operations with what each `mirrors` at
+   its index (the `/account-api` conventions: `view`, `go`, `location`,
+   `message`, `errors`; `preferredLanguage: { value, populated }` where it
+   knows the person). Errors English, each with its code.
+2. **The renderers**: `web_<surface>_*.ts` beside the surface's server module,
+   a page table module exporting `PAGES` and `render(path, view, ctx)` (the
+   bundle's global), and an entry `web_<surface>.ts` that builds
+   `new WebSurface(env, { base, api, pages, namespaces, frame?, brand? })`
+   from the browser's objects and calls `start()`. Words from a catalog
+   namespace of its own in `common/locales/<ns>/`.
+3. **The build**: one `bundle_surface` line in `build-typescript.sh`, with the
+   runtime's output named explicitly and never the name of a compiled server
+   module (the portal's is `portal-spa.js` because `portal.js` is
+   `portal.ts`), and one row in `tests/tools/web_surfaces.js` — with `cases`
+   for `tests/web_surfaces.js`'s round trip (view → JSON → bundle, byte-equal
+   to the compiled module), or `heldBy` naming the test that draws every page
+   from its API's answers.
+4. **The server**: the shell through `ShellDocument.document()` with
+   `stylesheets: ['/web/card.css']`, `attributes`
+   `PageLocale.shellAttributes(req, app)` plus `data-sts-prefix` (and the
+   `data-sts-authn`/`data-sts-oauth` bases where those are elsewhere),
+   `ShellDocument.serve()` with `csp: { 'style-src': "'self'" }`, and the
+   bundle with `readFile()` and `sendFile()`; every path in `sts_metadata.ts`,
+   in `hosted_applications.js`'s application, in `cell_placement.ts`.
+5. **The docs**: its row in the root `CLAUDE.md`'s static-surface table, and
+   the server-drawn rows it replaces taken out.
+
+
+## 3cm. THE MOCK RELYING PARTIES — DELETED (#592, 2026-10-12)
+
+`/wsfed/rp`, `/saml2/sp` and `/saml11/rp` were development-only
+demonstrations (#585) that #581 had converted into one static surface
+(`mock_rp_surface.ts`, `web_mock_rp_pages.ts`, `web_mock_rp.ts`, the
+`mockRp` catalogs and `MOCK_RP_CSS`). rcbj decided on #591 that the runtime
+ships no demonstration code, and #592 deleted all of it — the routes, their
+start views and scripts, the verifiers that existed only to show a verdict
+(`verifySignInResponse()` and both `verifyResponse()`s), the two persisted
+stores (`wsfed.rpContexts`, `saml2_sso.spContexts`) and their two lifetimes,
+and `/saml2/sp`'s IMPLICIT TRUST: `saml2_sso.ts` trusted this service's own
+certificate for that one entityID, and `request_signature.ts` took an
+`implicitCertificates` list for it. Both are gone; every service provider's
+certificate is a registered one. The number is kept because the prose cites
+it.
+
+**What they were also for, and what replaced it.** Each was its profile's
+default return address: a request naming no `wreply`, `shire` or
+`AssertionConsumerServiceURL`, with none registered, went to the mock in
+development. It is REFUSED now, in both modes (`saml/return_address.ts`;
+SAML 1.1 refuses on its own page with `STS-SAML-0028`). The relying parties a
+test needs are the test peer's (`tests/peer/peer_saml.js`, #586). The error
+codes only they raised (`STS-SAML-0021`, `0022`, `0042`, `0043`,
+`STS-WSFED-0016`) are retired. The Provider Commands mock
+(`oauth-oidc/command_mock_rp.ts`) went in #591's fifth phase (#596), to the
+test peer's `peer_commands.js`.

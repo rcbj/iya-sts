@@ -11,7 +11,10 @@
 //
 // Draws the Verifier request from the answer of `GET
 // /admin-api/verifier-request`: which claims the mock Verifier asks for, in
-// which format, and the DCQL query it builds.
+// which format, and the DCQL query it builds — and, since #587, the Start a
+// verification form, which posts to `POST /admin-api/verifications/start`
+// (its `mirrors` names this tab), and the verifications still open with
+// what each decided, the view's `recentVerifications`.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -49,8 +52,12 @@ class VcVerifierConfigPage {
     const requested = json.requested;
     const query = json.dcqlQuery;
 
-    const inner = kit.note(t.html('consoleVcVerifierConfig.intro1') + '<a ' +
-      'href="/oid4vp/verifier">/oid4vp/verifier</a>' +
+    // A verification starts from this tab or `POST /admin-api/
+    // verifications/start` (#587) — the demonstration's bar door, which this
+    // sentence linked in a development realm, left for the development
+    // companion on #594.
+    const inner = kit.note(t.html('consoleVcVerifierConfig.intro1') +
+      '<code>POST /admin-api/verifications/start</code>' +
       t.html('consoleVcVerifierConfig.intro2')) +
 
       kit.note(t.html('consoleVcVerifierConfig.catalogue1') + '<a ' +
@@ -78,7 +85,14 @@ class VcVerifierConfigPage {
       '<h2>' + t.html('consoleVcVerifierConfig.hQuery') + '</h2>' +
       kit.note(t.html('consoleVcVerifierConfig.queryNote')) +
       '<textarea readonly spellcheck="false">' +
-      kit.esc(JSON.stringify(query, null, 2)) + '</textarea><h2>' +
+      kit.esc(JSON.stringify(query, null, 2)) + '</textarea>' +
+
+      '<h2>' + t.html('consoleVcVerifierConfig.hStart') + '</h2>' +
+      VcVerifierConfigPage.startSection(json, t) +
+      '<h2>' + t.html('consoleVcVerifierConfig.hOpen') + '</h2>' +
+      VcVerifierConfigPage.openSection(json.recentVerifications, t) +
+
+      '<h2>' +
       t.html('consoleVcVerifierConfig.hNotChange') + '</h2>' +
       kit.note(t.html('consoleVcVerifierConfig.notChange1') + '<a ' +
       'href="/admin/vc">/admin/vc</a>' +
@@ -142,6 +156,105 @@ class VcVerifierConfigPage {
       '</button></form></div>';
   }
 
+  // START A VERIFICATION (#587): one form with a menu per thing a start may
+  // name (the demonstration's `/oid4vp/start` links named the same, until
+  // #594). It posts to
+  // this tab, which the runtime resolves to `POST
+  // /admin-api/verifications/start` through that operation's `mirrors`; its
+  // answer's `message` — the state, the wallet URL and the openid4vp:// URI
+  // — is what the strip then shows. Every menu but the format's opens on
+  // "the Verifier's default", an EMPTY value the start reads as absent, so
+  // pressing Start with nothing chosen asks for the defaults.
+  /**
+   * Draws the Start a verification form, its menus read off the view's
+   * `startChoices`.
+   *
+   * @param json - the page's view (`vpConfigJson()`)
+   * @param t - the page's translator (#539)
+   * @returns the form as HTML
+   */
+  static startSection(json, t) {
+    const choices = json.startChoices || {};
+    const menu = function (name, label, values, selected) {
+      const id = 'vp-start-' + name.replace(/_/g, '-');
+      return '<label for="' + id + '">' + label + '</label> <select id="' +
+        id + '" name="' + name + '">' +
+        (selected === null
+          ? '<option value="">' +
+            t.html('consoleVcVerifierConfig.optDefault') + '</option>'
+          : '') +
+        (values || []).map(function (value) {
+          return '<option value="' + kit.esc(value) + '"' +
+            (value === selected ? ' selected' : '') + '>' + kit.esc(value) +
+            '</option>';
+        }).join('') + '</select> ';
+    };
+    return kit.note(t.html('consoleVcVerifierConfig.startNote')) +
+      '<form method="post" action="/admin/vc-verifier-config"><input ' +
+      'type="hidden" name="action" value="start"><div class="formrow">' +
+      menu('format', t.html('consoleVcVerifierConfig.lFormat'),
+           choices.format, json.format) +
+      menu('by', t.html('consoleVcVerifierConfig.lBy'), choices.by, null) +
+      menu('client_id_prefix', t.html('consoleVcVerifierConfig.lPrefix'),
+           choices.client_id_prefix, null) +
+      '</div><div class="formrow">' +
+      menu('response_type', t.html('consoleVcVerifierConfig.lResponseType'),
+           choices.response_type, null) +
+      menu('response_mode', t.html('consoleVcVerifierConfig.lResponseMode'),
+           choices.response_mode, null) +
+      menu('mode', t.html('consoleVcVerifierConfig.lMode'), choices.mode,
+           null) +
+      '</div><div class="formrow"><button>' +
+      t.html('consoleVcVerifierConfig.startButton') + '</button></div>' +
+      '</form>';
+  }
+
+  // THE VERIFICATIONS STILL OPEN (#587), newest first: what each asked and
+  // what it decided. A row names the disclosed claims and the failed checks
+  // and never a value; one verdict whole is `GET
+  // /admin-api/verifications?state=`.
+  /**
+   * Draws the open verifications and their outcomes.
+   *
+   * @param list - the view's `recentVerifications`
+   * @param t - the page's translator (#539)
+   * @returns the table or a note, as HTML
+   */
+  static openSection(list, t) {
+    const rows = (list && list.verifications) || [];
+    if (!rows.length) {
+      return kit.note(t.html('consoleVcVerifierConfig.noOpen'));
+    }
+    return kit.note(t.html('consoleVcVerifierConfig.openCount',
+                           { shown: rows.length, total: list.total })) +
+      '<table><tr><th>' + t.html('consoleVcVerifierConfig.thState') +
+      '</th><th>' + t.html('consoleVcVerifierConfig.thAsked') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thExpires') + '</th><th>' +
+      t.html('consoleVcVerifierConfig.thOutcome') + '</th></tr>' +
+      rows.map(function (row) {
+        const outcome = !row.received
+          ? '<span class="state-none">' +
+            t.html('consoleVcVerifierConfig.waiting') + '</span>'
+          : (row.ok
+            ? '<span class="state-valid">' +
+              t.html('consoleVcVerifierConfig.accepted') + '</span>'
+            : '<span class="state-expired">' +
+              t.html('consoleVcVerifierConfig.refused') + '</span>') +
+            (row.claims.length ? '<br>' + kit.codeList(row.claims) : '') +
+            (row.failedChecks.length
+              ? '<br>' + kit.codeList(row.failedChecks) : '') +
+            (row.error ? '<br><code>' + kit.esc(row.error) + '</code>' : '');
+        return '<tr><td><code>' + kit.esc(row.state) + '</code></td><td>' +
+          '<code>' + kit.esc(row.format || row.responseType) + '</code> ' +
+          (row.byReference
+            ? t.html('consoleVcVerifierConfig.byReference')
+            : t.html('consoleVcVerifierConfig.byValue')) +
+          (row.requested.length ? '<br>' + kit.codeList(row.requested) : '') +
+          '</td><td>' + kit.esc(row.expiresAt) + '</td><td>' + outcome +
+          '</td></tr>';
+      }).join('') + '</table>';
+  }
+
   // The credential types a wallet may submit, and which one an unqualified
   // request asks for. One request is for ONE of them: a presentation cannot
   // convert between formats, so a wallet holding a jwt_vc_json credential has
@@ -171,10 +284,7 @@ class VcVerifierConfigPage {
         kit.esc(item.identifierText) + '</code></td>' +
         '<td>' + kit.esc(item.selectiveDisclosure) + '</td>' +
         '<td>' + kit.esc(item.holderBinding) + '</td>' +
-        '<td>' + configs + '</td>' +
-        '<td><a href="' + kit.esc('/oid4vp/verifier?format=' +
-                                   encodeURIComponent(item.id)) +
-        '">' + t.html('consoleVcVerifierConfig.presentOne') + '</a></td></tr>';
+        '<td>' + configs + '</td></tr>';
     }).join('');
     return '<form method="post" action="/admin/vc-verifier-config"><input ' +
       'type="hidden" name="action" ' +
@@ -184,7 +294,7 @@ class VcVerifierConfigPage {
       t.html('consoleVcVerifierConfig.thIdentifiedBy') + '</th><th>' +
       t.html('consoleVcVerifierConfig.thSelective') + '</th><th>' +
       t.html('consoleVcVerifierConfig.thHolderBinding') + '</th><th>' +
-      t.html('consoleVcVerifierConfig.thIssuedAs') + '</th><th></th></tr>' +
+      t.html('consoleVcVerifierConfig.thIssuedAs') + '</th></tr>' +
       rows + '</table>' +
       '<div class="formrow"><button>' +
       t.html('consoleVcVerifierConfig.askDefault') + '</button>' +

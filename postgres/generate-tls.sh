@@ -28,6 +28,20 @@
 # this key is needed by the database the STS refuses to start without. A
 # circular dependency at boot is a worse thing to own than four lines of
 # openssl in the image that already ships it.
+#
+# THE CERTIFICATE IS SHARED, AND THE KEY IS NOT (2026-10-12). The service
+# verifies this certificate by default
+# (`persistence.databaseTlsRejectUnauthorized`), and a self-signed one
+# verifies only against itself — so with
+# POSTGRES_TLS_PUBLIC_DIR set, the certificate (and nothing else) is copied
+# to `${POSTGRES_TLS_PUBLIC_DIR}/${CN}.crt`, a directory the stacks share
+# read-only with the `sts` container, which names it in
+# `persistence.databaseTlsCaFile`. The key stays in TLS_DIR, which no other
+# container mounts. One file per CN, so the three databases of the cells
+# stack can share one directory without writing each other's file. Copied
+# on EVERY start, not only after a generation, so a restored data volume
+# and a recreated share agree; written to a temporary name and renamed, so
+# a reader never sees half a certificate.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -63,5 +77,15 @@ fi
 chmod 600 "${KEY}"
 chmod 644 "${CRT}"
 chown postgres:postgres "${KEY}" "${CRT}" 2>/dev/null || true
+
+PUBLIC_DIR="${POSTGRES_TLS_PUBLIC_DIR:-}"
+if [ -n "${PUBLIC_DIR}" ]; then
+  mkdir -p "${PUBLIC_DIR}"
+  cp "${CRT}" "${PUBLIC_DIR}/.${CN}.crt.tmp"
+  chmod 644 "${PUBLIC_DIR}/.${CN}.crt.tmp"
+  mv -f "${PUBLIC_DIR}/.${CN}.crt.tmp" "${PUBLIC_DIR}/${CN}.crt"
+  echo "postgres-tls: the certificate (not the key) is shared as" \
+    "${PUBLIC_DIR}/${CN}.crt."
+fi
 
 echo "postgres-tls: ready."

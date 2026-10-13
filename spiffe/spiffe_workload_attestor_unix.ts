@@ -62,11 +62,17 @@ class UnixWorkloadAttestor {
   readonly type = 'unix';
   /**
    * One sentence for `GET /spiffe` and the console: what this attestor
-   * verifies.
+   * verifies. STATIC as well (#543), so that `spiffe_server.ts`'s
+   * `prose()` reads it without building an attestor.
    */
-  readonly verifies = 'The uid, gid and supplementary groups the kernel ' +
+  static readonly VERIFIES =
+    'The uid, gid and supplementary groups the kernel ' +
     'reports for the caller\'s process, and its executable\'s path and ' +
     'SHA-256.';
+  /**
+   * The same sentence, on the instance the attestation table holds.
+   */
+  readonly verifies = UnixWorkloadAttestor.VERIFIES;
 
   /**
    * Builds the attestor over its dependencies.

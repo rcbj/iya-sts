@@ -265,7 +265,7 @@ two messages: a resource request and a resource response. This service
 implements both halves at every resource server that takes an OAuth access
 token. Those are UserInfo, the RFC 9470 step-up resource, the OpenID4VCI
 endpoints, `/scim/v2`, the Shared Signals endpoints, Grant Management and the
-VC-API test endpoints. The draft says nothing about how it is turned on, so
+W3C VC API. The draft says nothing about how it is turned on, so
 it is a setting of its own and not a value of `oauth2.fapi`.
 
 **A signed request** carries an HTTP message signature with
@@ -393,8 +393,8 @@ It has no setting of its own.
   when the proof is accepted. On a cluster it is claimed once across all nodes.
 * The **nonce handshake** (sections 8 and 9), when `oauth2.dpopNonceRequired`
   is on. It makes proofs fresher and never makes them mandatory: a request
-  with no `DPoP` header is still a Bearer request. In development,
-  `POST /dpop/nonce-mode` flips the setting for the realm it is reached in.
+  with no `DPoP` header is still a Bearer request. It is set per realm, on
+  `/admin/oauth2` or through `POST /admin-api/config/set`.
 * **A bound token presented as `Bearer` is refused** at every protected
   endpoint: UserInfo, the OpenID4VCI endpoints, SCIM, Shared Signals,
   `/admin-api` and the embedded debugger.
@@ -439,29 +439,34 @@ new certificate (section 7.1), and the new tokens bind to it.
 `tls_client_certificate_bound_access_tokens` is advertised only where the port
 is TLS.
 
-### The admin console as a public client
+### The admin console and the user portal as public clients
 
-The admin console is being converted to a static application that runs in the
-browser and holds its own tokens (a public client,
-`token_endpoint_auth_method` `none`). Until that conversion is finished the
-seeded `sts-admin-console` client is still a confidential client, and nothing
-in this section applies to it.
+The admin console and the user portal are static applications that run in the
+browser and hold their own tokens. Each is a public client
+(`token_endpoint_auth_method` `none`): `sts-admin-console` since #446 and
+`sts-user-portal` since #568. Two rules apply to these two clients and to no
+other. Neither is a setting:
 
-Once it is a public client, two rules apply to it and to no other client.
-Neither is a setting:
-
-* **Every token issued to it is DPoP-bound.** The token endpoint refuses a
-  request from it that carries no DPoP proof (`invalid_dpop_proof`). Its
+* **Every token issued to them is DPoP-bound.** The token endpoint refuses a
+  request from either that carries no DPoP proof (`invalid_dpop_proof`). The
   refresh token is bound to the same key, as RFC 9449 section 5 requires for
-  any public client. The management API refuses an access token issued to it
-  that carries no `cnf.jkt`.
-* **It is the one public client a confidential-only FAPI profile allows.**
+  any public client. The management API and the [account API](account-api.md)
+  refuse an access token issued to them that carries no `cnf.jkt`.
+* **They are the two public clients a confidential-only FAPI profile allows.**
   FAPI 1.0 Advanced and FAPI 2.0 support no public client. In a realm with one
-  of those profiles on, the console may still sign in. **The console does not
-  conform to the profile in that realm.** Every other client is held to the
-  profile, and the console's tokens are still sender-constrained.
+  of those profiles on, the console and the portal may still sign in. **They
+  do not conform to the profile in that realm.** Every other client is held to
+  the profile, and their tokens are still sender-constrained.
 
-The user portal is not affected. It stays a confidential client.
+Each rule checks both the client's id and its declared method. A seeded entry
+that an operator changed back to a confidential method is not affected.
+
+Under a FAPI profile the two clients also push their authorization requests
+where the realm requires it (RFC 9126), and ask for and verify a JARM
+response where the realm offers no other response mode. They are not
+required to sign their request objects, because a public client in a browser
+holds no registered key; an explicit `oauth2.requireSignedRequestObject`
+still applies to them.
 
 ### Requiring a sender constraint — five settings
 
@@ -519,8 +524,9 @@ default**:
   protected endpoints require `oauth2.stepUpAcrValues` and
   `oauth2.stepUpMaxAgeS`, which require nothing by default. A registered API
   declares its own requirement as `oauthStepUpAcrValues` / `oauthStepUpMaxAge`,
-  and `/oauth2/step-up/resource/{application}` stands in for it. A token that
-  falls short is answered 401 with
+  and the API itself sends the challenge (the stand-in resource that answered
+  for it here was removed in #593). A token that falls short is answered 401
+  with
   `WWW-Authenticate: Bearer error="insufficient_user_authentication"`, plus the
   `acr_values` and `max_age` it needs.
 
@@ -639,10 +645,9 @@ for the process (`STS_HTTPS=true`) and leave `oauth2.rfc9700` to the realm for a
 compliant pass over HTTPS.
 
 **With the port on TLS there is no plain listener**, so the first fetch of
-`GET /tls/server-certificate` or `POST /tls/trust` is made without verifying the
-certificate (`curl -k`). That is the same act as trusting the PEM the endpoint
-hands back, one step earlier. `/tls`, `/admin/sts-metadata` and the startup line
-say so, and the compose healthcheck picks its scheme from the environment.
+`GET /tls/server-certificate` is made without verifying the certificate
+(`curl -k`). That is the same act as trusting the PEM the endpoint hands back,
+one step earlier. `/admin/sts-metadata` and the startup line say so, and the compose healthcheck picks its scheme from the environment.
 
 The session cookie is `Secure` when, and only when, the port is TLS: a browser
 drops a `Secure` cookie that arrives over plain HTTP, so an unconditional flag
@@ -1039,8 +1044,8 @@ setting.
 costs nothing to forge. The cost, stated rather than hidden, is that a proxy
 terminating mutual TLS cannot pass the certificate through.
 
-`GET /tls/forwarded` reports every forwarding and certificate header a request
-carried, whether any was believed, and the effective base URL. Certificate
+Monitoring → TLS connection (`GET /admin-api/tls-connection`, Admin Read)
+reports every forwarding and certificate header a request carried, whether any was believed, and the effective base URL. Certificate
 headers are listed even though they are ignored. Stripping inbound headers at
 the proxy and protecting the proxy-to-application hop are rows with
 `enforced: no`: they are decisions about a link this process cannot see.
@@ -1262,9 +1267,9 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
   refresh tokens, and the authorization code and refresh grants only.
 * OAuth 2.1 mode, FAPI and the five sender-constraint settings are **not**
   implied by product mode. Turn them on explicitly.
-* `POST /dpop/nonce-mode` is a development test control. Product mode refuses
-  it, and `oauth2.dpopNonceRequired` is then changed only through
-  `/admin/oauth2` or `POST /admin-api/config/set`.
+* `oauth2.dpopNonceRequired` is changed only through `/admin/oauth2` or
+  `POST /admin-api/config/set`, in either mode (the test control
+  `/dpop/nonce-mode` was deleted by #597).
 * RFC 8705's declared refusals, RFC 9068 and RFC 9470 apply **in every mode**.
 * Certificate revocation is **soft-fail** in development and **hard-fail** in
   product (`pki.revocationCheck=auto`). This decides whether a certificate from
@@ -1391,9 +1396,9 @@ client may override `oauth2.refreshIdleSeconds` and
   parameters, TLS client certificates and step-up requirement.
 * **Monitoring → OAuth 2.0 / OIDC activity** (`/admin/oauth2/monitor`) counts
   step-up outcomes and challenges per client.
-* `GET /tls` and `/tls/forwarded` show what a connection presented and which
-  forwarded headers were believed.
-* `GET /dpop/nonce-mode` reports whether nonces are required in this realm.
+* **Monitoring → TLS connection** (`/admin/tls-connection`) shows what a
+  connection presented and which forwarded headers were believed.
+* `/admin/oauth2` shows whether DPoP nonces are required in this realm.
 * `/admin/authorization-servers` holds the named authorization servers, their
   members and their drift; `/admin/sts-metadata` lists the ones this process
   has served.

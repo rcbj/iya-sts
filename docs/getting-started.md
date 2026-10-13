@@ -49,7 +49,7 @@ shown as an environment variable is passed with `-e`.
 
 `CONFIG_FILE` selects a file in `env/` — `local.js`, `test.js` or
 `docker-tests.js`. At the default `debug` level every endpoint call and every
-artifact before and after signing is logged. That is the point of a mock, so
+artifact before and after signing is logged. That is the point of development mode, so
 resist quietening it; `env/test.js` is the quiet one if you need it — and it is
 what the three test launchers select for themselves, since a suite that passes
 throws its log away and the level is about half of this service's CPU. Ask any
@@ -69,7 +69,6 @@ will not bind on an ordinary user account.
 |---|---|---|---|
 | 8081 | The main service — every protocol endpoint, the console, the API. **HTTPS**, since every appconfig file here sets `global.https`; `STS_HTTPS=false` makes it plain HTTP. It asks every connection for a client certificate and requires none, so it is also where mutual TLS happens | `global.port` | `STS_PORT` |
 | 88 (TCP+UDP) | The Kerberos KDC | `krb5.kdcPort` | `KRB5_KDC_PORT` |
-| 8888 | The Kerberos-protected test service | `krb5.servicePort` | `KRB5_SERVICE_PORT` |
 | 389 | The LDAP directory | `ldap.port` | `LDAP_PORT` |
 | 636 | The same directory over TLS (LDAPS) | `ldap.tlsPort` | `LDAPS_PORT` |
 | 8092 | The SPIFFE Workload API over gRPC (product mode: only where `spiffe.workloadTcpSourceAuthenticated` is on) | `spiffe.workloadPort` | `STS_SPIFFE_WORKLOAD_PORT` |
@@ -86,7 +85,8 @@ is not" is the ordinary outcome and one flag could only report one of them:
   (an admin console page, so it needs a session; `GET
   /admin-api/ldap/service` is the same object and is not gated)
 - `GET /spiffe` — all four SPIFFE sockets, separately
-- `GET /krb5/principals` — the KDC
+- the KDC — its startup log line (`krb5: the KDC is reachable on TCP and UDP …`,
+  or `STS-CORE-0029` naming why it could not bind)
 
 So a page answering 200 is not evidence that the listener behind it came up. Read
 the flag.
@@ -112,7 +112,7 @@ second process — but every default port collides. Give the second one its own:
 docker run --rm -p 8091:8091 \
   -e CONFIG_FILE=./env/local.js \
   -e STS_PORT=8091 -e LDAP_PORT=3891 -e LDAPS_PORT=6391 \
-  -e KRB5_KDC_PORT=8891 -e KRB5_SERVICE_PORT=8891 \
+  -e KRB5_KDC_PORT=8891 \
   -e STS_SPIFFE_WORKLOAD_PORT=8093 -e STS_SPIFFE_SERVER_PORT=8182 \
   -e STS_SPIFFE_WORKLOAD_SOCKET=/tmp/spire-agent-2/public/api.sock \
   iya-sts
@@ -219,8 +219,10 @@ services:
       POSTGRES_DB: sts
       STS_DB_APP_USER: sts_app
       STS_DB_APP_PASSWORD: ${STS_DB_APP_PASSWORD:?set STS_DB_APP_PASSWORD in .env}
+      POSTGRES_TLS_PUBLIC_DIR: /run/sts-db-ca
     volumes:
       - db-data:/var/lib/postgresql
+      - db-ca:/run/sts-db-ca
       - db-initdb:/docker-entrypoint-initdb.d:ro
       - db-share:/usr/local/share/sts:ro
     command:
@@ -309,10 +311,14 @@ services:
     ports:
       - "${STS_PORT:-8081}:8081"
       - "${PKI_PORT:-8082}:8082"
+      - "${KDC_PORT:-88}:88"
+      - "${KDC_PORT:-88}:88/udp"
     environment:
       STS_MODE: product
+      KRB5_SERVICE_PRINCIPAL: ${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       STS_PERSISTENCE_MODE: postgres
-      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=require
+      STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=verify-full
+      STS_DATABASE_TLS_CA_FILE: /run/secrets/database-ca/postgres.crt
       STS_DATABASE_PASSWORD_PROVIDER: vault
       STS_DATABASE_PASSWORD_REF: secret/data/sts
       STS_DATABASE_PASSWORD_FIELD: databasePassword
@@ -327,6 +333,7 @@ services:
     volumes:
       - bao-client:/run/secrets/openbao:ro
       - bao-startup:/run/secrets/openbao-startup
+      - db-ca:/run/secrets/database-ca:ro
       - sts-data:/usr/src/sts/data
     tmpfs:
       - /run/sts-startup:mode=0700,uid=10001,gid=10001
@@ -348,6 +355,7 @@ services:
 
 volumes:
   db-data:
+  db-ca:
   db-initdb:
   db-share:
   bao-file:
@@ -429,13 +437,19 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, and every build also has its `M.N.O`. `STS_PORT` and
-  `PKI_PORT` move the two published ports.
+  build of `main`, and every build also has its `M.N.O`. `STS_PORT`,
+  `PKI_PORT` and `KDC_PORT` move the published ports.
+* **Kerberos works from the start.** The KDC is published on 88 (TCP and
+  UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
+  asks for at `https://localhost:8081`, under a random key the service makes
+  itself. Set `KRB5_SERVICE_PRINCIPAL` to `HTTP/<host>` when you reach the
+  service by another name. The client side is in
+  [Kerberos: signing in from a browser](kerberos.md#signing-in-from-a-browser-on-the-base-installation).
 
 What the checkout's own `docker-compose.yml` has and this does not: the optional
 remote XACML PEP (the `xacml` profile), and the extra addresses a realm's own
-SPIFFE listeners bind. Kerberos and LDAP are running but not published; add
-`88`, `389` or `636` to `ports` to reach them from the host.
+SPIFFE listeners bind. LDAP is running but not published; add `389` or `636`
+to `ports` to reach it from the host.
 [Configuration](configuration.md) covers every setting the `environment` block
 can take.
 
@@ -469,10 +483,9 @@ its default `development` mode. There is no setting that opens the console;
 `admin.authRequired` is gone; `global.mode` answers that question. `/admin-api` reads the same service for a program, and takes an OAuth
 2.0 access token of its own.
 
-A protocol you can drive end to end in a browser with nothing else installed is
-**SAML 2.0**: open `https://localhost:8081/saml2/sp`, pick a response binding, sign
-in with any username, and the mock service provider verifies the response it gets
-back check by check. `https://localhost:8081/saml2/metadata` is the identity provider
+**SAML 2.0** needs a service provider of your own to drive end to end — there
+is no built-in one in the service (#592); the test suite's is the test peer
+(`tests/peer/`). `https://localhost:8081/saml2/metadata` is the identity provider
 metadata; `https://localhost:8081/saml2/metadata/anything-you-like` is a document of its
 own for a service provider by that name, minted on the spot — in development mode
 only. In product mode that is a 404 until the service provider is registered.
@@ -500,7 +513,7 @@ The quickest ways to read it:
 
 ```bash
 curl -sk https://localhost:8081/admin-api | head -8   # version, build, commit, stamped
-curl -sk https://localhost:8081/                      # the front page's version line
+curl -sk https://localhost:8081/home-api/front        # the front page's version
 node common/version.js                                # from a checkout, without running it
 ```
 

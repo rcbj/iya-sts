@@ -205,30 +205,11 @@ function childMain() {
       }
     };
   };
-  const dataAttribute = function (html, name, within) {
-    let text = html;
-    if (within) {
-      const at = html.indexOf('id="' + within + '"');
-      text = at < 0 ? '' : html.slice(at, html.indexOf('>', at));
-    }
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(text);
-    return found ? found[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-      : '';
-  };
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name && !/ disabled/.test(tag)) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const config = require(ROOT + '/common/config');
     const passkeyPolicy = require(ROOT + '/common/passkey_policy');
@@ -284,47 +265,79 @@ function childMain() {
             .update(nodeCrypto.randomBytes(32).toString('base64url'))
             .digest('base64url'),
           code_challenge_method: 'S256' }).toString());
-      const screen = await b.go('GET', String(start.headers.location || ''));
-      return { b: b, screen: screen };
+      // A STATIC PAGE SINCE #571: its shell, and its view.
+      const opened = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(start.headers.location || '') });
+      return { b: b, screen: opened.shell, opened: opened,
+               view: opened.view || {} };
     };
     // The password screen's first step: passwordless (`webauthn_only`) or a
     // password, then the passkey page it draws.
     const firstStep = async function (name, passwordless) {
       const s = await screenFor();
-      const form = hiddenFields(s.screen.text);
-      form.username = name;
-      form.password = passwordless ? '' : PASSWORD;
-      if (passwordless) {
-        form.webauthn_only = '1';
-      }
-      form.action = 'login';
-      const step = await s.b.go('POST', '/authn/login', { form: form });
-      return { s: s, step: step,
-               mfaId: (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                       [])[1] };
+      // The step's page, which the act names (#571).
+      const step = await authnScreen.follow({ port: port, jar: s.b.jar,
+        opened: s.opened, fields: { action: 'login', username: name,
+          password: passwordless ? '' : PASSWORD,
+          webauthn_only: passwordless ? '1' : '' } });
+      return { s: s, step: step, mfaId: step.id };
+    };
+    // A STEP'S ANSWER READ AS THE FORM'S WAS (#572): `redirect` — and a
+    // session refused at the end, whose answer names the sign-in screen —
+    // as its 303 with `location`; a refusal on the step's own page at its
+    // status (400), the sentence its text.
+    const formLike = function (a) {
+      const loc = String(a.location || '');
+      const goes = a.next === 'redirect' || a.next === 'mfa' ||
+        (a.next === 'refused' && !!loc);
+      return { status: goes ? 303 : a.apiStatus,
+               headers: goes ? { location: loc } : {},
+               text: (a.errors || []).length ? a.errors.join(' ')
+                                             : String(a.text || ''),
+               answer: a };
+    };
+    // The passkey step's ceremony (#572): armed by `…/webauthn/options`,
+    // made by the test's authenticator, sent to `…/webauthn`.
+    const ceremony = async function (f, make) {
+      const done = await authnScreen.passkeyStep({ port: port,
+        jar: f.s.b.jar, opened: f.step }, make);
+      return formLike(done.answer);
     };
     const register = async function (name, key) {
       const f = await firstStep(name, true);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'create',
-        credential: JSON.stringify(key.register(
-          dataAttribute(f.step.text, 'challenge'),
-          dataAttribute(f.step.text, 'userid'))) } });
+      return ceremony(f, function (c) {
+        return key.register(c.challenge, c.user.id);
+      });
     };
     const signIn = async function (name, key, passwordless) {
       const f = await firstStep(name, passwordless);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'get',
-        credential: JSON.stringify(key.assert(
-          dataAttribute(f.step.text, 'challenge', 'wa-data'))) } });
+      const r = await ceremony(f, function (c) {
+        return key.assert(c.challenge);
+      });
+      // A SESSION REFUSED AT THE END OF THE CEREMONY sends the browser to
+      // the sign-in screen with the sentence on its view (#571): the screen
+      // is a static page, so the form's POST cannot draw it.
+      const at = String(r.headers.location || '');
+      if (r.status === 303 && /\/authn\/login\?authn=/.test(at)) {
+        r.screenView = (await authnScreen.open({ port: port, jar: f.s.b.jar,
+                                                 at: at })).view || null;
+      }
+      return r;
     };
     const usernameless = async function (key) {
       const s = await screenFor();
-      const form = hiddenFields(s.screen.text);
-      form.action = 'passkey';
-      form.passkey_credential = JSON.stringify(key.assert(
-        dataAttribute(s.screen.text, 'challenge', 'wa-passkey')));
-      return s.b.go('POST', '/authn/login', { form: form });
+      // Armed and sent as the screen's page does (#571).
+      const armed = await authnScreen.passkeyOptions({ port: port,
+        jar: s.b.jar, opened: s.opened });
+      return authnScreen.act({ port: port, jar: s.b.jar, opened: s.opened,
+        path: '/authn-api/pending/' + encodeURIComponent(s.opened.id) +
+              '/passkey',
+        body: { credential: JSON.stringify(key.assert(armed.challenge)) } });
+    };
+    // Refused at the screen: back to it, saying why (#571).
+    const refusedAtScreen = function (r, why) {
+      return r.status === 303 && !!r.screenView &&
+             why.test(String(r.screenView.error || ''));
     };
     const redirected = function (r) {
       return r.status === 302 || r.status === 303;
@@ -359,7 +372,7 @@ function childMain() {
          JSON.stringify(saved.errors || []));
     const bob = makeAuthenticator(RPID, ORIGIN, 'eligible');
     r = await register('pkb-bob', bob);
-    note(r.status === 200 && !redirected(r) &&
+    note(r.status === 400 && !redirected(r) &&
          /device-bound passkeys/.test(r.text) &&
          codeRecorded('STS-AUTHN-0312') &&
          credentials.keysOf('pkb-bob').length === 0,
@@ -374,20 +387,19 @@ function childMain() {
 
     // 3. A synced key registered before: every door.
     r = await signIn('pkb-alice', alice, true);
-    note(r.status === 200 && !redirected(r) &&
-         /device-bound passkeys/.test(r.text) &&
+    note(refusedAtScreen(r, /device-bound passkeys/) &&
          sessionRefused('pkb-alice', 'STS-AUTHN-0313'),
          '3a. a synced key registered before the realm said no does not ' +
          'sign in passwordless (STS-AUTHN-0313, a session.refuse row), and ' +
          'the page says why', r.status + ' ' + r.text.slice(0, 300));
     r = await signIn('pkb-dave', dave, false);
-    note(r.status === 200 && !redirected(r) &&
+    note(refusedAtScreen(r, /./) &&
          sessionRefused('pkb-dave', 'STS-AUTHN-0313'),
          '3b. nor as the step after a password', r.status + ' ' +
          r.text.slice(0, 300));
     policy({ backupEligibility: 'disallow', allowUsernameless: true });
     r = await usernameless(alice);
-    note(r.status === 200 && !redirected(r) &&
+    note(r.apiStatus === 400 && !redirected(r) &&
          /device-bound passkeys/.test(r.text),
          '3c. nor with no username', r.status + ' ' + r.text.slice(0, 300));
 

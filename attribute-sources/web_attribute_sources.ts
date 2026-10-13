@@ -254,11 +254,17 @@ class AttributeSourcesPage {
     const t = ctx.t;
     const rows = json.sources.map((source: Json) => this.row(t, json, source))
       .join('');
+    // The register is paged on `sourcesPage` (#313).
+    const nav = json.sourcesPaging
+      ? kit.pageNavPair(PAGE, kit.pageParamsOf(ctx.query || {}),
+                        json.sourcesPaging, t)
+      : { head: '', foot: '' };
     return kit.note(t.html('consoleAttributeSources.intro')) +
       (json.hostPatterns ? '' :
         kit.warn(t.html('consoleAttributeSources.anyHost'))) +
-      '<h3 id="sources">' + t.html('consoleAttributeSources.sources') +
-      '</h3><table><thead><tr><th>' +
+      '<h3 id="sources" data-tab="sources">' +
+      t.html('consoleAttributeSources.sources') +
+      '</h3>' + nav.head + '<table><thead><tr><th>' +
       t.html('consoleAttributeSources.colSource') + '</th>' +
       '<th>' + t.html('consoleAttributeSources.colDatabase') + '</th><th>' +
       t.html('consoleAttributeSources.colRow') + '</th><th>' +
@@ -269,8 +275,9 @@ class AttributeSourcesPage {
       (rows || '<tr><td colspan="7"><span class="state-none">' +
                t.html('consoleAttributeSources.noSource') +
                '</span></td></tr>') +
-      '</tbody></table>' +
-      '<h3 id="add">' + t.html('consoleAttributeSources.addSource') +
+      '</tbody></table>' + nav.foot +
+      '<h3 id="add" data-tab="add">' +
+      t.html('consoleAttributeSources.addSource') +
       '</h3><form method="post" action="' + PAGE +
       '"><input type="hidden" name="action" value="add-source">' +
       '<div class="formrow"><label>' + t.html('consoleAttributeSources.id') +
@@ -278,7 +285,8 @@ class AttributeSourcesPage {
       'placeholder="hr-db" required></label></div>' +
       this.fields(t, json, null) + '<button type="submit">' +
       t.html('consoleAttributeSources.add') + '</button></form>' +
-      '<h3 id="person">' + t.html('consoleAttributeSources.readOnePerson') +
+      '<h3 id="person" data-tab="person">' +
+      t.html('consoleAttributeSources.readOnePerson') +
       '</h3><form method="post" ' +
       'action="' + PAGE + '"><div class="formrow"><input type="hidden" ' +
       'name="action" value="refresh-person"><label>' +
@@ -288,16 +296,18 @@ class AttributeSourcesPage {
       '</button></div></form>' +
       // The link is markup a message cannot carry, so the sentence is split
       // around it.
-      '<p class="sub">' +
+      '<p class="sub" data-metadata>' +
       t.html('consoleAttributeSources.fromEverySource') + ' <code>' +
       esc(json.job) + '</code> ' +
       t.html('consoleAttributeSources.jobOn') + ' ' +
       '<a href="/admin/scheduler">' +
       t.html('consoleAttributeSources.scheduler') + '</a>' +
       t.html('consoleAttributeSources.jobOnEnd') + '</p>' +
-      '<h2>' + t.html('consoleAttributeSources.settings') + '</h2>' +
+      '<h2 data-tab="settings">' + t.html('consoleAttributeSources.settings') +
+      '</h2>' +
       settings.forms(json.settings, PAGE) +
-      '<p class="links"><a href="' + PAGE + '?format=json">JSON</a> · ' +
+      '<p class="links" data-metadata><a href="' + PAGE +
+      '?format=json">JSON</a> · ' +
       '<code>GET /admin-api/attribute-sources</code></p>';
   }
 }

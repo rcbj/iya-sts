@@ -44,5 +44,6 @@
   "nothingIn": "Walang {state}.",
   "counts": "{pending} nakabinbin, {sent} naipadala, <strong>{dead} dead</strong>",
   "colWhat": "Ano",
-  "deliveriesNote": "<strong>Bawat outbound na paghahatid</strong> na ipinapadala ng serbisyong ito sa pamamagitan ng POST sa address na in-register ng client, sa iisang durable queue: bawat isa ay persisted na row, sinusubukan nang isang beses para sa cluster sa ilalim ng na-claim na lease, inuulit nang may backoff kapag sulit dahil sa timeout, pagkabigo ng koneksyon, 5xx, 408 o 429, at <strong>dead letter</strong> kung hindi — muling ipinapadala lang kapag pinindot ng operator ang Subukang muli, na nagsisimula ng bagong henerasyon."
+  "deliveriesNote": "<strong>Bawat outbound na paghahatid</strong> na ipinapadala ng serbisyong ito sa pamamagitan ng POST sa address na in-register ng client, sa iisang durable queue: bawat isa ay persisted na row, sinusubukan nang isang beses para sa cluster sa ilalim ng na-claim na lease, inuulit nang may backoff kapag sulit dahil sa timeout, pagkabigo ng koneksyon, 5xx, 408 o 429, at <strong>dead letter</strong> kung hindi — muling ipinapadala lang kapag pinindot ng operator ang Subukang muli, na nagsisimula ng bagong henerasyon.",
+  "clientsHeading": "Mga relying party"
 }

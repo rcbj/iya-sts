@@ -163,16 +163,17 @@ async function theRestart(cells, realm) {
             first.location);
         });
   const screen = await kit.browse(jar, first.location);
-  const fields = kit.signInFields(screen.text);
-  check("which is a sign-in screen", function () {
-    assert.ok(fields.authnId, screen.status + " " + kit.said(screen.text));
+  check("which is a sign-in screen (its shell, #571)", function () {
+    assert.ok(screen.status === 200 &&
+              /\/authn\/signin\.js/.test(screen.text),
+              screen.status + " " + kit.said(screen.text));
   });
-  const screenUrl = new URL(first.location);
-  const posted = await kit.browse(jar, screenUrl.origin + screenUrl.pathname,
-    { form: { authn_id: fields.authnId, username: PERSON, password: PASSWORD,
-              action: "login", csrf_token: fields.csrf } });
-  check("the login POST names a person homed in " + cells.ids.b + ": 303 " +
-        "back to the original authorization request", function () {
+  // OVER `/authn-api` SINCE #571 (`kit.postScreen()`): the act's answer is
+  // the start to restart at home, which the screen's page follows.
+  const posted = await kit.postScreen(jar, first.location, PERSON,
+                                      PASSWORD);
+  check("the sign-in names a person homed in " + cells.ids.b + ": back " +
+        "to the original authorization request", function () {
           assert.strictEqual(posted.status, 303,
             posted.status + " " + kit.said(posted.text));
           assert.strictEqual(posted.location, start, posted.location);
@@ -199,29 +200,25 @@ async function theRestart(cells, realm) {
           assert.ok(/\/authn\/login\?authn=/.test(again.location),
             again.location);
         });
+  // SINCE #571 THE SCREEN IS A SHELL, answered only for a sign-in the
+  // answering cell holds (an unknown id is refused, 400): the shell is the
+  // proof of WHERE the sign-in is.
   const homeScreen = await kit.browse(jar, again.location);
-  const homeFields = kit.signInFields(homeScreen.text);
   check("the pinned sign-in screen is a sign-in", function () {
-    assert.ok(homeFields.authnId, homeScreen.status + " " +
+    assert.ok(kit.isSignIn(homeScreen), homeScreen.status + " " +
       kit.said(homeScreen.text));
   });
   const unpinned = await kit.browse(jar.without("sts_cell"), again.location);
   check("and it is cell B's: the same URL at cell A without the pin is not " +
         "a sign-in cell A holds", function () {
-          assert.ok(unpinned.text.indexOf(homeFields.authnId) < 0 ||
-                    unpinned.status >= 400,
+          assert.ok(!kit.isSignIn(unpinned) && unpinned.status >= 400,
             "cell A drew the pinned sign-in itself: " + unpinned.status);
-          assert.notStrictEqual(kit.signInFields(unpinned.text).authnId,
-                                homeFields.authnId);
         });
 
   log.info("=== 3. the password at home, the code from home ===");
-  const homeUrl = new URL(again.location);
-  const signedIn = await kit.browse(jar, homeUrl.origin + homeUrl.pathname,
-    { form: { authn_id: homeFields.authnId, username: PERSON,
-              password: PASSWORD, action: "login",
-              csrf_token: homeFields.csrf } });
-  check("the password POST at cell A is relayed home and signs the person " +
+  const signedIn = await kit.postScreen(jar, again.location, PERSON,
+                                        PASSWORD);
+  check("the password act at cell A is relayed home and signs the person " +
         "in: a redirect and a session cookie", function () {
           assert.ok(signedIn.status >= 300 && signedIn.status < 400,
             signedIn.status + " " + kit.said(signedIn.text));
@@ -328,21 +325,17 @@ async function thePushedRequest(cells, realm) {
     started.location.replace(new URL(realm.a).origin,
                              new URL(realm.b).origin));
   check("and that sign-in is cell B's: cell B draws it", function () {
-    assert.ok(kit.signInFields(atHome.text).authnId,
+    assert.ok(kit.isSignIn(atHome),
       atHome.status + " " + kit.said(atHome.text));
   });
   const screen = await kit.browse(jar, started.location);
-  const fields = kit.signInFields(screen.text);
   check("the browser that made the request reaches it through cell A",
         function () {
-          assert.ok(fields.authnId, screen.status + " " +
+          assert.ok(kit.isSignIn(screen), screen.status + " " +
             kit.said(screen.text));
         });
-  const screenUrl = new URL(started.location);
-  const signedIn = await kit.browse(jar, screenUrl.origin +
-                                    screenUrl.pathname,
-    { form: { authn_id: fields.authnId, username: PERSON, password: PASSWORD,
-              action: "login", csrf_token: fields.csrf } });
+  const signedIn = await kit.postScreen(jar, started.location, PERSON,
+                                        PASSWORD);
   const flow = await kit.drive(jar, signedIn.location || "", REDIRECT);
   check("and the person signs in there and the flow ends at the client " +
         "with a code and the pushed state", function () {

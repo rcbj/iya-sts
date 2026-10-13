@@ -6,7 +6,11 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 
 | File | What it is |
 |---|---|
-| `authn.ts` | The sign-in screen, the session store, and the pending-authentication record. |
+| `authn.ts` | The sign-in screen's views and acts, the session store, and the pending-authentication record. |
+| `authn_api.ts` | **`/authn-api` (#571)**: the sign-in screen's API — the operation table, the CSRF binding, the body schemas and the OpenAPI document. The logic is `authn.ts`'s. See *The sign-in screen is a static surface*, below. |
+| `web_authn.ts`, `web_authn_pages.ts`, `web_authn_login.ts`, `web_authn_select.ts`, `web_authn_password.ts` | **The sign-in surface in the browser (#571)**: the runtime (`authn-spa.js`, served at `/authn/signin.js`) and the renderers of `/authn/login`, `/authn/select-idp` and `/authn/password-change`. `web_` modules (`common/CLAUDE.md` 3cl). **The screen's explanations fold (rcbj, 2026-10-12)**: the federation, Kerberos and wallet blurbs and the notes at its foot go through the console's `WebKit.note()` (`admin-ui/web_kit.ts`), so a paragraph longer than a line is a `<details>` whose summary is its first sentence; the rules are `common/web_card_css.ts`'s `FOLD_CSS`. |
+| `web_authn_mfa.ts`, `web_authn_email.ts` | **The steps after the screen in the browser (#572, #573)**: the renderers of `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup`, and of the emailed factor's three pages. See *The steps after the screen*, below. |
+| `email_factor.ts` | The emailed code and sign-in link (#64): their views and acts since #573. See *The emailed code and the emailed sign-in link*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
@@ -19,17 +23,26 @@ session it owns; every Kerberos module is #15 and below so that the KDC's routes
 are not dragged to the front of the router. A require from here to there would do
 exactly that AND close a cycle, since that module needs `startSession()`.
 
-**AND A FOURTH, FIFTH, SIXTH AND SEVENTH (2026-09-17, #38 and its follow-ups):
-`/authn/wallet`, `/authn/wallet/wait`, `/authn/wallet/dc-api` and
-`/authn/wallet.js`** — sign in with a wallet — are `oid4vc/vc_signin.ts`'s, for
-the same kind of reason: what they drive is the OpenID4VP Verifier, which is
-required at 11–14, and this module requires nothing of that family. This module
-declares all four paths (`WALLET_PATH`, `WALLET_WAIT_PATH`,
-`WALLET_DCAPI_PATH`, `WALLET_SCRIPT_PATH`), draws the button
+**AND A FOURTH AND FIFTH (2026-09-17, #38 and its follow-ups):
+`/authn/wallet` and `/authn/wallet/wait`** — sign in with a wallet — are
+`oid4vc/vc_signin.ts`'s, for the same kind of reason: what they drive is the
+OpenID4VP Verifier, which is required at 11–14, and this module requires
+nothing of that family. **Since #574 both are routes of the sign-in surface**:
+each answers `signInShell()` (exported for it, with `locationOf()`), both are
+`ARRIVAL_PATHS`, the acts are the `/authn-api/wallet` operations
+`authn_api.ts` binds and hands to `vc_signin.ts` (requiring it when an
+operation arrives, never at load), and `/authn/wallet/dc-api` and
+`/authn/wallet.js` are gone — their constants with them. A wallet's poll
+answered with a second factor is answered by `beginSecondFactorAfterWallet()`
+and `enrolAfterProof()` as the screen's acts are, `stepAnswer()` naming the
+step's page (a WebAuthn step minted there carries `atSignIn`, so `GET
+/authn/webauthn` draws the ceremony this function drew in place until then).
+This module declares both paths (`WALLET_PATH`, `WALLET_WAIT_PATH`), draws
+the button
 (`walletOptionHtml()`, gone when `oid4vp.signIn` is off — **no longer withheld
 under `forceMfa`**), and that door uses `pendingFor()` and
 `completeAuthentication()` exactly as the Kerberos door does. See *The wallet door* below; the design is argued in
-`oid4vc/CLAUDE.md`, *Signing in with a wallet*.
+`oid4vc/CLAUDE.md`, *Signing in with a wallet* — and, for how a wallet APP is reached and what request it is sent (the `openid4vp://` link, `x509_hash`, `direct_post.jwt`, 2026-10-12), *A wallet APP, and a request it can act on*.
 
 **It needed no inverted hook either**, which is worth saying because rule 3e's
 inventory of slots is long and another is the obvious move. The only two things
@@ -66,6 +79,286 @@ record crossing a directory boundary for no gain.
 never writes one. Do not give any other module a session store to "decouple" it:
 two stores would each look correct alone and never see each other, and the
 symptom is a sign-on that silently is not single.
+
+## THE SIGN-IN SCREEN IS A STATIC SURFACE OVER `/authn-api` (#571, 2026-10-12)
+
+**What changed is the page and the door; nothing a sign-in decides.** #569
+converts every human-facing page to a static application on #570's
+foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
+
+* **`/authn/login`, `/authn/select-idp` and `/authn/password-change` answer
+  the SHELL** (`signInShell()`, `ShellDocument`), which mints the
+  `sts_session` arrival cookie for a browser without one (they are on
+  `ARRIVAL_PATHS`) and loads `/authn/signin.js`. An unknown id is refused at
+  the shell as it always was (400, `invalid_request`), and the chooser's GET
+  still sends a browser with fewer than two partners to the screen with a
+  303. **Script is required** (rcbj on #569): the `<noscript>` says so and no
+  form is drawn.
+* **The form POSTs are DELETED.** Their bodies are `screenAct()` and
+  `passwordChangeAct()`, moved whole and called by `authn_api.ts`. The page
+  builders became VIEWS — `screenView()`, `selectIdpView()`,
+  `passwordChangeView()` — every decision the markup was drawn under, as
+  facts and no words; `web_authn_login.ts` and its siblings draw them in the
+  `authn` catalogs' words with the element ids the screen always had.
+* **THE ANSWER IS THE NEXT STEP** (`authn.ts`, *What the sign-in screen's
+  acts answer*): `redirect` (to `record.returnTo`, still checked as a path
+  on this service; the `sts_session` cookie set on that answer), `mfa`
+  (`step` and the address of the page that draws it, by its own GET),
+  `password-change`, `home-cell` (#98's restart: the start's method, address
+  and fields, sent by the runtime exactly as the re-post page sent them), or
+  `refused` with the English sentence and no error code. One copy of the
+  logic answers both kinds of door: `answersJson(res)` (`res.locals.authnApi`,
+  set by the API) is asked at the one line where a page was sent, and a door
+  that is still a FORM (the wallet's, until #574) gets a 303 instead — its
+  refusal goes on the record as `screenError` and is shown by the view.
+* **`GET /authn/webauthn` draws an ENROLMENT ceremony for a step the screen
+  minted for it** (`step.atSignIn`), which only the POST's answer used to
+  draw; never for a step minted for another factor.
+* **An emailed factor** is armed by the act (`armSecondFactor()`, or
+  `beginFirstFactor()` for a first factor) and drawn by its page's GET; a
+  message that could not be sent is said there once (`emailNotice`).
+
+* **`/authn/spnego`'s person-facing bodies are the same surface's (#575)**:
+  the first 401, the 403 when off and the signed-in 200 answer the shell
+  with the page's state in `data-sts-state`, drawn by an EMBEDDED page row
+  that fetches no view; the RFC 4559 exchange, its statuses and its headers
+  (the CSP aside) are unchanged. `kerberos/CLAUDE.md` argues it.
+
+### `/authn-api`
+
+| Operation | What |
+|---|---|
+| `GET /authn-api` | the index: each operation and the page or control it `mirrors` (`action` naming the screen's button) |
+| `GET /authn-api/openapi.json` | generated from the table and the zod bodies (`account_api_spec.ts`'s converter) |
+| `GET /authn-api/pending/{id}` | the screen's view, `csrf`, `uiLocales`, a locked person's `preferredLanguage` |
+| `GET /authn-api/pending/{id}/partners` | the chooser's view, the list resolved again; `go` to the screen with fewer than two |
+| `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body; `…/passkey/options` (which mints a challenge and names nobody) is counted per address on a `passkey-options` budget of its own since 2026-10-12, 429 with `Retry-After` past it (`STS-AUTHN-0332`, `tests/authn_api.js` 5i-ii) |
+| `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
+
+**UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
+`authn_id` was. It is never logged here, and `common/audit.js`'s
+`redactedPath()` takes it out of an HTTP row's target and the call log
+(`/authn-api/pending/(redacted)/password`).
+
+**EVERY ACT IS BOUND** (rcbj's decision 2 on #571), checked before the id
+is looked up: `Content-Type: application/json` (`STS-AUTHN-0325`, 415), an
+`Origin` in `cors.ownOrigins()` (`STS-AUTHN-0326`, 403), and
+`X-CSRF-Token` equal to `websecurity.tokenFor()` of the `sts_session`
+cookie's session id (`STS-AUTHN-0327`, 403) — **a request with no session is
+refused**, unlike `checkCsrf()`'s no-session pass, because every act follows
+a shell that minted one. A handler that throws answers 500
+(`STS-AUTHN-0328`). Rate limits, risk scoring, lockout, the issuance policy,
+the restart at home and the audit rows are `screenAct()`'s, exactly the
+form's (`STS-AUTHN-0008` is now a 429).
+
+**Placement (#98)**: `/authn-api` is a `handler` row naming `authn.ts`,
+whose `screenAct()` finds the home cell from the login name; `/authn/signin.js`
+is `local`. `hosted_applications.js` puts `/authn-api` in the `authn`
+application.
+
+### The browser
+
+`web_authn.ts` (`AuthnSurface extends WebSurface`): acts as JSON with the
+view's `csrf`; the button an act is read off the index (`mirrors` and
+`action`) and a control no operation is the door of is refused; the passkey
+with no username — `passkey/options`, then `navigator.credentials.get()`
+with user verification required, the autofill armed with conditional
+mediation where the browser has it and NOT armed again after a refused
+passkey, a credential nobody holds signalled (section 5.1.10) — over
+`common/web_webauthn.ts`, the byte helpers the portal's ceremonies share;
+the fingerprint by loading `/authn/fingerprint.js` beside the bundle (a
+library is not a `web_` module and cannot be bundled into one), whose glue
+leaves the visitorId on `window.stsDeviceFingerprint` too.
+`/authn/webauthn.js` was served for `/authn/webauthn` until #572 converted
+that page; nothing draws a page that loads it now, and it is gone.
+
+**Tests**: `tests/authn_api.js` (the shell, the index, the view, every
+binding refusal, every act and its next step, the redacted audit row, the
+form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
+`tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is
+the walk every in-process test signs in through, and over HTTP every job
+signs in through `tests/vendored/authn_signin.js`.
+
+## THE STEPS AFTER THE SCREEN (#572, #573, 2026-10-12)
+
+**The second-factor pages and the emailed factor's are pages of the same
+surface**, on the screen's pattern: each path answers the shell, the browser
+draws it from `GET /authn-api/mfa/{id}?page=` and sends its acts to `POST
+/authn-api/mfa/{id}/…`, and the form POSTs are deleted. Nothing a step
+decides moved: every act is its form POST's body, moved whole into a method
+(`mfaTotpAct()`, `mfaBackupCodeAct()`, `mfaPasswordAct()`,
+`mfaWebauthnOptions()`, `mfaWebauthnAct()`, `mfaSetupAct()`;
+`email_factor.ts`'s `sendAct()`, `codeAct()`, `openAct()`), and the page
+builders became facts (`mfaView()`, `webauthnFacts()`, `mfaSetupFacts()`,
+`EmailFactor.view()`).
+
+| Page | `page=` | Acts (`/authn-api/mfa/{id}/…`) |
+|---|---|---|
+| `/authn/totp` | `totp` | `totp` |
+| `/authn/backup-code` | `backup-code` | `backup-code` |
+| `/authn/password-factor` | `password` | `password` |
+| `/authn/webauthn` | `webauthn` (`&key=`, #534) | `webauthn/options`, `webauthn` |
+| `/authn/mfa-setup` | `setup` | `setup/totp`, `setup/confirm`, `setup/webauthn`, `skip` (Ignore, #246) |
+| `/authn/email-code`, `/authn/email-link` | `email-code`, `email-link` | `email/send`, `email/code` |
+| `/authn/email-link/open` | `email-link-open` | `email-link/open` |
+
+Every page in that table also carries **Start over** (`start-over`, below).
+
+* **START OVER (rcbj, 2026-10-12: "each MFA screen during login should
+  have a back button to start the login over in a graceful manner")**. Every
+  step's page — the five above, the emailed factor's ask, code, waiting and
+  link pages, and the forced password change — draws a Start over button
+  (`WebAuthnMfa.startOver()`, a form of its own); the runtime sends it,
+  whichever page it is on and before the page's own acts, to
+  `POST /authn-api/mfa/{id}/start-over` or, for the password change,
+  `POST /authn-api/password-change/{id}/start-over`. `restartFrom()` is the
+  whole of it: the step is deleted from its store with everything it held
+  (an emailed code's hash, a link's token, an enrolment's secret in
+  progress, the first factor's `amr` and risk assessment), no session is
+  started and no factor counted, and the pending sign-in the step was minted
+  from (`step.authn`, taken out of `pending` when the step began) is put
+  back under its SAME id with a fresh `authn.pendingTtlS` and nothing of the
+  attempt on it (`screenError`, `passkeyChallenge`, `rememberBrowser`
+  cleared). The answer is `next: redirect` to `/authn/login?authn=<id>`, the
+  address a session refused at a step's end already goes to, so the
+  relying party's request completes after the person signs in again. An
+  `authn.sign-in.started-over` audit row records it; a step that has already
+  ended is refused (STS-AUTHN-0331, or the password change's own
+  STS-AUTHN-0144). A step with no record cannot be minted, but if one were,
+  it is ended and the browser sent to the realm's front door, since
+  `/authn/login` is not a destination without a pending record. **The
+  wallet's pages as a second factor are not given one**: they are the
+  wallet surface's, and their own "another way" link returns to the step's
+  page, which has it. `tests/authn_mfa_api.js` section 11 holds it (a
+  mutant that does not put the record back fails 11c, 11d, 11g and 11j).
+
+* **WHAT A PAGE MAY BE DRAWN FOR IS `stepProblem()`**, which both the
+  shell's GET (the 400 the page always answered) and the view ask: an
+  expired step, a code page for somebody with no app, a passkey page for
+  somebody holding no key of the step's role unless the step was minted for
+  its enrolment ceremony (`atSignIn` — the screen's, and since #572 the
+  set-up step's "Set up a passkey"), a recovery-code page with no unspent
+  code, a password page after a password. **The emailed factor's pages
+  answer the shell whatever their query**, and the view draws what is
+  wrong as the end page `endPage()` drew (state `end`, English).
+* **THE ID IS A BEARER CAPABILITY**, as `?mfa=` always was: every act is
+  bound as the screen's are (JSON, an Origin of this service, the
+  `X-CSRF-Token` of the `sts_session` cookie), the id is never logged, and
+  `common/audit.js` redacts `/authn-api/mfa/(redacted)/…`. The step pages
+  are on `ARRIVAL_PATHS`, so a browser reaching one without the cookie
+  (a mailed link opened later) is given one.
+* **WHERE A REFUSAL IS DRAWN (decided for #572)**: a refusal of the step's
+  own credential — a wrong code, a ceremony that did not verify, a rate
+  limit (429), a message that could not be sent — is the step's OWN page
+  again, with the sentence over a fresh view, and the step is kept, as the
+  page redrawn with a sentence did. **A session refused at the END of a
+  step** (`refusedSession()`: disabled meanwhile, the issuance policy) is
+  drawn on the SIGN-IN SCREEN: the step is spent and the pending sign-in put
+  back, so `screenRefused()` — told by `res.locals.authnStep` — puts the
+  sentence on the record (`screenError`) and answers `next: refused` with
+  the screen's `location`. Until #572 it was a 303 to the screen; #571's
+  interim answer, the same place by another road. An emailed factor's
+  refusal that ENDS the sign-in (too many wrong codes, already used,
+  another browser) answers `end: { title }`, and the page draws the end
+  page.
+* **THE PASSKEY STEP'S MODE IS THE STEP'S.** The form posted `mode`, which
+  the page had computed from the keys the person held; `mfaWebauthnAct()`
+  computes it the same way (`webauthnFacts()`), and the enrolment ceremony
+  is refused to a step not minted for it — the gate the GET always had,
+  now at the act as well. The ceremony's options are armed by
+  `webauthn/options` (refused, STS-AUTHN-0329, while a person has still to
+  choose one of several passkeys); the runtime runs it over
+  `common/web_webauthn.ts`. **No "my browser did not ask" button** (#470):
+  script is required (rcbj on #569), so the button that stood in for a
+  blocked script is gone; a result with no ceremony in it is still refused
+  in its sentence (STS-AUTHN-0022).
+* **THE SET-UP STEP'S QR CODE IS DRAWN IN THE BROWSER** from the `otpauth:`
+  URI in the view (`common/web_qr.ts`, moved from `portal/`); no picture
+  crosses the API. The typed secret is in the view as the page showed it.
+* **THE MAILED LINK STILL POINTS AT `/authn/email-link/open?mfa=…&t=…`**,
+  whose GET spends nothing (a mail scanner fetches every link): the view
+  checks the `sts_email_binding` cookie and draws Continue, which sends `t`
+  to `email-link/open`. The waiting page's `<meta>` refresh is a poll in
+  the runtime (`poll()`, every `seconds`), which draws the page again only
+  when the step is gone (`elsewhere`) or ended.
+* **A send stays on the page**: `email/send` answers `next: stay` with
+  `notice: resent`, and the page draws its "a new code is on its way".
+* **The ways round a factor** (the other mechanism, the wallet at
+  `/authn/wallet?mfa=`, the password, the emailed factor, a recovery code)
+  are facts of the view (`links`), drawn as the pages drew them; a link to a
+  page of this surface is followed in place, the wallet's is a navigation.
+* **A next step is followed in place**: an act's `location` on this surface
+  is drawn by the runtime without reloading the shell (`goTo()`), so the
+  screen, its step and the set-up step's secret are one page's history.
+
+**Tests**: `tests/authn_mfa_api.js` (the shells, the index, the views, the
+binding, each act and its next step, the rate limit, a session refused at
+the end, the redacted audit row); the round trip's step cases in
+`tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `openStep()`,
+`stepAct()`, `passkeyStep()` and `ignoreOffer()` in process, and
+`tests/vendored/authn_signin.js`'s `step()`, `stepAct()`, `passkeyStep()`
+and `ignoreOffer()` over HTTP; the conformance suite's person presses an
+offered set-up step's Ignore (`conformance_browser.js`).
+
+## AND THE SIGN-OUT'S TWO OPERATIONS (#577, 2026-10-12)
+
+**`/logout` is a static surface whose API is this one**, because signing
+out is the other end of what it does — the same session, the same
+`sts_session` cookie, the same binding — and `/logout` is this application
+in `hosted_applications.js`. The logic is `logout/logout.ts`'s
+(`signOutView()`, `signOutAct()`), required when an operation arrives:
+that module is second to last and reads `ldap_server.js`, a JavaScript
+route module. `logout/CLAUDE.md` argues the page.
+
+| Operation | What |
+|---|---|
+| `GET /authn-api/logout` | the inventory of the person the cookie names (or `?username=`, where naming is open), `csrf`, their `preferredLanguage`; 403 a name that may not be used, 401 nobody |
+| `POST /authn-api/logout` | the act (`scope`, `select`, `username`, closed), bound as every act here: the result's `view`, or the signed-out document's `form` where the browser has something to fan out |
+
+Access `session`; placement `affinity` (`/authn-api/logout`, as `/logout`).
+A body refused is `STS-LOGOUT-0003`. **`/logout` is on `ARRIVAL_PATHS`** so a
+browser holding no cookie that names somebody (a development test control)
+is given one to bind the act to; **`/logout/signed-out` is on
+`NOT_ARRIVAL_PATHS`**, since the browser it signed out is not arriving.
+
+## THE CONSENT SCREEN IS A PAGE OF THIS SURFACE (#576, 2026-10-12)
+
+**`/oauth2/consent` is drawn by this surface's runtime**, the one page of it
+outside `/authn`: the address the authorization endpoint has always sent a
+person to, so the runtime owns that path beside its base
+(`AuthnSurface.surfacePath()`), draws it from `GET /authn-api/consent/{id}`
+(`web_consent_screen.ts`, beside its server module in `oauth-oidc/`, in the
+`consent` catalogs alone), and sends Allow or Deny — with the limits a
+person lowered, as the form's fields — to `POST /authn-api/consent/{id}`,
+whose answer is a `redirect` the runtime follows. The view and the act are
+`oauth-oidc/consent_screen.ts`'s (`consentView()`, `consentAct()`,
+`askedOf()`); `authn_api.ts` is the door — the id's shape, the binding, and
+the body (`action` closed once the `lim_t0r<n>_<member>` controls are taken
+off, each control by its name and shape) — and requires `consent_screen`
+when an operation arrives, never at load (it is built at 8b, after this
+API at 8-api).
+
+| Operation | `mirrors` | What |
+|---|---|---|
+| `GET /authn-api/consent/{id}` | `GET /oauth2/consent` | the view, `csrf`, the request's `uiLocales`, the person's `preferredLanguage` |
+| `POST /authn-api/consent/{id}` | `POST /oauth2/consent` | Allow or Deny; `next: redirect` to the authorization request |
+
+**ITS SCRIPT IS SERVED AT ITS OWN ADDRESS, `/oauth2/consent.js`** — the
+same built file as `/authn/signin.js` (`authn.signInBundle()`) — and
+**`/authn-api/consent` belongs to the OAuth 2.0 / OpenID Connect application**
+(`common/hosted_applications.js`, longest prefix first), so the page, its
+script and its API are on the listener the authorization endpoint redirected
+to, whichever listener `/authn` is mapped to (#472): this service sends no
+credentialed CORS answer, so a page cannot call an API on another origin
+with its cookie. The shell names the sign-in service's base
+(`data-sts-authn`) only for the language chooser. The consent shell does NOT
+load `/authn/signin.js`, and that is why the protocol jobs that recognise
+the sign-in screen by its script still tell the two apart.
+
+**THE ID IS A BEARER CAPABILITY**, as `?consent=` always was:
+`common/audit.js` redacts `/authn-api/consent/(redacted)` and the `consent`
+query value; and both operations answer only the browser whose session is
+the person asked — the shell's check, made again at each.
 
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
@@ -669,7 +962,7 @@ It is **not** called from `sessionOf()`, which looks like the obvious place and
 is not: that function is called several times per request, so an event there
 would be several events for one act.
 
-## It checks no password
+## It checks no password in development mode (product verifies it)
 
 ## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
 
@@ -1247,9 +1540,12 @@ secret, so it has to happen somewhere the person is already authenticated
 sign-in screen that handed out a shared secret to whoever typed a password would
 be a second factor anybody could set up for themselves.
 
-### It has NO SCRIPT, and it had to argue that beside a page that does
+### It had NO SCRIPT, and had to argue that beside a page that does
 
-The one-time code screen at `/authn/totp` sits directly beside a page that DOES
+**Since #572 the argument is moot rather than reversed**: every step is a
+page of the sign-in surface, which is a script (*The steps after the
+screen*, above). Until then: the one-time code screen at `/authn/totp` sat
+directly beside a page that DOES
 relax the policy and still had to argue its own case. A WebAuthn ceremony is a
 browser API call and cannot happen without script; a person reading six digits
 off a phone and typing them into an input needs none, and the QR code that
@@ -1530,7 +1826,7 @@ token there would refuse a credential the policy had just allowed.
 
 ---
 
-## THE SIGN-IN SCREEN MAY CARRY ONE SCRIPT: THE BROWSER FINGERPRINT (2026-09-22, #62 P6)
+## THE BROWSER FINGERPRINT (2026-09-22, #62 P6; the screen's bundle loads it since #571)
 
 **Only while `risk.fingerprinting` is on in the realm — off by default**
 (rcbj's decision). The argument the root CLAUDE.md asks for, made from
@@ -1699,9 +1995,9 @@ marked spent is a permanent credential. `common/credentials.ts` carries the
 argument and `verifyBackupCode()` is where it is enforced, so this endpoint has
 no branch of its own for it.
 
-### It has NO SCRIPT, and the argument is made again rather than cited
+### It had NO SCRIPT, and the argument was made again rather than cited
 
-A person reads a string off a piece of paper and types it into an input. So it
+(Moot since #572, as `/authn/totp`'s.) A person reads a string off a piece of paper and types it into an input. So it
 is served under the service-wide `script-src 'none'` and `sendBackupCodePage()`
 sets no policy of its own — which is `/authn/totp`'s position, argued the same
 day, and the root `CLAUDE.md`'s rule is that a new scripted page needs its case
@@ -1786,7 +2082,9 @@ the sign-in screen's two boxes ("Use a passkey as a second step", "Sign in
 with a passkey instead of a password"), `/authn/mfa-setup` and the refusals
 all say so. The settings and error codes keep their names.
 
-**The real button.** The root CLAUDE.md says every scripted page except the
+**The real button** — gone with #572, which made the page a page of the
+sign-in surface, where script is required. The root CLAUDE.md said every
+scripted page except the
 OP iframe and the console carries a REAL submit button, and this page — the
 first scripted page — did not. Its `wa-form` held only hidden inputs, so with
 the script blocked nothing happened. The form now carries *My browser did
@@ -1825,15 +2123,16 @@ still answers where the username is typed (its handle must then be the
 name's bytes), and never where it is not (`STS-AUTHN-0304`, rcbj's decision:
 no migration — the person registers it again).
 
-**The usernameless sign-in** (the passkey policy's `allowUsernameless`, off
-by default — `webauthn.usernameless` until #527; `common/CLAUDE.md` 3ch) is
+**The usernameless sign-in** (the passkey policy's `allowUsernameless`, ON
+by default since 2026-10-10, off before — `webauthn.usernameless` until #527; `common/CLAUDE.md` 3ch) is
 `passkeySignIn()`, reached from `POST /authn/login` with `action=passkey`
 before a username is read:
 
-* **The challenge is on the PENDING RECORD**, minted when the screen is drawn
-  (`passkeyChallengeFor()`), because conditional mediation starts the
-  ceremony as the page loads; the POST takes it whatever happens, and the
-  next drawing mints another. Single-use across the cluster through
+* **The challenge is on the PENDING RECORD**, minted by `POST
+  /authn-api/pending/{id}/passkey/options` since #571 (`passkeyOptions()`;
+  it was minted when the screen was drawn), which the page asks as it loads
+  because conditional mediation starts the ceremony then; the act takes it
+  whatever happens, and the next options mint another. Single-use across the cluster through
   `spendAssertion()`, like every assertion.
 * **Who it is comes from the handle** (`credentials.ownerOfUserHandle()`, an
   index in `ldap_server.js` that is checked on a hit and rebuilt on a miss
@@ -1857,12 +2156,11 @@ before a username is read:
   realm answers on the same RP ID, and a credential this realm cannot place
   may be another realm's, or a person homed in another cell — and the
   signal would hide it from their credential manager for good.
-* **The screen runs `/authn/webauthn.js` while it is offered** — the root
-  CLAUDE.md's scripted-page row. *Sign in with a passkey* is a real submit
-  button, after Sign In so Enter still means Sign In; the script posts the
-  assertion through two hidden inputs (`passkey_credential`, and an
-  `action=passkey` input it enables). `sendLoginPage()` reads whether to
-  relax `script-src` off the markup.
+* **The screen's own bundle runs it since #571** (*The sign-in screen is a
+  static surface*, above): `POST /authn-api/pending/{id}/passkey/options`
+  arms the challenge, `…/passkey` takes the assertion. Until then
+  `/authn/webauthn.js` ran it, with a real submit button for a browser
+  without script.
 * **Across cells** the handle never leaves home (`cell_sessions.ts`'s
   credential pattern covers `webauthn`), so a usernameless sign-in answers
   only people homed in the cell that drew the screen; anybody else types
@@ -2034,15 +2332,16 @@ after computing `factor`:
   (`STS-AUTHN-0171`): a key on its own is one factor, `amr ["hwk"]`, and the
   requirement is two.
 * **A requirement with no factor held mints a `pendingMfa` step with factor
-  `enrol`** and draws `mfaSetupPage()` — buttons for an authenticator app and a
+  `enrol`** and answers its page (`mfaSetupFacts()` since #572) — buttons for an authenticator app and a
   security key, whichever `enrolmentOffered()` finds (`totp.offered()`;
   `webauthnPolicy.offered()` with the `mfa` role allowed). Offered neither, the
   sign-in is refused naming the settings (`STS-AUTHN-0172`) rather than a
   required factor silently not being asked for.
-* **`/authn/mfa-setup`** takes the step id. `webauthn` hands the step to
-  `webauthnPage()` as an ordinary `mfa` enrolment; `totp` begins an enrolment,
-  moves the step to `enrol-totp` and draws the QR code and the typed secret;
-  `confirm-totp` confirms the code (rate limited on the `mfa-code` bucket) and
+* **`/authn/mfa-setup`** takes the step id (its acts are `/authn-api`'s since
+  #572). `setup/webauthn` hands the step to the passkey page as an ordinary
+  `mfa` enrolment; `setup/totp` begins an enrolment, moves the step to
+  `enrol-totp`, whose view carries the `otpauth:` URI the browser draws as a
+  QR code, and the typed secret; `setup/confirm` confirms the code (rate limited on the `mfa-code` bucket) and
   only then calls `startSession(['pwd','otp'], 'mfa')` and returns to the
   caller. A wrong code keeps the step. Anybody who already holds a factor is
   refused there (`STS-AUTHN-0175`), which is what keeps this door the same
@@ -2389,13 +2688,14 @@ reserved `invalid` is refused); product verifies it.
 
 ## THE EMAILED CODE AND THE EMAILED SIGN-IN LINK (#64, 2026-09-23)
 
-`authn/email_factor.ts` draws and checks both, as a FIRST factor (the sign-in
-screen's "Email me a sign-in code" / "…link" buttons — submit buttons of the
-same form, so the username goes with them and no script is needed) and as a
+`authn/email_factor.ts` answers and checks both, as a FIRST factor (the
+sign-in screen's "Email me a sign-in code" / "…link" buttons, the screen's
+`email` act since #571) and as a
 SECOND (a `pendingMfa` step whose `factor` is `email-code` or `email-link`,
 or whose `email` offers one as a way round the factor asked for). This module
-declares the three paths and owns the step store; that one registers the six
-routes just after this module and reaches the steps only through
+declares the three paths and owns the step store; that one registers the three
+pages' shells just after this module (their views and acts are `/authn-api`'s
+since #573) and reaches the steps only through
 `mintMfaStep()`, `saveMfaStep()`, `dropMfaStep()`, `finishEmailSecondFactor()`
 and `finishEmailFirstFactor()` — the wallet door's arrangement.
 
@@ -2416,11 +2716,12 @@ email SHALL NOT be used for out-of-band authentication. Where they are on:
   D3): the step holds the SHA-256 of a cookie set when the link was sent, and
   the landing page is refused without it. Approving from another device is the
   login-CSRF shape and is not offered. **The landing GET spends nothing**; a
-  Continue button posts. The waiting page refreshes with a `<meta>` tag and,
-  once the step is spent, says the sign-in went on in the other tab.
-- **No script on any of the six pages** — so none is on the root file's list
-  of pages that relax the policy; each argued its case the same way
-  `/authn/totp` did.
+  Continue button sends the token (`/authn-api`, #573). The waiting page asks
+  again every few seconds (a `<meta>` refresh until #573, the runtime's poll
+  since) and, once the step is spent, says the sign-in went on in the other
+  tab.
+- **Pages of the sign-in surface since #573** (*The steps after the screen*,
+  above): until then there was no script on any of the six pages.
 - **`amr ["otp"]`**, the first factor's `amr` plus `otp` and `acr "mfa"` as a
   second (D1, D2); the event's credential kind is `email-code` or
   `email-link`, which the issuance policy is told and `risk_engine` reads: an

@@ -58,8 +58,10 @@ class SamlPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static saml2Body(ctx, json) {
+  static saml2Body(ctx, json, options?) {
     const t = ctx.t;
+    const includeMetadata = !options || options.includeMetadata !== false;
+    const includeSettings = !options || options.includeSettings !== false;
     const needle = String(ctx.query.q || '').trim();
     const paging = json.paging;
     const filterParams = { q: String(ctx.query.q || ''),
@@ -109,16 +111,16 @@ class SamlPage {
         '</td></tr>';
     }).join('');
 
-    const inner = '<h1>' + t.html('consoleSaml.saml2.title') +
-      '</h1><p class="sub">' + t.html('consoleSaml.saml2.intro') + '</p>' +
-      kit.note(t.html('consoleSaml.saml2.perSp') + '<a ' +
-      'href="/saml2/metadata">/saml2/metadata</a>' +
-      t.html('consoleSaml.common.unscopedAfter')) +
+    const inner = '<h1>' + t.html('consoleSaml.saml2.title') + '</h1>' +
+      (includeMetadata
+        ? '<p class="sub">' + t.html('consoleSaml.saml2.intro') + '</p>' +
+          kit.note(t.html('consoleSaml.saml2.perSp') + '<a ' +
+          'href="/saml2/metadata">/saml2/metadata</a>' +
+          t.html('consoleSaml.common.unscopedAfter'))
+        : '') +
       '<p class="sub"><a href="/saml2">' +
-      t.html('consoleSaml.common.linkProfile') + '</a> &middot; <a ' +
-      'href="/saml2/sp">' + t.html('consoleSaml.saml2.linkMockSp') +
-      '</a> &middot; <a ' +
-      'href="/admin/saml-attributes">' +
+      t.html('consoleSaml.common.linkProfile') + '</a> &middot; ' +
+      '<a href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkAttributes') + '</a> ' +
       '&middot; <a ' +
       'href="/admin/applications?kind=' + json.kind + '">' +
@@ -150,10 +152,7 @@ class SamlPage {
           '<th>' + t.html('consoleSaml.common.thLastSeen') +
           '</th></tr></thead><tbody>' + rows + '</tbody></table>' + nav.foot
         : kit.note(t.html('consoleSaml.saml2.noneYet',
-          { filtered: needle ? 'yes' : 'no' }) + ' ' +
-          t.html('consoleSaml.common.startOne') + '<a ' +
-          'href="/saml2/sp">' + t.html('consoleSaml.saml2.linkMockSp') +
-          '</a>' + t.html('consoleSaml.saml2.orRegister'))) +
+          { filtered: needle ? 'yes' : 'no' }))) +
       '<h2>' + t.html('consoleSaml.saml2.hRegister') +
       '</h2><p class="sub">' + t.html('consoleSaml.saml2.registerIntro') +
       '</p><form ' +
@@ -183,7 +182,8 @@ class SamlPage {
           t.html('consoleSaml.saml2.thLast') + '</th></tr></thead>' +
           '<tbody>' + refusedRows + '</tbody></table>' + refusedNav.foot
         : '<p class="sub">' + t.html('consoleSaml.saml2.none') + '</p>') +
-      SettingsForms.forms(json.settings, '/admin/saml2') +
+      (includeSettings
+        ? SettingsForms.forms(json.settings, '/admin/saml2') : '') +
       kit.note(t.html('consoleSaml.saml2.shape') + '<a ' +
       'href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkCustomAttributes') + '</a>' +
@@ -601,8 +601,10 @@ class SamlPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static saml11Body(ctx, json) {
+  static saml11Body(ctx, json, options?) {
     const t = ctx.t;
+    const includeMetadata = !options || options.includeMetadata !== false;
+    const includeSettings = !options || options.includeSettings !== false;
     const needle = String(ctx.query.q || '').trim();
     const paging = json.paging;
     const filterParams = { q: String(ctx.query.q || ''),
@@ -639,18 +641,19 @@ class SamlPage {
         '</td></tr>';
     }).join('');
 
-    const inner = '<h1>' + t.html('consoleSaml.saml11.title') +
-      '</h1><p class="sub">' + t.html('consoleSaml.saml11.intro') + '</p>' +
-      kit.note(t.html('consoleSaml.saml11.noRequest') + '<a ' +
-      'href="/admin/saml2">' + t.html('consoleSaml.saml11.linkSaml2Page') +
-      '</a>' + t.html('consoleSaml.saml11.noRequestAfter')) +
-      kit.note(t.html('consoleSaml.saml11.perRp') + '<a ' +
-      'href="/saml11/metadata">/saml11/metadata</a>' +
-      t.html('consoleSaml.common.unscopedAfter')) +
+    const inner = '<h1>' + t.html('consoleSaml.saml11.title') + '</h1>' +
+      (includeMetadata
+        ? '<p class="sub">' + t.html('consoleSaml.saml11.intro') + '</p>' +
+          kit.note(t.html('consoleSaml.saml11.noRequest') + '<a ' +
+          'href="/admin/saml2">' +
+          t.html('consoleSaml.saml11.linkSaml2Page') +
+          '</a>' + t.html('consoleSaml.saml11.noRequestAfter')) +
+          kit.note(t.html('consoleSaml.saml11.perRp') + '<a ' +
+          'href="/saml11/metadata">/saml11/metadata</a>' +
+          t.html('consoleSaml.common.unscopedAfter'))
+        : '') +
       '<p class="sub"><a href="/saml11">' +
       t.html('consoleSaml.common.linkProfile') + '</a> &middot; <a ' +
-      'href="/saml11/rp">' + t.html('consoleSaml.saml11.linkMockRp') +
-      '</a> &middot; <a ' +
       'href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkAttributes') + '</a> ' +
       '&middot; <a ' +
@@ -683,10 +686,7 @@ class SamlPage {
           '</th></tr></thead><tbody>' + rows +
           '</tbody></table>' + nav.foot
         : kit.note(t.html('consoleSaml.saml11.noneYet',
-          { filtered: needle ? 'yes' : 'no' }) + ' ' +
-          t.html('consoleSaml.common.startOne') + '<a ' +
-          'href="/saml11/rp">' + t.html('consoleSaml.saml11.linkMockRp') +
-          '</a>' + t.html('consoleSaml.saml11.orRegister'))) +
+          { filtered: needle ? 'yes' : 'no' }))) +
       '<h2>' + t.html('consoleSaml.saml11.hRegister') +
       '</h2><p class="sub">' + t.html('consoleSaml.saml11.registerIntro') +
       '</p><form method="post" action="/admin/saml11"><div ' +
@@ -694,11 +694,15 @@ class SamlPage {
       'value="register"><label for="new_rp">' +
       t.html('consoleSaml.saml11.identifier') + '</label><input ' +
       'type="text" id="new_rp" name="rp" ' +
-      'placeholder="urn:example:app"><button>' +
+      'placeholder="urn:example:app" required><label for="new_shire">' +
+      t.html('consoleSaml.saml11.thShire') + ' (<code>shire</code>)</label>' +
+      '<input type="url" id="new_shire" name="shire" required ' +
+      'placeholder="https://app.example.com/saml/acs"><button>' +
       t.html('consoleSaml.common.register') + '</button><span ' +
       'class="note">' + t.html('consoleSaml.saml11.registerNote') +
       '</span></div></form>' +
-      SettingsForms.forms(json.settings, '/admin/saml11') +
+      (includeSettings
+        ? SettingsForms.forms(json.settings, '/admin/saml11') : '') +
       kit.note(t.html('consoleSaml.saml11.shape') + '<a ' +
       'href="/admin/saml-attributes">' +
       t.html('consoleSaml.common.linkCustomAttributes') + '</a>' +
@@ -708,6 +712,29 @@ class SamlPage {
                        '', {});
 
     return inner;
+  }
+
+  /**
+   * Draws the SAML profile notes collected on the Metadata tab.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @returns the explanatory notes as HTML
+   */
+  static metadataBody(ctx) {
+    const t = ctx.t;
+    return '<h1>SAML</h1>' +
+      '<p class="sub">' + t.html('consoleSaml.saml2.intro') + '</p>' +
+      kit.note(t.html('consoleSaml.saml2.perSp') + '<a ' +
+      'href="/saml2/metadata">/saml2/metadata</a>' +
+      t.html('consoleSaml.common.unscopedAfter')) +
+      '<p class="sub">' + t.html('consoleSaml.saml11.intro') + '</p>' +
+      kit.note(t.html('consoleSaml.saml11.noRequest') + '<a ' +
+      'href="/admin/saml2">' +
+      t.html('consoleSaml.saml11.linkSaml2Page') +
+      '</a>' + t.html('consoleSaml.saml11.noRequestAfter')) +
+      kit.note(t.html('consoleSaml.saml11.perRp') + '<a ' +
+      'href="/saml11/metadata">/saml11/metadata</a>' +
+      t.html('consoleSaml.common.unscopedAfter'));
   }
 
   // Which of the two browser profiles a recorded binding value names, in words.
@@ -816,10 +843,7 @@ class SamlPage {
       kit.esc(String(json.authentications || 0)) +
         '</td></tr></tbody></table><h2>' +
       t.html('consoleSaml.detail11.hNotHere') + '</h2><p ' +
-      'class="sub">' + t.html('consoleSaml.detail11.notHere') + '</p><p ' +
-      'class="sub"><a href="/saml11/rp">' +
-      t.html('consoleSaml.detail11.mockRp') + '</a>' +
-      t.html('consoleSaml.detail11.mockRpAfter') + '</p>';
+      'class="sub">' + t.html('consoleSaml.detail11.notHere') + '</p>';
 
     return inner;
   }

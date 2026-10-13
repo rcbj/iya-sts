@@ -387,15 +387,21 @@ class EncryptionPage {
              { mode: json.store.mode }) + '</p>',
       t.html('consoleEncryption.storeTitle'));
 
+    // TWO TABS (2026-10-12, `WebPages.protocolTabs()`): what is encrypted
+    // and the data encryption keys with their controls. The key, the
+    // algorithm and the counting are what the page explains and reports,
+    // and are Metadata.
     return tiles + what +
-                  '<h3>' + t.html('consoleEncryption.hEncrypted') + '</h3>' +
+                  '<h3 data-tab="classes">' +
+                  t.html('consoleEncryption.hEncrypted') + '</h3>' +
                   self.classesTable(json, t) +
                   self.unclassifiedBlock(json, t) +
                   '<h3>' + t.html('consoleEncryption.hKey') + '</h3>' +
                   keyBlock + boundsBlock +
                   '<h3>' + t.html('consoleEncryption.hAlgorithm') + '</h3>' +
                   algBlock +
-                  '<h3>' + t.html('consoleEncryption.hDataKeys') + '</h3>' +
+                  '<h3 data-tab="datakeys">' +
+                  t.html('consoleEncryption.hDataKeys') + '</h3>' +
                   self.renderDataKeys(ctx, json) +
                   '<h3>' + t.html('consoleEncryption.hCounting') + '</h3>' +
                   countsBlock +
