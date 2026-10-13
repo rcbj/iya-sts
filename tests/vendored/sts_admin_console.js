@@ -512,7 +512,21 @@ async function go(driver, url) {
   // page's /admin-api operation — after a sign-in in the browser where the
   // page holds no token yet. So the navigation is done when the page is
   // drawn, and what the page answered is what its operation answered.
-  await waitForDrawn(driver);
+  const state = await waitForDrawn(driver);
+  // THE SIGN-IN SCREEN, MET LATE (2026-10-13). The check above reads the
+  // address straight after the load, but it is the console's SCRIPT that
+  // finds no session and sends the browser to the sign-in screen — so on a
+  // slower node (single-node's run of 2026-10-13, /admin/tls/trust) the
+  // redirect landed after it, waitForDrawn() answered 'elsewhere', and the
+  // section read the sign-in screen as the page. Asked again once settled.
+  if (state === "elsewhere" && signedInAs && bare.indexOf("/admin") >= 0 &&
+      (await driver.getCurrentUrl()).indexOf("/authn/login") >= 0) {
+    log.info("[sign-in] " + bare + " met the sign-in screen once its " +
+             "script ran: this browser's one sign-on cookie was taken by " +
+             "an earlier section; signing in again as " + signedInAs + ".");
+    await typeTheSignIn(driver, signedInAs);
+    await waitForDrawn(driver);
+  }
   if (hash >= 0) {
     await driver.executeScript("location.hash = arguments[0];",
                                url.slice(hash + 1));
@@ -6579,7 +6593,11 @@ async function theBrowserWillNotSend(driver, path, fields, values, offender,
       "is still in front of them. It posted " + posted.length + " time(s), " +
       "which means the attribute is gone and the only thing left refusing " +
       "this is a round trip that empties the page.");
-    assert.strictEqual(after, before,
+    // THE FRAGMENT IS NOT A NAVIGATION (2026-10-13): a page whose form is
+    // on a tab names the tab it opened in the fragment
+    // (`/admin/applications#applications-tab-add`, CI on main 8fe81efa),
+    // which loads nothing — so the document is compared without it.
+    assert.strictEqual(after.split("#")[0], before.split("#")[0],
       "and the browser should not have gone anywhere; it went to " + after);
     assert.strictEqual(validity.formValid, false,
       "and the form should report itself invalid; it reports " +
