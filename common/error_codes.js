@@ -161,7 +161,8 @@ const SUBSYSTEMS = [
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
            'common/mode.js, common/version.js, sts_metadata.ts, home/, ' +
            'admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts ' +
-           '(STS-CORE-0126), cluster/node_snapshots.ts',
+           '(STS-CORE-0126), cluster/node_snapshots.ts, ' +
+           'common/heap_collector.ts',
     what: 'Starting the service, the settings table, trust realms, and the ' +
           'helpers every protocol shares.' },
   { id: 'WORKER', label: 'Worker pools',
@@ -1076,6 +1077,28 @@ const CODES = [
       'read (#472).',
     spec: 'the service does not start; logged when the listeners cannot be ' +
       'reconciled' },
+  // MONITORING → NODE HEALTH'S COLLECT BUTTONS (#611): a full garbage
+  // collection in the front process and its worker threads, on demand.
+  { code: 'STS-CORE-0158',
+    summary: 'A garbage collection asked for on Monitoring → Node Health ' +
+      '(POST /admin-api/node-health/collect-garbage) did not run in one ' +
+      'isolate — the front process\'s main thread or a worker thread: V8 ' +
+      'would not hand its gc to a new context, or gc threw (#611). The ' +
+      'answer\'s row for that isolate says why; the others still ran.',
+    spec: 'HTTP 500 when the front process\'s own did not run and nothing ' +
+      'else was asked; otherwise HTTP 200 with that row\'s ok false' },
+  { code: 'STS-CORE-0159',
+    summary: 'A worker thread asked to run a garbage collection by ' +
+      'Monitoring → Node Health did not answer within its bound (#611). ' +
+      'It may still be collecting; the answer lists it under unanswered.',
+    spec: 'none — HTTP 200, the thread listed under unanswered' },
+  { code: 'STS-CORE-0160',
+    summary: 'A garbage collection was asked for on Monitoring → Node ' +
+      'Health with an action the operation does not have, or a target ' +
+      'that is neither `all`, `front`, nor the threadId of a ready worker ' +
+      'thread of this node (#611). Nothing was collected.',
+    spec: 'HTTP 400 for an unknown action or a malformed target, 404 for ' +
+      'a thread this node does not have' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

@@ -199,6 +199,9 @@ import WorkerChannel = require('./worker_channel');
 // Requires only the error-code table above: an unexpected error in this
 // worker is logged and contained rather than ending it (#355).
 import faultBoundary = require('./fault_boundary');
+// Requires only node's `v8` and `vm`: Monitoring → Node Health's Collect
+// buttons run a full garbage collection of this thread's isolate (#611).
+import HeapCollector = require('./heap_collector');
 
 let logLevelProblem = null;
 const log = bunyan.createLogger({
@@ -1453,6 +1456,10 @@ class RequestWorker {
       }
       if (message && message.poolStatus) {
         this.reportPoolStatus(message);
+        return;
+      }
+      if (message && message.collectGarbage) {
+        this.collectGarbage(message);
       }
     });
 
@@ -1497,6 +1504,34 @@ class RequestWorker {
                   error: error || null, memory: memory, cpu: cpu,
                   uptimeS: Math.round(process.uptime()) });
     log.debug("Leaving RequestWorker.reportPoolStatus().");
+  }
+
+  // A FULL GARBAGE COLLECTION OF THIS THREAD'S ISOLATE (#611), for
+  // Monitoring → Node Health's Collect buttons. A worker thread is an isolate
+  // of its own, so the front process cannot collect its heap; it asks over
+  // the channel, and this answers with what `common/heap_collector.ts`
+  // measured — the heap before and after, and the pause. The collection is
+  // synchronous: this thread serves nothing while it runs, which is what the
+  // page says before the button is pressed.
+  /**
+   * Answers the front process's `{ collectGarbage }` question: runs a full
+   * garbage collection of this thread's isolate and reports its heap before
+   * and after.
+   *
+   * @param message - the question, carrying the id to answer under
+   */
+  collectGarbage(message: any): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering RequestWorker.collectGarbage().");
+    const collection = HeapCollector.collect(log);
+    if (!collection.ok) {
+      log.error(errorCodes.tag('STS-CORE-0158') + 'request_worker: a ' +
+                'garbage collection asked for by Monitoring → Node Health ' +
+                'did not run: ' + collection.error);
+    }
+    this.report({ collectGarbage: true, id: message.id,
+                  pid: WorkerChannel.id(), collection: collection });
+    log.debug("Leaving RequestWorker.collectGarbage().");
   }
 
   // ---------------------------------------------------------------------------
