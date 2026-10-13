@@ -1371,6 +1371,10 @@
     "en": "896007dff32a6824",
     "text": "Se establecieron la descripción, el nombre para mostrar o los tipos de miembro de un rol"
   },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "Se ejecutó una recolección de basura completa en un proceso o hilo worker de un nodo"
+  },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",
     "text": "Se rechazó un AuthnRequest de SAML 2.0"

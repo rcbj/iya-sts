@@ -1371,6 +1371,10 @@
     "en": "896007dff32a6824",
     "text": "La description, le nom d’affichage ou les types de membres d’un rôle ont été définis"
   },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "Un ramasse-miettes complet a été exécuté dans un processus ou un thread de travail d’un nœud"
+  },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",
     "text": "Une AuthnRequest SAML 2.0 a été refusée"

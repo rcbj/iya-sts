@@ -1371,6 +1371,10 @@
     "en": "896007dff32a6824",
     "text": "设置了角色的描述、显示名称或成员类型"
   },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "在某个节点的进程或工作线程中执行了一次完整垃圾回收"
+  },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",
     "text": "SAML 2.0 AuthnRequest 被拒绝"

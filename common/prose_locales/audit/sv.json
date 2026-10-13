@@ -1371,6 +1371,10 @@
     "en": "896007dff32a6824",
     "text": "En rolls beskrivning, visningsnamn eller medlemstyper sattes"
   },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "En fullständig skräpinsamling kördes i en process eller arbetstråd på en nod"
+  },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",
     "text": "En SAML 2.0 AuthnRequest avvisades"
