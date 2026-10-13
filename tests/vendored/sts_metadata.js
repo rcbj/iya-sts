@@ -385,11 +385,6 @@ function theIndexMatchesTheRouter(doc) {
     assert.ok(Array.isArray(e.methods) && e.methods.length,
       e.path + " should name at least one HTTP method.");
   });
-  assert.deepStrictEqual(doc.demoMarkMismatches || [], [],
-    "these paths carry the demonstration mark on one half and not the " +
-    "other (#585) — a route marked demoOnly whose ENDPOINTS row is not " +
-    "flagged demo, or the reverse — so one mode would list an endpoint the " +
-    "other does not serve: " + JSON.stringify(doc.demoMarkMismatches));
   log.info("[drift] OK — every registered route is described and every " +
            "description is registered.");
   log.debug("Leaving theIndexMatchesTheRouter().");
@@ -552,25 +547,24 @@ async function theMethodsShownActuallyAnswer(doc) {
 // The index must not omit the endpoints this service's OTHER documents
 // advertise. Those are discovered by clients, so an index that missed one would
 // be missing exactly the endpoints that matter most.
-// THE DEMONSTRATIONS (#585): served and listed only in development. In a
-// product realm none is listed — and one that is not listed must not answer
-// either, which is asked of a known few directly, since a path the page does
-// not list is a path the method check above never calls.
-async function theDemonstrationsFollowTheMode(doc, consoleClient) {
-  log.debug("Entering theDemonstrationsFollowTheMode().");
-  log.info("=== The demonstration endpoints ===");
-  const modeAnswer = await consoleClient.api("GET", "/admin-api/mode");
-  assert.strictEqual(modeAnswer.status, 200,
-    "GET /admin-api/mode should answer 200; got " + modeAnswer.status);
-  const product = !!(modeAnswer.json || {}).isProduct;
-  const listed = doc.endpoints.filter(function (e) { return e.demo; });
-  // #591 moved them out phase by phase (#592 to #598), and #595 took the
-  // last — the Kerberos and SPNEGO ones, to the development companion — so
-  // NO realm lists one now, development included, and every former one
-  // answers as an unrouted path in either mode.
-  assert.deepStrictEqual(listed.map(function (e) { return e.path; }), [],
-    "a " + (product ? "product" : "development") + " realm must list no " +
-    "demonstration endpoint (#585, #595).");
+// NO DEMONSTRATION IS LEFT (#591, #599). #585 served and listed them only in
+// development, behind a mark on the route and a `demo` flag on the row;
+// #592 to #598 moved every one out of the runtime, and #599 removed the
+// mark, the flag and the document's `demoMarkMismatches` with them. So no
+// row may carry a demonstration member, and a known few former paths are
+// asked directly, since a path the page does not list is a path the method
+// check above never calls.
+async function noDemonstrationIsLeft(doc) {
+  log.debug("Entering noDemonstrationIsLeft().");
+  log.info("=== No demonstration endpoint ===");
+  const flagged = doc.endpoints.filter(function (e) {
+    return Object.prototype.hasOwnProperty.call(e, "demo");
+  });
+  assert.deepStrictEqual(flagged.map(function (e) { return e.path; }), [],
+    "no endpoint row may carry a demonstration flag: the runtime ships no " +
+    "demonstration (#591, #599).");
+  assert.ok(!Object.prototype.hasOwnProperty.call(doc, "demoMarkMismatches"),
+    "the document reports no demonstration mark: there is none (#599).");
   const probes = [["GET", "/saml2/sp"], ["GET", "/issuer"],
                   ["GET", "/oid4vp/verifier"], ["GET", "/tls"],
                   ["POST", "/ssf/receive"], ["GET", "/krb5/principals"],
@@ -583,13 +577,12 @@ async function theDemonstrationsFollowTheMode(doc, consoleClient) {
       new RegExp("Cannot " + probe[0] + " ").test(String(r.raw || "")
         .replace(/<[^>]*>/g, ""));
     assert.ok(unrouted, probe[0] + " " + probe[1] + " should answer as an " +
-              "unrouted path (Express's own 404, #585, #595); " +
+              "unrouted path (Express's own 404, #591); " +
               "got " + r.status + " " + String(r.raw || "").slice(0, 80));
   }
-  log.info("[demos] OK — " + (product ? "product" : "development") +
-           ": none listed, and " + probes.length + " probed answer as " +
-           "unrouted paths.");
-  log.debug("Leaving theDemonstrationsFollowTheMode().");
+  log.info("[demos] OK — none listed, and " + probes.length + " probed " +
+           "answer as unrouted paths.");
+  log.debug("Leaving noDemonstrationIsLeft().");
 }
 
 async function theAdvertisedEndpointsAreAllListed(doc) {
@@ -711,7 +704,7 @@ async function test() {
   await theMethodsShownActuallyAnswer(doc);
   await pathsAreFollowableLinks(doc, served.page);
   await theAdvertisedEndpointsAreAllListed(doc);
-  await theDemonstrationsFollowTheMode(doc, consoleClient);
+  await noDemonstrationIsLeft(doc);
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
 }
